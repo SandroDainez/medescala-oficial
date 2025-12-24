@@ -11,7 +11,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -85,6 +86,11 @@ export default function ShiftCalendar() {
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [filterSector, setFilterSector] = useState<string>(searchParams.get('sector') || 'all');
   
+  // Bulk selection mode
+  const [bulkMode, setBulkMode] = useState(false);
+  const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set());
+  const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
+  
   // Dialogs
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -92,6 +98,7 @@ export default function ShiftCalendar() {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
+  const [bulkCreateDialogOpen, setBulkCreateDialogOpen] = useState(false);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -514,6 +521,161 @@ export default function ShiftCalendar() {
     }
   }
 
+  // Toggle shift selection for bulk operations
+  function toggleShiftSelection(shiftId: string) {
+    setSelectedShiftIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(shiftId)) {
+        newSet.delete(shiftId);
+      } else {
+        newSet.add(shiftId);
+      }
+      return newSet;
+    });
+  }
+
+  // Toggle date selection for bulk create
+  function toggleDateSelection(dateStr: string) {
+    setSelectedDates(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(dateStr)) {
+        newSet.delete(dateStr);
+      } else {
+        newSet.add(dateStr);
+      }
+      return newSet;
+    });
+  }
+
+  // Select all visible shifts
+  function selectAllShifts() {
+    const allIds = new Set(filteredShifts.map(s => s.id));
+    setSelectedShiftIds(allIds);
+  }
+
+  // Clear all selections
+  function clearSelection() {
+    setSelectedShiftIds(new Set());
+    setSelectedDates(new Set());
+  }
+
+  // Exit bulk mode
+  function exitBulkMode() {
+    setBulkMode(false);
+    clearSelection();
+  }
+
+  // Bulk delete shifts
+  async function handleBulkDelete() {
+    if (selectedShiftIds.size === 0) {
+      toast({ title: 'Nenhum plantão selecionado', variant: 'destructive' });
+      return;
+    }
+
+    if (!confirm(`Deseja excluir ${selectedShiftIds.size} plantão(ões)? Esta ação não pode ser desfeita.`)) return;
+
+    const idsToDelete = Array.from(selectedShiftIds);
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const id of idsToDelete) {
+      const { error } = await supabase.from('shifts').delete().eq('id', id);
+      if (error) {
+        errorCount++;
+      } else {
+        successCount++;
+      }
+    }
+
+    if (errorCount > 0) {
+      toast({ 
+        title: `${successCount} excluídos, ${errorCount} erros`, 
+        variant: 'destructive' 
+      });
+    } else {
+      toast({ title: `${successCount} plantão(ões) excluído(s)!` });
+    }
+
+    clearSelection();
+    fetchData();
+    setDayDialogOpen(false);
+  }
+
+  // Bulk create shifts for selected dates
+  async function handleBulkCreate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!currentTenantId || selectedDates.size === 0) return;
+
+    let autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+    let shiftNotes = formData.notes || '';
+    if (formData.assigned_user_id === 'disponivel') {
+      shiftNotes = `[DISPONÍVEL] ${shiftNotes}`.trim();
+    } else if (formData.assigned_user_id === 'vago') {
+      shiftNotes = `[VAGO] ${shiftNotes}`.trim();
+    }
+
+    const sortedDates = Array.from(selectedDates).sort();
+    let successCount = 0;
+    let errorCount = 0;
+
+    for (const dateStr of sortedDates) {
+      const shiftData = {
+        tenant_id: currentTenantId,
+        title: autoTitle,
+        hospital: formData.hospital,
+        location: formData.location || null,
+        shift_date: dateStr,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+        base_value: parseFloat(formData.base_value) || 0,
+        notes: shiftNotes || null,
+        sector_id: formData.sector_id || null,
+        created_by: user?.id,
+        updated_by: user?.id,
+      };
+
+      const { data: newShift, error } = await supabase
+        .from('shifts')
+        .insert(shiftData)
+        .select()
+        .single();
+
+      if (error) {
+        errorCount++;
+        continue;
+      }
+      successCount++;
+
+      // Create assignment if a real user was selected
+      if (formData.assigned_user_id && 
+          formData.assigned_user_id !== 'vago' && 
+          formData.assigned_user_id !== 'disponivel' && 
+          newShift) {
+        await supabase.from('shift_assignments').insert({
+          tenant_id: currentTenantId,
+          shift_id: newShift.id,
+          user_id: formData.assigned_user_id,
+          assigned_value: parseFloat(formData.base_value) || 0,
+          created_by: user?.id,
+        });
+      }
+    }
+
+    if (errorCount > 0) {
+      toast({ 
+        title: `${successCount} criados, ${errorCount} erros`, 
+        variant: 'destructive' 
+      });
+    } else {
+      toast({ title: `${successCount} plantão(ões) criado(s)!` });
+    }
+
+    clearSelection();
+    setBulkCreateDialogOpen(false);
+    closeShiftDialog();
+    fetchData();
+  }
+
   async function handleDeleteShift(id: string) {
     if (!confirm('Deseja excluir este plantão e todas as atribuições?')) return;
 
@@ -738,21 +900,43 @@ export default function ShiftCalendar() {
           {days.map(day => {
             const dayShifts = getShiftsForDateFiltered(day);
             const hasShifts = dayShifts.length > 0;
+            const dateStr = format(day, 'yyyy-MM-dd');
+            const isDateSelected = selectedDates.has(dateStr);
+            const dayHasSelectedShifts = dayShifts.some(s => selectedShiftIds.has(s.id));
             
             return (
               <div
                 key={day.toISOString()}
                 className={`${viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} p-1 border rounded-lg cursor-pointer transition-colors
                   ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
+                  ${bulkMode && isDateSelected ? 'ring-2 ring-primary bg-primary/10' : ''}
+                  ${bulkMode && dayHasSelectedShifts ? 'ring-2 ring-destructive bg-destructive/10' : ''}
                 `}
-                onClick={() => openDayView(day)}
+                onClick={() => {
+                  if (bulkMode && !hasShifts) {
+                    // In bulk mode with no shifts, toggle date selection for bulk create
+                    toggleDateSelection(dateStr);
+                  } else {
+                    openDayView(day);
+                  }
+                }}
               >
-                <div className={`text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
-                  {format(day, 'd')}
-                  {viewMode === 'week' && (
-                    <span className="text-muted-foreground ml-1 text-xs">
-                      {format(day, 'EEE', { locale: ptBR })}
-                    </span>
+                <div className={`flex items-center justify-between text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
+                  <span>
+                    {format(day, 'd')}
+                    {viewMode === 'week' && (
+                      <span className="text-muted-foreground ml-1 text-xs">
+                        {format(day, 'EEE', { locale: ptBR })}
+                      </span>
+                    )}
+                  </span>
+                  {bulkMode && !hasShifts && (
+                    <Checkbox 
+                      checked={isDateSelected}
+                      onCheckedChange={() => toggleDateSelection(dateStr)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-4 w-4"
+                    />
                   )}
                 </div>
                 
@@ -766,6 +950,7 @@ export default function ShiftCalendar() {
                       const isNight = isNightShift(shift.start_time, shift.end_time);
                       const isAvailable = isShiftAvailable(shift);
                       const showSectorName = !options?.hideSectorName && filterSector === 'all';
+                      const isShiftSelected = selectedShiftIds.has(shift.id);
                       
                       // Determine what to show for each shift:
                       // - If has assignments: show assigned plantonistas
@@ -776,13 +961,29 @@ export default function ShiftCalendar() {
                       return (
                         <div
                           key={shift.id}
-                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
+                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''} ${bulkMode && isShiftSelected ? 'ring-2 ring-destructive' : ''}`}
                           style={{ 
                             backgroundColor: isNight ? '#e0e7ff' : `${sectorColor}20`,
                             borderLeft: `3px solid ${isNight ? '#6366f1' : sectorColor}`
                           }}
                           title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
+                          onClick={(e) => {
+                            if (bulkMode) {
+                              e.stopPropagation();
+                              toggleShiftSelection(shift.id);
+                            }
+                          }}
                         >
+                          {bulkMode && (
+                            <div className="flex justify-end mb-1">
+                              <Checkbox 
+                                checked={isShiftSelected}
+                                onCheckedChange={() => toggleShiftSelection(shift.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                className="h-3 w-3"
+                              />
+                            </div>
+                          )}
                           {showSectorName && (
                             <div className="flex items-center gap-1">
                               {isNight ? (
@@ -1320,35 +1521,95 @@ export default function ShiftCalendar() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {/* View Mode Toggle */}
-                <div className="flex border rounded-lg overflow-hidden">
-                  <Button 
-                    variant={viewMode === 'week' ? 'default' : 'ghost'} 
-                    size="sm"
-                    onClick={() => setViewMode('week')}
-                    className="rounded-none"
-                  >
-                    Semana
-                  </Button>
-                  <Button 
-                    variant={viewMode === 'month' ? 'default' : 'ghost'} 
-                    size="sm"
-                    onClick={() => setViewMode('month')}
-                    className="rounded-none"
-                  >
-                    Mês
-                  </Button>
-                </div>
+                {/* Bulk Mode Toggle */}
+                {bulkMode ? (
+                  <>
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-lg bg-primary/10 border border-primary/30">
+                      <CheckSquare className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-medium text-primary">
+                        {selectedShiftIds.size > 0 
+                          ? `${selectedShiftIds.size} plantão(ões)` 
+                          : selectedDates.size > 0 
+                            ? `${selectedDates.size} data(s)`
+                            : 'Modo Seleção'}
+                      </span>
+                    </div>
+                    {selectedShiftIds.size > 0 && (
+                      <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Excluir ({selectedShiftIds.size})
+                      </Button>
+                    )}
+                    {selectedDates.size > 0 && (
+                      <Button size="sm" onClick={() => {
+                        // Open bulk create dialog
+                        const effectiveSectorId = filterSector !== 'all' ? filterSector : sectors[0]?.id || '';
+                        const effectiveSector = sectors.find(s => s.id === effectiveSectorId);
+                        setFormData({
+                          hospital: effectiveSector?.name || sectors[0]?.name || '',
+                          location: '',
+                          shift_date: '',
+                          start_time: '07:00',
+                          end_time: '19:00',
+                          base_value: '',
+                          notes: '',
+                          sector_id: effectiveSectorId,
+                          assigned_user_id: '',
+                          duration_hours: '',
+                          repeat_weeks: 0,
+                        });
+                        setBulkCreateDialogOpen(true);
+                      }}>
+                        <Plus className="mr-2 h-4 w-4" />
+                        Criar ({selectedDates.size})
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={clearSelection}>
+                      Limpar
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={exitBulkMode}>
+                      <X className="mr-2 h-4 w-4" />
+                      Sair
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    {/* View Mode Toggle */}
+                    <div className="flex border rounded-lg overflow-hidden">
+                      <Button 
+                        variant={viewMode === 'week' ? 'default' : 'ghost'} 
+                        size="sm"
+                        onClick={() => setViewMode('week')}
+                        className="rounded-none"
+                      >
+                        Semana
+                      </Button>
+                      <Button 
+                        variant={viewMode === 'month' ? 'default' : 'ghost'} 
+                        size="sm"
+                        onClick={() => setViewMode('month')}
+                        className="rounded-none"
+                      >
+                        Mês
+                      </Button>
+                    </div>
 
-                <Button variant="outline" onClick={handlePrintSchedule}>
-                  <Printer className="mr-2 h-4 w-4" />
-                  Imprimir
-                </Button>
+                    <Button variant="outline" onClick={() => setBulkMode(true)}>
+                      <CheckSquare className="mr-2 h-4 w-4" />
+                      Seleção
+                    </Button>
 
-                <Button onClick={() => openCreateShift()}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Novo Plantão
-                </Button>
+                    <Button variant="outline" onClick={handlePrintSchedule}>
+                      <Printer className="mr-2 h-4 w-4" />
+                      Imprimir
+                    </Button>
+
+                    <Button onClick={() => openCreateShift()}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Novo Plantão
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1460,10 +1721,69 @@ export default function ShiftCalendar() {
               <span>
                 {selectedDate && format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
               </span>
-              <Button size="sm" onClick={() => selectedDate && openCreateShift(selectedDate)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Adicionar Plantão
-              </Button>
+              <div className="flex items-center gap-2">
+                {selectedDate && getShiftsForDate(selectedDate).length > 0 && (
+                  <>
+                    {/* Select all in this day */}
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => {
+                        const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                        const allSelected = dayShiftIds.every(id => selectedShiftIds.has(id));
+                        if (allSelected) {
+                          // Deselect all
+                          setSelectedShiftIds(prev => {
+                            const newSet = new Set(prev);
+                            dayShiftIds.forEach(id => newSet.delete(id));
+                            return newSet;
+                          });
+                        } else {
+                          // Select all
+                          setSelectedShiftIds(prev => {
+                            const newSet = new Set(prev);
+                            dayShiftIds.forEach(id => newSet.add(id));
+                            return newSet;
+                          });
+                        }
+                        if (!bulkMode) setBulkMode(true);
+                      }}
+                    >
+                      <CheckSquare className="mr-2 h-4 w-4" />
+                      {(() => {
+                        const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                        const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
+                        return selectedCount > 0 
+                          ? `${selectedCount} selecionado(s)` 
+                          : 'Selecionar todos';
+                      })()}
+                    </Button>
+                    {(() => {
+                      const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                      const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
+                      if (selectedCount > 0) {
+                        return (
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={() => {
+                              handleBulkDelete();
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Excluir ({selectedCount})
+                          </Button>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </>
+                )}
+                <Button size="sm" onClick={() => selectedDate && openCreateShift(selectedDate)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Adicionar
+                </Button>
+              </div>
             </DialogTitle>
           </DialogHeader>
 
@@ -1480,16 +1800,28 @@ export default function ShiftCalendar() {
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
                 const isAvailable = isShiftAvailable(shift);
                 const showSectorName = filterSector === 'all';
+                const isShiftSelected = selectedShiftIds.has(shift.id);
                 
                 return (
                   <Card 
                     key={shift.id}
                     style={{ borderLeft: `4px solid ${sectorColor}` }}
+                    className={isShiftSelected ? 'ring-2 ring-destructive' : ''}
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-start gap-3">
+                          {/* Checkbox for selection */}
+                          <Checkbox 
+                            checked={isShiftSelected}
+                            onCheckedChange={() => {
+                              toggleShiftSelection(shift.id);
+                              if (!bulkMode) setBulkMode(true);
+                            }}
+                            className="mt-1"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
                             {showSectorName && (
                               <Badge 
                                 variant="outline"
@@ -1525,6 +1857,7 @@ export default function ShiftCalendar() {
                             <span className="font-medium text-foreground">
                               R$ {Number(shift.base_value).toFixed(2)}
                             </span>
+                            </div>
                           </div>
                         </div>
                         <div className="flex gap-1">
@@ -2086,6 +2419,203 @@ export default function ShiftCalendar() {
               Fechar
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Create Dialog */}
+      <Dialog open={bulkCreateDialogOpen} onOpenChange={setBulkCreateDialogOpen}>
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Plus className="h-5 w-5" />
+              Criar Plantões em Lote
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="mb-4 p-3 rounded-lg bg-muted/50 border">
+            <p className="text-sm font-medium">Datas selecionadas: {selectedDates.size}</p>
+            <div className="flex flex-wrap gap-1 mt-2">
+              {Array.from(selectedDates).sort().slice(0, 10).map(dateStr => (
+                <Badge key={dateStr} variant="secondary" className="text-xs">
+                  {format(parseISO(dateStr), "dd/MM", { locale: ptBR })}
+                </Badge>
+              ))}
+              {selectedDates.size > 10 && (
+                <Badge variant="outline" className="text-xs">
+                  +{selectedDates.size - 10} mais
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <form onSubmit={handleBulkCreate} className="space-y-4">
+            {/* Sector selector */}
+            <div className="space-y-2">
+              <Label htmlFor="bulk_sector_id">Setor</Label>
+              <Select 
+                value={formData.sector_id} 
+                onValueChange={(v) => {
+                  const sector = sectors.find(s => s.id === v);
+                  setFormData({ 
+                    ...formData, 
+                    sector_id: v, 
+                    hospital: sector?.name || formData.hospital 
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectors.map(sector => (
+                    <SelectItem key={sector.id} value={sector.id}>
+                      <span className="flex items-center gap-2">
+                        <span 
+                          className="w-2 h-2 rounded-full" 
+                          style={{ backgroundColor: sector.color || '#22c55e' }}
+                        />
+                        {sector.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Auto-detected shift type indicator */}
+            {formData.start_time && formData.end_time && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                {isNightShift(formData.start_time, formData.end_time) ? (
+                  <>
+                    <Moon className="h-5 w-5 text-indigo-400" />
+                    <span className="font-medium text-indigo-400">Plantão Noturno</span>
+                  </>
+                ) : (
+                  <>
+                    <Sun className="h-5 w-5 text-amber-500" />
+                    <span className="font-medium text-amber-500">Plantão Diurno</span>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk_location">Local/Sala (opcional)</Label>
+              <Input
+                id="bulk_location"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                placeholder="Ex: Sala 3"
+              />
+            </div>
+            
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="bulk_start_time">Início</Label>
+                <Input
+                  id="bulk_start_time"
+                  type="time"
+                  value={formData.start_time}
+                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="bulk_end_time">Término</Label>
+                <Input
+                  id="bulk_end_time"
+                  type="time"
+                  value={formData.end_time}
+                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="bulk_base_value">Valor Base (R$)</Label>
+                <Input
+                  id="bulk_base_value"
+                  type="number"
+                  step="0.01"
+                  value={formData.base_value}
+                  onChange={(e) => setFormData({ ...formData, base_value: e.target.value })}
+                  placeholder="0.00"
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label>Atribuição</Label>
+                <Select 
+                  value={formData.assigned_user_id || 'vago'} 
+                  onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vago">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-gray-400" />
+                        Plantão Vago
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="disponivel">
+                      <span className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500" />
+                        Plantão Disponível
+                      </span>
+                    </SelectItem>
+                    {(() => {
+                      const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
+                      const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                      const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
+                      
+                      if (membersToShow.length > 0) {
+                        return (
+                          <>
+                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                              {label}
+                            </div>
+                            {membersToShow.map((m) => (
+                              <SelectItem key={m.user_id} value={m.user_id}>
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-primary" />
+                                  {m.profile?.name || 'Sem nome'}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="bulk_notes">Observações</Label>
+              <Input
+                id="bulk_notes"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Observações adicionais..."
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => setBulkCreateDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="flex-1" disabled={selectedDates.size === 0}>
+                <Plus className="mr-2 h-4 w-4" />
+                Criar {selectedDates.size} Plantão(ões)
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
