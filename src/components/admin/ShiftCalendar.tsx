@@ -73,7 +73,6 @@ export default function ShiftCalendar() {
   
   // Form data
   const [formData, setFormData] = useState({
-    title: '',
     hospital: '',
     location: '',
     shift_date: '',
@@ -82,6 +81,7 @@ export default function ShiftCalendar() {
     base_value: '',
     notes: '',
     sector_id: '',
+    assigned_user_id: '', // Plantonista selecionado
   });
 
   const [assignData, setAssignData] = useState({
@@ -160,12 +160,18 @@ export default function ShiftCalendar() {
     setLoading(false);
   }
 
-  // Check if shift is nocturnal (starts at 19:00 or later, or ends at 07:00 or before next day)
+  // Check if shift is nocturnal (starts at 18:00 or later, or ends at 07:00 or before)
   function isNightShift(startTime: string, endTime: string): boolean {
     const startHour = parseInt(startTime.split(':')[0], 10);
     const endHour = parseInt(endTime.split(':')[0], 10);
     // Night shift if starts at 18:00+ or ends at 07:00 or before
     return startHour >= 18 || endHour <= 7 || endHour < startHour;
+  }
+
+  // Generate automatic title based on time
+  function generateShiftTitle(startTime: string, endTime: string): string {
+    const isNight = isNightShift(startTime, endTime);
+    return isNight ? 'Plantão Noturno' : 'Plantão Diurno';
   }
 
   // Get sector color
@@ -242,9 +248,12 @@ export default function ShiftCalendar() {
     e.preventDefault();
     if (!currentTenantId) return;
 
+    // Generate title automatically based on time
+    const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+
     const shiftData = {
       tenant_id: currentTenantId,
-      title: formData.title,
+      title: autoTitle,
       hospital: formData.hospital,
       location: formData.location || null,
       shift_date: formData.shift_date,
@@ -271,11 +280,30 @@ export default function ShiftCalendar() {
         closeShiftDialog();
       }
     } else {
-      const { error } = await supabase.from('shifts').insert(shiftData);
+      const { data: newShift, error } = await supabase
+        .from('shifts')
+        .insert(shiftData)
+        .select()
+        .single();
 
       if (error) {
         toast({ title: 'Erro ao criar', description: error.message, variant: 'destructive' });
       } else {
+        // If a user was selected, create the assignment
+        if (formData.assigned_user_id && newShift) {
+          const { error: assignError } = await supabase.from('shift_assignments').insert({
+            tenant_id: currentTenantId,
+            shift_id: newShift.id,
+            user_id: formData.assigned_user_id,
+            assigned_value: parseFloat(formData.base_value) || 0,
+            created_by: user?.id,
+          });
+
+          if (assignError) {
+            console.error('Error assigning user:', assignError);
+          }
+        }
+
         toast({ title: 'Plantão criado!' });
         fetchData();
         closeShiftDialog();
@@ -337,7 +365,6 @@ export default function ShiftCalendar() {
   function openCreateShift(date?: Date) {
     setEditingShift(null);
     setFormData({
-      title: '',
       hospital: sectors[0]?.name || '',
       location: '',
       shift_date: date ? format(date, 'yyyy-MM-dd') : '',
@@ -346,6 +373,7 @@ export default function ShiftCalendar() {
       base_value: '',
       notes: '',
       sector_id: sectors[0]?.id || '',
+      assigned_user_id: '',
     });
     setShiftDialogOpen(true);
   }
@@ -353,7 +381,6 @@ export default function ShiftCalendar() {
   function openEditShift(shift: Shift) {
     setEditingShift(shift);
     setFormData({
-      title: shift.title,
       hospital: shift.hospital,
       location: shift.location || '',
       shift_date: shift.shift_date,
@@ -362,6 +389,7 @@ export default function ShiftCalendar() {
       base_value: shift.base_value.toString(),
       notes: shift.notes || '',
       sector_id: shift.sector_id || '',
+      assigned_user_id: '',
     });
     setShiftDialogOpen(true);
   }
@@ -370,7 +398,6 @@ export default function ShiftCalendar() {
     setShiftDialogOpen(false);
     setEditingShift(null);
     setFormData({
-      title: '',
       hospital: '',
       location: '',
       shift_date: '',
@@ -379,6 +406,7 @@ export default function ShiftCalendar() {
       base_value: '',
       notes: '',
       sector_id: '',
+      assigned_user_id: '',
     });
   }
 
@@ -874,27 +902,35 @@ export default function ShiftCalendar() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="title">Título do Plantão</Label>
-                <Input
-                  id="title"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Ex: Plantão Noturno"
-                  required
-                />
+            {/* Auto-detected shift type indicator */}
+            {formData.start_time && formData.end_time && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                {isNightShift(formData.start_time, formData.end_time) ? (
+                  <>
+                    <Moon className="h-5 w-5 text-indigo-400" />
+                    <span className="font-medium text-indigo-400">Plantão Noturno</span>
+                    <span className="text-xs text-muted-foreground">(detectado automaticamente)</span>
+                  </>
+                ) : (
+                  <>
+                    <Sun className="h-5 w-5 text-amber-500" />
+                    <span className="font-medium text-amber-500">Plantão Diurno</span>
+                    <span className="text-xs text-muted-foreground">(detectado automaticamente)</span>
+                  </>
+                )}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="location">Local/Sala (opcional)</Label>
-                <Input
-                  id="location"
-                  value={formData.location}
-                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                  placeholder="Ex: Sala 3"
-                />
-              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="location">Local/Sala (opcional)</Label>
+              <Input
+                id="location"
+                value={formData.location}
+                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                placeholder="Ex: Sala 3"
+              />
             </div>
+            
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="shift_date">Data</Label>
@@ -927,18 +963,44 @@ export default function ShiftCalendar() {
                 />
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="base_value">Valor Base (R$)</Label>
-              <Input
-                id="base_value"
-                type="number"
-                step="0.01"
-                value={formData.base_value}
-                onChange={(e) => setFormData({ ...formData, base_value: e.target.value })}
-                placeholder="0.00"
-                required
-              />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="base_value">Valor Base (R$)</Label>
+                <Input
+                  id="base_value"
+                  type="number"
+                  step="0.01"
+                  value={formData.base_value}
+                  onChange={(e) => setFormData({ ...formData, base_value: e.target.value })}
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+              
+              {/* Plantonista selection - only for new shifts */}
+              {!editingShift && (
+                <div className="space-y-2">
+                  <Label>Plantonista (opcional)</Label>
+                  <Select 
+                    value={formData.assigned_user_id} 
+                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar plantonista" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Nenhum (atribuir depois)</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.user_id} value={m.user_id}>
+                          {m.profile?.name || 'Sem nome'}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="notes">Observações</Label>
               <Input
