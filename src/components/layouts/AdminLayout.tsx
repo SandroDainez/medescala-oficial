@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
-  Calendar, 
   CalendarDays,
   Users, 
   Building2,
