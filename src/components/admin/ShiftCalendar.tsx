@@ -1207,7 +1207,7 @@ export default function ShiftCalendar() {
     );
   }
 
-  // Print schedule function
+  // Print schedule function - Calendar visual format
   function handlePrintSchedule() {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -1217,11 +1217,16 @@ export default function ShiftCalendar() {
 
     const activeSector = filterSector !== 'all' ? sectors.find(s => s.id === filterSector) : null;
     const scheduleName = activeSector ? activeSector.name : 'Todos os Setores';
-    const periodLabel = viewMode === 'month' 
-      ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
-      : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`;
+    const sectorColor = activeSector?.color || '#22c55e';
+    const periodLabel = format(currentDate, 'MMMM yyyy', { locale: ptBR });
 
-    // Group shifts by date
+    // Get calendar days for the current month
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const calendarDays = eachDayOfInterval({ start: monthStart, end: monthEnd });
+    const firstDayOfWeek = monthStart.getDay();
+
+    // Group shifts by date for quick lookup
     const shiftsByDate: Record<string, Shift[]> = {};
     filteredShifts.forEach(shift => {
       if (!shiftsByDate[shift.shift_date]) {
@@ -1230,43 +1235,67 @@ export default function ShiftCalendar() {
       shiftsByDate[shift.shift_date].push(shift);
     });
 
-    // Sort dates
-    const sortedDates = Object.keys(shiftsByDate).sort();
+    // Sort shifts within each date by start_time
+    Object.keys(shiftsByDate).forEach(dateStr => {
+      shiftsByDate[dateStr].sort((a, b) => a.start_time.localeCompare(b.start_time));
+    });
 
-    let tableRows = '';
-    sortedDates.forEach(dateStr => {
-      const dayShifts = shiftsByDate[dateStr];
-      const dateFormatted = format(parseISO(dateStr), "EEEE, dd/MM/yyyy", { locale: ptBR });
+    // Generate calendar cells HTML
+    let calendarCells = '';
+    
+    // Empty cells before first day
+    for (let i = 0; i < firstDayOfWeek; i++) {
+      calendarCells += '<div class="calendar-cell empty"></div>';
+    }
+
+    // Calendar days
+    calendarDays.forEach(day => {
+      const dateStr = format(day, 'yyyy-MM-dd');
+      const dayShifts = shiftsByDate[dateStr] || [];
+      const dayNum = format(day, 'd');
+      const dayName = format(day, 'EEE', { locale: ptBR });
+      const isCurrentDay = isToday(day);
       
-      dayShifts.forEach((shift, idx) => {
+      let shiftsHtml = '';
+      dayShifts.forEach(shift => {
         const shiftAssignments = getAssignmentsForShift(shift.id);
-        const sectorName = getSectorName(shift.sector_id, shift.hospital);
         const isNight = isNightShift(shift.start_time, shift.end_time);
-        const shiftType = isNight ? '🌙 Noturno' : '☀️ Diurno';
+        const bgColor = isNight ? '#e0e7ff' : `${sectorColor}20`;
+        const borderColor = isNight ? '#6366f1' : sectorColor;
+        const timeIcon = isNight ? '🌙' : '☀️';
         
-        let assignedNames = '';
+        let assigneeText = '';
         if (shiftAssignments.length > 0) {
-          assignedNames = shiftAssignments.map(a => a.profile?.name || 'Sem nome').join(', ');
+          assigneeText = shiftAssignments.map(a => {
+            const name = a.profile?.name || 'Sem nome';
+            // Truncate long names
+            return name.length > 15 ? name.substring(0, 15) + '...' : name;
+          }).join(', ');
+        } else if (shift.notes?.includes('[DISPONÍVEL]')) {
+          assigneeText = '<span class="available">DISPONÍVEL</span>';
         } else {
-          // Check if it's marked as available or vacant in notes
-          if (shift.notes?.includes('[DISPONÍVEL]')) {
-            assignedNames = '<span style="color: #2563eb; font-weight: bold;">📋 DISPONÍVEL</span>';
-          } else {
-            assignedNames = '<span style="color: #dc2626; font-weight: bold;">⚠️ VAGO</span>';
-          }
+          assigneeText = '<span class="vacant">VAGO</span>';
         }
 
-        tableRows += `
-          <tr>
-            ${idx === 0 ? `<td rowspan="${dayShifts.length}" style="vertical-align: top; font-weight: 600; border: 1px solid #ddd; padding: 8px; background: #f8f9fa;">${dateFormatted}</td>` : ''}
-            <td style="border: 1px solid #ddd; padding: 8px;">${sectorName}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${shift.start_time.slice(0, 5)} - ${shift.end_time.slice(0, 5)}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${shiftType}</td>
-            <td style="border: 1px solid #ddd; padding: 8px;">${assignedNames}</td>
-            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${Number(shift.base_value).toFixed(2)}</td>
-          </tr>
+        shiftsHtml += `
+          <div class="shift-card" style="background: ${bgColor}; border-left: 3px solid ${borderColor};">
+            <div class="shift-time">${timeIcon} ${shift.start_time.slice(0, 5)} - ${shift.end_time.slice(0, 5)}</div>
+            <div class="shift-assignee">${assigneeText}</div>
+          </div>
         `;
       });
+
+      calendarCells += `
+        <div class="calendar-cell ${isCurrentDay ? 'today' : ''}">
+          <div class="day-header">
+            <span class="day-num">${dayNum}</span>
+            <span class="day-name">${dayName}</span>
+          </div>
+          <div class="shifts-container">
+            ${shiftsHtml}
+          </div>
+        </div>
+      `;
     });
 
     // Calculate stats
@@ -1284,30 +1313,162 @@ export default function ShiftCalendar() {
         <meta charset="UTF-8">
         <title>Escala - ${scheduleName} - ${periodLabel}</title>
         <style>
-          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-          h1 { margin-bottom: 5px; color: #1a1a1a; }
-          h2 { color: #666; font-weight: normal; margin-top: 0; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background: #1a1a1a; color: white; padding: 10px; text-align: left; }
-          .stats { display: flex; gap: 20px; margin: 20px 0; }
-          .stat-card { padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center; }
-          .stat-number { font-size: 24px; font-weight: bold; }
-          .stat-label { font-size: 12px; color: #666; }
-          .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #999; }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            padding: 15px; 
+            color: #333;
+            background: #fff;
+          }
+          .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid ${sectorColor};
+          }
+          .sector-dot {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: ${sectorColor};
+          }
+          h1 { 
+            font-size: 22px;
+            font-weight: 600;
+            color: #1a1a1a; 
+          }
+          .period {
+            font-size: 16px;
+            color: #666;
+            text-transform: capitalize;
+            margin-left: auto;
+          }
+          .stats { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 15px; 
+          }
+          .stat-card { 
+            padding: 10px 15px; 
+            background: #f5f5f5; 
+            border-radius: 8px; 
+            text-align: center;
+            flex: 1;
+          }
+          .stat-number { font-size: 20px; font-weight: bold; }
+          .stat-label { font-size: 10px; color: #666; text-transform: uppercase; }
+          
+          .calendar-header {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            margin-bottom: 2px;
+          }
+          .weekday {
+            text-align: center;
+            font-weight: 600;
+            font-size: 11px;
+            color: #666;
+            padding: 8px 0;
+            background: #f8f9fa;
+          }
+          .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+          }
+          .calendar-cell {
+            min-height: 90px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 4px;
+            background: #fff;
+          }
+          .calendar-cell.empty {
+            background: #f9fafb;
+            border-color: transparent;
+          }
+          .calendar-cell.today {
+            border-color: ${sectorColor};
+            background: ${sectorColor}08;
+          }
+          .day-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+          }
+          .day-num {
+            font-weight: 600;
+            font-size: 12px;
+            color: #1a1a1a;
+          }
+          .day-name {
+            font-size: 9px;
+            color: #999;
+            text-transform: uppercase;
+          }
+          .shifts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+          }
+          .shift-card {
+            padding: 3px 5px;
+            border-radius: 3px;
+            font-size: 8px;
+          }
+          .shift-time {
+            font-weight: 500;
+            color: #374151;
+          }
+          .shift-assignee {
+            color: #1a1a1a;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .vacant {
+            color: #dc2626;
+            font-weight: bold;
+          }
+          .available {
+            color: #2563eb;
+            font-weight: bold;
+          }
+          .footer { 
+            margin-top: 15px; 
+            padding-top: 10px; 
+            border-top: 1px solid #ddd; 
+            font-size: 10px; 
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+          }
           @media print {
-            body { padding: 0; }
-            .no-print { display: none; }
+            body { padding: 10px; }
+            .calendar-cell { min-height: 80px; }
+          }
+          @page {
+            size: landscape;
+            margin: 10mm;
           }
         </style>
       </head>
       <body>
-        <h1>Escala de Plantões - ${scheduleName}</h1>
-        <h2>${periodLabel}</h2>
+        <div class="header">
+          <div class="sector-dot"></div>
+          <h1>${scheduleName}</h1>
+          <div class="period">${periodLabel}</div>
+        </div>
         
         <div class="stats">
           <div class="stat-card">
             <div class="stat-number">${filteredShifts.length}</div>
-            <div class="stat-label">Total de Plantões</div>
+            <div class="stat-label">Total</div>
           </div>
           <div class="stat-card">
             <div class="stat-number" style="color: #22c55e;">${assignedShifts}</div>
@@ -1323,24 +1484,23 @@ export default function ShiftCalendar() {
           </div>
         </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Setor</th>
-              <th>Horário</th>
-              <th>Tipo</th>
-              <th>Plantonista(s)</th>
-              <th style="text-align: right;">Valor</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${tableRows || '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #999;">Nenhum plantão no período</td></tr>'}
-          </tbody>
-        </table>
+        <div class="calendar-header">
+          <div class="weekday">Dom</div>
+          <div class="weekday">Seg</div>
+          <div class="weekday">Ter</div>
+          <div class="weekday">Qua</div>
+          <div class="weekday">Qui</div>
+          <div class="weekday">Sex</div>
+          <div class="weekday">Sáb</div>
+        </div>
+
+        <div class="calendar-grid">
+          ${calendarCells}
+        </div>
 
         <div class="footer">
-          Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+          <span>Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
+          <span>MedEscala</span>
         </div>
 
         <script>
