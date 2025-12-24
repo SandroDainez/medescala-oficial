@@ -48,7 +48,14 @@ interface Member {
   profile: { id: string; name: string | null } | null;
 }
 
+interface SectorMembership {
+  id: string;
+  sector_id: string;
+  user_id: string;
+}
+
 type ViewMode = 'month' | 'week';
+type ShiftAssignmentType = 'vago' | 'disponivel' | string; // string is user_id
 
 export default function ShiftCalendar() {
   const { currentTenantId } = useTenant();
@@ -60,6 +67,7 @@ export default function ShiftCalendar() {
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -108,7 +116,7 @@ export default function ShiftCalendar() {
       end = endOfWeek(currentDate, { weekStartsOn: 0 });
     }
 
-    const [shiftsRes, membersRes, sectorsRes] = await Promise.all([
+    const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*')
@@ -128,10 +136,18 @@ export default function ShiftCalendar() {
         .eq('tenant_id', currentTenantId)
         .eq('active', true)
         .order('name'),
+      supabase
+        .from('sector_memberships')
+        .select('id, sector_id, user_id')
+        .eq('tenant_id', currentTenantId),
     ]);
 
     if (sectorsRes.data) {
       setSectors(sectorsRes.data as Sector[]);
+    }
+
+    if (sectorMembershipsRes.data) {
+      setSectorMemberships(sectorMembershipsRes.data);
     }
 
     if (shiftsRes.data) {
@@ -158,6 +174,14 @@ export default function ShiftCalendar() {
     }
 
     setLoading(false);
+  }
+
+  // Get members that belong to a specific sector
+  function getMembersForSector(sectorId: string): Member[] {
+    const sectorUserIds = sectorMemberships
+      .filter(sm => sm.sector_id === sectorId)
+      .map(sm => sm.user_id);
+    return members.filter(m => sectorUserIds.includes(m.user_id));
   }
 
   // Check if shift is nocturnal (starts at 18:00 or later, or ends at 07:00 or before)
@@ -248,8 +272,16 @@ export default function ShiftCalendar() {
     e.preventDefault();
     if (!currentTenantId) return;
 
-    // Generate title automatically based on time
-    const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+    // Generate title automatically based on time and assignment type
+    let autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+    
+    // Add status to notes for tracking
+    let shiftNotes = formData.notes || '';
+    if (formData.assigned_user_id === 'disponivel') {
+      shiftNotes = `[DISPONÍVEL] ${shiftNotes}`.trim();
+    } else if (formData.assigned_user_id === 'vago') {
+      shiftNotes = `[VAGO] ${shiftNotes}`.trim();
+    }
 
     const shiftData = {
       tenant_id: currentTenantId,
@@ -260,7 +292,7 @@ export default function ShiftCalendar() {
       start_time: formData.start_time,
       end_time: formData.end_time,
       base_value: parseFloat(formData.base_value) || 0,
-      notes: formData.notes || null,
+      notes: shiftNotes || null,
       sector_id: formData.sector_id || null,
       created_by: user?.id,
       updated_by: user?.id,
@@ -289,8 +321,11 @@ export default function ShiftCalendar() {
       if (error) {
         toast({ title: 'Erro ao criar', description: error.message, variant: 'destructive' });
       } else {
-        // If a user was selected, create the assignment
-        if (formData.assigned_user_id && newShift) {
+        // If a real user was selected (not 'vago' or 'disponivel'), create the assignment
+        if (formData.assigned_user_id && 
+            formData.assigned_user_id !== 'vago' && 
+            formData.assigned_user_id !== 'disponivel' && 
+            newShift) {
           const { error: assignError } = await supabase.from('shift_assignments').insert({
             tenant_id: currentTenantId,
             shift_id: newShift.id,
@@ -304,7 +339,13 @@ export default function ShiftCalendar() {
           }
         }
 
-        toast({ title: 'Plantão criado!' });
+        const statusMsg = formData.assigned_user_id === 'disponivel' 
+          ? 'Plantão disponível criado! Plantonistas podem se oferecer.'
+          : formData.assigned_user_id === 'vago'
+          ? 'Plantão vago criado!'
+          : 'Plantão criado!';
+        
+        toast({ title: statusMsg });
         fetchData();
         closeShiftDialog();
       }
@@ -997,23 +1038,55 @@ export default function ShiftCalendar() {
               {/* Plantonista selection - only for new shifts */}
               {!editingShift && (
                 <div className="space-y-2">
-                  <Label>Plantonista (opcional)</Label>
+                  <Label>Atribuição do Plantão</Label>
                   <Select 
-                    value={formData.assigned_user_id || 'none'} 
-                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v === 'none' ? '' : v })}
+                    value={formData.assigned_user_id || 'vago'} 
+                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecionar plantonista" />
+                      <SelectValue placeholder="Selecionar tipo" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">Nenhum (atribuir depois)</SelectItem>
-                      {members.map((m) => (
-                        <SelectItem key={m.user_id} value={m.user_id}>
-                          {m.profile?.name || 'Sem nome'}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="vago">
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-gray-400" />
+                          Plantão Vago
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="disponivel">
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                          Plantão Disponível (usuários podem se oferecer)
+                        </span>
+                      </SelectItem>
+                      {/* Show only members that belong to the selected sector */}
+                      {formData.sector_id && getMembersForSector(formData.sector_id).length > 0 && (
+                        <>
+                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                            Plantonistas do Setor
+                          </div>
+                          {getMembersForSector(formData.sector_id).map((m) => (
+                            <SelectItem key={m.user_id} value={m.user_id}>
+                              <span className="flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-primary" />
+                                {m.profile?.name || 'Sem nome'}
+                              </span>
+                            </SelectItem>
+                          ))}
+                        </>
+                      )}
+                      {formData.sector_id && getMembersForSector(formData.sector_id).length === 0 && (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                          Nenhum plantonista vinculado a este setor
+                        </div>
+                      )}
                     </SelectContent>
                   </Select>
+                  {formData.assigned_user_id === 'disponivel' && (
+                    <p className="text-xs text-muted-foreground">
+                      Este plantão ficará visível para plantonistas se oferecerem. Você precisará aprovar.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
