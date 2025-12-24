@@ -14,7 +14,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
   id: string;
@@ -42,11 +43,25 @@ interface TenantInfo {
   current_users_count: number;
 }
 
+interface Sector {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+interface SectorMembership {
+  id: string;
+  sector_id: string;
+  user_id: string;
+}
+
 export default function UserManagement() {
   const { user } = useAuth();
   const { currentTenantId, currentTenantName } = useTenant();
   const { toast } = useToast();
   const [members, setMembers] = useState<MemberWithProfile[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
@@ -54,6 +69,7 @@ export default function UserManagement() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberWithProfile | null>(null);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+  const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
   
   // Edit form fields
   const [editName, setEditName] = useState('');
@@ -89,6 +105,8 @@ export default function UserManagement() {
     if (currentTenantId) {
       fetchMembers();
       fetchTenantInfo();
+      fetchSectors();
+      fetchSectorMemberships();
     }
   }, [currentTenantId]);
 
@@ -117,6 +135,34 @@ export default function UserManagement() {
 
     if (data) {
       setTenantInfo(data);
+    }
+  }
+
+  async function fetchSectors() {
+    if (!currentTenantId) return;
+
+    const { data } = await supabase
+      .from('sectors')
+      .select('id, name, color')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true)
+      .order('name');
+
+    if (data) {
+      setSectors(data);
+    }
+  }
+
+  async function fetchSectorMemberships() {
+    if (!currentTenantId) return;
+
+    const { data } = await supabase
+      .from('sector_memberships')
+      .select('id, sector_id, user_id')
+      .eq('tenant_id', currentTenantId);
+
+    if (data) {
+      setSectorMemberships(data);
     }
   }
 
@@ -189,7 +235,7 @@ export default function UserManagement() {
   function openEditDialog(member: MemberWithProfile) {
     setEditingMember(member);
     setEditName(member.profile?.name || '');
-    setEditEmail(''); // Will be fetched from auth
+    setEditEmail(''); 
     setEditPhone(member.profile?.phone || '');
     setEditCpf(member.profile?.cpf || '');
     setEditCrm(member.profile?.crm || '');
@@ -199,6 +245,13 @@ export default function UserManagement() {
     setEditBankAccount(member.profile?.bank_account || '');
     setEditPixKey(member.profile?.pix_key || '');
     setEditProfileType(member.profile?.profile_type || 'plantonista');
+    
+    // Load user's current sectors
+    const userSectors = sectorMemberships
+      .filter(sm => sm.user_id === member.user_id)
+      .map(sm => sm.sector_id);
+    setEditSectorIds(userSectors);
+    
     setEditDialogOpen(true);
   }
 
@@ -228,10 +281,51 @@ export default function UserManagement() {
 
       if (profileError) throw profileError;
 
+      // Update sector memberships
+      // First, get current memberships for this user
+      const currentMemberships = sectorMemberships.filter(sm => sm.user_id === editingMember.user_id);
+      const currentSectorIds = currentMemberships.map(sm => sm.sector_id);
+
+      // Sectors to add
+      const sectorsToAdd = editSectorIds.filter(id => !currentSectorIds.includes(id));
+      // Sectors to remove
+      const sectorsToRemove = currentSectorIds.filter(id => !editSectorIds.includes(id));
+
+      // Add new sector memberships
+      if (sectorsToAdd.length > 0) {
+        const newMemberships = sectorsToAdd.map(sectorId => ({
+          tenant_id: currentTenantId,
+          user_id: editingMember.user_id,
+          sector_id: sectorId,
+          created_by: user?.id,
+        }));
+
+        const { error: addError } = await supabase
+          .from('sector_memberships')
+          .insert(newMemberships);
+
+        if (addError) throw addError;
+      }
+
+      // Remove old sector memberships
+      if (sectorsToRemove.length > 0) {
+        const idsToRemove = currentMemberships
+          .filter(sm => sectorsToRemove.includes(sm.sector_id))
+          .map(sm => sm.id);
+
+        const { error: removeError } = await supabase
+          .from('sector_memberships')
+          .delete()
+          .in('id', idsToRemove);
+
+        if (removeError) throw removeError;
+      }
+
       toast({ title: 'Usuário atualizado!' });
       setEditDialogOpen(false);
       setEditingMember(null);
       fetchMembers();
+      fetchSectorMemberships();
     } catch (error: any) {
       toast({ 
         title: 'Erro ao atualizar', 
@@ -984,6 +1078,66 @@ export default function UserManagement() {
                     />
                   </div>
                 </div>
+              </div>
+
+              <Separator />
+
+              {/* Sectors */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <Layers className="h-4 w-4" />
+                  Setores que Participa
+                </div>
+                
+                {sectors.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum setor cadastrado. Crie setores primeiro.
+                  </p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {sectors.map(sector => {
+                      const isChecked = editSectorIds.includes(sector.id);
+                      return (
+                        <div 
+                          key={sector.id}
+                          className="flex items-center gap-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer"
+                          style={{ borderLeftColor: sector.color || '#22c55e', borderLeftWidth: '4px' }}
+                          onClick={() => {
+                            if (isChecked) {
+                              setEditSectorIds(editSectorIds.filter(id => id !== sector.id));
+                            } else {
+                              setEditSectorIds([...editSectorIds, sector.id]);
+                            }
+                          }}
+                        >
+                          <Checkbox
+                            id={`sector-${sector.id}`}
+                            checked={isChecked}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setEditSectorIds([...editSectorIds, sector.id]);
+                              } else {
+                                setEditSectorIds(editSectorIds.filter(id => id !== sector.id));
+                              }
+                            }}
+                          />
+                          <div className="flex items-center gap-2">
+                            <span 
+                              className="w-3 h-3 rounded-full" 
+                              style={{ backgroundColor: sector.color || '#22c55e' }}
+                            />
+                            <Label 
+                              htmlFor={`sector-${sector.id}`} 
+                              className="cursor-pointer font-medium"
+                            >
+                              {sector.name}
+                            </Label>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2">
