@@ -119,8 +119,13 @@ export default function ShiftCalendar() {
     quantity: 1,
   });
 
-  // Individual user assignments when creating multiple shifts
-  const [multiAssignments, setMultiAssignments] = useState<string[]>([]);
+  // Individual shift data when creating multiple shifts
+  interface MultiShiftData {
+    user_id: string;
+    start_time: string;
+    end_time: string;
+  }
+  const [multiShifts, setMultiShifts] = useState<MultiShiftData[]>([]);
 
   const [assignData, setAssignData] = useState({
     user_id: '',
@@ -444,9 +449,14 @@ export default function ShiftCalendar() {
         closeShiftDialog();
       }
     } else {
-      const quantity = Math.max(1, Math.min(50, Number(formData.quantity) || 1));
+      const quantity = Math.max(1, Math.min(20, Number(formData.quantity) || 1));
 
-      async function createOneShift(shiftDate: string, userIdForShift: string | null) {
+      async function createOneShift(
+        shiftDate: string, 
+        userIdForShift: string | null,
+        startTime: string,
+        endTime: string
+      ) {
         // Determine notes based on assignment type
         let shiftNotesForThis = formData.notes || '';
         if (!userIdForShift || userIdForShift === 'vago') {
@@ -455,11 +465,17 @@ export default function ShiftCalendar() {
           shiftNotesForThis = `[DISPONÍVEL] ${shiftNotesForThis}`.trim();
         }
 
+        // Generate title based on this shift's time
+        const autoTitle = generateShiftTitle(startTime, endTime);
+
         const { data: createdShift, error } = await supabase
           .from('shifts')
           .insert({
             ...shiftData,
+            title: autoTitle,
             shift_date: shiftDate,
+            start_time: startTime,
+            end_time: endTime,
             notes: shiftNotesForThis || null,
           })
           .select()
@@ -487,13 +503,15 @@ export default function ShiftCalendar() {
       let successCount = 0;
       let errorCount = 0;
 
-      // Create N shifts for the selected day with individual assignments
+      // Create N shifts for the selected day with individual assignments and times
       for (let i = 0; i < quantity; i++) {
-        // Use individual assignment if available, otherwise use the default
-        const userIdForShift = quantity > 1 && multiAssignments[i] 
-          ? multiAssignments[i] 
-          : formData.assigned_user_id;
-        const res = await createOneShift(formData.shift_date, userIdForShift || null);
+        // Use individual data if available, otherwise use the default
+        const shiftInfo = quantity > 1 && multiShifts[i] ? multiShifts[i] : null;
+        const userIdForShift = shiftInfo?.user_id || formData.assigned_user_id || null;
+        const startTime = shiftInfo?.start_time || formData.start_time;
+        const endTime = shiftInfo?.end_time || formData.end_time;
+        
+        const res = await createOneShift(formData.shift_date, userIdForShift, startTime, endTime);
         if (res.ok) successCount++; else errorCount++;
       }
 
@@ -503,10 +521,12 @@ export default function ShiftCalendar() {
           const newDate = addWeeks(baseDate, week);
           const dateStr = format(newDate, 'yyyy-MM-dd');
           for (let i = 0; i < quantity; i++) {
-            const userIdForShift = quantity > 1 && multiAssignments[i] 
-              ? multiAssignments[i] 
-              : formData.assigned_user_id;
-            const res = await createOneShift(dateStr, userIdForShift || null);
+            const shiftInfo = quantity > 1 && multiShifts[i] ? multiShifts[i] : null;
+            const userIdForShift = shiftInfo?.user_id || formData.assigned_user_id || null;
+            const startTime = shiftInfo?.start_time || formData.start_time;
+            const endTime = shiftInfo?.end_time || formData.end_time;
+            
+            const res = await createOneShift(dateStr, userIdForShift, startTime, endTime);
             if (res.ok) successCount++; else errorCount++;
           }
         }
@@ -955,7 +975,7 @@ export default function ShiftCalendar() {
   function closeShiftDialog() {
     setShiftDialogOpen(false);
     setEditingShift(null);
-    setMultiAssignments([]);
+    setMultiShifts([]);
     setFormData({
       hospital: '',
       location: '',
@@ -2213,17 +2233,21 @@ export default function ShiftCalendar() {
                     const val = parseInt(e.target.value, 10);
                     const newQty = isNaN(val) || val < 1 ? 1 : Math.min(val, 20);
                     setFormData({ ...formData, quantity: newQty });
-                    // Initialize multiAssignments array when quantity changes
+                    // Initialize multiShifts array when quantity changes
                     if (newQty > 1) {
-                      setMultiAssignments(prev => {
+                      setMultiShifts(prev => {
                         const newArr = [...prev];
                         while (newArr.length < newQty) {
-                          newArr.push('vago');
+                          newArr.push({ 
+                            user_id: 'vago', 
+                            start_time: formData.start_time || '07:00', 
+                            end_time: formData.end_time || '19:00' 
+                          });
                         }
                         return newArr.slice(0, newQty);
                       });
                     } else {
-                      setMultiAssignments([]);
+                      setMultiShifts([]);
                     }
                   }}
                   className="max-w-[120px]"
@@ -2318,50 +2342,96 @@ export default function ShiftCalendar() {
                     <Users className="h-4 w-4 text-green-600" />
                     Atribuição Individual ({formData.quantity} plantões)
                   </Label>
-                  <div className="grid gap-2 max-h-[200px] overflow-y-auto">
+                  <div className="grid gap-3 max-h-[300px] overflow-y-auto pr-2">
                     {Array.from({ length: formData.quantity }, (_, i) => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
                       const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                      const shiftData = multiShifts[i] || { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
                       
                       return (
-                        <div key={i} className="flex items-center gap-2">
-                          <span className="text-sm font-medium w-20">Plantão {i + 1}:</span>
-                          <Select 
-                            value={multiAssignments[i] || 'vago'} 
-                            onValueChange={(v) => {
-                              setMultiAssignments(prev => {
-                                const newArr = [...prev];
-                                newArr[i] = v;
-                                return newArr;
-                              });
-                            }}
-                          >
-                            <SelectTrigger className="flex-1">
-                              <SelectValue placeholder="Selecionar" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="vago">
-                                <span className="flex items-center gap-2">
-                                  <span className="w-2 h-2 rounded-full bg-gray-400" />
-                                  Vago
-                                </span>
-                              </SelectItem>
-                              <SelectItem value="disponivel">
-                                <span className="flex items-center gap-2">
-                                  <span className="w-2 h-2 rounded-full bg-green-500" />
-                                  Disponível
-                                </span>
-                              </SelectItem>
-                              {membersToShow.map((m) => (
-                                <SelectItem key={m.user_id} value={m.user_id}>
+                        <div key={i} className="p-3 rounded-lg border bg-background space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-semibold text-primary">Plantão {i + 1}</span>
+                            {shiftData.start_time && shiftData.end_time && (
+                              <Badge variant="outline" className="text-xs">
+                                {isNightShift(shiftData.start_time, shiftData.end_time) ? '🌙 Noturno' : '☀️ Diurno'}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Início</Label>
+                              <Input
+                                type="time"
+                                value={shiftData.start_time}
+                                onChange={(e) => {
+                                  setMultiShifts(prev => {
+                                    const newArr = [...prev];
+                                    if (!newArr[i]) newArr[i] = { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
+                                    newArr[i] = { ...newArr[i], start_time: e.target.value };
+                                    return newArr;
+                                  });
+                                }}
+                                className="h-8"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Término</Label>
+                              <Input
+                                type="time"
+                                value={shiftData.end_time}
+                                onChange={(e) => {
+                                  setMultiShifts(prev => {
+                                    const newArr = [...prev];
+                                    if (!newArr[i]) newArr[i] = { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
+                                    newArr[i] = { ...newArr[i], end_time: e.target.value };
+                                    return newArr;
+                                  });
+                                }}
+                                className="h-8"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Plantonista</Label>
+                            <Select 
+                              value={shiftData.user_id || 'vago'} 
+                              onValueChange={(v) => {
+                                setMultiShifts(prev => {
+                                  const newArr = [...prev];
+                                  if (!newArr[i]) newArr[i] = { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
+                                  newArr[i] = { ...newArr[i], user_id: v };
+                                  return newArr;
+                                });
+                              }}
+                            >
+                              <SelectTrigger className="h-8">
+                                <SelectValue placeholder="Selecionar" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="vago">
                                   <span className="flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-primary" />
-                                    {m.profile?.name || 'Sem nome'}
+                                    <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                    Vago
                                   </span>
                                 </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                                <SelectItem value="disponivel">
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-green-500" />
+                                    Disponível
+                                  </span>
+                                </SelectItem>
+                                {membersToShow.map((m) => (
+                                  <SelectItem key={m.user_id} value={m.user_id}>
+                                    <span className="flex items-center gap-2">
+                                      <span className="w-2 h-2 rounded-full bg-primary" />
+                                      {m.profile?.name || 'Sem nome'}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
                       );
                     })}
