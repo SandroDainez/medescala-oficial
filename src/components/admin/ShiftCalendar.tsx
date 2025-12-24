@@ -549,6 +549,15 @@ export default function ShiftCalendar() {
     }
   }
 
+  // Helper to sort members alphabetically by name
+  function sortMembersAlphabetically(membersList: Member[]): Member[] {
+    return [...membersList].sort((a, b) => {
+      const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
+      const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+      return nameA.localeCompare(nameB, 'pt-BR');
+    });
+  }
+
   // Toggle shift selection for bulk operations
   function toggleShiftSelection(shiftId: string) {
     setSelectedShiftIds(prev => {
@@ -2366,7 +2375,7 @@ export default function ShiftCalendar() {
                   <div className="grid gap-3 max-h-[300px] overflow-y-auto pr-2">
                     {Array.from({ length: formData.quantity }, (_, i) => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                      const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                      const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
                       const shiftData = multiShifts[i] || { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
                       
                       return (
@@ -2483,7 +2492,7 @@ export default function ShiftCalendar() {
                       </SelectItem>
                       {(() => {
                         const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                        const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                        const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
                         const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
                         
                         if (membersToShow.length > 0) {
@@ -2604,7 +2613,7 @@ export default function ShiftCalendar() {
                   <SelectValue placeholder="Selecione um plantonista" />
                 </SelectTrigger>
                 <SelectContent>
-                  {members.map((m) => (
+                  {sortMembersAlphabetically(members).map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
                       {m.profile?.name || 'Sem nome'}
                     </SelectItem>
@@ -2880,7 +2889,7 @@ export default function ShiftCalendar() {
                     </SelectItem>
                     {(() => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                      const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                      const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
                       const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
                       
                       if (membersToShow.length > 0) {
