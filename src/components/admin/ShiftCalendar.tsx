@@ -113,6 +113,7 @@ export default function ShiftCalendar() {
     assigned_user_id: '',
     duration_hours: '',
     repeat_weeks: 0,
+    quantity: 1,
   });
 
   const [assignData, setAssignData] = useState({
@@ -437,85 +438,75 @@ export default function ShiftCalendar() {
         closeShiftDialog();
       }
     } else {
-      // Create the first shift
-      const { data: newShift, error } = await supabase
-        .from('shifts')
-        .insert(shiftData)
-        .select()
-        .single();
+      const quantity = Math.max(1, Math.min(50, Number(formData.quantity) || 1));
 
-      if (error) {
-        toast({ title: 'Erro ao criar', description: error.message, variant: 'destructive' });
-        return;
-      }
+      const shouldAssignUser =
+        formData.assigned_user_id &&
+        formData.assigned_user_id !== 'vago' &&
+        formData.assigned_user_id !== 'disponivel';
 
-      // If a real user was selected (not 'vago' or 'disponivel'), create the assignment for the first shift
-      if (formData.assigned_user_id && 
-          formData.assigned_user_id !== 'vago' && 
-          formData.assigned_user_id !== 'disponivel' && 
-          newShift) {
-        const { error: assignError } = await supabase.from('shift_assignments').insert({
-          tenant_id: currentTenantId,
-          shift_id: newShift.id,
-          user_id: formData.assigned_user_id,
-          assigned_value: parseFloat(formData.base_value) || 0,
-          created_by: user?.id,
-        });
+      async function createOneShift(shiftDate: string) {
+        const { data: createdShift, error } = await supabase
+          .from('shifts')
+          .insert({
+            ...shiftData,
+            shift_date: shiftDate,
+          })
+          .select()
+          .single();
 
-        if (assignError) {
-          console.error('Error assigning user:', assignError);
+        if (error || !createdShift) return { ok: false as const };
+
+        if (shouldAssignUser) {
+          await supabase.from('shift_assignments').insert({
+            tenant_id: currentTenantId,
+            shift_id: createdShift.id,
+            user_id: formData.assigned_user_id,
+            assigned_value: parseFloat(formData.base_value) || 0,
+            created_by: user?.id,
+          });
         }
+
+        return { ok: true as const };
       }
 
-      // Repeat for additional weeks if specified
       const repeatWeeks = formData.repeat_weeks || 0;
+      const baseDate = parseISO(formData.shift_date);
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Create N shifts for the selected day
+      for (let i = 0; i < quantity; i++) {
+        const res = await createOneShift(formData.shift_date);
+        if (res.ok) successCount++; else errorCount++;
+      }
+
+      // Repeat N shifts in subsequent weeks (if any)
       if (repeatWeeks > 0) {
-        const baseDate = parseISO(formData.shift_date);
-        
         for (let week = 1; week <= repeatWeeks; week++) {
           const newDate = addWeeks(baseDate, week);
-          const repeatedShiftData = {
-            ...shiftData,
-            shift_date: format(newDate, 'yyyy-MM-dd'),
-          };
-
-          const { data: repeatedShift, error: repeatError } = await supabase
-            .from('shifts')
-            .insert(repeatedShiftData)
-            .select()
-            .single();
-
-          if (repeatError) {
-            console.error(`Error creating repeated shift for week ${week}:`, repeatError);
-            continue;
-          }
-
-          // Create assignment for repeated shift if a plantonista was selected
-          if (formData.assigned_user_id && 
-              formData.assigned_user_id !== 'vago' && 
-              formData.assigned_user_id !== 'disponivel' && 
-              repeatedShift) {
-            await supabase.from('shift_assignments').insert({
-              tenant_id: currentTenantId,
-              shift_id: repeatedShift.id,
-              user_id: formData.assigned_user_id,
-              assigned_value: parseFloat(formData.base_value) || 0,
-              created_by: user?.id,
-            });
+          const dateStr = format(newDate, 'yyyy-MM-dd');
+          for (let i = 0; i < quantity; i++) {
+            const res = await createOneShift(dateStr);
+            if (res.ok) successCount++; else errorCount++;
           }
         }
       }
 
-      const totalCreated = 1 + (repeatWeeks || 0);
-      const statusMsg = repeatWeeks > 0
-        ? `${totalCreated} plantões criados (${repeatWeeks} semanas repetidas)!`
-        : formData.assigned_user_id === 'disponivel' 
-          ? 'Plantão disponível criado! Plantonistas podem se oferecer.'
-          : formData.assigned_user_id === 'vago'
-          ? 'Plantão vago criado!'
-          : 'Plantão criado!';
-      
-      toast({ title: statusMsg });
+      if (errorCount > 0) {
+        toast({ title: `${successCount} criados, ${errorCount} erros`, variant: 'destructive' });
+      } else {
+        const statusMsg = repeatWeeks > 0
+          ? `${successCount} plantões criados (${repeatWeeks} semanas repetidas)!`
+          : formData.assigned_user_id === 'disponivel'
+            ? `${successCount} plantões disponíveis criados!`
+            : formData.assigned_user_id === 'vago'
+              ? `${successCount} plantões vagos criados!`
+              : `${successCount} plantões criados!`;
+        toast({ title: statusMsg });
+      }
+
       fetchData();
       closeShiftDialog();
     }
@@ -821,6 +812,7 @@ export default function ShiftCalendar() {
       assigned_user_id: '',
       duration_hours: '',
       repeat_weeks: 0,
+      quantity: 1,
     });
     setShiftDialogOpen(true);
   }
@@ -841,6 +833,7 @@ export default function ShiftCalendar() {
       assigned_user_id: currentAssignment?.user_id || '',
       duration_hours: '',
       repeat_weeks: 0,
+      quantity: 1,
     });
     setShiftDialogOpen(true);
   }
@@ -860,6 +853,7 @@ export default function ShiftCalendar() {
       assigned_user_id: '',
       duration_hours: '',
       repeat_weeks: 0,
+      quantity: 1,
     });
   }
 
@@ -1553,6 +1547,7 @@ export default function ShiftCalendar() {
                           assigned_user_id: '',
                           duration_hours: '',
                           repeat_weeks: 0,
+                          quantity: 1,
                         });
                         setBulkCreateDialogOpen(true);
                       }}>
@@ -2051,7 +2046,7 @@ export default function ShiftCalendar() {
               />
             </div>
             
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label htmlFor="shift_date">Data</Label>
                 <Input
@@ -2072,6 +2067,19 @@ export default function ShiftCalendar() {
                   required
                 />
               </div>
+              {!editingShift && (
+                <div className="space-y-2">
+                  <Label htmlFor="quantity">Quantidade (no dia)</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min={1}
+                    max={50}
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value === '' ? 1 : Number(e.target.value) })}
+                  />
+                </div>
+              )}
             </div>
             
             <div className="grid gap-4 sm:grid-cols-3">
