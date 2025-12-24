@@ -31,7 +31,7 @@ export default function AdminFinancial() {
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
     const { data: assignments } = await supabase.from('shift_assignments').select('user_id, assigned_value, shift:shifts!inner(shift_date)').eq('tenant_id', currentTenantId).gte('shift.shift_date', startDate).lte('shift.shift_date', endDate).eq('status', 'completed');
-    const { data: members } = await supabase.from('memberships').select('user_id, profile:profiles(name)').eq('tenant_id', currentTenantId);
+    const { data: members } = await supabase.from('memberships').select('user_id, profile:profiles!memberships_user_id_profiles_fkey(name)').eq('tenant_id', currentTenantId);
     const { data: payments } = await supabase.from('payments').select('user_id, status').eq('tenant_id', currentTenantId).eq('month', selectedMonth).eq('year', selectedYear);
     const userSummaries: Record<string, PaymentSummary> = {};
     members?.forEach((m: any) => { userSummaries[m.user_id] = { user_id: m.user_id, user_name: m.profile?.name, total_shifts: 0, total_value: 0, payment_status: null }; });

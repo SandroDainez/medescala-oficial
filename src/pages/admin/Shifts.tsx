@@ -86,7 +86,7 @@ export default function AdminShifts() {
     
     const { data } = await supabase
       .from('memberships')
-      .select('user_id, profile:profiles(id, name)')
+      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
     

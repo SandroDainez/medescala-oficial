@@ -42,7 +42,7 @@ export default function AdminSwaps() {
     if (!currentTenantId) return;
     const { data } = await supabase
       .from('swap_requests')
-      .select(`id, status, reason, admin_notes, created_at, requester:profiles!swap_requests_requester_id_fkey(name), target_user:profiles!swap_requests_target_user_id_fkey(name), origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(shift:shifts(title, hospital, shift_date))`)
+      .select(`id, status, reason, admin_notes, created_at, requester:profiles!swap_requests_requester_id_profiles_fkey(name), target_user:profiles!swap_requests_target_user_id_profiles_fkey(name), origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(shift:shifts(title, hospital, shift_date))`)
       .eq('tenant_id', currentTenantId)
       .order('created_at', { ascending: false });
     if (data) setSwaps(data as unknown as SwapRequest[]);

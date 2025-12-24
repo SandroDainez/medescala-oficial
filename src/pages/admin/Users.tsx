@@ -42,7 +42,7 @@ export default function AdminUsers() {
     
     const { data, error } = await supabase
       .from('memberships')
-      .select('id, user_id, role, active, profile:profiles(name)')
+      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name)')
       .eq('tenant_id', currentTenantId);
 
     if (!error && data) {
