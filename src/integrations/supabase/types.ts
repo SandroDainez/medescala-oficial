@@ -123,6 +123,42 @@ export type Database = {
           },
         ]
       }
+      plans: {
+        Row: {
+          active: boolean
+          created_at: string
+          features: Json | null
+          id: string
+          max_users: number
+          min_users: number
+          name: string
+          price_monthly: number
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          features?: Json | null
+          id?: string
+          max_users: number
+          min_users?: number
+          name: string
+          price_monthly?: number
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          features?: Json | null
+          id?: string
+          max_users?: number
+          min_users?: number
+          name?: string
+          price_monthly?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -334,45 +370,65 @@ export type Database = {
       }
       tenants: {
         Row: {
+          billing_status: string
           created_at: string
           created_by: string | null
+          current_users_count: number
           id: string
           logo_url: string | null
           max_shifts_per_month: number
           max_users: number
           name: string
           plan: Database["public"]["Enums"]["tenant_plan"]
+          plan_id: string
           slug: string
+          trial_ends_at: string | null
           updated_at: string
           updated_by: string | null
         }
         Insert: {
+          billing_status?: string
           created_at?: string
           created_by?: string | null
+          current_users_count?: number
           id?: string
           logo_url?: string | null
           max_shifts_per_month?: number
           max_users?: number
           name: string
           plan?: Database["public"]["Enums"]["tenant_plan"]
+          plan_id: string
           slug: string
+          trial_ends_at?: string | null
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
+          billing_status?: string
           created_at?: string
           created_by?: string | null
+          current_users_count?: number
           id?: string
           logo_url?: string | null
           max_shifts_per_month?: number
           max_users?: number
           name?: string
           plan?: Database["public"]["Enums"]["tenant_plan"]
+          plan_id?: string
           slug?: string
+          trial_ends_at?: string | null
           updated_at?: string
           updated_by?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tenants_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -400,6 +456,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_add_user_to_tenant: { Args: { _tenant_id: string }; Returns: boolean }
       check_tenant_shift_limit: {
         Args: { _tenant_id: string }
         Returns: boolean
@@ -416,6 +473,18 @@ export type Database = {
           max_shifts_per_month: number
           max_users: number
           plan: Database["public"]["Enums"]["tenant_plan"]
+        }[]
+      }
+      get_tenant_subscription: {
+        Args: { _tenant_id: string }
+        Returns: {
+          billing_status: string
+          current_users: number
+          features: Json
+          max_users: number
+          plan_name: string
+          price_monthly: number
+          trial_ends_at: string
         }[]
       }
       get_user_role: {

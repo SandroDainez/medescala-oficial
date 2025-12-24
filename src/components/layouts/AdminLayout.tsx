@@ -12,7 +12,8 @@ import {
   DollarSign,
   LogOut,
   Menu,
-  X
+  X,
+  CreditCard
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -22,6 +23,7 @@ const navItems = [
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/admin/financial', label: 'Financeiro', icon: DollarSign },
+  { to: '/admin/subscription', label: 'Assinatura', icon: CreditCard },
 ];
 
 export function AdminLayout() {

@@ -19,6 +19,7 @@ import AdminShifts from "./pages/admin/Shifts";
 import AdminUsers from "./pages/admin/Users";
 import AdminSwaps from "./pages/admin/Swaps";
 import AdminFinancial from "./pages/admin/Financial";
+import AdminSubscription from "./pages/admin/Subscription";
 
 // User pages
 import UserShifts from "./pages/user/Shifts";
@@ -77,6 +78,7 @@ function AppRoutes() {
         <Route path="users" element={<AdminUsers />} />
         <Route path="swaps" element={<AdminSwaps />} />
         <Route path="financial" element={<AdminFinancial />} />
+        <Route path="subscription" element={<AdminSubscription />} />
       </Route>
 
       {/* User Routes */}

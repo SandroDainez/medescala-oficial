@@ -42,10 +42,28 @@ export default function Onboarding() {
 
     setLoading(true);
 
-    // Create tenant
+    // Get default free plan
+    const { data: freePlan } = await supabase
+      .from('plans')
+      .select('id')
+      .eq('name', 'Gratuito')
+      .single();
+
+    if (!freePlan) {
+      toast({ title: 'Erro ao obter plano padrão', variant: 'destructive' });
+      setLoading(false);
+      return;
+    }
+
+    // Create tenant with plan
     const { data: tenant, error: tenantError } = await supabase
       .from('tenants')
-      .insert({ name: tenantName, slug: tenantSlug })
+      .insert({ 
+        name: tenantName, 
+        slug: tenantSlug, 
+        plan_id: freePlan.id,
+        created_by: user.id 
+      })
       .select()
       .single();
 
@@ -64,6 +82,7 @@ export default function Onboarding() {
       tenant_id: tenant.id,
       user_id: user.id,
       role: 'admin',
+      created_by: user.id,
     });
 
     if (membershipError) {
@@ -113,11 +132,25 @@ export default function Onboarding() {
       return;
     }
 
+    // Check if tenant can add more users
+    const { data: canAdd } = await supabase.rpc('can_add_user_to_tenant', { _tenant_id: tenant.id });
+
+    if (!canAdd) {
+      toast({ 
+        title: 'Limite de usuários atingido', 
+        description: 'Este hospital atingiu o limite de usuários do plano atual',
+        variant: 'destructive' 
+      });
+      setLoading(false);
+      return;
+    }
+
     // Create membership as user
     const { error: membershipError } = await supabase.from('memberships').insert({
       tenant_id: tenant.id,
       user_id: user.id,
       role: 'user',
+      created_by: user.id,
     });
 
     if (membershipError) {
