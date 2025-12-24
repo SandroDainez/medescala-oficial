@@ -362,17 +362,21 @@ export default function ShiftCalendar() {
     }
   }
 
-  function openCreateShift(date?: Date) {
+  function openCreateShift(date?: Date, sectorIdOverride?: string) {
+    // Use the override sector or the current filter if viewing a specific sector
+    const effectiveSectorId = sectorIdOverride || (filterSector !== 'all' ? filterSector : sectors[0]?.id || '');
+    const effectiveSector = sectors.find(s => s.id === effectiveSectorId);
+    
     setEditingShift(null);
     setFormData({
-      hospital: sectors[0]?.name || '',
+      hospital: effectiveSector?.name || sectors[0]?.name || '',
       location: '',
       shift_date: date ? format(date, 'yyyy-MM-dd') : '',
       start_time: '07:00',
       end_time: '19:00',
       base_value: '',
       notes: '',
-      sector_id: sectors[0]?.id || '',
+      sector_id: effectiveSectorId,
       assigned_user_id: '',
     });
     setShiftDialogOpen(true);
@@ -871,37 +875,50 @@ export default function ShiftCalendar() {
             <DialogTitle>{editingShift ? 'Editar Plantão' : 'Novo Plantão'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateShift} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="sector_id">Setor</Label>
-              <Select 
-                value={formData.sector_id} 
-                onValueChange={(v) => {
-                  const sector = sectors.find(s => s.id === v);
-                  setFormData({ 
-                    ...formData, 
-                    sector_id: v, 
-                    hospital: sector?.name || formData.hospital 
-                  });
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um setor" />
-                </SelectTrigger>
-                <SelectContent>
-                  {sectors.map(sector => (
-                    <SelectItem key={sector.id} value={sector.id}>
-                      <span className="flex items-center gap-2">
-                        <span 
-                          className="w-2 h-2 rounded-full" 
-                          style={{ backgroundColor: sector.color || '#22c55e' }}
-                        />
-                        {sector.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Show sector selector only if viewing "all" or editing */}
+            {(filterSector === 'all' || editingShift) ? (
+              <div className="space-y-2">
+                <Label htmlFor="sector_id">Setor</Label>
+                <Select 
+                  value={formData.sector_id} 
+                  onValueChange={(v) => {
+                    const sector = sectors.find(s => s.id === v);
+                    setFormData({ 
+                      ...formData, 
+                      sector_id: v, 
+                      hospital: sector?.name || formData.hospital 
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um setor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sectors.map(sector => (
+                      <SelectItem key={sector.id} value={sector.id}>
+                        <span className="flex items-center gap-2">
+                          <span 
+                            className="w-2 h-2 rounded-full" 
+                            style={{ backgroundColor: sector.color || '#22c55e' }}
+                          />
+                          {sector.name}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            ) : (
+              // Show selected sector as a badge when viewing specific sector
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50 border">
+                <span 
+                  className="w-3 h-3 rounded-full" 
+                  style={{ backgroundColor: sectors.find(s => s.id === formData.sector_id)?.color || '#22c55e' }}
+                />
+                <span className="font-medium">{sectors.find(s => s.id === formData.sector_id)?.name}</span>
+                <span className="text-xs text-muted-foreground">(setor selecionado)</span>
+              </div>
+            )}
             {/* Auto-detected shift type indicator */}
             {formData.start_time && formData.end_time && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
