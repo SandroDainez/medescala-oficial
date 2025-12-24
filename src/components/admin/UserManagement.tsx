@@ -174,9 +174,22 @@ export default function UserManagement() {
     }
   }
 
+  // Generate internal email from name
+  function generateInternalEmail(name: string): string {
+    const cleanName = name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/[^a-z0-9]/g, '.') // Replace special chars with dots
+      .replace(/\.+/g, '.') // Remove consecutive dots
+      .replace(/^\.|\.$/, ''); // Remove leading/trailing dots
+    const random = Math.random().toString(36).substring(2, 8);
+    return `${cleanName}.${random}@interno.hospital`;
+  }
+
   async function handleInviteUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!currentTenantId || !inviteEmail || !invitePassword || !inviteName) return;
+    if (!currentTenantId || !invitePassword || !inviteName) return;
 
     setIsCreatingUser(true);
 
@@ -191,9 +204,12 @@ export default function UserManagement() {
         return;
       }
 
+      // Generate internal email if not provided
+      const userEmail = inviteEmail.trim() || generateInternalEmail(inviteName);
+
       // Create user via supabase auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: inviteEmail,
+        email: userEmail,
         password: invitePassword,
         options: {
           data: {
@@ -362,15 +378,17 @@ export default function UserManagement() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="inviteEmail">E-mail *</Label>
+                        <Label htmlFor="inviteEmail">E-mail (opcional)</Label>
                         <Input
                           id="inviteEmail"
                           type="email"
                           value={inviteEmail}
                           onChange={(e) => setInviteEmail(e.target.value)}
-                          placeholder="email@exemplo.com"
-                          required
+                          placeholder="Deixe em branco para gerar automático"
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Se não informado, será gerado um email interno
+                        </p>
                       </div>
                     </div>
 
