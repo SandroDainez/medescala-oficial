@@ -10,9 +10,16 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO } from 'date-fns';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+interface Sector {
+  id: string;
+  name: string;
+  color: string | null;
+  active: boolean;
+}
 
 interface Shift {
   id: string;
@@ -24,6 +31,7 @@ interface Shift {
   end_time: string;
   base_value: number;
   notes: string | null;
+  sector_id: string | null;
 }
 
 interface ShiftAssignment {
@@ -40,14 +48,18 @@ interface Member {
   profile: { id: string; name: string | null } | null;
 }
 
+type ViewMode = 'month' | 'week';
+
 export default function ShiftCalendar() {
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -69,6 +81,7 @@ export default function ShiftCalendar() {
     end_time: '',
     base_value: '',
     notes: '',
+    sector_id: '',
   });
 
   const [assignData, setAssignData] = useState({
@@ -80,29 +93,46 @@ export default function ShiftCalendar() {
     if (currentTenantId) {
       fetchData();
     }
-  }, [currentTenantId, currentDate]);
+  }, [currentTenantId, currentDate, viewMode]);
 
   async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    const start = startOfMonth(currentDate);
-    const end = endOfMonth(currentDate);
+    let start: Date, end: Date;
+    if (viewMode === 'month') {
+      start = startOfMonth(currentDate);
+      end = endOfMonth(currentDate);
+    } else {
+      start = startOfWeek(currentDate, { weekStartsOn: 0 });
+      end = endOfWeek(currentDate, { weekStartsOn: 0 });
+    }
 
-    const [shiftsRes, membersRes] = await Promise.all([
+    const [shiftsRes, membersRes, sectorsRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*')
         .eq('tenant_id', currentTenantId)
         .gte('shift_date', format(start, 'yyyy-MM-dd'))
         .lte('shift_date', format(end, 'yyyy-MM-dd'))
-        .order('shift_date', { ascending: true }),
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true }),
       supabase
         .from('memberships')
         .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
         .eq('tenant_id', currentTenantId)
         .eq('active', true),
+      supabase
+        .from('sectors')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .eq('active', true)
+        .order('name'),
     ]);
+
+    if (sectorsRes.data) {
+      setSectors(sectorsRes.data as Sector[]);
+    }
 
     if (shiftsRes.data) {
       setShifts(shiftsRes.data);
@@ -118,6 +148,8 @@ export default function ShiftCalendar() {
         if (assignmentsData) {
           setAssignments(assignmentsData as unknown as ShiftAssignment[]);
         }
+      } else {
+        setAssignments([]);
       }
     }
 
@@ -128,13 +160,31 @@ export default function ShiftCalendar() {
     setLoading(false);
   }
 
-  // Get unique sectors
-  const sectors = [...new Set(shifts.map(s => s.hospital))].filter(Boolean);
+  // Get sector color
+  function getSectorColor(sectorId: string | null, hospital: string): string {
+    if (sectorId) {
+      const sector = sectors.find(s => s.id === sectorId);
+      if (sector?.color) return sector.color;
+    }
+    // Fallback colors based on hospital name
+    const colors = ['#22c55e', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+    const index = hospital.charCodeAt(0) % colors.length;
+    return colors[index];
+  }
+
+  // Get sector name
+  function getSectorName(sectorId: string | null, hospital: string): string {
+    if (sectorId) {
+      const sector = sectors.find(s => s.id === sectorId);
+      if (sector) return sector.name;
+    }
+    return hospital;
+  }
 
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
-    : shifts.filter(s => s.hospital === filterSector);
+    : shifts.filter(s => s.sector_id === filterSector || s.hospital === filterSector);
 
   // Get shifts for a specific date
   function getShiftsForDate(date: Date) {
@@ -147,16 +197,38 @@ export default function ShiftCalendar() {
   }
 
   // Calendar navigation
-  const days = eachDayOfInterval({
-    start: startOfMonth(currentDate),
-    end: endOfMonth(currentDate),
-  });
+  const days = viewMode === 'month' 
+    ? eachDayOfInterval({
+        start: startOfMonth(currentDate),
+        end: endOfMonth(currentDate),
+      })
+    : eachDayOfInterval({
+        start: startOfWeek(currentDate, { weekStartsOn: 0 }),
+        end: endOfWeek(currentDate, { weekStartsOn: 0 }),
+      });
 
   // Get day of week for first day of month (0-6, Sunday-Saturday)
-  const firstDayOfWeek = startOfMonth(currentDate).getDay();
+  const firstDayOfWeek = viewMode === 'month' ? startOfMonth(currentDate).getDay() : 0;
 
   // Create empty cells for days before the first day of month
   const emptyCells = Array(firstDayOfWeek).fill(null);
+
+  // Navigation handlers
+  function navigatePrev() {
+    if (viewMode === 'month') {
+      setCurrentDate(subMonths(currentDate, 1));
+    } else {
+      setCurrentDate(subWeeks(currentDate, 1));
+    }
+  }
+
+  function navigateNext() {
+    if (viewMode === 'month') {
+      setCurrentDate(addMonths(currentDate, 1));
+    } else {
+      setCurrentDate(addWeeks(currentDate, 1));
+    }
+  }
 
   async function handleCreateShift(e: React.FormEvent) {
     e.preventDefault();
@@ -172,6 +244,7 @@ export default function ShiftCalendar() {
       end_time: formData.end_time,
       base_value: parseFloat(formData.base_value) || 0,
       notes: formData.notes || null,
+      sector_id: formData.sector_id || null,
       created_by: user?.id,
       updated_by: user?.id,
     };
@@ -257,13 +330,14 @@ export default function ShiftCalendar() {
     setEditingShift(null);
     setFormData({
       title: '',
-      hospital: sectors[0] || '',
+      hospital: sectors[0]?.name || '',
       location: '',
       shift_date: date ? format(date, 'yyyy-MM-dd') : '',
       start_time: '07:00',
       end_time: '19:00',
       base_value: '',
       notes: '',
+      sector_id: sectors[0]?.id || '',
     });
     setShiftDialogOpen(true);
   }
@@ -279,6 +353,7 @@ export default function ShiftCalendar() {
       end_time: shift.end_time,
       base_value: shift.base_value.toString(),
       notes: shift.notes || '',
+      sector_id: shift.sector_id || '',
     });
     setShiftDialogOpen(true);
   }
@@ -295,6 +370,7 @@ export default function ShiftCalendar() {
       end_time: '',
       base_value: '',
       notes: '',
+      sector_id: '',
     });
   }
 
@@ -309,27 +385,123 @@ export default function ShiftCalendar() {
     setAssignDialogOpen(true);
   }
 
+  // Stats
+  const totalShifts = filteredShifts.length;
+  const totalAssignments = assignments.length;
+  const uniqueWorkers = [...new Set(assignments.map(a => a.user_id))].length;
+
   if (loading) {
     return <div className="text-muted-foreground p-4">Carregando calendário...</div>;
   }
 
   return (
     <div className="space-y-4">
+      {/* Stats Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-2xl font-bold">{totalShifts}</p>
+                <p className="text-xs text-muted-foreground">Plantões</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-2xl font-bold">{totalAssignments}</p>
+                <p className="text-xs text-muted-foreground">Atribuições</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-2xl font-bold">{uniqueWorkers}</p>
+                <p className="text-xs text-muted-foreground">Plantonistas Ativos</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              <div>
+                <p className="text-2xl font-bold">{sectors.length}</p>
+                <p className="text-xs text-muted-foreground">Setores</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Sectors Legend */}
+      {sectors.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {sectors.map(sector => (
+            <Badge 
+              key={sector.id} 
+              variant="outline"
+              className="flex items-center gap-1.5"
+              style={{ borderColor: sector.color || '#22c55e' }}
+            >
+              <span 
+                className="w-2.5 h-2.5 rounded-full" 
+                style={{ backgroundColor: sector.color || '#22c55e' }}
+              />
+              {sector.name}
+            </Badge>
+          ))}
+        </div>
+      )}
+
       {/* Header with navigation and filters */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" onClick={navigatePrev}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <h2 className="text-xl font-bold min-w-[200px] text-center">
-            {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+          <h2 className="text-xl font-bold min-w-[220px] text-center">
+            {viewMode === 'month' 
+              ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+              : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`
+            }
           </h2>
-          <Button variant="outline" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+          <Button variant="outline" size="icon" onClick={navigateNext}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex border rounded-lg overflow-hidden">
+            <Button 
+              variant={viewMode === 'week' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setViewMode('week')}
+              className="rounded-none"
+            >
+              Semana
+            </Button>
+            <Button 
+              variant={viewMode === 'month' ? 'default' : 'ghost'} 
+              size="sm"
+              onClick={() => setViewMode('month')}
+              className="rounded-none"
+            >
+              Mês
+            </Button>
+          </div>
+
           <Select value={filterSector} onValueChange={setFilterSector}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filtrar por setor" />
@@ -337,7 +509,15 @@ export default function ShiftCalendar() {
             <SelectContent>
               <SelectItem value="all">Todos os setores</SelectItem>
               {sectors.map(sector => (
-                <SelectItem key={sector} value={sector}>{sector}</SelectItem>
+                <SelectItem key={sector.id} value={sector.id}>
+                  <span className="flex items-center gap-2">
+                    <span 
+                      className="w-2 h-2 rounded-full" 
+                      style={{ backgroundColor: sector.color || '#22c55e' }}
+                    />
+                    {sector.name}
+                  </span>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -364,7 +544,7 @@ export default function ShiftCalendar() {
           {/* Calendar days */}
           <div className="grid grid-cols-7 gap-1">
             {emptyCells.map((_, index) => (
-              <div key={`empty-${index}`} className="min-h-[100px]" />
+              <div key={`empty-${index}`} className={viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} />
             ))}
             
             {days.map(day => {
@@ -374,36 +554,67 @@ export default function ShiftCalendar() {
               return (
                 <div
                   key={day.toISOString()}
-                  className={`min-h-[100px] p-1 border rounded-lg cursor-pointer transition-colors
+                  className={`${viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} p-1 border rounded-lg cursor-pointer transition-colors
                     ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
                   `}
                   onClick={() => openDayView(day)}
                 >
                   <div className={`text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
                     {format(day, 'd')}
+                    {viewMode === 'week' && (
+                      <span className="text-muted-foreground ml-1 text-xs">
+                        {format(day, 'EEE', { locale: ptBR })}
+                      </span>
+                    )}
                   </div>
                   
                   {hasShifts && (
                     <div className="space-y-1">
-                      {dayShifts.slice(0, 3).map(shift => {
+                      {dayShifts.slice(0, viewMode === 'week' ? 6 : 3).map(shift => {
                         const shiftAssignments = getAssignmentsForShift(shift.id);
+                        const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
+                        const sectorName = getSectorName(shift.sector_id, shift.hospital);
+                        
                         return (
                           <div
                             key={shift.id}
-                            className="text-xs p-1 rounded bg-primary/10 text-primary truncate"
-                            title={`${shift.title} - ${shift.hospital}`}
+                            className="text-xs p-1.5 rounded"
+                            style={{ 
+                              backgroundColor: `${sectorColor}20`,
+                              borderLeft: `3px solid ${sectorColor}`
+                            }}
+                            title={`${shift.title} - ${sectorName}`}
                           >
-                            <div className="font-medium truncate">{shift.hospital}</div>
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Users className="h-3 w-3" />
-                              <span>{shiftAssignments.length}</span>
+                            <div className="font-medium truncate" style={{ color: sectorColor }}>
+                              {sectorName}
                             </div>
+                            <div className="flex items-center gap-1 text-muted-foreground text-[10px]">
+                              <Clock className="h-2.5 w-2.5" />
+                              {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                            </div>
+                            {shiftAssignments.length > 0 && (
+                              <div className="mt-0.5 flex flex-wrap gap-0.5">
+                                {shiftAssignments.slice(0, 2).map(a => (
+                                  <span 
+                                    key={a.id} 
+                                    className="bg-background/80 px-1 py-0.5 rounded text-[9px] truncate max-w-[60px]"
+                                  >
+                                    {a.profile?.name?.split(' ')[0] || '?'}
+                                  </span>
+                                ))}
+                                {shiftAssignments.length > 2 && (
+                                  <span className="text-[9px] text-muted-foreground">
+                                    +{shiftAssignments.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
-                      {dayShifts.length > 3 && (
-                        <div className="text-xs text-muted-foreground">
-                          +{dayShifts.length - 3} mais
+                      {dayShifts.length > (viewMode === 'week' ? 6 : 3) && (
+                        <div className="text-xs text-muted-foreground text-center">
+                          +{dayShifts.length - (viewMode === 'week' ? 6 : 3)} mais
                         </div>
                       )}
                     </div>
@@ -417,7 +628,7 @@ export default function ShiftCalendar() {
 
       {/* Day Detail Dialog */}
       <Dialog open={dayDialogOpen} onOpenChange={setDayDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>
@@ -438,17 +649,43 @@ export default function ShiftCalendar() {
             ) : (
               selectedDate && getShiftsForDate(selectedDate).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
+                const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
+                const sectorName = getSectorName(shift.sector_id, shift.hospital);
+                
                 return (
-                  <Card key={shift.id}>
+                  <Card 
+                    key={shift.id}
+                    style={{ borderLeft: `4px solid ${sectorColor}` }}
+                  >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div>
-                          <CardTitle className="text-lg">{shift.title}</CardTitle>
-                          <div className="text-sm text-muted-foreground">
-                            {shift.hospital} {shift.location && `• ${shift.location}`}
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge 
+                              variant="outline"
+                              style={{ 
+                                borderColor: sectorColor,
+                                backgroundColor: `${sectorColor}20`
+                              }}
+                            >
+                              {sectorName}
+                            </Badge>
                           </div>
-                          <div className="text-sm">
-                            {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)} • R$ {Number(shift.base_value).toFixed(2)}
+                          <CardTitle className="text-lg">{shift.title}</CardTitle>
+                          <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
+                            {shift.location && (
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-3.5 w-3.5" />
+                                {shift.location}
+                              </span>
+                            )}
+                            <span className="flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5" />
+                              {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                            </span>
+                            <span className="font-medium text-foreground">
+                              R$ {Number(shift.base_value).toFixed(2)}
+                            </span>
                           </div>
                         </div>
                         <div className="flex gap-1">
@@ -466,27 +703,39 @@ export default function ShiftCalendar() {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2">
-                        <div className="text-sm font-medium">Usuários Atribuídos:</div>
+                        <div className="flex items-center justify-between">
+                          <div className="text-sm font-medium">Plantonistas Atribuídos:</div>
+                          <Badge variant="secondary">{shiftAssignments.length} pessoa(s)</Badge>
+                        </div>
                         {shiftAssignments.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">Nenhum usuário atribuído</p>
+                          <p className="text-sm text-muted-foreground italic">Nenhum plantonista atribuído</p>
                         ) : (
-                          <div className="flex flex-wrap gap-2">
+                          <div className="grid gap-2 sm:grid-cols-2">
                             {shiftAssignments.map(assignment => (
-                              <Badge key={assignment.id} variant="secondary" className="flex items-center gap-2">
-                                {assignment.profile?.name || 'Sem nome'}
-                                <span className="text-xs text-muted-foreground">
-                                  R$ {Number(assignment.assigned_value).toFixed(2)}
-                                </span>
-                                <button
+                              <div 
+                                key={assignment.id} 
+                                className="flex items-center justify-between p-2 rounded-lg bg-muted/50 border"
+                              >
+                                <div>
+                                  <div className="font-medium text-sm">
+                                    {assignment.profile?.name || 'Sem nome'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Valor: R$ {Number(assignment.assigned_value).toFixed(2)}
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleRemoveAssignment(assignment.id);
                                   }}
-                                  className="ml-1 hover:text-destructive"
                                 >
-                                  ×
-                                </button>
-                              </Badge>
+                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                </Button>
+                              </div>
                             ))}
                           </div>
                         )}
@@ -507,9 +756,40 @@ export default function ShiftCalendar() {
             <DialogTitle>{editingShift ? 'Editar Plantão' : 'Novo Plantão'}</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleCreateShift} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="sector_id">Setor</Label>
+              <Select 
+                value={formData.sector_id} 
+                onValueChange={(v) => {
+                  const sector = sectors.find(s => s.id === v);
+                  setFormData({ 
+                    ...formData, 
+                    sector_id: v, 
+                    hospital: sector?.name || formData.hospital 
+                  });
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um setor" />
+                </SelectTrigger>
+                <SelectContent>
+                  {sectors.map(sector => (
+                    <SelectItem key={sector.id} value={sector.id}>
+                      <span className="flex items-center gap-2">
+                        <span 
+                          className="w-2 h-2 rounded-full" 
+                          style={{ backgroundColor: sector.color || '#22c55e' }}
+                        />
+                        {sector.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="title">Título</Label>
+                <Label htmlFor="title">Título do Plantão</Label>
                 <Input
                   id="title"
                   value={formData.title}
@@ -519,24 +799,14 @@ export default function ShiftCalendar() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="hospital">Setor/Hospital</Label>
+                <Label htmlFor="location">Local/Sala (opcional)</Label>
                 <Input
-                  id="hospital"
-                  value={formData.hospital}
-                  onChange={(e) => setFormData({ ...formData, hospital: e.target.value })}
-                  placeholder="Ex: UTI, PS, Centro Cirúrgico"
-                  required
+                  id="location"
+                  value={formData.location}
+                  onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  placeholder="Ex: Sala 3"
                 />
               </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="location">Local/Sala (opcional)</Label>
-              <Input
-                id="location"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                placeholder="Ex: Sala 3, Leito 12"
-              />
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
@@ -602,14 +872,14 @@ export default function ShiftCalendar() {
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Atribuir Usuário ao Plantão</DialogTitle>
+            <DialogTitle>Atribuir Plantonista</DialogTitle>
           </DialogHeader>
           <form onSubmit={handleAssign} className="space-y-4">
             <div className="space-y-2">
-              <Label>Usuário</Label>
+              <Label>Plantonista</Label>
               <Select value={assignData.user_id} onValueChange={(v) => setAssignData({ ...assignData, user_id: v })}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione um usuário" />
+                  <SelectValue placeholder="Selecione um plantonista" />
                 </SelectTrigger>
                 <SelectContent>
                   {members.map((m) => (
@@ -631,7 +901,7 @@ export default function ShiftCalendar() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={!assignData.user_id}>
-              Atribuir
+              Atribuir Plantonista
             </Button>
           </form>
         </DialogContent>
