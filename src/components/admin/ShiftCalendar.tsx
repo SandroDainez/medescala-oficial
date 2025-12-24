@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -90,6 +90,8 @@ export default function ShiftCalendar() {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
   
   // Form data
   const [formData, setFormData] = useState({
@@ -962,6 +964,125 @@ export default function ShiftCalendar() {
   const totalAssignments = assignments.length;
   const uniqueWorkers = [...new Set(assignments.map(a => a.user_id))].length;
 
+  // Conflict detection interface
+  interface ShiftConflict {
+    id: string;
+    userId: string;
+    userName: string;
+    date: string;
+    shifts: {
+      shiftId: string;
+      sectorName: string;
+      startTime: string;
+      endTime: string;
+      assignmentId: string;
+    }[];
+  }
+
+  // Detect conflicts: same person assigned to overlapping shifts on the same date
+  function detectConflicts(): ShiftConflict[] {
+    const conflicts: ShiftConflict[] = [];
+    
+    // Group assignments by user and date
+    const userDateAssignments: Record<string, {
+      userId: string;
+      userName: string;
+      date: string;
+      shifts: {
+        shiftId: string;
+        sectorName: string;
+        startTime: string;
+        endTime: string;
+        assignmentId: string;
+      }[];
+    }> = {};
+
+    assignments.forEach(assignment => {
+      const shift = shifts.find(s => s.id === assignment.shift_id);
+      if (!shift) return;
+
+      const key = `${assignment.user_id}_${shift.shift_date}`;
+      
+      if (!userDateAssignments[key]) {
+        userDateAssignments[key] = {
+          userId: assignment.user_id,
+          userName: assignment.profile?.name || 'Sem nome',
+          date: shift.shift_date,
+          shifts: []
+        };
+      }
+
+      userDateAssignments[key].shifts.push({
+        shiftId: shift.id,
+        sectorName: getSectorName(shift.sector_id, shift.hospital),
+        startTime: shift.start_time,
+        endTime: shift.end_time,
+        assignmentId: assignment.id
+      });
+    });
+
+    // Check for overlapping shifts
+    Object.entries(userDateAssignments).forEach(([key, data]) => {
+      if (data.shifts.length > 1) {
+        // Check for time overlaps
+        const hasOverlap = data.shifts.some((s1, i) => 
+          data.shifts.slice(i + 1).some(s2 => {
+            const s1Start = parseInt(s1.startTime.replace(':', ''));
+            const s1End = parseInt(s1.endTime.replace(':', ''));
+            const s2Start = parseInt(s2.startTime.replace(':', ''));
+            const s2End = parseInt(s2.endTime.replace(':', ''));
+            
+            // Handle overnight shifts
+            const s1EndAdjusted = s1End < s1Start ? s1End + 2400 : s1End;
+            const s2EndAdjusted = s2End < s2Start ? s2End + 2400 : s2End;
+            
+            // Check overlap
+            return s1Start < s2EndAdjusted && s2Start < s1EndAdjusted;
+          })
+        );
+
+        if (hasOverlap) {
+          conflicts.push({
+            id: key,
+            userId: data.userId,
+            userName: data.userName,
+            date: data.date,
+            shifts: data.shifts
+          });
+        }
+      }
+    });
+
+    return conflicts;
+  }
+
+  const conflicts = detectConflicts();
+  const unresolvedConflicts = conflicts.filter(c => !acknowledgedConflicts.has(c.id));
+
+  function handleAcknowledgeConflict(conflictId: string) {
+    setAcknowledgedConflicts(prev => new Set([...prev, conflictId]));
+    toast({
+      title: 'Conflito reconhecido',
+      description: 'O conflito foi marcado como reconhecido e não será mais exibido.'
+    });
+  }
+
+  async function handleRemoveConflictAssignment(assignmentId: string) {
+    if (!user?.id) return;
+    
+    const { error } = await supabase
+      .from('shift_assignments')
+      .delete()
+      .eq('id', assignmentId);
+
+    if (error) {
+      toast({ title: 'Erro ao remover atribuição', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Atribuição removida!', description: 'O conflito foi resolvido.' });
+      fetchData();
+    }
+  }
+
   if (loading) {
     return <div className="text-muted-foreground p-4">Carregando calendário...</div>;
   }
@@ -1015,6 +1136,64 @@ export default function ShiftCalendar() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Conflict Alert */}
+      {unresolvedConflicts.length > 0 && (
+        <Card className="border-red-500 bg-red-50 dark:bg-red-950/20">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                <span className="font-bold text-red-700 dark:text-red-400">
+                  ⚠️ {unresolvedConflicts.length} Conflito{unresolvedConflicts.length > 1 ? 's' : ''} de Escala Detectado{unresolvedConflicts.length > 1 ? 's' : ''}
+                </span>
+                <Button 
+                  variant="destructive" 
+                  size="sm" 
+                  className="ml-auto"
+                  onClick={() => setConflictDialogOpen(true)}
+                >
+                  Ver Detalhes
+                </Button>
+              </div>
+              
+              {/* Quick summary */}
+              <div className="grid gap-2">
+                {unresolvedConflicts.slice(0, 3).map(conflict => (
+                  <div 
+                    key={conflict.id}
+                    className="flex flex-wrap items-center gap-2 text-sm bg-white dark:bg-background rounded p-2 border border-red-200"
+                  >
+                    <span className="font-semibold text-red-700 dark:text-red-400">
+                      {conflict.userName}
+                    </span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="text-muted-foreground">
+                      {format(parseISO(conflict.date), "dd/MM/yyyy", { locale: ptBR })}
+                    </span>
+                    <span className="text-muted-foreground">•</span>
+                    <span className="text-red-600">
+                      Escalado em {conflict.shifts.length} locais ao mesmo tempo:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      {conflict.shifts.map((s, i) => (
+                        <Badge key={i} variant="outline" className="border-red-300 text-red-700">
+                          {s.sectorName} ({s.startTime.slice(0, 5)}-{s.endTime.slice(0, 5)})
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {unresolvedConflicts.length > 3 && (
+                  <p className="text-sm text-red-600">
+                    + {unresolvedConflicts.length - 3} outro{unresolvedConflicts.length - 3 > 1 ? 's' : ''} conflito{unresolvedConflicts.length - 3 > 1 ? 's' : ''}...
+                  </p>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Main Layout: Vertical Sector Sidebar + Calendar */}
       <div className="flex gap-4">
@@ -1738,6 +1917,110 @@ export default function ShiftCalendar() {
               Atribuir Plantonista
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Conflict Details Dialog */}
+      <Dialog open={conflictDialogOpen} onOpenChange={setConflictDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Conflitos de Escala ({conflicts.length})
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Os conflitos abaixo indicam plantonistas escalados em mais de um local no mesmo horário.
+              Você pode remover uma das atribuições ou reconhecer o conflito se for intencional.
+            </p>
+
+            {conflicts.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                ✅ Nenhum conflito detectado
+              </div>
+            ) : (
+              conflicts.map(conflict => {
+                const isAcknowledged = acknowledgedConflicts.has(conflict.id);
+                
+                return (
+                  <Card 
+                    key={conflict.id} 
+                    className={`border-2 ${isAcknowledged ? 'border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20' : 'border-red-400 bg-red-50/50 dark:bg-red-950/20'}`}
+                  >
+                    <CardContent className="p-4 space-y-3">
+                      {/* Header */}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Users className="h-5 w-5 text-red-600" />
+                          <span className="font-bold text-lg">{conflict.userName}</span>
+                          {isAcknowledged && (
+                            <Badge className="bg-yellow-500 text-white">Reconhecido</Badge>
+                          )}
+                        </div>
+                        <Badge variant="outline">
+                          {format(parseISO(conflict.date), "EEEE, dd/MM/yyyy", { locale: ptBR })}
+                        </Badge>
+                      </div>
+
+                      {/* Conflicting shifts */}
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-red-700 dark:text-red-400">
+                          Escalado em {conflict.shifts.length} locais simultaneamente:
+                        </p>
+                        {conflict.shifts.map((shiftInfo, idx) => (
+                          <div 
+                            key={idx}
+                            className="flex flex-wrap items-center justify-between gap-2 p-3 bg-white dark:bg-background rounded border"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex flex-col">
+                                <span className="font-medium">{shiftInfo.sectorName}</span>
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {shiftInfo.startTime.slice(0, 5)} - {shiftInfo.endTime.slice(0, 5)}
+                                </span>
+                              </div>
+                            </div>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleRemoveConflictAssignment(shiftInfo.assignmentId)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Remover
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Actions */}
+                      {!isAcknowledged && (
+                        <div className="flex justify-end pt-2 border-t">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleAcknowledgeConflict(conflict.id)}
+                            className="border-yellow-500 text-yellow-700 hover:bg-yellow-100"
+                          >
+                            <Check className="h-4 w-4 mr-1" />
+                            Reconhecer e Manter
+                          </Button>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex justify-end pt-4 border-t">
+            <Button onClick={() => setConflictDialogOpen(false)}>
+              Fechar
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
