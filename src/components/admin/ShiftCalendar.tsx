@@ -523,27 +523,26 @@ export default function ShiftCalendar() {
                       return (
                         <div
                           key={shift.id}
-                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-2 ring-indigo-500/50' : ''}`}
+                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
                           style={{ 
-                            backgroundColor: isNight ? '#312e81' : `${sectorColor}20`,
-                            borderLeft: `3px solid ${isNight ? '#818cf8' : sectorColor}`
+                            backgroundColor: isNight ? '#e0e7ff' : `${sectorColor}20`,
+                            borderLeft: `3px solid ${isNight ? '#6366f1' : sectorColor}`
                           }}
                           title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
                         >
                           <div className="flex items-center gap-1">
                             {isNight ? (
-                              <Moon className="h-3 w-3 text-indigo-300" />
+                              <Moon className="h-3 w-3 text-indigo-600" />
                             ) : (
                               <Sun className="h-3 w-3 text-amber-500" />
                             )}
                             <span 
-                              className="font-medium truncate" 
-                              style={{ color: isNight ? '#a5b4fc' : sectorColor }}
+                              className="font-semibold truncate text-foreground" 
                             >
                               {sectorName}
                             </span>
                           </div>
-                          <div className={`flex items-center gap-1 text-[10px] ${isNight ? 'text-indigo-200' : 'text-muted-foreground'}`}>
+                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                             <Clock className="h-2.5 w-2.5" />
                             {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                           </div>
@@ -552,9 +551,9 @@ export default function ShiftCalendar() {
                               {shiftAssignments.map(a => (
                                 <div 
                                   key={a.id} 
-                                  className={`flex items-center gap-1 px-1 py-0.5 rounded text-[9px] ${isNight ? 'bg-indigo-900/50 text-indigo-100' : 'bg-background/80'}`}
+                                  className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-background/80 text-foreground font-medium"
                                 >
-                                  <Users className="h-2 w-2 flex-shrink-0" />
+                                  <Users className="h-2.5 w-2.5 flex-shrink-0 text-primary" />
                                   <span className="truncate">{a.profile?.name || 'Sem nome'}</span>
                                 </div>
                               ))}
@@ -991,7 +990,7 @@ export default function ShiftCalendar() {
               />
             </div>
             
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="shift_date">Data</Label>
                 <Input
@@ -1012,8 +1011,36 @@ export default function ShiftCalendar() {
                   required
                 />
               </div>
+            </div>
+            
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="end_time">Fim</Label>
+                <Label>Duração do Plantão</Label>
+                <Select 
+                  value="" 
+                  onValueChange={(v) => {
+                    if (!formData.start_time) return;
+                    const hours = parseInt(v, 10);
+                    const [h, m] = formData.start_time.split(':').map(Number);
+                    const startMinutes = h * 60 + m;
+                    const endMinutes = (startMinutes + hours * 60) % (24 * 60);
+                    const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
+                    const endM = (endMinutes % 60).toString().padStart(2, '0');
+                    setFormData({ ...formData, end_time: `${endH}:${endM}` });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar duração" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6 horas</SelectItem>
+                    <SelectItem value="12">12 horas</SelectItem>
+                    <SelectItem value="24">24 horas</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="end_time">Término</Label>
                 <Input
                   id="end_time"
                   type="time"
