@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -93,6 +93,7 @@ export default function ShiftCalendar() {
     sector_id: '',
     assigned_user_id: '',
     duration_hours: '',
+    repeat_weeks: 0,
   });
 
   const [assignData, setAssignData] = useState({
@@ -354,6 +355,7 @@ export default function ShiftCalendar() {
         closeShiftDialog();
       }
     } else {
+      // Create the first shift
       const { data: newShift, error } = await supabase
         .from('shifts')
         .insert(shiftData)
@@ -362,35 +364,78 @@ export default function ShiftCalendar() {
 
       if (error) {
         toast({ title: 'Erro ao criar', description: error.message, variant: 'destructive' });
-      } else {
-        // If a real user was selected (not 'vago' or 'disponivel'), create the assignment
-        if (formData.assigned_user_id && 
-            formData.assigned_user_id !== 'vago' && 
-            formData.assigned_user_id !== 'disponivel' && 
-            newShift) {
-          const { error: assignError } = await supabase.from('shift_assignments').insert({
-            tenant_id: currentTenantId,
-            shift_id: newShift.id,
-            user_id: formData.assigned_user_id,
-            assigned_value: parseFloat(formData.base_value) || 0,
-            created_by: user?.id,
-          });
+        return;
+      }
 
-          if (assignError) {
-            console.error('Error assigning user:', assignError);
+      // If a real user was selected (not 'vago' or 'disponivel'), create the assignment for the first shift
+      if (formData.assigned_user_id && 
+          formData.assigned_user_id !== 'vago' && 
+          formData.assigned_user_id !== 'disponivel' && 
+          newShift) {
+        const { error: assignError } = await supabase.from('shift_assignments').insert({
+          tenant_id: currentTenantId,
+          shift_id: newShift.id,
+          user_id: formData.assigned_user_id,
+          assigned_value: parseFloat(formData.base_value) || 0,
+          created_by: user?.id,
+        });
+
+        if (assignError) {
+          console.error('Error assigning user:', assignError);
+        }
+      }
+
+      // Repeat for additional weeks if specified
+      const repeatWeeks = formData.repeat_weeks || 0;
+      if (repeatWeeks > 0) {
+        const baseDate = parseISO(formData.shift_date);
+        
+        for (let week = 1; week <= repeatWeeks; week++) {
+          const newDate = addWeeks(baseDate, week);
+          const repeatedShiftData = {
+            ...shiftData,
+            shift_date: format(newDate, 'yyyy-MM-dd'),
+          };
+
+          const { data: repeatedShift, error: repeatError } = await supabase
+            .from('shifts')
+            .insert(repeatedShiftData)
+            .select()
+            .single();
+
+          if (repeatError) {
+            console.error(`Error creating repeated shift for week ${week}:`, repeatError);
+            continue;
+          }
+
+          // Create assignment for repeated shift if a plantonista was selected
+          if (formData.assigned_user_id && 
+              formData.assigned_user_id !== 'vago' && 
+              formData.assigned_user_id !== 'disponivel' && 
+              repeatedShift) {
+            await supabase.from('shift_assignments').insert({
+              tenant_id: currentTenantId,
+              shift_id: repeatedShift.id,
+              user_id: formData.assigned_user_id,
+              assigned_value: parseFloat(formData.base_value) || 0,
+              created_by: user?.id,
+            });
           }
         }
+      }
 
-        const statusMsg = formData.assigned_user_id === 'disponivel' 
+      const totalCreated = 1 + (repeatWeeks || 0);
+      const statusMsg = repeatWeeks > 0
+        ? `${totalCreated} plantões criados (${repeatWeeks} semanas repetidas)!`
+        : formData.assigned_user_id === 'disponivel' 
           ? 'Plantão disponível criado! Plantonistas podem se oferecer.'
           : formData.assigned_user_id === 'vago'
           ? 'Plantão vago criado!'
           : 'Plantão criado!';
-        
-        toast({ title: statusMsg });
-        fetchData();
-        closeShiftDialog();
-      }
+      
+      toast({ title: statusMsg });
+      fetchData();
+      closeShiftDialog();
     }
   }
 
@@ -462,6 +507,7 @@ export default function ShiftCalendar() {
       sector_id: effectiveSectorId,
       assigned_user_id: '',
       duration_hours: '',
+      repeat_weeks: 0,
     });
     setShiftDialogOpen(true);
   }
@@ -481,6 +527,7 @@ export default function ShiftCalendar() {
       sector_id: shift.sector_id || '',
       assigned_user_id: currentAssignment?.user_id || '',
       duration_hours: '',
+      repeat_weeks: 0,
     });
     setShiftDialogOpen(true);
   }
@@ -499,6 +546,7 @@ export default function ShiftCalendar() {
       sector_id: '',
       assigned_user_id: '',
       duration_hours: '',
+      repeat_weeks: 0,
     });
   }
 
@@ -1407,8 +1455,46 @@ export default function ShiftCalendar() {
                 placeholder="Observações adicionais..."
               />
             </div>
+
+            {/* Repeat in next weeks - only show for new shifts */}
+            {!editingShift && (
+              <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+                <div className="flex items-center gap-2">
+                  <Repeat className="h-4 w-4 text-primary" />
+                  <Label className="font-medium">Repetir nas próximas semanas</Label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Crie plantões idênticos nas mesmas datas e horários nas próximas semanas.
+                </p>
+                <Select 
+                  value={formData.repeat_weeks.toString()} 
+                  onValueChange={(v) => setFormData({ ...formData, repeat_weeks: parseInt(v, 10) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Não repetir" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">Não repetir</SelectItem>
+                    <SelectItem value="1">Repetir por 1 semana</SelectItem>
+                    <SelectItem value="2">Repetir por 2 semanas</SelectItem>
+                    <SelectItem value="3">Repetir por 3 semanas</SelectItem>
+                    <SelectItem value="4">Repetir por 4 semanas</SelectItem>
+                    <SelectItem value="5">Repetir por 5 semanas</SelectItem>
+                    <SelectItem value="6">Repetir por 6 semanas</SelectItem>
+                    <SelectItem value="7">Repetir por 7 semanas</SelectItem>
+                    <SelectItem value="8">Repetir por 8 semanas</SelectItem>
+                  </SelectContent>
+                </Select>
+                {formData.repeat_weeks > 0 && (
+                  <p className="text-xs text-primary font-medium">
+                    Serão criados {1 + formData.repeat_weeks} plantões no total (este + {formData.repeat_weeks} semanas)
+                  </p>
+                )}
+              </div>
+            )}
+
             <Button type="submit" className="w-full">
-              {editingShift ? 'Salvar Alterações' : 'Criar Plantão'}
+              {editingShift ? 'Salvar Alterações' : formData.repeat_weeks > 0 ? `Criar ${1 + formData.repeat_weeks} Plantões` : 'Criar Plantão'}
             </Button>
           </form>
         </DialogContent>
