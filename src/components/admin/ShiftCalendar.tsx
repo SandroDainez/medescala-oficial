@@ -10,7 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -158,6 +158,14 @@ export default function ShiftCalendar() {
     }
 
     setLoading(false);
+  }
+
+  // Check if shift is nocturnal (starts at 19:00 or later, or ends at 07:00 or before next day)
+  function isNightShift(startTime: string, endTime: string): boolean {
+    const startHour = parseInt(startTime.split(':')[0], 10);
+    const endHour = parseInt(endTime.split(':')[0], 10);
+    // Night shift if starts at 18:00+ or ends at 07:00 or before
+    return startHour >= 18 || endHour <= 7 || endHour < startHour;
   }
 
   // Get sector color
@@ -435,39 +443,46 @@ export default function ShiftCalendar() {
                       const shiftAssignments = getAssignmentsForShift(shift.id);
                       const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                       const sectorName = getSectorName(shift.sector_id, shift.hospital);
+                      const isNight = isNightShift(shift.start_time, shift.end_time);
                       
                       return (
                         <div
                           key={shift.id}
-                          className="text-xs p-1.5 rounded"
+                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-2 ring-indigo-500/50' : ''}`}
                           style={{ 
-                            backgroundColor: `${sectorColor}20`,
-                            borderLeft: `3px solid ${sectorColor}`
+                            backgroundColor: isNight ? '#312e81' : `${sectorColor}20`,
+                            borderLeft: `3px solid ${isNight ? '#818cf8' : sectorColor}`
                           }}
-                          title={`${shift.title} - ${sectorName}`}
+                          title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
                         >
-                          <div className="font-medium truncate" style={{ color: sectorColor }}>
-                            {sectorName}
+                          <div className="flex items-center gap-1">
+                            {isNight ? (
+                              <Moon className="h-3 w-3 text-indigo-300" />
+                            ) : (
+                              <Sun className="h-3 w-3 text-amber-500" />
+                            )}
+                            <span 
+                              className="font-medium truncate" 
+                              style={{ color: isNight ? '#a5b4fc' : sectorColor }}
+                            >
+                              {sectorName}
+                            </span>
                           </div>
-                          <div className="flex items-center gap-1 text-muted-foreground text-[10px]">
+                          <div className={`flex items-center gap-1 text-[10px] ${isNight ? 'text-indigo-200' : 'text-muted-foreground'}`}>
                             <Clock className="h-2.5 w-2.5" />
                             {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                           </div>
                           {shiftAssignments.length > 0 && (
-                            <div className="mt-0.5 flex flex-wrap gap-0.5">
-                              {shiftAssignments.slice(0, 2).map(a => (
-                                <span 
+                            <div className="mt-1 space-y-0.5">
+                              {shiftAssignments.map(a => (
+                                <div 
                                   key={a.id} 
-                                  className="bg-background/80 px-1 py-0.5 rounded text-[9px] truncate max-w-[60px]"
+                                  className={`flex items-center gap-1 px-1 py-0.5 rounded text-[9px] ${isNight ? 'bg-indigo-900/50 text-indigo-100' : 'bg-background/80'}`}
                                 >
-                                  {a.profile?.name?.split(' ')[0] || '?'}
-                                </span>
+                                  <Users className="h-2 w-2 flex-shrink-0" />
+                                  <span className="truncate">{a.profile?.name || 'Sem nome'}</span>
+                                </div>
                               ))}
-                              {shiftAssignments.length > 2 && (
-                                <span className="text-[9px] text-muted-foreground">
-                                  +{shiftAssignments.length - 2}
-                                </span>
-                              )}
                             </div>
                           )}
                         </div>

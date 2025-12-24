@@ -393,34 +393,78 @@ export default function AdminDashboard() {
 
         {/* Calendar Tab */}
         <TabsContent value="calendar" className="space-y-4">
-          {/* Calendar Navigation */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={navigatePrevious}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <h3 className="text-lg font-semibold min-w-[200px] text-center">
-                {viewMode === 'week' 
-                  ? `Semana de ${format(calendarDays[0], 'dd/MM')} a ${format(calendarDays[6], 'dd/MM')}`
-                  : format(currentDate, 'MMMM yyyy', { locale: ptBR })}
-              </h3>
-              <Button variant="outline" size="icon" onClick={navigateNext}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
+          {/* Main Layout: Vertical Sector Sidebar + Calendar */}
+          <div className="flex gap-4">
+            {/* Vertical Sector Sidebar */}
+            <div className="w-48 flex-shrink-0">
+              <Card className="sticky top-4">
+                <CardContent className="p-2">
+                  <div className="flex flex-col gap-1">
+                    {sectors.map(sector => {
+                      const sectorShifts = shifts.filter(s => s.sector?.id === sector.id);
+                      
+                      return (
+                        <Button
+                          key={sector.id}
+                          variant="ghost"
+                          className="w-full justify-start gap-2 h-auto py-3 hover:bg-accent"
+                          style={{ 
+                            backgroundColor: `${sector.color}10`,
+                            borderLeft: `3px solid ${sector.color}`
+                          }}
+                          onClick={() => navigate('/admin/calendar')}
+                        >
+                          <span 
+                            className="w-3 h-3 rounded-full flex-shrink-0" 
+                            style={{ backgroundColor: sector.color }}
+                          />
+                          <span className="flex flex-col items-start truncate">
+                            <span className="truncate text-xs font-medium">{sector.name}</span>
+                            <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
+                          </span>
+                        </Button>
+                      );
+                    })}
+                    {sectors.length === 0 && (
+                      <Button variant="link" size="sm" onClick={() => navigate('/admin/sectors')}>
+                        Criar primeiro setor
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
-            <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'week' | 'month')}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="week">Semana</SelectItem>
-                <SelectItem value="month">Mês</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
 
-          {/* Weekly View */}
-          {viewMode === 'week' && (
+            {/* Calendar Area */}
+            <div className="flex-1 min-w-0">
+              {/* Calendar Navigation */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="icon" onClick={navigatePrevious}>
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <h3 className="text-lg font-semibold min-w-[200px] text-center">
+                    {viewMode === 'week' 
+                      ? `Semana de ${format(calendarDays[0], 'dd/MM')} a ${format(calendarDays[6], 'dd/MM')}`
+                      : format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+                  </h3>
+                  <Button variant="outline" size="icon" onClick={navigateNext}>
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'week' | 'month')}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="week">Semana</SelectItem>
+                    <SelectItem value="month">Mês</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Weekly View */}
+              {viewMode === 'week' && (
             <div className="grid grid-cols-7 gap-2">
               {calendarDays.map(day => {
                 const dayShifts = getShiftsForDate(day);
@@ -470,10 +514,10 @@ export default function AdminDashboard() {
                 );
               })}
             </div>
-          )}
+              )}
 
-          {/* Monthly View */}
-          {viewMode === 'month' && (
+              {/* Monthly View */}
+              {viewMode === 'month' && (
             <Card>
               <CardContent className="p-4">
                 <div className="grid grid-cols-7 gap-1 mb-2">
@@ -513,20 +557,7 @@ export default function AdminDashboard() {
               </CardContent>
             </Card>
           )}
-
-          {/* Sectors Legend */}
-          <div className="flex flex-wrap gap-2">
-            <span className="text-sm text-muted-foreground">Setores:</span>
-            {sectors.map(sector => (
-              <Badge key={sector.id} style={{ backgroundColor: sector.color, color: 'white' }}>
-                {sector.name}
-              </Badge>
-            ))}
-            {sectors.length === 0 && (
-              <Button variant="link" size="sm" onClick={() => navigate('/admin/sectors')}>
-                Criar primeiro setor
-              </Button>
-            )}
+            </div>
           </div>
         </TabsContent>
 
