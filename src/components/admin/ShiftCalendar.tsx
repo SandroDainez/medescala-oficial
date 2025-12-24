@@ -11,9 +11,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface Sector {
@@ -99,6 +99,9 @@ export default function ShiftCalendar() {
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
   const [bulkCreateDialogOpen, setBulkCreateDialogOpen] = useState(false);
+  const [copyScheduleDialogOpen, setCopyScheduleDialogOpen] = useState(false);
+  const [copyTargetMonth, setCopyTargetMonth] = useState<Date | null>(null);
+  const [copyInProgress, setCopyInProgress] = useState(false);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -677,6 +680,109 @@ export default function ShiftCalendar() {
       toast({ title: 'Plantão excluído!' });
       fetchData();
       setDayDialogOpen(false);
+    }
+  }
+
+  // Copy schedule from current month to target month
+  async function handleCopySchedule() {
+    if (!currentTenantId || !copyTargetMonth || copyInProgress) return;
+
+    setCopyInProgress(true);
+
+    try {
+      // Get all shifts from the current month (use the already loaded shifts)
+      const shiftsToProcess = filterSector === 'all' 
+        ? shifts 
+        : shifts.filter(s => s.sector_id === filterSector);
+
+      if (shiftsToProcess.length === 0) {
+        toast({ title: 'Nenhum plantão para copiar', description: 'Este mês não tem plantões cadastrados.', variant: 'destructive' });
+        setCopyInProgress(false);
+        return;
+      }
+
+      const targetDaysInMonth = getDaysInMonth(copyTargetMonth);
+      let successCount = 0;
+      let skippedCount = 0;
+      let errorCount = 0;
+
+      for (const shift of shiftsToProcess) {
+        const originalDay = getDate(parseISO(shift.shift_date));
+
+        // Skip if target month doesn't have this day (e.g., day 31 in February)
+        if (originalDay > targetDaysInMonth) {
+          skippedCount++;
+          continue;
+        }
+
+        // Calculate new date in target month
+        const newShiftDate = setDate(copyTargetMonth, originalDay);
+        const newShiftDateStr = format(newShiftDate, 'yyyy-MM-dd');
+
+        // Create the new shift
+        const { data: newShift, error } = await supabase
+          .from('shifts')
+          .insert({
+            tenant_id: currentTenantId,
+            title: shift.title,
+            hospital: shift.hospital,
+            location: shift.location,
+            shift_date: newShiftDateStr,
+            start_time: shift.start_time,
+            end_time: shift.end_time,
+            base_value: shift.base_value,
+            notes: shift.notes,
+            sector_id: shift.sector_id,
+            created_by: user?.id,
+            updated_by: user?.id,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          errorCount++;
+          continue;
+        }
+
+        successCount++;
+
+        // Copy assignments for this shift
+        const shiftAssignments = assignments.filter(a => a.shift_id === shift.id);
+        for (const assignment of shiftAssignments) {
+          await supabase.from('shift_assignments').insert({
+            tenant_id: currentTenantId,
+            shift_id: newShift.id,
+            user_id: assignment.user_id,
+            assigned_value: assignment.assigned_value,
+            status: 'assigned',
+            created_by: user?.id,
+          });
+        }
+      }
+
+      let message = `${successCount} plantões copiados!`;
+      if (skippedCount > 0) {
+        message += ` ${skippedCount} ignorados (dia não existe no mês destino).`;
+      }
+      if (errorCount > 0) {
+        message += ` ${errorCount} erros.`;
+      }
+
+      toast({ 
+        title: 'Escala copiada!', 
+        description: message 
+      });
+
+      setCopyScheduleDialogOpen(false);
+      setCopyTargetMonth(null);
+
+      // Navigate to the target month to see the copied shifts
+      setCurrentDate(copyTargetMonth);
+    } catch (error) {
+      console.error('Error copying schedule:', error);
+      toast({ title: 'Erro ao copiar escala', variant: 'destructive' });
+    } finally {
+      setCopyInProgress(false);
     }
   }
 
@@ -1588,6 +1694,18 @@ export default function ShiftCalendar() {
                     <Button variant="outline" onClick={() => setBulkMode(true)}>
                       <CheckSquare className="mr-2 h-4 w-4" />
                       Seleção
+                    </Button>
+
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setCopyTargetMonth(addMonths(currentDate, 1));
+                        setCopyScheduleDialogOpen(true);
+                      }}
+                      disabled={shifts.length === 0}
+                    >
+                      <Copy className="mr-2 h-4 w-4" />
+                      Copiar Escala
                     </Button>
 
                     <Button variant="outline" onClick={handlePrintSchedule}>
@@ -2620,6 +2738,90 @@ export default function ShiftCalendar() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy Schedule Dialog */}
+      <Dialog open={copyScheduleDialogOpen} onOpenChange={setCopyScheduleDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Copy className="h-5 w-5" />
+              Copiar Escala para Outro Mês
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-muted/50 border">
+              <div className="text-sm text-muted-foreground mb-2">Escala atual:</div>
+              <div className="font-semibold text-lg">
+                {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+              </div>
+              <div className="text-sm text-muted-foreground mt-1">
+                {filterSector === 'all' 
+                  ? `${shifts.length} plantões em todos os setores`
+                  : `${shifts.filter(s => s.sector_id === filterSector).length} plantões no setor selecionado`
+                }
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Copiar para o mês:</Label>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyTargetMonth && setCopyTargetMonth(subMonths(copyTargetMonth, 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <div className="flex-1 text-center font-semibold text-lg py-2 px-4 border rounded-lg bg-background">
+                  {copyTargetMonth && format(copyTargetMonth, 'MMMM yyyy', { locale: ptBR })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => copyTargetMonth && setCopyTargetMonth(addMonths(copyTargetMonth, 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
+              <strong>Atenção:</strong> Os plantões serão copiados para os mesmos dias do mês destino. 
+              Dias que não existem no mês destino (ex: dia 31 em fevereiro) serão ignorados.
+              As atribuições de plantonistas também serão copiadas.
+            </div>
+
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                className="flex-1" 
+                onClick={() => {
+                  setCopyScheduleDialogOpen(false);
+                  setCopyTargetMonth(null);
+                }}
+                disabled={copyInProgress}
+              >
+                Cancelar
+              </Button>
+              <Button 
+                className="flex-1" 
+                onClick={handleCopySchedule}
+                disabled={copyInProgress || !copyTargetMonth}
+              >
+                {copyInProgress ? (
+                  <>Copiando...</>
+                ) : (
+                  <>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copiar Escala
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
