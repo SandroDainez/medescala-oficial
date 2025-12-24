@@ -14,19 +14,25 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail } from 'lucide-react';
 
 interface MemberWithProfile {
   id: string;
   user_id: string;
   role: 'admin' | 'user';
   active: boolean;
+  email?: string;
   profile: { 
     name: string | null;
     phone: string | null;
     cpf: string | null;
     crm: string | null;
     profile_type: string | null;
+    address: string | null;
+    bank_name: string | null;
+    bank_agency: string | null;
+    bank_account: string | null;
+    pix_key: string | null;
   } | null;
 }
 
@@ -45,6 +51,22 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<MemberWithProfile | null>(null);
+  const [isUpdatingUser, setIsUpdatingUser] = useState(false);
+  
+  // Edit form fields
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editCpf, setEditCpf] = useState('');
+  const [editCrm, setEditCrm] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editBankName, setEditBankName] = useState('');
+  const [editBankAgency, setEditBankAgency] = useState('');
+  const [editBankAccount, setEditBankAccount] = useState('');
+  const [editPixKey, setEditPixKey] = useState('');
+  const [editProfileType, setEditProfileType] = useState('');
   
   // Form fields
   const [inviteName, setInviteName] = useState('');
@@ -75,7 +97,7 @@ export default function UserManagement() {
     
     const { data, error } = await supabase
       .from('memberships')
-      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type)')
+      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type, address, bank_name, bank_agency, bank_account, pix_key)')
       .eq('tenant_id', currentTenantId);
 
     if (!error && data) {
@@ -162,6 +184,63 @@ export default function UserManagement() {
     setInviteBankAgency('');
     setInviteBankAccount('');
     setInvitePixKey('');
+  }
+
+  function openEditDialog(member: MemberWithProfile) {
+    setEditingMember(member);
+    setEditName(member.profile?.name || '');
+    setEditEmail(''); // Will be fetched from auth
+    setEditPhone(member.profile?.phone || '');
+    setEditCpf(member.profile?.cpf || '');
+    setEditCrm(member.profile?.crm || '');
+    setEditAddress(member.profile?.address || '');
+    setEditBankName(member.profile?.bank_name || '');
+    setEditBankAgency(member.profile?.bank_agency || '');
+    setEditBankAccount(member.profile?.bank_account || '');
+    setEditPixKey(member.profile?.pix_key || '');
+    setEditProfileType(member.profile?.profile_type || 'plantonista');
+    setEditDialogOpen(true);
+  }
+
+  async function handleUpdateUser(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingMember) return;
+
+    setIsUpdatingUser(true);
+
+    try {
+      // Update profile
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({
+          name: editName,
+          phone: editPhone || null,
+          cpf: editCpf || null,
+          crm: editCrm || null,
+          address: editAddress || null,
+          bank_name: editBankName || null,
+          bank_agency: editBankAgency || null,
+          bank_account: editBankAccount || null,
+          pix_key: editPixKey || null,
+          profile_type: editProfileType,
+        })
+        .eq('id', editingMember.user_id);
+
+      if (profileError) throw profileError;
+
+      toast({ title: 'Usuário atualizado!' });
+      setEditDialogOpen(false);
+      setEditingMember(null);
+      fetchMembers();
+    } catch (error: any) {
+      toast({ 
+        title: 'Erro ao atualizar', 
+        description: error.message, 
+        variant: 'destructive' 
+      });
+    } finally {
+      setIsUpdatingUser(false);
+    }
   }
 
   async function copyInviteCode() {
@@ -632,6 +711,14 @@ export default function UserManagement() {
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditDialog(member)}
+                              title="Editar usuário"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
                               variant="outline"
                               size="sm"
                               onClick={() => toggleRole(member.id, member.role)}
@@ -743,6 +830,174 @@ export default function UserManagement() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5" />
+              Editar Usuário
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[70vh] pr-4">
+            <form onSubmit={handleUpdateUser} className="space-y-6">
+              {/* Personal Data */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                  <User className="h-4 w-4" />
+                  Dados Pessoais
+                </div>
+                
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editName">Nome Completo *</Label>
+                    <Input
+                      id="editName"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Nome do usuário"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editProfileType">Tipo de Perfil</Label>
+                    <Select value={editProfileType} onValueChange={setEditProfileType}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="plantonista">Plantonista</SelectItem>
+                        <SelectItem value="administrador">Administrador</SelectItem>
+                        <SelectItem value="outros">Outros</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editPhone">Telefone</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="editPhone"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="pl-10"
+                        placeholder="(11) 99999-9999"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editCpf">CPF</Label>
+                    <Input
+                      id="editCpf"
+                      value={editCpf}
+                      onChange={(e) => setEditCpf(e.target.value)}
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editCrm">CRM</Label>
+                    <div className="relative">
+                      <Stethoscope className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="editCrm"
+                        value={editCrm}
+                        onChange={(e) => setEditCrm(e.target.value)}
+                        className="pl-10"
+                        placeholder="CRM/SP 000000"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editAddress">Endereço</Label>
+                    <div className="relative">
+                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="editAddress"
+                        value={editAddress}
+                        onChange={(e) => setEditAddress(e.target.value)}
+                        className="pl-10"
+                        placeholder="Rua, número, cidade"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Bank Data */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <CreditCard className="h-4 w-4" />
+                  Dados Bancários
+                </div>
+                
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editBankName">Banco</Label>
+                    <div className="relative">
+                      <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                      <Input
+                        id="editBankName"
+                        value={editBankName}
+                        onChange={(e) => setEditBankName(e.target.value)}
+                        className="pl-10"
+                        placeholder="Nome do banco"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editPixKey">Chave PIX</Label>
+                    <Input
+                      id="editPixKey"
+                      value={editPixKey}
+                      onChange={(e) => setEditPixKey(e.target.value)}
+                      placeholder="CPF, email, telefone ou chave aleatória"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="editBankAgency">Agência</Label>
+                    <Input
+                      id="editBankAgency"
+                      value={editBankAgency}
+                      onChange={(e) => setEditBankAgency(e.target.value)}
+                      placeholder="0000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="editBankAccount">Conta</Label>
+                    <Input
+                      id="editBankAccount"
+                      value={editBankAccount}
+                      onChange={(e) => setEditBankAccount(e.target.value)}
+                      placeholder="00000-0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setEditDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="flex-1" disabled={isUpdatingUser}>
+                  {isUpdatingUser ? 'Salvando...' : 'Salvar Alterações'}
+                </Button>
+              </div>
+            </form>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
