@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar } from 'lucide-react';
 
 interface Sector {
   id: string;
@@ -37,6 +38,7 @@ interface SectorMembership {
 }
 
 export default function AdminSectors() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
@@ -402,6 +404,14 @@ export default function AdminSectors() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => navigate(`/admin/calendar?sector=${sector.id}`)}
+                        >
+                          <Calendar className="mr-1 h-4 w-4" />
+                          Escala
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"

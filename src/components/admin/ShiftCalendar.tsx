@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -58,6 +59,7 @@ type ViewMode = 'month' | 'week';
 type ShiftAssignmentType = 'vago' | 'disponivel' | string; // string is user_id
 
 export default function ShiftCalendar() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -71,7 +73,7 @@ export default function ShiftCalendar() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [filterSector, setFilterSector] = useState<string>('all');
+  const [filterSector, setFilterSector] = useState<string>(searchParams.get('sector') || 'all');
   
   // Dialogs
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
@@ -1023,7 +1025,7 @@ export default function ShiftCalendar() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="base_value">Valor Base (R$)</Label>
+                <Label htmlFor="base_value">Valor Base (R$) - opcional</Label>
                 <Input
                   id="base_value"
                   type="number"
@@ -1031,7 +1033,6 @@ export default function ShiftCalendar() {
                   value={formData.base_value}
                   onChange={(e) => setFormData({ ...formData, base_value: e.target.value })}
                   placeholder="0.00"
-                  required
                 />
               </div>
               
