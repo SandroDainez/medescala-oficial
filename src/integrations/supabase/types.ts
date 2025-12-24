@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      payments: {
+        Row: {
+          closed_at: string | null
+          closed_by: string | null
+          created_at: string
+          id: string
+          month: number
+          notes: string | null
+          status: string
+          total_hours: number
+          total_shifts: number
+          total_value: number
+          updated_at: string
+          user_id: string
+          year: number
+        }
+        Insert: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          month: number
+          notes?: string | null
+          status?: string
+          total_hours?: number
+          total_shifts?: number
+          total_value?: number
+          updated_at?: string
+          user_id: string
+          year: number
+        }
+        Update: {
+          closed_at?: string | null
+          closed_by?: string | null
+          created_at?: string
+          id?: string
+          month?: number
+          notes?: string | null
+          status?: string
+          total_hours?: number
+          total_shifts?: number
+          total_value?: number
+          updated_at?: string
+          user_id?: string
+          year?: number
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -34,6 +82,154 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      shift_assignments: {
+        Row: {
+          assigned_value: number
+          checkin_at: string | null
+          checkout_at: string | null
+          created_at: string
+          id: string
+          notes: string | null
+          shift_id: string
+          status: string
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          assigned_value?: number
+          checkin_at?: string | null
+          checkout_at?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          shift_id: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          assigned_value?: number
+          checkin_at?: string | null
+          checkout_at?: string | null
+          created_at?: string
+          id?: string
+          notes?: string | null
+          shift_id?: string
+          status?: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_assignments_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shifts: {
+        Row: {
+          base_value: number
+          created_at: string
+          created_by: string | null
+          end_time: string
+          hospital: string
+          id: string
+          location: string | null
+          notes: string | null
+          shift_date: string
+          start_time: string
+          title: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          base_value?: number
+          created_at?: string
+          created_by?: string | null
+          end_time: string
+          hospital: string
+          id?: string
+          location?: string | null
+          notes?: string | null
+          shift_date: string
+          start_time: string
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          base_value?: number
+          created_at?: string
+          created_by?: string | null
+          end_time?: string
+          hospital?: string
+          id?: string
+          location?: string | null
+          notes?: string | null
+          shift_date?: string
+          start_time?: string
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      swap_requests: {
+        Row: {
+          admin_notes: string | null
+          created_at: string
+          id: string
+          origin_assignment_id: string
+          reason: string | null
+          requester_id: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          status: Database["public"]["Enums"]["swap_status"]
+          target_user_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          admin_notes?: string | null
+          created_at?: string
+          id?: string
+          origin_assignment_id: string
+          reason?: string | null
+          requester_id: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["swap_status"]
+          target_user_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          admin_notes?: string | null
+          created_at?: string
+          id?: string
+          origin_assignment_id?: string
+          reason?: string | null
+          requester_id?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          status?: Database["public"]["Enums"]["swap_status"]
+          target_user_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "swap_requests_origin_assignment_id_fkey"
+            columns: ["origin_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "shift_assignments"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -75,6 +271,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "user"
+      swap_status: "pending" | "approved" | "rejected" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -203,6 +400,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "user"],
+      swap_status: ["pending", "approved", "rejected", "cancelled"],
     },
   },
 } as const
