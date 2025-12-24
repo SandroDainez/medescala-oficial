@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
-import { ChevronLeft, ChevronRight, Users, Calendar, Clock, MapPin } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { ChevronLeft, ChevronRight, Users, Calendar, Clock, MapPin, Hand, Check } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -25,6 +27,7 @@ interface Shift {
   shift_date: string;
   start_time: string;
   end_time: string;
+  notes: string | null;
   sector_id: string | null;
   sector?: Sector;
 }
@@ -43,18 +46,33 @@ interface MySector {
   sector: Sector;
 }
 
+interface ShiftOffer {
+  id: string;
+  shift_id: string;
+  user_id: string;
+  status: string;
+}
+
 export default function UserCalendar() {
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   const [mySectors, setMySectors] = useState<MySector[]>([]);
   const [allSectors, setAllSectors] = useState<Sector[]>([]);
+  const [myOffers, setMyOffers] = useState<ShiftOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
   const [filterSector, setFilterSector] = useState<string>('all');
+  
+  // Offer dialog
+  const [offerDialogOpen, setOfferDialogOpen] = useState(false);
+  const [selectedShiftForOffer, setSelectedShiftForOffer] = useState<Shift | null>(null);
+  const [offerMessage, setOfferMessage] = useState('');
+  const [submittingOffer, setSubmittingOffer] = useState(false);
 
   useEffect(() => {
     if (currentTenantId && user) {
@@ -69,8 +87,8 @@ export default function UserCalendar() {
     const start = startOfMonth(currentDate);
     const end = endOfMonth(currentDate);
 
-    // Fetch my sectors, all sectors, and shifts
-    const [mySectorsRes, allSectorsRes, shiftsRes] = await Promise.all([
+    // Fetch my sectors, all sectors, shifts, and my offers
+    const [mySectorsRes, allSectorsRes, shiftsRes, myOffersRes] = await Promise.all([
       supabase
         .from('sector_memberships')
         .select('sector_id, sector:sectors(*)')
@@ -88,6 +106,11 @@ export default function UserCalendar() {
         .gte('shift_date', format(start, 'yyyy-MM-dd'))
         .lte('shift_date', format(end, 'yyyy-MM-dd'))
         .order('shift_date', { ascending: true }),
+      supabase
+        .from('shift_offers')
+        .select('id, shift_id, user_id, status')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id),
     ]);
 
     if (mySectorsRes.data) {
@@ -96,6 +119,10 @@ export default function UserCalendar() {
 
     if (allSectorsRes.data) {
       setAllSectors(allSectorsRes.data);
+    }
+
+    if (myOffersRes.data) {
+      setMyOffers(myOffersRes.data);
     }
 
     if (shiftsRes.data) {
@@ -116,6 +143,22 @@ export default function UserCalendar() {
     }
 
     setLoading(false);
+  }
+
+  // Check if shift is available (marked as [DISPONÍVEL] in notes)
+  function isAvailableShift(shift: Shift) {
+    return shift.notes?.includes('[DISPONÍVEL]');
+  }
+
+  // Check if I already offered for this shift
+  function hasOfferedForShift(shiftId: string) {
+    return myOffers.some(o => o.shift_id === shiftId);
+  }
+
+  // Get my offer status for a shift
+  function getMyOfferStatus(shiftId: string) {
+    const offer = myOffers.find(o => o.shift_id === shiftId);
+    return offer?.status;
   }
 
   // Filter shifts by sector
@@ -157,6 +200,40 @@ export default function UserCalendar() {
   function openDayView(date: Date) {
     setSelectedDate(date);
     setDayDialogOpen(true);
+  }
+
+  function openOfferDialog(shift: Shift) {
+    setSelectedShiftForOffer(shift);
+    setOfferMessage('');
+    setOfferDialogOpen(true);
+  }
+
+  async function submitOffer() {
+    if (!selectedShiftForOffer || !currentTenantId || !user) return;
+    
+    setSubmittingOffer(true);
+    
+    const { error } = await supabase.from('shift_offers').insert({
+      tenant_id: currentTenantId,
+      shift_id: selectedShiftForOffer.id,
+      user_id: user.id,
+      message: offerMessage || null,
+      created_by: user.id,
+    });
+
+    if (error) {
+      if (error.code === '23505') {
+        toast({ title: 'Aviso', description: 'Você já se ofereceu para este plantão', variant: 'destructive' });
+      } else {
+        toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      }
+    } else {
+      toast({ title: 'Oferta enviada!', description: 'O administrador irá analisar sua oferta.' });
+      fetchData();
+      setOfferDialogOpen(false);
+    }
+    
+    setSubmittingOffer(false);
   }
 
   // Get sectors to show in filter (only my sectors or all if no assignment)
@@ -236,6 +313,7 @@ export default function UserCalendar() {
               const dayShifts = getShiftsForDate(day);
               const hasShifts = dayShifts.length > 0;
               const hasMyShift = dayShifts.some(s => isMyShift(s.id));
+              const hasAvailableShift = dayShifts.some(s => isAvailableShift(s) && !isMyShift(s.id));
 
               return (
                 <div
@@ -243,6 +321,7 @@ export default function UserCalendar() {
                   className={`min-h-[80px] sm:min-h-[100px] p-1 border rounded-lg cursor-pointer transition-colors
                     ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
                     ${hasMyShift ? 'ring-2 ring-primary ring-inset' : ''}
+                    ${hasAvailableShift ? 'ring-2 ring-green-500 ring-inset' : ''}
                   `}
                   onClick={() => openDayView(day)}
                 >
@@ -255,6 +334,7 @@ export default function UserCalendar() {
                       {dayShifts.slice(0, 2).map(shift => {
                         const shiftAssignments = getAssignmentsForShift(shift.id);
                         const isMine = isMyShift(shift.id);
+                        const isAvailable = isAvailableShift(shift);
                         const sectorColor = shift.sector?.color || '#22c55e';
 
                         return (
@@ -262,15 +342,21 @@ export default function UserCalendar() {
                             key={shift.id}
                             className={`text-xs p-1 rounded truncate ${isMine ? 'font-bold' : ''}`}
                             style={{
-                              backgroundColor: `${sectorColor}20`,
-                              borderLeft: `3px solid ${sectorColor}`,
+                              backgroundColor: isAvailable ? '#dcfce7' : `${sectorColor}20`,
+                              borderLeft: `3px solid ${isAvailable ? '#22c55e' : sectorColor}`,
                             }}
                             title={`${shift.title} - ${shift.hospital}`}
                           >
                             <div className="truncate">{shift.sector?.name || shift.hospital}</div>
                             <div className="flex items-center gap-1 text-muted-foreground">
-                              <Users className="h-3 w-3" />
-                              <span>{shiftAssignments.length}</span>
+                              {isAvailable ? (
+                                <Badge className="text-[10px] px-1 h-4 bg-green-500">DISPONÍVEL</Badge>
+                              ) : (
+                                <>
+                                  <Users className="h-3 w-3" />
+                                  <span>{shiftAssignments.length}</span>
+                                </>
+                              )}
                               {isMine && <Badge className="text-[10px] px-1 h-4 bg-primary">EU</Badge>}
                             </div>
                           </div>
@@ -297,6 +383,10 @@ export default function UserCalendar() {
           <span>Dia com meu plantão</span>
         </div>
         <div className="flex items-center gap-2">
+          <div className="w-4 h-4 rounded ring-2 ring-green-500" />
+          <span>Plantão disponível</span>
+        </div>
+        <div className="flex items-center gap-2">
           <Badge className="text-[10px] px-1 h-4 bg-primary">EU</Badge>
           <span>Estou escalado</span>
         </div>
@@ -320,20 +410,26 @@ export default function UserCalendar() {
               selectedDate && getShiftsForDate(selectedDate).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
                 const isMine = isMyShift(shift.id);
+                const isAvailable = isAvailableShift(shift);
+                const hasOffered = hasOfferedForShift(shift.id);
+                const offerStatus = getMyOfferStatus(shift.id);
                 const sectorColor = shift.sector?.color || '#22c55e';
 
                 return (
                   <Card 
                     key={shift.id} 
-                    className={isMine ? 'ring-2 ring-primary' : ''}
-                    style={{ borderLeft: `4px solid ${sectorColor}` }}
+                    className={`${isMine ? 'ring-2 ring-primary' : ''} ${isAvailable ? 'ring-2 ring-green-500' : ''}`}
+                    style={{ borderLeft: `4px solid ${isAvailable ? '#22c55e' : sectorColor}` }}
                   >
                     <CardHeader className="pb-2">
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <CardTitle className="text-lg">{shift.title}</CardTitle>
                             {isMine && <Badge className="bg-primary">Meu Plantão</Badge>}
+                            {isAvailable && !isMine && (
+                              <Badge className="bg-green-500">Plantão Disponível</Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-4 text-sm text-muted-foreground mt-1">
                             {shift.sector && (
@@ -358,24 +454,55 @@ export default function UserCalendar() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <Users className="h-4 w-4" />
-                          Colegas de Plantão ({shiftAssignments.length}):
-                        </div>
-                        {shiftAssignments.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">Nenhum plantonista atribuído</p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {shiftAssignments.map(assignment => (
-                              <Badge 
-                                key={assignment.id} 
-                                variant={assignment.user_id === user?.id ? 'default' : 'secondary'}
+                      <div className="space-y-3">
+                        {/* Show colleagues if not available shift */}
+                        {!isAvailable && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-sm font-medium">
+                              <Users className="h-4 w-4" />
+                              Colegas de Plantão ({shiftAssignments.length}):
+                            </div>
+                            {shiftAssignments.length === 0 ? (
+                              <p className="text-sm text-muted-foreground">Nenhum plantonista atribuído</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                {shiftAssignments.map(assignment => (
+                                  <Badge 
+                                    key={assignment.id} 
+                                    variant={assignment.user_id === user?.id ? 'default' : 'secondary'}
+                                  >
+                                    {assignment.profile?.name || 'Sem nome'}
+                                    {assignment.user_id === user?.id && ' (Eu)'}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Offer button for available shifts */}
+                        {isAvailable && !isMine && (
+                          <div className="pt-2 border-t">
+                            {hasOffered ? (
+                              <div className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                                <Check className="h-5 w-5 text-green-600" />
+                                <div>
+                                  <p className="font-medium text-sm">Você já se ofereceu para este plantão</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Status: {offerStatus === 'pending' ? 'Aguardando análise' : 
+                                             offerStatus === 'accepted' ? 'Aceito' : 'Rejeitado'}
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <Button 
+                                className="w-full bg-green-600 hover:bg-green-700"
+                                onClick={() => openOfferDialog(shift)}
                               >
-                                {assignment.profile?.name || 'Sem nome'}
-                                {assignment.user_id === user?.id && ' (Eu)'}
-                              </Badge>
-                            ))}
+                                <Hand className="mr-2 h-4 w-4" />
+                                Me Oferecer para Este Plantão
+                              </Button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -385,6 +512,64 @@ export default function UserCalendar() {
               })
             )}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Offer Dialog */}
+      <Dialog open={offerDialogOpen} onOpenChange={setOfferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Hand className="h-5 w-5 text-green-600" />
+              Oferecer-se para Plantão
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedShiftForOffer && (
+            <div className="space-y-4">
+              <div className="p-4 rounded-lg bg-muted/50 space-y-2">
+                <p className="font-medium">{selectedShiftForOffer.title}</p>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p className="flex items-center gap-1">
+                    <Calendar className="h-3 w-3" />
+                    {format(parseISO(selectedShiftForOffer.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                  </p>
+                  <p className="flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {selectedShiftForOffer.start_time.slice(0, 5)} - {selectedShiftForOffer.end_time.slice(0, 5)}
+                  </p>
+                  <p className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {selectedShiftForOffer.hospital}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Mensagem para o administrador (opcional):</label>
+                <Textarea 
+                  value={offerMessage}
+                  onChange={(e) => setOfferMessage(e.target.value)}
+                  placeholder="Ex: Tenho disponibilidade total neste dia..."
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  className="flex-1 bg-green-600 hover:bg-green-700" 
+                  onClick={submitOffer}
+                  disabled={submittingOffer}
+                >
+                  <Hand className="mr-2 h-4 w-4" />
+                  {submittingOffer ? 'Enviando...' : 'Confirmar Oferta'}
+                </Button>
+                <Button variant="outline" onClick={() => setOfferDialogOpen(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
