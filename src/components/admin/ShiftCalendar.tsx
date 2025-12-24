@@ -723,7 +723,7 @@ export default function ShiftCalendar() {
                       const sectorName = getSectorName(shift.sector_id, shift.hospital);
                       const isNight = isNightShift(shift.start_time, shift.end_time);
                       const isAvailable = isShiftAvailable(shift);
-                      const showSectorName = filterSector === 'all';
+                      const showSectorName = filterSector === 'all' || !sectors.some(s => s.id === filterSector);
                       
                       // Determine what to show for each shift:
                       // - If has assignments: show assigned plantonistas
@@ -1437,7 +1437,7 @@ export default function ShiftCalendar() {
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
                 const isAvailable = isShiftAvailable(shift);
-                const showSectorName = filterSector === 'all';
+                const showSectorName = filterSector === 'all' || !sectors.some(s => s.id === filterSector);
                 
                 return (
                   <Card 
