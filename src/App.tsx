@@ -22,6 +22,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminSectors from "./pages/admin/Sectors";
 import AdminSwaps from "./pages/admin/Swaps";
 import AdminFinancial from "./pages/admin/Financial";
+import AdminReports from "./pages/admin/Reports";
 import AdminSubscription from "./pages/admin/Subscription";
 
 // User pages
@@ -85,6 +86,7 @@ function AppRoutes() {
         <Route path="sectors" element={<AdminSectors />} />
         <Route path="swaps" element={<AdminSwaps />} />
         <Route path="financial" element={<AdminFinancial />} />
+        <Route path="reports" element={<AdminReports />} />
         <Route path="subscription" element={<AdminSubscription />} />
       </Route>
 
