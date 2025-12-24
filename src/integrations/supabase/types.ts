@@ -346,6 +346,7 @@ export type Database = {
         Row: {
           active: boolean
           allowed_checkin_radius_meters: number | null
+          checkin_enabled: boolean
           color: string | null
           created_at: string
           created_by: string | null
@@ -360,6 +361,7 @@ export type Database = {
         Insert: {
           active?: boolean
           allowed_checkin_radius_meters?: number | null
+          checkin_enabled?: boolean
           color?: string | null
           created_at?: string
           created_by?: string | null
@@ -374,6 +376,7 @@ export type Database = {
         Update: {
           active?: boolean
           allowed_checkin_radius_meters?: number | null
+          checkin_enabled?: boolean
           color?: string | null
           created_at?: string
           created_by?: string | null
