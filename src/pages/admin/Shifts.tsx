@@ -26,6 +26,13 @@ interface Shift {
   notes: string | null;
 }
 
+interface ShiftAssignment {
+  id: string;
+  shift_id: string;
+  user_id: string;
+  profile: { name: string | null } | null;
+}
+
 interface Member {
   user_id: string;
   profile: { id: string; name: string | null } | null;
@@ -36,6 +43,7 @@ export default function AdminShifts() {
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const [shifts, setShifts] = useState<Shift[]>([]);
+  const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -77,8 +85,27 @@ export default function AdminShifts() {
 
     if (!error && data) {
       setShifts(data);
+      
+      // Fetch assignments for all shifts
+      if (data.length > 0) {
+        const shiftIds = data.map(s => s.id);
+        const { data: assignmentsData } = await supabase
+          .from('shift_assignments')
+          .select('id, shift_id, user_id, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+          .in('shift_id', shiftIds);
+        
+        if (assignmentsData) {
+          setAssignments(assignmentsData as unknown as ShiftAssignment[]);
+        }
+      } else {
+        setAssignments([]);
+      }
     }
     setLoading(false);
+  }
+
+  function getAssignmentsForShift(shiftId: string): ShiftAssignment[] {
+    return assignments.filter(a => a.shift_id === shiftId);
   }
 
   async function fetchMembers() {
@@ -322,6 +349,7 @@ export default function AdminShifts() {
                 <TableHead>Data</TableHead>
                 <TableHead>Título</TableHead>
                 <TableHead>Setor</TableHead>
+                <TableHead>Plantonista</TableHead>
                 <TableHead>Horário</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -330,22 +358,33 @@ export default function AdminShifts() {
             <TableBody>
               {shifts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Nenhum plantão cadastrado
                   </TableCell>
                 </TableRow>
               ) : (
-                shifts.map((shift) => (
-                  <TableRow key={shift.id}>
-                    <TableCell>
-                      {format(new Date(shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
-                    </TableCell>
-                    <TableCell className="font-medium">{shift.title}</TableCell>
-                    <TableCell>{shift.hospital}</TableCell>
-                    <TableCell>
-                      {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
-                    </TableCell>
-                    <TableCell>R$ {Number(shift.base_value).toFixed(2)}</TableCell>
+                shifts.map((shift) => {
+                  const shiftAssignments = getAssignmentsForShift(shift.id);
+                  return (
+                    <TableRow key={shift.id}>
+                      <TableCell>
+                        {format(new Date(shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
+                      </TableCell>
+                      <TableCell className="font-medium">{shift.title}</TableCell>
+                      <TableCell>{shift.hospital}</TableCell>
+                      <TableCell>
+                        {shiftAssignments.length > 0 ? (
+                          <span className="text-foreground">
+                            {shiftAssignments.map(a => a.profile?.name || 'Sem nome').join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground italic">Vago</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                      </TableCell>
+                      <TableCell>R$ {Number(shift.base_value).toFixed(2)}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
                         <Button
@@ -368,7 +407,8 @@ export default function AdminShifts() {
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
+                  );
+                })
               )}
             </TableBody>
           </Table>
