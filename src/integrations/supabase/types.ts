@@ -212,7 +212,7 @@ export type Database = {
           month: number
           notes: string | null
           status: string
-          tenant_id: string | null
+          tenant_id: string
           total_hours: number
           total_shifts: number
           total_value: number
@@ -230,7 +230,7 @@ export type Database = {
           month: number
           notes?: string | null
           status?: string
-          tenant_id?: string | null
+          tenant_id: string
           total_hours?: number
           total_shifts?: number
           total_value?: number
@@ -248,7 +248,7 @@ export type Database = {
           month?: number
           notes?: string | null
           status?: string
-          tenant_id?: string | null
+          tenant_id?: string
           total_hours?: number
           total_shifts?: number
           total_value?: number
