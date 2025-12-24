@@ -168,21 +168,48 @@ export type Database = {
       }
       profiles: {
         Row: {
+          address: string | null
+          bank_account: string | null
+          bank_agency: string | null
+          bank_name: string | null
+          cpf: string | null
           created_at: string
+          crm: string | null
           id: string
           name: string | null
+          phone: string | null
+          pix_key: string | null
+          profile_type: string | null
           updated_at: string
         }
         Insert: {
+          address?: string | null
+          bank_account?: string | null
+          bank_agency?: string | null
+          bank_name?: string | null
+          cpf?: string | null
           created_at?: string
+          crm?: string | null
           id: string
           name?: string | null
+          phone?: string | null
+          pix_key?: string | null
+          profile_type?: string | null
           updated_at?: string
         }
         Update: {
+          address?: string | null
+          bank_account?: string | null
+          bank_agency?: string | null
+          bank_name?: string | null
+          cpf?: string | null
           created_at?: string
+          crm?: string | null
           id?: string
           name?: string | null
+          phone?: string | null
+          pix_key?: string | null
+          profile_type?: string | null
           updated_at?: string
         }
         Relationships: []
