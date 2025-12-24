@@ -187,6 +187,102 @@ export type Database = {
         }
         Relationships: []
       }
+      sector_memberships: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          sector_id: string
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sector_id: string
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          sector_id?: string
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sector_memberships_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sector_memberships_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sector_memberships_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sectors: {
+        Row: {
+          active: boolean
+          color: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          name: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          active?: boolean
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          active?: boolean
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sectors_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shift_assignments: {
         Row: {
           assigned_value: number
@@ -267,6 +363,7 @@ export type Database = {
           id: string
           location: string | null
           notes: string | null
+          sector_id: string | null
           shift_date: string
           start_time: string
           tenant_id: string | null
@@ -283,6 +380,7 @@ export type Database = {
           id?: string
           location?: string | null
           notes?: string | null
+          sector_id?: string | null
           shift_date: string
           start_time: string
           tenant_id?: string | null
@@ -299,6 +397,7 @@ export type Database = {
           id?: string
           location?: string | null
           notes?: string | null
+          sector_id?: string | null
           shift_date?: string
           start_time?: string
           tenant_id?: string | null
@@ -307,6 +406,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "shifts_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "shifts_tenant_id_fkey"
             columns: ["tenant_id"]
