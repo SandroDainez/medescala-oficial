@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Lock, Printer, DollarSign, Users, Calendar, MapPin, Eye, FileText, Clock, Filter } from 'lucide-react';
+import { Download, Lock, Printer, DollarSign, Users, Calendar, MapPin, Eye, FileText, Clock, Filter, ChevronDown, ChevronRight, Building } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -36,7 +36,23 @@ interface ShiftDetail {
   end_time: string;
   duration_hours: number;
   sector_name: string;
+  sector_id: string | null;
   hospital: string;
+}
+
+interface SectorSummary {
+  sector_id: string;
+  sector_name: string;
+  total_shifts: number;
+  total_hours: number;
+  total_value: number;
+  users: {
+    user_id: string;
+    user_name: string | null;
+    total_shifts: number;
+    total_hours: number;
+    total_value: number;
+  }[];
 }
 
 export default function AdminFinancial() {
@@ -44,6 +60,7 @@ export default function AdminFinancial() {
   const { currentTenantId, currentTenantName } = useTenant();
   const { toast } = useToast();
   const [summaries, setSummaries] = useState<PaymentSummary[]>([]);
+  const [sectorSummaries, setSectorSummaries] = useState<SectorSummary[]>([]);
   const [shiftDetails, setShiftDetails] = useState<ShiftDetail[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -53,6 +70,7 @@ export default function AdminFinancial() {
   
   const [selectedUser, setSelectedUser] = useState<PaymentSummary | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
 
   // Quick date presets
   function setThisMonth() {
@@ -124,6 +142,7 @@ export default function AdminFinancial() {
           start_time,
           end_time,
           hospital,
+          sector_id,
           sector:sectors(name)
         )
       `)
@@ -158,6 +177,7 @@ export default function AdminFinancial() {
           end_time: d.shift?.end_time,
           duration_hours: duration,
           sector_name: d.shift?.sector?.name || 'N/A',
+          sector_id: d.shift?.sector_id || null,
           hospital: d.shift?.hospital || 'N/A'
         };
       });
@@ -194,9 +214,66 @@ export default function AdminFinancial() {
       });
 
       setSummaries(Object.values(userSummaries).filter(s => s.total_shifts > 0));
+
+      // Build sector summaries
+      const sectorMap: Record<string, SectorSummary> = {};
+      
+      details.forEach(d => {
+        const sectorKey = d.sector_id || 'sem-setor';
+        if (!sectorMap[sectorKey]) {
+          sectorMap[sectorKey] = {
+            sector_id: sectorKey,
+            sector_name: d.sector_name || 'Sem Setor',
+            total_shifts: 0,
+            total_hours: 0,
+            total_value: 0,
+            users: []
+          };
+        }
+        sectorMap[sectorKey].total_shifts++;
+        sectorMap[sectorKey].total_hours += d.duration_hours;
+        sectorMap[sectorKey].total_value += d.assigned_value;
+      });
+
+      // Add users to each sector
+      Object.values(sectorMap).forEach(sector => {
+        const sectorDetails = details.filter(d => (d.sector_id || 'sem-setor') === sector.sector_id);
+        const userMap: Record<string, { user_id: string; user_name: string | null; total_shifts: number; total_hours: number; total_value: number }> = {};
+        
+        sectorDetails.forEach(d => {
+          if (!userMap[d.user_id]) {
+            userMap[d.user_id] = {
+              user_id: d.user_id,
+              user_name: d.user_name,
+              total_shifts: 0,
+              total_hours: 0,
+              total_value: 0
+            };
+          }
+          userMap[d.user_id].total_shifts++;
+          userMap[d.user_id].total_hours += d.duration_hours;
+          userMap[d.user_id].total_value += d.assigned_value;
+        });
+        
+        sector.users = Object.values(userMap).sort((a, b) => b.total_value - a.total_value);
+      });
+
+      setSectorSummaries(Object.values(sectorMap).sort((a, b) => b.total_value - a.total_value));
     }
 
     setLoading(false);
+  }
+
+  function toggleSector(sectorId: string) {
+    setExpandedSectors(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectorId)) {
+        newSet.delete(sectorId);
+      } else {
+        newSet.add(sectorId);
+      }
+      return newSet;
+    });
   }
 
   async function closePayment(userId: string, totalShifts: number, totalValue: number, totalHours: number) {
@@ -624,7 +701,8 @@ export default function AdminFinancial() {
       {/* Tabs for different views */}
       <Tabs defaultValue="summary" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="summary">Resumo por Plantonista</TabsTrigger>
+          <TabsTrigger value="summary">Por Plantonista</TabsTrigger>
+          <TabsTrigger value="sectors">Por Setor</TabsTrigger>
           <TabsTrigger value="detailed">Todos os Plantões</TabsTrigger>
         </TabsList>
 
@@ -699,6 +777,95 @@ export default function AdminFinancial() {
                   )}
                 </TableBody>
               </Table>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Sectors Tab */}
+        <TabsContent value="sectors">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Resumo por Setor
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {sectorSummaries.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  Nenhum dado para o período selecionado
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {sectorSummaries.map(sector => (
+                    <div key={sector.sector_id}>
+                      {/* Sector Header */}
+                      <div 
+                        className="flex items-center justify-between p-4 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                        onClick={() => toggleSector(sector.sector_id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          {expandedSectors.has(sector.sector_id) ? (
+                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                          )}
+                          <div>
+                            <h3 className="font-semibold text-foreground">{sector.sector_name}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {sector.users.length} plantonista{sector.users.length !== 1 ? 's' : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-6 text-sm">
+                          <div className="text-center">
+                            <p className="font-semibold">{sector.total_shifts}</p>
+                            <p className="text-xs text-muted-foreground">plantões</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold">{sector.total_hours.toFixed(1)}h</p>
+                            <p className="text-xs text-muted-foreground">horas</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-green-600">R$ {sector.total_value.toFixed(2)}</p>
+                            <p className="text-xs text-muted-foreground">total</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Sector Users */}
+                      {expandedSectors.has(sector.sector_id) && (
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-background">
+                              <TableHead className="pl-12">Plantonista</TableHead>
+                              <TableHead className="text-center">Plantões</TableHead>
+                              <TableHead className="text-center">Carga Horária</TableHead>
+                              <TableHead className="text-right pr-6">Valor a Receber</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sector.users.map(u => (
+                              <TableRow key={u.user_id} className="bg-background">
+                                <TableCell className="pl-12 font-medium">{u.user_name || 'N/A'}</TableCell>
+                                <TableCell className="text-center">
+                                  <Badge variant="secondary">{u.total_shifts}</Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  <Badge variant="outline">{u.total_hours.toFixed(1)}h</Badge>
+                                </TableCell>
+                                <TableCell className="text-right pr-6 font-semibold text-green-600">
+                                  R$ {u.total_value.toFixed(2)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
