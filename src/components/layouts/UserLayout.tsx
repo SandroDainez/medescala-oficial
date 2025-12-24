@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { TenantSelector } from '@/components/TenantSelector';
+import { NotificationBell } from '@/components/NotificationBell';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -12,7 +13,8 @@ import {
   DollarSign,
   LogOut,
   Menu,
-  X
+  X,
+  Stethoscope
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -37,7 +39,7 @@ export function UserLayout() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-card">
+      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm">
         <div className="flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-4">
             <Button
@@ -48,19 +50,27 @@ export function UserLayout() {
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <h1 className="text-xl font-bold text-primary">MedEscala</h1>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground">
+                <Stethoscope className="h-4 w-4" />
+              </div>
+              <span className="text-lg font-bold text-foreground">
+                Med<span className="text-primary">Escala</span>
+              </span>
+            </div>
             <TenantSelector />
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <NotificationBell />
             {currentTenantName && (
-              <span className="hidden text-sm font-medium text-foreground lg:inline">
+              <span className="hidden text-sm font-medium text-foreground lg:inline px-2 py-1 bg-secondary rounded">
                 {currentTenantName}
               </span>
             )}
-            <span className="hidden text-sm text-muted-foreground sm:inline">
+            <span className="hidden text-sm text-muted-foreground sm:inline max-w-[150px] truncate">
               {user?.email}
             </span>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground hover:text-destructive">
               <LogOut className="h-4 w-4" />
               <span className="ml-2 hidden sm:inline">Sair</span>
             </Button>

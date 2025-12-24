@@ -144,6 +144,64 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          read_at: string | null
+          shift_assignment_id: string | null
+          tenant_id: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          read_at?: string | null
+          shift_assignment_id?: string | null
+          tenant_id: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          read_at?: string | null
+          shift_assignment_id?: string | null
+          tenant_id?: string
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_shift_assignment_id_fkey"
+            columns: ["shift_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "shift_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payments: {
         Row: {
           closed_at: string | null
@@ -347,6 +405,7 @@ export type Database = {
           active: boolean
           allowed_checkin_radius_meters: number | null
           checkin_enabled: boolean
+          checkin_tolerance_minutes: number
           color: string | null
           created_at: string
           created_by: string | null
@@ -362,6 +421,7 @@ export type Database = {
           active?: boolean
           allowed_checkin_radius_meters?: number | null
           checkin_enabled?: boolean
+          checkin_tolerance_minutes?: number
           color?: string | null
           created_at?: string
           created_by?: string | null
@@ -377,6 +437,7 @@ export type Database = {
           active?: boolean
           allowed_checkin_radius_meters?: number | null
           checkin_enabled?: boolean
+          checkin_tolerance_minutes?: number
           color?: string | null
           created_at?: string
           created_by?: string | null
