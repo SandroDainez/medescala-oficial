@@ -1410,7 +1410,7 @@ export default function ShiftCalendar() {
 
       {/* Create/Edit Shift Dialog */}
       <Dialog open={shiftDialogOpen} onOpenChange={(open) => !open && closeShiftDialog()}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingShift ? 'Editar Plantão' : 'Novo Plantão'}</DialogTitle>
           </DialogHeader>
