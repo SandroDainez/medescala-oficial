@@ -18,28 +18,34 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          created_by: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
           tenant_id: string
           updated_at: string
+          updated_by: string | null
           user_id: string
         }
         Insert: {
           active?: boolean
           created_at?: string
+          created_by?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id: string
           updated_at?: string
+          updated_by?: string | null
           user_id: string
         }
         Update: {
           active?: boolean
           created_at?: string
+          created_by?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           tenant_id?: string
           updated_at?: string
+          updated_by?: string | null
           user_id?: string
         }
         Relationships: [
@@ -57,6 +63,7 @@ export type Database = {
           closed_at: string | null
           closed_by: string | null
           created_at: string
+          created_by: string | null
           id: string
           month: number
           notes: string | null
@@ -66,6 +73,7 @@ export type Database = {
           total_shifts: number
           total_value: number
           updated_at: string
+          updated_by: string | null
           user_id: string
           year: number
         }
@@ -73,6 +81,7 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           month: number
           notes?: string | null
@@ -82,6 +91,7 @@ export type Database = {
           total_shifts?: number
           total_value?: number
           updated_at?: string
+          updated_by?: string | null
           user_id: string
           year: number
         }
@@ -89,6 +99,7 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           month?: number
           notes?: string | null
@@ -98,6 +109,7 @@ export type Database = {
           total_shifts?: number
           total_value?: number
           updated_at?: string
+          updated_by?: string | null
           user_id?: string
           year?: number
         }
@@ -138,6 +150,7 @@ export type Database = {
           checkin_at: string | null
           checkout_at: string | null
           created_at: string
+          created_by: string | null
           id: string
           notes: string | null
           shift_id: string
@@ -152,6 +165,7 @@ export type Database = {
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           notes?: string | null
           shift_id: string
@@ -166,6 +180,7 @@ export type Database = {
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           notes?: string | null
           shift_id?: string
@@ -255,6 +270,7 @@ export type Database = {
         Row: {
           admin_notes: string | null
           created_at: string
+          created_by: string | null
           id: string
           origin_assignment_id: string
           reason: string | null
@@ -265,10 +281,12 @@ export type Database = {
           target_user_id: string | null
           tenant_id: string | null
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           admin_notes?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           origin_assignment_id: string
           reason?: string | null
@@ -279,10 +297,12 @@ export type Database = {
           target_user_id?: string | null
           tenant_id?: string | null
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           admin_notes?: string | null
           created_at?: string
+          created_by?: string | null
           id?: string
           origin_assignment_id?: string
           reason?: string | null
@@ -293,6 +313,7 @@ export type Database = {
           target_user_id?: string | null
           tenant_id?: string | null
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -314,27 +335,42 @@ export type Database = {
       tenants: {
         Row: {
           created_at: string
+          created_by: string | null
           id: string
           logo_url: string | null
+          max_shifts_per_month: number
+          max_users: number
           name: string
+          plan: Database["public"]["Enums"]["tenant_plan"]
           slug: string
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           created_at?: string
+          created_by?: string | null
           id?: string
           logo_url?: string | null
+          max_shifts_per_month?: number
+          max_users?: number
           name: string
+          plan?: Database["public"]["Enums"]["tenant_plan"]
           slug: string
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           created_at?: string
+          created_by?: string | null
           id?: string
           logo_url?: string | null
+          max_shifts_per_month?: number
+          max_users?: number
           name?: string
+          plan?: Database["public"]["Enums"]["tenant_plan"]
           slug?: string
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: []
       }
@@ -364,6 +400,24 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_tenant_shift_limit: {
+        Args: { _tenant_id: string }
+        Returns: boolean
+      }
+      check_tenant_user_limit: {
+        Args: { _tenant_id: string }
+        Returns: boolean
+      }
+      get_tenant_plan_info: {
+        Args: { _tenant_id: string }
+        Returns: {
+          current_month_shifts: number
+          current_users: number
+          max_shifts_per_month: number
+          max_users: number
+          plan: Database["public"]["Enums"]["tenant_plan"]
+        }[]
+      }
       get_user_role: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
@@ -395,6 +449,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "user"
       swap_status: "pending" | "approved" | "rejected" | "cancelled"
+      tenant_plan: "free" | "pro" | "premium"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -524,6 +579,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "user"],
       swap_status: ["pending", "approved", "rejected", "cancelled"],
+      tenant_plan: ["free", "pro", "premium"],
     },
   },
 } as const
