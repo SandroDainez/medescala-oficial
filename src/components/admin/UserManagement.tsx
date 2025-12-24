@@ -15,7 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check } from 'lucide-react';
 
 interface MemberWithProfile {
   id: string;
@@ -70,6 +70,16 @@ export default function UserManagement() {
   const [editingMember, setEditingMember] = useState<MemberWithProfile | null>(null);
   const [isUpdatingUser, setIsUpdatingUser] = useState(false);
   const [editSectorIds, setEditSectorIds] = useState<string[]>([]);
+  
+  // Credentials dialog state
+  const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
+  const [createdUserCredentials, setCreatedUserCredentials] = useState<{
+    name: string;
+    email: string;
+    password: string;
+  } | null>(null);
+  const [showCreatedPassword, setShowCreatedPassword] = useState(false);
+  const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
   
   // Edit form fields
   const [editName, setEditName] = useState('');
@@ -486,10 +496,15 @@ export default function UserManagement() {
 
         if (membershipError) throw membershipError;
 
-        toast({ 
-          title: 'Usuário criado!', 
-          description: `${inviteName} foi adicionado ao hospital.` 
+        // Show credentials dialog
+        setCreatedUserCredentials({
+          name: inviteName,
+          email: userEmail,
+          password: userPassword
         });
+        setShowCreatedPassword(false);
+        setCopiedField(null);
+        setCredentialsDialogOpen(true);
         
         // Reset all form fields
         resetForm();
@@ -1329,6 +1344,143 @@ export default function UserManagement() {
               </div>
             </form>
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials Dialog - Shows after user creation */}
+      <Dialog open={credentialsDialogOpen} onOpenChange={setCredentialsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-green-600">
+              <Check className="h-5 w-5" />
+              Usuário Criado com Sucesso!
+            </DialogTitle>
+          </DialogHeader>
+          
+          {createdUserCredentials && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                O usuário <strong>{createdUserCredentials.name}</strong> foi criado. 
+                Anote as credenciais abaixo:
+              </p>
+              
+              {/* Email */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Email de acesso</Label>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    value={createdUserCredentials.email} 
+                    readOnly 
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(createdUserCredentials.email);
+                      setCopiedField('email');
+                      setTimeout(() => setCopiedField(null), 2000);
+                    }}
+                  >
+                    {copiedField === 'email' ? (
+                      <Check className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Password */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Senha</Label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input 
+                      type={showCreatedPassword ? 'text' : 'password'}
+                      value={createdUserCredentials.password} 
+                      readOnly 
+                      className="font-mono text-sm pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full"
+                      onClick={() => setShowCreatedPassword(!showCreatedPassword)}
+                    >
+                      {showCreatedPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(createdUserCredentials.password);
+                      setCopiedField('password');
+                      setTimeout(() => setCopiedField(null), 2000);
+                    }}
+                  >
+                    {copiedField === 'password' ? (
+                      <Check className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Generate new password button */}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+                  let newPassword = '';
+                  for (let i = 0; i < 12; i++) {
+                    newPassword += chars.charAt(Math.floor(Math.random() * chars.length));
+                  }
+                  setCreatedUserCredentials({
+                    ...createdUserCredentials,
+                    password: newPassword
+                  });
+                  setShowCreatedPassword(true);
+                  toast({
+                    title: 'Nova senha gerada',
+                    description: 'Lembre-se: você precisará atualizar manualmente a senha do usuário no sistema.'
+                  });
+                }}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Gerar Nova Senha
+              </Button>
+              
+              <p className="text-xs text-muted-foreground bg-muted p-3 rounded-md">
+                <strong>Importante:</strong> Compartilhe essas credenciais com o usuário de forma segura. 
+                Ele poderá alterar a senha após o primeiro login.
+              </p>
+              
+              <Button 
+                className="w-full" 
+                onClick={() => {
+                  setCredentialsDialogOpen(false);
+                  toast({ 
+                    title: 'Usuário criado!', 
+                    description: `${createdUserCredentials.name} foi adicionado ao hospital.` 
+                  });
+                }}
+              >
+                Fechar
+              </Button>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
