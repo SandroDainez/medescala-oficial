@@ -110,6 +110,33 @@ export default function AdminFinancial() {
     setEndDate(format(today, 'yyyy-MM-dd'));
   }
 
+  // Find period with available data
+  async function findDataPeriod() {
+    if (!currentTenantId) return;
+    
+    const { data: shifts } = await supabase
+      .from('shifts')
+      .select('shift_date')
+      .eq('tenant_id', currentTenantId)
+      .order('shift_date', { ascending: true })
+      .limit(1);
+    
+    const { data: shiftsLast } = await supabase
+      .from('shifts')
+      .select('shift_date')
+      .eq('tenant_id', currentTenantId)
+      .order('shift_date', { ascending: false })
+      .limit(1);
+    
+    if (shifts && shifts.length > 0 && shiftsLast && shiftsLast.length > 0) {
+      setStartDate(shifts[0].shift_date);
+      setEndDate(shiftsLast[0].shift_date);
+      toast({ title: 'Período ajustado', description: `Mostrando dados de ${format(parseISO(shifts[0].shift_date), 'dd/MM/yyyy')} a ${format(parseISO(shiftsLast[0].shift_date), 'dd/MM/yyyy')}` });
+    } else {
+      toast({ title: 'Sem dados', description: 'Nenhum plantão encontrado no sistema', variant: 'destructive' });
+    }
+  }
+
   // Calculate duration in hours
   function calculateDuration(start: string, end: string): number {
     if (!start || !end) return 0;
@@ -754,10 +781,31 @@ export default function AdminFinancial() {
               <Button variant="outline" size="sm" onClick={setLastMonth}>
                 Mês passado
               </Button>
+              <Button variant="default" size="sm" onClick={findDataPeriod}>
+                <Calendar className="mr-2 h-4 w-4" />
+                Buscar Período com Dados
+              </Button>
             </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* No data message with helper */}
+      {summaries.length === 0 && !loading && (
+        <Card className="border-dashed border-2 border-muted-foreground/30">
+          <CardContent className="p-6 text-center">
+            <Calendar className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+            <h3 className="font-semibold text-lg mb-2">Nenhum plantão no período selecionado</h3>
+            <p className="text-muted-foreground mb-4">
+              Período atual: {format(parseISO(startDate), 'dd/MM/yyyy')} a {format(parseISO(endDate), 'dd/MM/yyyy')}
+            </p>
+            <Button onClick={findDataPeriod}>
+              <Calendar className="mr-2 h-4 w-4" />
+              Buscar Período com Dados
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
@@ -848,131 +896,115 @@ export default function AdminFinancial() {
           <TabsTrigger value="detailed">Todos os Plantões</TabsTrigger>
         </TabsList>
 
-        {/* Summary Tab */}
+        {/* Summary Tab - Table Format */}
         <TabsContent value="summary">
           <Card>
             <CardHeader>
-              <CardTitle>Resumo por Plantonista</CardTitle>
+              <CardTitle>Relatório por Plantonista</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               {summaries.length === 0 ? (
                 <div className="text-center text-muted-foreground py-8">
-                  Nenhum dado para o período selecionado
+                  Nenhum dado para o período selecionado. Verifique as datas selecionadas.
                 </div>
               ) : (
-                <div className="divide-y">
-                  {summaries.map(s => (
-                    <div key={s.user_id}>
-                      {/* User Header Row */}
-                      <div 
-                        className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
-                        onClick={() => toggleUser(s.user_id)}
-                      >
-                        <div className="flex items-center gap-3">
-                          {s.sectors.length > 0 ? (
-                            expandedUsers.has(s.user_id) ? (
-                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                            ) : (
-                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                            )
-                          ) : (
-                            <div className="w-5" />
-                          )}
+                <div className="space-y-6 p-4">
+                  {summaries.map(s => {
+                    const userShifts = shiftDetails.filter(d => d.user_id === s.user_id);
+                    return (
+                      <div key={s.user_id} className="border rounded-lg overflow-hidden">
+                        {/* User Header */}
+                        <div className="bg-primary/10 p-4 flex items-center justify-between">
                           <div>
-                            <h3 className="font-semibold text-foreground">{s.user_name || 'N/A'}</h3>
+                            <h3 className="font-bold text-lg text-foreground">{s.user_name || 'N/A'}</h3>
                             <p className="text-sm text-muted-foreground">
-                              {s.sectors.length} setor{s.sectors.length !== 1 ? 'es' : ''}
+                              {s.total_shifts} plantão(ões) • {s.total_hours.toFixed(1)} horas
                             </p>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-4 sm:gap-6">
-                          <div className="text-center hidden sm:block">
-                            <Badge variant="secondary">{s.total_shifts}</Badge>
-                            <p className="text-xs text-muted-foreground mt-1">plantões</p>
-                          </div>
-                          <div className="text-center hidden sm:block">
-                            <Badge variant="outline">{s.total_hours.toFixed(1)}h</Badge>
-                            <p className="text-xs text-muted-foreground mt-1">horas</p>
-                          </div>
-                          <div className="text-center">
-                            {s.total_value > 0 ? (
-                              <p className="font-semibold text-green-600">R$ {s.total_value.toFixed(2)}</p>
-                            ) : (
-                              <p className="font-semibold text-muted-foreground italic">Sem valor</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">total</p>
-                          </div>
-                          <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => openUserDetails(s)}
-                              title="Ver detalhes"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => handlePrintUserDetail(s)}
-                              title="Imprimir extrato"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={() => closePayment(s.user_id, s.total_shifts, s.total_value, s.total_hours)}
-                              title="Fechar período"
-                            >
-                              <Lock className="h-4 w-4" />
-                            </Button>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <p className="text-sm text-muted-foreground">Total a Receber</p>
+                              {s.total_value > 0 ? (
+                                <p className="font-bold text-xl text-green-600">R$ {s.total_value.toFixed(2)}</p>
+                              ) : (
+                                <p className="font-bold text-lg text-muted-foreground italic">Sem valor</p>
+                              )}
+                            </div>
+                            <div className="flex gap-1">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handlePrintUserDetail(s)}
+                                title="Imprimir extrato"
+                              >
+                                <Printer className="h-4 w-4" />
+                              </Button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-
-                      {/* Sector Breakdown */}
-                      {expandedUsers.has(s.user_id) && s.sectors.length > 0 && (
-                        <div className="bg-muted/30 border-t">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-muted/50">
-                                <TableHead className="pl-12">Setor</TableHead>
-                                <TableHead className="text-center">Plantões</TableHead>
-                                <TableHead className="text-center">Carga Horária</TableHead>
-                                <TableHead className="text-right pr-6">Valor</TableHead>
+                        
+                        {/* User Shifts Table */}
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/50">
+                              <TableHead>Data</TableHead>
+                              <TableHead>Horário</TableHead>
+                              <TableHead>Duração</TableHead>
+                              <TableHead>Setor/Local</TableHead>
+                              <TableHead className="text-right">Valor</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {userShifts.map(shift => (
+                              <TableRow key={shift.id}>
+                                <TableCell className="font-medium">
+                                  {shift.shift_date && format(parseISO(shift.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}
+                                </TableCell>
+                                <TableCell>
+                                  {shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline">{shift.duration_hours.toFixed(1)}h</Badge>
+                                </TableCell>
+                                <TableCell>{shift.sector_name}</TableCell>
+                                <TableCell className="text-right font-semibold">
+                                  {shift.assigned_value > 0 ? (
+                                    <span className="text-green-600">R$ {shift.assigned_value.toFixed(2)}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground italic">Sem valor</span>
+                                  )}
+                                </TableCell>
                               </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {s.sectors.map(sector => (
-                                <TableRow key={sector.sector_id} className="bg-background/50">
-                                  <TableCell className="pl-12">
-                                    <div className="flex items-center gap-2">
-                                      <Building className="h-4 w-4 text-muted-foreground" />
-                                      <span className="font-medium">{sector.sector_name}</span>
-                                    </div>
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant="secondary">{sector.total_shifts}</Badge>
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
-                                  </TableCell>
-                                  <TableCell className="text-right pr-6 font-semibold">
-                                    {sector.total_value > 0 ? (
-                                      <span className="text-green-600">R$ {sector.total_value.toFixed(2)}</span>
-                                    ) : (
-                                      <span className="text-muted-foreground italic">Sem valor</span>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
+                            ))}
+                          </TableBody>
+                          <tfoot>
+                            <tr className="bg-muted/30 font-bold">
+                              <td colSpan={2} className="p-4 text-right">TOTAL:</td>
+                              <td className="p-4">{s.total_hours.toFixed(1)}h</td>
+                              <td className="p-4">{s.total_shifts} plantões</td>
+                              <td className="p-4 text-right text-green-600">
+                                {s.total_value > 0 ? `R$ ${s.total_value.toFixed(2)}` : 'Sem valor'}
+                              </td>
+                            </tr>
+                          </tfoot>
+                        </Table>
+                      </div>
+                    );
+                  })}
+                  
+                  {/* Grand Total */}
+                  <div className="bg-primary/10 p-4 rounded-lg flex justify-between items-center mt-4">
+                    <span className="font-bold text-foreground flex items-center gap-2">
+                      <DollarSign className="h-5 w-5 text-primary" />
+                      TOTAL GERAL - TODOS OS PLANTONISTAS
+                    </span>
+                    <div className="flex items-center gap-6 text-sm">
+                      <span className="font-semibold">{summaries.length} plantonistas</span>
+                      <span className="font-semibold">{totalShiftsAll} plantões</span>
+                      <span className="font-semibold">{totalHoursAll.toFixed(1)}h</span>
+                      <span className="font-bold text-green-600 text-lg">R$ {totalValueAll.toFixed(2)}</span>
                     </div>
-                  ))}
+                  </div>
                 </div>
               )}
             </CardContent>
