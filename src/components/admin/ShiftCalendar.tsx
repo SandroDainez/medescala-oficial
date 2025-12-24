@@ -897,18 +897,67 @@ export default function ShiftCalendar() {
 
           {/* Calendar Content */}
           {filterSector === 'all' ? (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <LayoutGrid className="h-5 w-5" />
-                  Todos os Setores
-                  <Badge variant="secondary" className="ml-2">{shifts.length} plantões</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-2 sm:p-4">
-                {renderCalendarGrid(shifts)}
-              </CardContent>
-            </Card>
+            <div className="space-y-6">
+              {/* Summary Card */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <LayoutGrid className="h-5 w-5" />
+                    Resumo - Todos os Setores
+                    <Badge variant="secondary" className="ml-2">{shifts.length} plantões</Badge>
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+
+              {/* Individual Sector Calendars */}
+              {sectors.filter(sector => {
+                const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
+                return sectorShifts.length > 0;
+              }).map(sector => {
+                const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
+                const sectorAssignments = assignments.filter(a => sectorShifts.some(s => s.id === a.shift_id));
+                
+                return (
+                  <Card key={sector.id} style={{ borderColor: sector.color || '#22c55e', borderWidth: '2px' }}>
+                    <CardHeader className="pb-2" style={{ backgroundColor: `${sector.color || '#22c55e'}10` }}>
+                      <CardTitle className="text-lg flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span 
+                            className="w-5 h-5 rounded-full" 
+                            style={{ backgroundColor: sector.color || '#22c55e' }}
+                          />
+                          {sector.name}
+                        </div>
+                        <div className="flex items-center gap-3 text-sm font-normal">
+                          <Badge variant="outline">{sectorShifts.length} plantões</Badge>
+                          <Badge variant="outline">{sectorAssignments.length} atribuições</Badge>
+                          <Badge variant="outline">{[...new Set(sectorAssignments.map(a => a.user_id))].length} plantonistas</Badge>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => setFilterSector(sector.id)}
+                          >
+                            Ver apenas
+                          </Button>
+                        </div>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-2 sm:p-4">
+                      {renderCalendarGrid(sectorShifts)}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+
+              {/* Show message if no sectors have shifts */}
+              {sectors.filter(sector => shifts.filter(s => s.sector_id === sector.id).length > 0).length === 0 && (
+                <Card>
+                  <CardContent className="p-8 text-center text-muted-foreground">
+                    Nenhum plantão cadastrado neste período
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           ) : (
             (() => {
               const sector = sectors.find(s => s.id === filterSector);
