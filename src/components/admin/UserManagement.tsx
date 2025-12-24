@@ -466,24 +466,25 @@ export default function UserManagement() {
         // Wait a bit for the trigger to create the profile
         await new Promise(resolve => setTimeout(resolve, 1000));
 
-        // Update profile with additional info
-        const profileUpdate: Record<string, string | null> = {
+        // Upsert profile with name and additional info
+        const profileData = {
+          id: authData.user.id,
+          name: inviteName,
           profile_type: inviteProfileType,
+          phone: invitePhone || null,
+          cpf: inviteCpf || null,
+          crm: inviteCrm || null,
+          address: inviteAddress || null,
+          bank_name: inviteBankName || null,
+          bank_agency: inviteBankAgency || null,
+          bank_account: inviteBankAccount || null,
+          pix_key: invitePixKey || null,
         };
-        
-        if (invitePhone) profileUpdate.phone = invitePhone;
-        if (inviteCpf) profileUpdate.cpf = inviteCpf;
-        if (inviteCrm) profileUpdate.crm = inviteCrm;
-        if (inviteAddress) profileUpdate.address = inviteAddress;
-        if (inviteBankName) profileUpdate.bank_name = inviteBankName;
-        if (inviteBankAgency) profileUpdate.bank_agency = inviteBankAgency;
-        if (inviteBankAccount) profileUpdate.bank_account = inviteBankAccount;
-        if (invitePixKey) profileUpdate.pix_key = invitePixKey;
 
+        // Use upsert to ensure profile is created if it doesn't exist
         await supabase
           .from('profiles')
-          .update(profileUpdate)
-          .eq('id', authData.user.id);
+          .upsert(profileData);
 
         // Add membership
         const { error: membershipError } = await supabase.from('memberships').insert({
