@@ -686,16 +686,36 @@ export default function UserManagement() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Permissão no Sistema *</Label>
-                      <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'admin' | 'user')}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="user">Usuário comum (pode ver e atualizar próprios dados)</SelectItem>
-                          <SelectItem value="admin">Administrador (acesso total ao sistema)</SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <Label className="flex items-center gap-2">
+                        <Shield className="h-4 w-4" />
+                        Permissão no Sistema *
+                      </Label>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          type="button"
+                          variant={inviteRole === 'user' ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                          onClick={() => setInviteRole('user')}
+                        >
+                          <User className="h-4 w-4" />
+                          <div className="text-left">
+                            <div className="font-medium">Plantonista</div>
+                            <div className="text-xs opacity-70">Ver próprios dados</div>
+                          </div>
+                        </Button>
+                        <Button
+                          type="button"
+                          variant={inviteRole === 'admin' ? 'default' : 'outline'}
+                          className="w-full justify-start gap-2"
+                          onClick={() => setInviteRole('admin')}
+                        >
+                          <Shield className="h-4 w-4" />
+                          <div className="text-left">
+                            <div className="font-medium">Administrador</div>
+                            <div className="text-xs opacity-70">Acesso total</div>
+                          </div>
+                        </Button>
+                      </div>
                     </div>
                   </div>
 
