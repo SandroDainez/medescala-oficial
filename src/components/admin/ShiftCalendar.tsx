@@ -91,7 +91,8 @@ export default function ShiftCalendar() {
     base_value: '',
     notes: '',
     sector_id: '',
-    assigned_user_id: '', // Plantonista selecionado
+    assigned_user_id: '',
+    duration_hours: '',
   });
 
   const [assignData, setAssignData] = useState({
@@ -421,6 +422,7 @@ export default function ShiftCalendar() {
       notes: '',
       sector_id: effectiveSectorId,
       assigned_user_id: '',
+      duration_hours: '',
     });
     setShiftDialogOpen(true);
   }
@@ -437,6 +439,7 @@ export default function ShiftCalendar() {
       notes: shift.notes || '',
       sector_id: shift.sector_id || '',
       assigned_user_id: '',
+      duration_hours: '',
     });
     setShiftDialogOpen(true);
   }
@@ -454,6 +457,7 @@ export default function ShiftCalendar() {
       notes: '',
       sector_id: '',
       assigned_user_id: '',
+      duration_hours: '',
     });
   }
 
@@ -1171,7 +1175,7 @@ export default function ShiftCalendar() {
               <div className="space-y-2">
                 <Label>Duração Rápida</Label>
                 <Select 
-                  value="" 
+                  value={formData.duration_hours} 
                   onValueChange={(v) => {
                     if (!formData.start_time) return;
                     const hours = parseInt(v, 10);
@@ -1180,7 +1184,7 @@ export default function ShiftCalendar() {
                     const endMinutes = (startMinutes + hours * 60) % (24 * 60);
                     const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
                     const endM = (endMinutes % 60).toString().padStart(2, '0');
-                    setFormData({ ...formData, end_time: `${endH}:${endM}` });
+                    setFormData({ ...formData, end_time: `${endH}:${endM}`, duration_hours: v });
                   }}
                 >
                   <SelectTrigger>
@@ -1201,16 +1205,20 @@ export default function ShiftCalendar() {
                   min="1"
                   max="48"
                   placeholder="Ex: 8"
+                  value={formData.duration_hours}
                   onChange={(e) => {
-                    if (!formData.start_time || !e.target.value) return;
-                    const hours = parseInt(e.target.value, 10);
+                    const value = e.target.value;
+                    setFormData({ ...formData, duration_hours: value });
+                    
+                    if (!formData.start_time || !value) return;
+                    const hours = parseInt(value, 10);
                     if (isNaN(hours) || hours < 1) return;
                     const [h, m] = formData.start_time.split(':').map(Number);
                     const startMinutes = h * 60 + m;
                     const endMinutes = (startMinutes + hours * 60) % (24 * 60);
                     const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
                     const endM = (endMinutes % 60).toString().padStart(2, '0');
-                    setFormData({ ...formData, end_time: `${endH}:${endM}` });
+                    setFormData(prev => ({ ...prev, end_time: `${endH}:${endM}`, duration_hours: value }));
                   }}
                 />
               </div>
