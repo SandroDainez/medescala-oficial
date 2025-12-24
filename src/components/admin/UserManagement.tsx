@@ -8,18 +8,26 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Mail, Users, UserCheck, UserX } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText } from 'lucide-react';
 
 interface MemberWithProfile {
   id: string;
   user_id: string;
   role: 'admin' | 'user';
   active: boolean;
-  profile: { name: string | null } | null;
+  profile: { 
+    name: string | null;
+    phone: string | null;
+    cpf: string | null;
+    crm: string | null;
+    profile_type: string | null;
+  } | null;
 }
 
 interface TenantInfo {
@@ -36,11 +44,24 @@ export default function UserManagement() {
   const [tenantInfo, setTenantInfo] = useState<TenantInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteName, setInviteName] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'user'>('user');
-  const [invitePassword, setInvitePassword] = useState('');
   const [isCreatingUser, setIsCreatingUser] = useState(false);
+  
+  // Form fields
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePassword, setInvitePassword] = useState('');
+  const [inviteRole, setInviteRole] = useState<'admin' | 'user'>('user');
+  const [inviteProfileType, setInviteProfileType] = useState('plantonista');
+  
+  // Optional fields
+  const [invitePhone, setInvitePhone] = useState('');
+  const [inviteCpf, setInviteCpf] = useState('');
+  const [inviteCrm, setInviteCrm] = useState('');
+  const [inviteAddress, setInviteAddress] = useState('');
+  const [inviteBankName, setInviteBankName] = useState('');
+  const [inviteBankAgency, setInviteBankAgency] = useState('');
+  const [inviteBankAccount, setInviteBankAccount] = useState('');
+  const [invitePixKey, setInvitePixKey] = useState('');
 
   useEffect(() => {
     if (currentTenantId) {
@@ -54,7 +75,7 @@ export default function UserManagement() {
     
     const { data, error } = await supabase
       .from('memberships')
-      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name)')
+      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type)')
       .eq('tenant_id', currentTenantId);
 
     if (!error && data) {
@@ -127,6 +148,22 @@ export default function UserManagement() {
     }
   }
 
+  function resetForm() {
+    setInviteName('');
+    setInviteEmail('');
+    setInvitePassword('');
+    setInviteRole('user');
+    setInviteProfileType('plantonista');
+    setInvitePhone('');
+    setInviteCpf('');
+    setInviteCrm('');
+    setInviteAddress('');
+    setInviteBankName('');
+    setInviteBankAgency('');
+    setInviteBankAccount('');
+    setInvitePixKey('');
+  }
+
   async function copyInviteCode() {
     if (tenantInfo?.slug) {
       await navigator.clipboard.writeText(tenantInfo.slug);
@@ -139,7 +176,7 @@ export default function UserManagement() {
 
   async function handleInviteUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!currentTenantId || !inviteEmail || !invitePassword) return;
+    if (!currentTenantId || !inviteEmail || !invitePassword || !inviteName) return;
 
     setIsCreatingUser(true);
 
@@ -160,7 +197,7 @@ export default function UserManagement() {
         password: invitePassword,
         options: {
           data: {
-            name: inviteName || inviteEmail.split('@')[0],
+            name: inviteName,
           }
         }
       });
@@ -170,6 +207,25 @@ export default function UserManagement() {
       if (authData.user) {
         // Wait a bit for the trigger to create the profile
         await new Promise(resolve => setTimeout(resolve, 1000));
+
+        // Update profile with additional info
+        const profileUpdate: Record<string, string | null> = {
+          profile_type: inviteProfileType,
+        };
+        
+        if (invitePhone) profileUpdate.phone = invitePhone;
+        if (inviteCpf) profileUpdate.cpf = inviteCpf;
+        if (inviteCrm) profileUpdate.crm = inviteCrm;
+        if (inviteAddress) profileUpdate.address = inviteAddress;
+        if (inviteBankName) profileUpdate.bank_name = inviteBankName;
+        if (inviteBankAgency) profileUpdate.bank_agency = inviteBankAgency;
+        if (inviteBankAccount) profileUpdate.bank_account = inviteBankAccount;
+        if (invitePixKey) profileUpdate.pix_key = invitePixKey;
+
+        await supabase
+          .from('profiles')
+          .update(profileUpdate)
+          .eq('id', authData.user.id);
 
         // Add membership
         const { error: membershipError } = await supabase.from('memberships').insert({
@@ -184,14 +240,12 @@ export default function UserManagement() {
 
         toast({ 
           title: 'Usuário criado!', 
-          description: `${inviteName || inviteEmail} foi adicionado ao hospital.` 
+          description: `${inviteName} foi adicionado ao hospital.` 
         });
         
+        // Reset all form fields
+        resetForm();
         setInviteDialogOpen(false);
-        setInviteEmail('');
-        setInviteName('');
-        setInvitePassword('');
-        setInviteRole('user');
         fetchMembers();
         fetchTenantInfo();
       }
@@ -283,73 +337,228 @@ export default function UserManagement() {
                 Adicionar Usuário
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-2xl max-h-[90vh]">
               <DialogHeader>
                 <DialogTitle>Adicionar Novo Usuário</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleInviteUser} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="inviteName">Nome Completo</Label>
-                  <Input
-                    id="inviteName"
-                    value={inviteName}
-                    onChange={(e) => setInviteName(e.target.value)}
-                    placeholder="Nome do usuário"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="inviteEmail">E-mail</Label>
-                  <Input
-                    id="inviteEmail"
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="email@exemplo.com"
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="invitePassword">Senha Inicial</Label>
-                  <Input
-                    id="invitePassword"
-                    type="password"
-                    value={invitePassword}
-                    onChange={(e) => setInvitePassword(e.target.value)}
-                    placeholder="Senha de acesso"
-                    minLength={6}
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    O usuário poderá alterar a senha depois
-                  </p>
-                </div>
-                <div className="space-y-2">
-                  <Label>Perfil</Label>
-                  <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'admin' | 'user')}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="user">
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4" />
-                          <span>Plantonista</span>
+              <ScrollArea className="max-h-[70vh] pr-4">
+                <form onSubmit={handleInviteUser} className="space-y-6">
+                  {/* Required Fields */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                      <User className="h-4 w-4" />
+                      Dados Obrigatórios
+                    </div>
+                    
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteName">Nome Completo *</Label>
+                        <Input
+                          id="inviteName"
+                          value={inviteName}
+                          onChange={(e) => setInviteName(e.target.value)}
+                          placeholder="Nome do usuário"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteEmail">E-mail *</Label>
+                        <Input
+                          id="inviteEmail"
+                          type="email"
+                          value={inviteEmail}
+                          onChange={(e) => setInviteEmail(e.target.value)}
+                          placeholder="email@exemplo.com"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="invitePassword">Senha Inicial *</Label>
+                        <Input
+                          id="invitePassword"
+                          type="password"
+                          value={invitePassword}
+                          onChange={(e) => setInvitePassword(e.target.value)}
+                          placeholder="Mínimo 6 caracteres"
+                          minLength={6}
+                          required
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          O usuário poderá alterar depois
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Tipo de Perfil *</Label>
+                        <Select value={inviteProfileType} onValueChange={setInviteProfileType}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="plantonista">
+                              <div className="flex items-center gap-2">
+                                <Stethoscope className="h-4 w-4" />
+                                <span>Plantonista</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="administrador">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-4 w-4" />
+                                <span>Administrador</span>
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="outros">
+                              <div className="flex items-center gap-2">
+                                <User className="h-4 w-4" />
+                                <span>Outros</span>
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Permissão no Sistema *</Label>
+                      <Select value={inviteRole} onValueChange={(v) => setInviteRole(v as 'admin' | 'user')}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="user">Usuário comum (pode ver e atualizar próprios dados)</SelectItem>
+                          <SelectItem value="admin">Administrador (acesso total ao sistema)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Optional - Personal Data */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      Dados Pessoais (opcional)
+                    </div>
+                    
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="invitePhone">Telefone</Label>
+                        <div className="relative">
+                          <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="invitePhone"
+                            value={invitePhone}
+                            onChange={(e) => setInvitePhone(e.target.value)}
+                            placeholder="(00) 00000-0000"
+                            className="pl-10"
+                          />
                         </div>
-                      </SelectItem>
-                      <SelectItem value="admin">
-                        <div className="flex items-center gap-2">
-                          <Shield className="h-4 w-4" />
-                          <span>Administrador</span>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteCpf">CPF</Label>
+                        <Input
+                          id="inviteCpf"
+                          value={inviteCpf}
+                          onChange={(e) => setInviteCpf(e.target.value)}
+                          placeholder="000.000.000-00"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteCrm">CRM (se médico)</Label>
+                        <div className="relative">
+                          <Stethoscope className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="inviteCrm"
+                            value={inviteCrm}
+                            onChange={(e) => setInviteCrm(e.target.value)}
+                            placeholder="CRM/UF 000000"
+                            className="pl-10"
+                          />
                         </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button type="submit" className="w-full" disabled={isCreatingUser}>
-                  {isCreatingUser ? 'Criando...' : 'Criar Usuário'}
-                </Button>
-              </form>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteAddress">Endereço</Label>
+                        <div className="relative">
+                          <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="inviteAddress"
+                            value={inviteAddress}
+                            onChange={(e) => setInviteAddress(e.target.value)}
+                            placeholder="Rua, número, cidade"
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Optional - Bank Data */}
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                      <CreditCard className="h-4 w-4" />
+                      Dados Bancários (opcional - para pagamentos)
+                    </div>
+                    
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteBankName">Banco</Label>
+                        <div className="relative">
+                          <Building2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="inviteBankName"
+                            value={inviteBankName}
+                            onChange={(e) => setInviteBankName(e.target.value)}
+                            placeholder="Nome do banco"
+                            className="pl-10"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="invitePixKey">Chave PIX</Label>
+                        <Input
+                          id="invitePixKey"
+                          value={invitePixKey}
+                          onChange={(e) => setInvitePixKey(e.target.value)}
+                          placeholder="CPF, e-mail, telefone ou chave aleatória"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteBankAgency">Agência</Label>
+                        <Input
+                          id="inviteBankAgency"
+                          value={inviteBankAgency}
+                          onChange={(e) => setInviteBankAgency(e.target.value)}
+                          placeholder="0000"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="inviteBankAccount">Conta</Label>
+                        <Input
+                          id="inviteBankAccount"
+                          value={inviteBankAccount}
+                          onChange={(e) => setInviteBankAccount(e.target.value)}
+                          placeholder="00000-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <Button type="submit" className="w-full" disabled={isCreatingUser}>
+                    {isCreatingUser ? 'Criando...' : 'Criar Usuário'}
+                  </Button>
+                </form>
+              </ScrollArea>
             </DialogContent>
           </Dialog>
         </div>
