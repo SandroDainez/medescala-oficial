@@ -42,51 +42,18 @@ export default function Onboarding() {
 
     setLoading(true);
 
-    // Get default free plan
-    const { data: freePlan } = await supabase
-      .from('plans')
-      .select('id')
-      .eq('name', 'Gratuito')
-      .single();
-
-    if (!freePlan) {
-      toast({ title: 'Erro ao obter plano padrão', variant: 'destructive' });
-      setLoading(false);
-      return;
-    }
-
-    // Create tenant with plan
-    const { data: tenant, error: tenantError } = await supabase
-      .from('tenants')
-      .insert({ 
-        name: tenantName, 
-        slug: tenantSlug, 
-        plan_id: freePlan.id,
-        created_by: user.id 
-      })
-      .select()
-      .single();
-
-    if (tenantError) {
-      toast({
-        title: 'Erro ao criar hospital',
-        description: tenantError.code === '23505' ? 'Este slug já está em uso' : tenantError.message,
-        variant: 'destructive',
-      });
-      setLoading(false);
-      return;
-    }
-
-    // Create membership as admin
-    const { error: membershipError } = await supabase.from('memberships').insert({
-      tenant_id: tenant.id,
-      user_id: user.id,
-      role: 'admin',
-      created_by: user.id,
+    // Use the security definer function to create tenant + membership in one transaction
+    const { data: tenantId, error } = await supabase.rpc('create_tenant_with_admin', {
+      _name: tenantName,
+      _slug: tenantSlug
     });
 
-    if (membershipError) {
-      toast({ title: 'Erro ao criar membership', description: membershipError.message, variant: 'destructive' });
+    if (error) {
+      toast({
+        title: 'Erro ao criar hospital',
+        description: error.code === '23505' ? 'Este código já está em uso' : error.message,
+        variant: 'destructive',
+      });
       setLoading(false);
       return;
     }
