@@ -15,6 +15,7 @@ import NotFound from "./pages/NotFound";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
+import AdminCalendar from "./pages/admin/Calendar";
 import AdminShifts from "./pages/admin/Shifts";
 import AdminUsers from "./pages/admin/Users";
 import AdminSwaps from "./pages/admin/Swaps";
@@ -74,6 +75,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<AdminDashboard />} />
+        <Route path="calendar" element={<AdminCalendar />} />
         <Route path="shifts" element={<AdminShifts />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="swaps" element={<AdminSwaps />} />

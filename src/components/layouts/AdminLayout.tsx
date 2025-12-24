@@ -7,19 +7,22 @@ import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
   Calendar, 
+  CalendarDays,
   Users, 
   ArrowLeftRight, 
   DollarSign,
   LogOut,
   Menu,
   X,
-  CreditCard
+  CreditCard,
+  ListTodo
 } from 'lucide-react';
 import { useState } from 'react';
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/shifts', label: 'Plantões', icon: Calendar },
+  { to: '/admin/calendar', label: 'Calendário', icon: CalendarDays },
+  { to: '/admin/shifts', label: 'Lista de Plantões', icon: ListTodo },
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/admin/financial', label: 'Financeiro', icon: DollarSign },
