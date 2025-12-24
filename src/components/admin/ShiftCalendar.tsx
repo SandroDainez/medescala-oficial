@@ -541,6 +541,7 @@ export default function ShiftCalendar() {
 
       fetchData();
       closeShiftDialog();
+      setDayDialogOpen(false);
     }
   }
 
