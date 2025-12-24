@@ -138,28 +138,38 @@ export default function AdminFinancial() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    // Fetch all assignments with shift details
-    const { data } = await supabase
-      .from('shift_assignments')
-      .select(`
-        id,
-        shift_id,
-        user_id,
-        assigned_value,
-        profile:profiles!shift_assignments_user_id_profiles_fkey(name),
-        shift:shifts!inner(
-          shift_date,
-          start_time,
-          end_time,
-          hospital,
-          sector_id,
-          sector:sectors(name)
-        )
-      `)
+    // First, fetch shifts in the date range to get their IDs
+    const { data: shiftsInRange } = await supabase
+      .from('shifts')
+      .select('id')
       .eq('tenant_id', currentTenantId)
-      .gte('shift.shift_date', startDate)
-      .lte('shift.shift_date', endDate)
-      .order('shift.shift_date', { ascending: true });
+      .gte('shift_date', startDate)
+      .lte('shift_date', endDate);
+
+    const shiftIds = shiftsInRange?.map(s => s.id) || [];
+
+    // Fetch all assignments with shift details for shifts in range
+    const { data } = shiftIds.length > 0 
+      ? await supabase
+        .from('shift_assignments')
+        .select(`
+          id,
+          shift_id,
+          user_id,
+          assigned_value,
+          profile:profiles!shift_assignments_user_id_profiles_fkey(name),
+          shift:shifts(
+            shift_date,
+            start_time,
+            end_time,
+            hospital,
+            sector_id,
+            sector:sectors(name)
+          )
+        `)
+        .eq('tenant_id', currentTenantId)
+        .in('shift_id', shiftIds)
+      : { data: [] };
 
     // Fetch members for payment status
     const { data: members } = await supabase
@@ -172,25 +182,32 @@ export default function AdminFinancial() {
       .from('payments')
       .select('user_id, status, month, year')
       .eq('tenant_id', currentTenantId);
-
-    if (data) {
-      const details: ShiftDetail[] = data.map((d: any) => {
-        const duration = calculateDuration(d.shift?.start_time || '', d.shift?.end_time || '');
-        return {
-          id: d.id,
-          shift_id: d.shift_id,
-          user_id: d.user_id,
-          user_name: d.profile?.name || 'N/A',
-          assigned_value: Number(d.assigned_value) || 0,
-          shift_date: d.shift?.shift_date,
-          start_time: d.shift?.start_time,
-          end_time: d.shift?.end_time,
-          duration_hours: duration,
-          sector_name: d.shift?.sector?.name || 'N/A',
-          sector_id: d.shift?.sector_id || null,
-          hospital: d.shift?.hospital || 'N/A'
-        };
-      });
+    if (data && data.length > 0) {
+      const details: ShiftDetail[] = data
+        .filter((d: any) => d.shift) // Only include assignments with valid shift data
+        .map((d: any) => {
+          const duration = calculateDuration(d.shift?.start_time || '', d.shift?.end_time || '');
+          return {
+            id: d.id,
+            shift_id: d.shift_id,
+            user_id: d.user_id,
+            user_name: d.profile?.name || 'N/A',
+            assigned_value: Number(d.assigned_value) || 0,
+            shift_date: d.shift?.shift_date,
+            start_time: d.shift?.start_time,
+            end_time: d.shift?.end_time,
+            duration_hours: duration,
+            sector_name: d.shift?.sector?.name || 'Sem Setor',
+            sector_id: d.shift?.sector_id || null,
+            hospital: d.shift?.hospital || 'N/A'
+          };
+        })
+        .sort((a: ShiftDetail, b: ShiftDetail) => {
+          // Sort by date
+          const dateA = new Date(a.shift_date);
+          const dateB = new Date(b.shift_date);
+          return dateA.getTime() - dateB.getTime();
+        });
       setShiftDetails(details);
 
       // Build summaries with sector breakdown
@@ -295,6 +312,11 @@ export default function AdminFinancial() {
       });
 
       setSectorSummaries(Object.values(sectorMap).sort((a, b) => b.total_value - a.total_value));
+    } else {
+      // No data found - reset states
+      setShiftDetails([]);
+      setSummaries([]);
+      setSectorSummaries([]);
     }
 
     setLoading(false);
