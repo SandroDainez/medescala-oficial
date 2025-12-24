@@ -6,8 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
@@ -549,147 +547,156 @@ export default function ShiftCalendar() {
         </Card>
       </div>
 
-      {/* Sector Tabs - Individual Calendar per Sector */}
-      <Tabs value={filterSector} onValueChange={setFilterSector} className="w-full">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <ScrollArea className="w-full sm:max-w-[60%]">
-            <TabsList className="inline-flex h-auto p-1 gap-1">
-              <TabsTrigger 
-                value="all" 
-                className="flex items-center gap-2 px-4 py-2"
-              >
-                <LayoutGrid className="h-4 w-4" />
-                Todos
-              </TabsTrigger>
-              {sectors.map(sector => (
-                <TabsTrigger 
-                  key={sector.id} 
-                  value={sector.id}
-                  className="flex items-center gap-2 px-4 py-2"
+      {/* Main Layout: Vertical Sector Sidebar + Calendar */}
+      <div className="flex gap-4">
+        {/* Vertical Sector Sidebar */}
+        <div className="w-16 md:w-48 flex-shrink-0">
+          <Card className="sticky top-4">
+            <CardContent className="p-2">
+              <div className="flex flex-col gap-1">
+                {/* All Sectors Button */}
+                <Button
+                  variant={filterSector === 'all' ? 'default' : 'ghost'}
+                  className={`w-full justify-start gap-2 h-auto py-3 ${filterSector === 'all' ? '' : 'hover:bg-accent'}`}
+                  onClick={() => setFilterSector('all')}
                 >
-                  <span 
-                    className="w-3 h-3 rounded-full flex-shrink-0" 
-                    style={{ backgroundColor: sector.color || '#22c55e' }}
-                  />
-                  {sector.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
+                  <LayoutGrid className="h-5 w-5 flex-shrink-0" />
+                  <span className="hidden md:inline truncate">Todos</span>
+                </Button>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {/* View Mode Toggle */}
-            <div className="flex border rounded-lg overflow-hidden">
-              <Button 
-                variant={viewMode === 'week' ? 'default' : 'ghost'} 
-                size="sm"
-                onClick={() => setViewMode('week')}
-                className="rounded-none"
-              >
-                Semana
-              </Button>
-              <Button 
-                variant={viewMode === 'month' ? 'default' : 'ghost'} 
-                size="sm"
-                onClick={() => setViewMode('month')}
-                className="rounded-none"
-              >
-                Mês
-              </Button>
-            </div>
+                <div className="my-2 border-t" />
 
-            <Button onClick={() => openCreateShift()}>
-              <Plus className="mr-2 h-4 w-4" />
-              Novo Plantão
-            </Button>
-          </div>
+                {/* Sector Buttons */}
+                {sectors.map(sector => {
+                  const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
+                  const isActive = filterSector === sector.id;
+                  
+                  return (
+                    <Button
+                      key={sector.id}
+                      variant={isActive ? 'secondary' : 'ghost'}
+                      className={`w-full justify-start gap-2 h-auto py-3 ${isActive ? '' : 'hover:bg-accent'}`}
+                      style={isActive ? { 
+                        backgroundColor: `${sector.color || '#22c55e'}20`,
+                        borderLeft: `3px solid ${sector.color || '#22c55e'}`
+                      } : {}}
+                      onClick={() => setFilterSector(sector.id)}
+                    >
+                      <span 
+                        className="w-4 h-4 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: sector.color || '#22c55e' }}
+                      />
+                      <span className="hidden md:flex flex-col items-start truncate">
+                        <span className="truncate text-sm">{sector.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        {/* Navigation */}
-        <div className="flex items-center justify-center gap-2 mt-4">
-          <Button variant="outline" size="icon" onClick={navigatePrev}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <h2 className="text-xl font-bold min-w-[220px] text-center">
-            {viewMode === 'month' 
-              ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
-              : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`
-            }
-          </h2>
-          <Button variant="outline" size="icon" onClick={navigateNext}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        {/* Calendar Area */}
+        <div className="flex-1 min-w-0">
+          {/* Header Controls */}
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Navigation */}
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={navigatePrev}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <h2 className="text-lg font-bold min-w-[180px] text-center">
+                  {viewMode === 'month' 
+                    ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+                    : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`
+                  }
+                </h2>
+                <Button variant="outline" size="icon" onClick={navigateNext}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
 
-        {/* Current Sector Info */}
-        {filterSector !== 'all' && (
-          <div className="mt-4 p-4 rounded-lg border" style={{ 
-            borderColor: sectors.find(s => s.id === filterSector)?.color || '#22c55e',
-            backgroundColor: `${sectors.find(s => s.id === filterSector)?.color || '#22c55e'}10`
-          }}>
-            <div className="flex items-center gap-3">
-              <span 
-                className="w-4 h-4 rounded-full" 
-                style={{ backgroundColor: sectors.find(s => s.id === filterSector)?.color || '#22c55e' }}
-              />
-              <div>
-                <h3 className="font-semibold">{sectors.find(s => s.id === filterSector)?.name}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {filteredShifts.length} plantões neste período • {assignments.filter(a => filteredShifts.some(s => s.id === a.shift_id)).length} atribuições
-                </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* View Mode Toggle */}
+                <div className="flex border rounded-lg overflow-hidden">
+                  <Button 
+                    variant={viewMode === 'week' ? 'default' : 'ghost'} 
+                    size="sm"
+                    onClick={() => setViewMode('week')}
+                    className="rounded-none"
+                  >
+                    Semana
+                  </Button>
+                  <Button 
+                    variant={viewMode === 'month' ? 'default' : 'ghost'} 
+                    size="sm"
+                    onClick={() => setViewMode('month')}
+                    className="rounded-none"
+                  >
+                    Mês
+                  </Button>
+                </div>
+
+                <Button onClick={() => openCreateShift()}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Novo Plantão
+                </Button>
               </div>
             </div>
           </div>
-        )}
 
-        {/* TabsContent for All Sectors */}
-        <TabsContent value="all" className="mt-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <LayoutGrid className="h-5 w-5" />
-                Todos os Setores
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-2 sm:p-4">
-              {renderCalendarGrid(shifts)}
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* TabsContent for Each Sector */}
-        {sectors.map(sector => {
-          const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
-          const sectorAssignments = assignments.filter(a => sectorShifts.some(s => s.id === a.shift_id));
-          
-          return (
-            <TabsContent key={sector.id} value={sector.id} className="mt-4">
-              <Card style={{ borderColor: sector.color || '#22c55e', borderWidth: '2px' }}>
-                <CardHeader className="pb-2" style={{ backgroundColor: `${sector.color || '#22c55e'}10` }}>
-                  <CardTitle className="text-lg flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span 
-                        className="w-4 h-4 rounded-full" 
-                        style={{ backgroundColor: sector.color || '#22c55e' }}
-                      />
-                      {sector.name}
-                    </div>
-                    <div className="flex items-center gap-4 text-sm font-normal text-muted-foreground">
-                      <span>{sectorShifts.length} plantões</span>
-                      <span>{sectorAssignments.length} atribuições</span>
-                      <span>{[...new Set(sectorAssignments.map(a => a.user_id))].length} plantonistas</span>
-                    </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="p-2 sm:p-4">
-                  {renderCalendarGrid(sectorShifts)}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          );
-        })}
-      </Tabs>
+          {/* Calendar Content */}
+          {filterSector === 'all' ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <LayoutGrid className="h-5 w-5" />
+                  Todos os Setores
+                  <Badge variant="secondary" className="ml-2">{shifts.length} plantões</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-2 sm:p-4">
+                {renderCalendarGrid(shifts)}
+              </CardContent>
+            </Card>
+          ) : (
+            (() => {
+              const sector = sectors.find(s => s.id === filterSector);
+              const sectorShifts = shifts.filter(s => s.sector_id === filterSector);
+              const sectorAssignments = assignments.filter(a => sectorShifts.some(s => s.id === a.shift_id));
+              
+              if (!sector) return null;
+              
+              return (
+                <Card style={{ borderColor: sector.color || '#22c55e', borderWidth: '2px' }}>
+                  <CardHeader className="pb-2" style={{ backgroundColor: `${sector.color || '#22c55e'}10` }}>
+                    <CardTitle className="text-lg flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span 
+                          className="w-5 h-5 rounded-full" 
+                          style={{ backgroundColor: sector.color || '#22c55e' }}
+                        />
+                        {sector.name}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm font-normal">
+                        <Badge variant="outline">{sectorShifts.length} plantões</Badge>
+                        <Badge variant="outline">{sectorAssignments.length} atribuições</Badge>
+                        <Badge variant="outline">{[...new Set(sectorAssignments.map(a => a.user_id))].length} plantonistas</Badge>
+                      </div>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-2 sm:p-4">
+                    {renderCalendarGrid(sectorShifts)}
+                  </CardContent>
+                </Card>
+              );
+            })()
+          )}
+        </div>
+      </div>
 
       {/* Day Detail Dialog */}
       <Dialog open={dayDialogOpen} onOpenChange={setDayDialogOpen}>
