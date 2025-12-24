@@ -191,13 +191,24 @@ export default function AdminReports() {
   }
 
   async function fetchCheckins() {
-    // Fetch shift assignments with check-in/out data
+    // Primeiro, buscar setores com check-in ativado
+    const enabledSectorIds = sectors.filter(s => s.checkin_enabled).map(s => s.id);
+    
+    if (enabledSectorIds.length === 0) {
+      setCheckins([]);
+      return;
+    }
+    
+    // Buscar apenas plantões de setores com check-in ativado E que já aconteceram (data <= hoje)
+    const today = new Date().toISOString().split('T')[0];
+    
     const { data: shiftsData } = await supabase
       .from('shifts')
-      .select('id')
+      .select('id, shift_date, start_time, end_time, sector_id')
       .eq('tenant_id', currentTenantId)
       .gte('shift_date', startDate)
-      .lte('shift_date', endDate);
+      .lte('shift_date', endDate <= today ? endDate : today) // Não mostrar plantões futuros
+      .in('sector_id', enabledSectorIds);
     
     if (!shiftsData || shiftsData.length === 0) {
       setCheckins([]);
@@ -221,12 +232,6 @@ export default function AdminReports() {
       return;
     }
     
-    // Get shift details
-    const { data: shifts } = await supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, sector_id')
-      .in('id', shiftIds);
-    
     // Get user names
     const userIds = [...new Set(assignments.map(a => a.user_id))];
     const { data: profiles } = await supabase
@@ -235,14 +240,17 @@ export default function AdminReports() {
       .in('id', userIds);
     
     const profileMap = new Map(profiles?.map(p => [p.id, p.name]) || []);
-    const shiftMap = new Map(shifts?.map(s => [s.id, s]) || []);
+    const shiftMap = new Map(shiftsData.map(s => [s.id, s]));
     const sectorMap = new Map(sectors.map(s => [s.id, s.name]));
     
     const checkinRecords: CheckinRecord[] = assignments
       .filter(a => {
-        if (selectedSector === 'all') return true;
         const shift = shiftMap.get(a.shift_id);
-        return shift?.sector_id === selectedSector;
+        // Filtrar por setor selecionado (se não for 'all')
+        if (selectedSector !== 'all' && shift?.sector_id !== selectedSector) {
+          return false;
+        }
+        return true;
       })
       .map(a => {
         const shift = shiftMap.get(a.shift_id);
@@ -262,7 +270,8 @@ export default function AdminReports() {
           checkout_latitude: a.checkout_latitude,
           checkout_longitude: a.checkout_longitude,
         };
-      });
+      })
+      .sort((a, b) => b.shift_date.localeCompare(a.shift_date)); // Ordenar por data mais recente
     
     setCheckins(checkinRecords);
   }
@@ -502,18 +511,23 @@ export default function AdminReports() {
             
             {reportType === 'checkins' && (
               <div className="space-y-2">
-                <Label>Setor</Label>
+                <Label>Setor (com check-in ativo)</Label>
                 <Select value={selectedSector} onValueChange={setSelectedSector}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos os setores</SelectItem>
-                    {sectors.map(s => (
+                    <SelectItem value="all">Todos com check-in ativo</SelectItem>
+                    {sectors.filter(s => s.checkin_enabled).map(s => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {sectors.filter(s => s.checkin_enabled).length === 0 && (
+                  <p className="text-xs text-destructive">
+                    Nenhum setor com check-in ativo. Ative na aba "Configurar Check-in".
+                  </p>
+                )}
               </div>
             )}
             
