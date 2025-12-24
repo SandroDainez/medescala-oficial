@@ -39,6 +39,7 @@ interface Sector {
   checkin_enabled: boolean;
   require_gps_checkin: boolean;
   allowed_checkin_radius_meters: number | null;
+  checkin_tolerance_minutes: number;
 }
 
 interface CheckinRecord {
@@ -90,6 +91,7 @@ export default function AdminReports() {
   // Dialog states
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
   const [sectorGpsDialogOpen, setSectorGpsDialogOpen] = useState(false);
+  const [sectorToleranceDialogOpen, setSectorToleranceDialogOpen] = useState(false);
   const [selectedAbsence, setSelectedAbsence] = useState<Absence | null>(null);
   const [selectedSectorForGps, setSelectedSectorForGps] = useState<Sector | null>(null);
   
@@ -121,7 +123,7 @@ export default function AdminReports() {
   async function fetchSectors() {
     const { data } = await supabase
       .from('sectors')
-      .select('id, name, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters')
+      .select('id, name, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
     
@@ -919,15 +921,18 @@ export default function AdminReports() {
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Ative o controle de check-in/check-out e GPS para os setores desejados.
+                Ative o controle de check-in/check-out, GPS e tolerância para os setores desejados.
+                <br />
+                <span className="text-xs">Alertas são enviados: 15 min antes, na hora e 15 min depois do início. Após a tolerância, o plantonista é marcado como ausente.</span>
               </p>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Setor</TableHead>
-                    <TableHead>Check-in Ativo</TableHead>
-                    <TableHead>GPS Obrigatório</TableHead>
-                    <TableHead>Raio Permitido</TableHead>
+                    <TableHead>Check-in</TableHead>
+                    <TableHead>GPS</TableHead>
+                    <TableHead>Raio</TableHead>
+                    <TableHead>Tolerância</TableHead>
                     <TableHead>Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -942,7 +947,7 @@ export default function AdminReports() {
                       </TableCell>
                       <TableCell>
                         <Badge variant={sector.checkin_enabled ? 'default' : 'secondary'}>
-                          {sector.checkin_enabled ? 'Ativado' : 'Desativado'}
+                          {sector.checkin_enabled ? 'Ativo' : 'Inativo'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -958,13 +963,20 @@ export default function AdminReports() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2 flex-wrap">
+                        {sector.checkin_enabled ? (
+                          <span>{sector.checkin_tolerance_minutes || 30} min</span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 flex-wrap">
                           <Button
                             variant={sector.checkin_enabled ? 'destructive' : 'default'}
                             size="sm"
                             onClick={() => handleToggleSectorCheckin(sector)}
                           >
-                            {sector.checkin_enabled ? 'Desativar Check-in' : 'Ativar Check-in'}
+                            {sector.checkin_enabled ? 'Desativar' : 'Ativar'}
                           </Button>
                           {sector.checkin_enabled && (
                             <>
@@ -973,7 +985,7 @@ export default function AdminReports() {
                                 size="sm"
                                 onClick={() => handleToggleSectorGps(sector)}
                               >
-                                {sector.require_gps_checkin ? 'Desativar GPS' : 'Ativar GPS'}
+                                GPS {sector.require_gps_checkin ? 'On' : 'Off'}
                               </Button>
                               {sector.require_gps_checkin && (
                                 <Button
@@ -984,9 +996,19 @@ export default function AdminReports() {
                                     setSectorGpsDialogOpen(true);
                                   }}
                                 >
-                                  Raio: {sector.allowed_checkin_radius_meters || 500}m
+                                  {sector.allowed_checkin_radius_meters || 500}m
                                 </Button>
                               )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedSectorForGps(sector);
+                                  setSectorToleranceDialogOpen(true);
+                                }}
+                              >
+                                {sector.checkin_tolerance_minutes || 30}min
+                              </Button>
                             </>
                           )}
                         </div>
@@ -1109,6 +1131,56 @@ export default function AdminReports() {
               const input = document.getElementById('radius-input') as HTMLInputElement;
               if (selectedSectorForGps && input) {
                 handleUpdateSectorRadius(selectedSectorForGps.id, parseInt(input.value));
+              }
+            }}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Configurar Tolerância */}
+      <Dialog open={sectorToleranceDialogOpen} onOpenChange={setSectorToleranceDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurar Tolerância de Check-in</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Define o tempo máximo (em minutos) após o início do plantão para realizar o check-in no setor <strong>{selectedSectorForGps?.name}</strong>.
+              <br /><br />
+              Após esse período sem check-in, o plantonista será automaticamente marcado como <strong>ausente</strong>.
+            </p>
+            <div className="space-y-2">
+              <Label>Tolerância em minutos</Label>
+              <Input
+                type="number"
+                defaultValue={selectedSectorForGps?.checkin_tolerance_minutes || 30}
+                id="tolerance-input"
+                min={5}
+                max={120}
+                step={5}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSectorToleranceDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={async () => {
+              const input = document.getElementById('tolerance-input') as HTMLInputElement;
+              if (selectedSectorForGps && input) {
+                const { error } = await supabase
+                  .from('sectors')
+                  .update({
+                    checkin_tolerance_minutes: parseInt(input.value),
+                    updated_by: user?.id,
+                  })
+                  .eq('id', selectedSectorForGps.id);
+                
+                if (error) {
+                  toast({ title: 'Erro ao atualizar tolerância', variant: 'destructive' });
+                } else {
+                  toast({ title: 'Tolerância atualizada' });
+                  setSectorToleranceDialogOpen(false);
+                  fetchSectors();
+                }
               }
             }}>Salvar</Button>
           </DialogFooter>
