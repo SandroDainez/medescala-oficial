@@ -723,6 +723,7 @@ export default function ShiftCalendar() {
                       const sectorName = getSectorName(shift.sector_id, shift.hospital);
                       const isNight = isNightShift(shift.start_time, shift.end_time);
                       const isAvailable = isShiftAvailable(shift);
+                      const showSectorName = filterSector === 'all';
                       
                       // Determine what to show for each shift:
                       // - If has assignments: show assigned plantonistas
@@ -740,17 +741,26 @@ export default function ShiftCalendar() {
                           }}
                           title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
                         >
-                          <div className="flex items-center gap-1">
-                            {isNight ? (
-                              <Moon className="h-3 w-3 text-indigo-600" />
-                            ) : (
-                              <Sun className="h-3 w-3 text-amber-500" />
-                            )}
-                            <span className="font-semibold truncate text-foreground">
-                              {sectorName}
-                            </span>
-                          </div>
+                          {showSectorName && (
+                            <div className="flex items-center gap-1">
+                              {isNight ? (
+                                <Moon className="h-3 w-3 text-indigo-600" />
+                              ) : (
+                                <Sun className="h-3 w-3 text-amber-500" />
+                              )}
+                              <span className="font-semibold truncate text-foreground">
+                                {sectorName}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                            {!showSectorName && (
+                              isNight ? (
+                                <Moon className="h-2.5 w-2.5 text-indigo-600" />
+                              ) : (
+                                <Sun className="h-2.5 w-2.5 text-amber-500" />
+                              )
+                            )}
                             <Clock className="h-2.5 w-2.5" />
                             {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                           </div>
@@ -1427,6 +1437,7 @@ export default function ShiftCalendar() {
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
                 const isAvailable = isShiftAvailable(shift);
+                const showSectorName = filterSector === 'all';
                 
                 return (
                   <Card 
@@ -1437,15 +1448,17 @@ export default function ShiftCalendar() {
                       <div className="flex items-start justify-between">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <Badge 
-                              variant="outline"
-                              style={{ 
-                                borderColor: sectorColor,
-                                backgroundColor: `${sectorColor}20`
-                              }}
-                            >
-                              {sectorName}
-                            </Badge>
+                            {showSectorName && (
+                              <Badge 
+                                variant="outline"
+                                style={{ 
+                                  borderColor: sectorColor,
+                                  backgroundColor: `${sectorColor}20`
+                                }}
+                              >
+                                {sectorName}
+                              </Badge>
+                            )}
                             {/* Status Badge */}
                             {shiftAssignments.length === 0 && (
                               isAvailable ? (
