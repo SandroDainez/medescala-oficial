@@ -16,7 +16,8 @@ import {
   X,
   CreditCard,
   ListTodo,
-  Stethoscope
+  Stethoscope,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -28,6 +29,7 @@ const navItems = [
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/admin/financial', label: 'Financeiro', icon: DollarSign },
+  { to: '/admin/reports', label: 'Relatórios', icon: FileSpreadsheet },
   { to: '/admin/subscription', label: 'Assinatura', icon: CreditCard },
 ];
 

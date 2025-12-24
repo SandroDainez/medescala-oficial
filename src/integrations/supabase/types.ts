@@ -14,6 +14,85 @@ export type Database = {
   }
   public: {
     Tables: {
+      absences: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          created_by: string | null
+          document_url: string | null
+          end_date: string
+          id: string
+          notes: string | null
+          reason: string | null
+          start_date: string
+          status: string
+          tenant_id: string
+          type: string
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_url?: string | null
+          end_date: string
+          id?: string
+          notes?: string | null
+          reason?: string | null
+          start_date: string
+          status?: string
+          tenant_id: string
+          type: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          document_url?: string | null
+          end_date?: string
+          id?: string
+          notes?: string | null
+          reason?: string | null
+          start_date?: string
+          status?: string
+          tenant_id?: string
+          type?: string
+          updated_at?: string
+          updated_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "absences_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "absences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           active: boolean
@@ -266,36 +345,42 @@ export type Database = {
       sectors: {
         Row: {
           active: boolean
+          allowed_checkin_radius_meters: number | null
           color: string | null
           created_at: string
           created_by: string | null
           description: string | null
           id: string
           name: string
+          require_gps_checkin: boolean
           tenant_id: string
           updated_at: string
           updated_by: string | null
         }
         Insert: {
           active?: boolean
+          allowed_checkin_radius_meters?: number | null
           color?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           name: string
+          require_gps_checkin?: boolean
           tenant_id: string
           updated_at?: string
           updated_by?: string | null
         }
         Update: {
           active?: boolean
+          allowed_checkin_radius_meters?: number | null
           color?: string | null
           created_at?: string
           created_by?: string | null
           description?: string | null
           id?: string
           name?: string
+          require_gps_checkin?: boolean
           tenant_id?: string
           updated_at?: string
           updated_by?: string | null
@@ -314,7 +399,11 @@ export type Database = {
         Row: {
           assigned_value: number
           checkin_at: string | null
+          checkin_latitude: number | null
+          checkin_longitude: number | null
           checkout_at: string | null
+          checkout_latitude: number | null
+          checkout_longitude: number | null
           created_at: string
           created_by: string | null
           id: string
@@ -329,7 +418,11 @@ export type Database = {
         Insert: {
           assigned_value?: number
           checkin_at?: string | null
+          checkin_latitude?: number | null
+          checkin_longitude?: number | null
           checkout_at?: string | null
+          checkout_latitude?: number | null
+          checkout_longitude?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -344,7 +437,11 @@ export type Database = {
         Update: {
           assigned_value?: number
           checkin_at?: string | null
+          checkin_latitude?: number | null
+          checkin_longitude?: number | null
           checkout_at?: string | null
+          checkout_latitude?: number | null
+          checkout_longitude?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
