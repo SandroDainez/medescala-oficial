@@ -21,7 +21,7 @@ import { useState } from 'react';
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/calendar', label: 'Calendário', icon: CalendarDays },
+  { to: '/admin/calendar', label: 'Escalas', icon: CalendarDays },
   { to: '/admin/shifts', label: 'Lista de Plantões', icon: ListTodo },
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
