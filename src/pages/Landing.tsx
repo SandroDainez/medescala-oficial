@@ -177,11 +177,10 @@ export default function Landing() {
                 solução completa e intuitiva.
               </p>
               <ul className="space-y-4">
-                {[
+              {[
                   'Interface moderna e fácil de usar',
-                  'Suporte técnico dedicado 24/7',
-                  'Atualizações constantes com novas funcionalidades',
-                  'Integração com sistemas hospitalares'
+                  'Suporte técnico',
+                  'Atualizações constantes com novas funcionalidades'
                 ].map((item, index) => (
                   <li key={index} className="flex items-center gap-3">
                     <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
@@ -256,7 +255,7 @@ export default function Landing() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Email</p>
-                    <p className="text-foreground font-medium">contato@medescala.com</p>
+                    <p className="text-foreground font-medium">sandrodainez1@gmail.com</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">
@@ -267,7 +266,7 @@ export default function Landing() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Telefone</p>
-                    <p className="text-foreground font-medium">(11) 99999-9999</p>
+                    <p className="text-foreground font-medium">(13) 99700-0649</p>
                   </div>
                 </div>
               </div>
