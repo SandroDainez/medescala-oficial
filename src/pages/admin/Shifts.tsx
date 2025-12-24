@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Pencil, Trash2, UserPlus } from 'lucide-react';
 import { format } from 'date-fns';
@@ -26,16 +26,17 @@ interface Shift {
   notes: string | null;
 }
 
-interface Profile {
-  id: string;
-  name: string | null;
+interface Member {
+  user_id: string;
+  profile: { id: string; name: string | null } | null;
 }
 
 export default function AdminShifts() {
   const { user } = useAuth();
+  const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
@@ -59,14 +60,19 @@ export default function AdminShifts() {
   });
 
   useEffect(() => {
-    fetchShifts();
-    fetchProfiles();
-  }, []);
+    if (currentTenantId) {
+      fetchShifts();
+      fetchMembers();
+    }
+  }, [currentTenantId]);
 
   async function fetchShifts() {
+    if (!currentTenantId) return;
+    
     const { data, error } = await supabase
       .from('shifts')
       .select('*')
+      .eq('tenant_id', currentTenantId)
       .order('shift_date', { ascending: false });
 
     if (!error && data) {
@@ -75,15 +81,24 @@ export default function AdminShifts() {
     setLoading(false);
   }
 
-  async function fetchProfiles() {
-    const { data } = await supabase.from('profiles').select('id, name');
-    if (data) setProfiles(data);
+  async function fetchMembers() {
+    if (!currentTenantId) return;
+    
+    const { data } = await supabase
+      .from('memberships')
+      .select('user_id, profile:profiles(id, name)')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true);
+    
+    if (data) setMembers(data as unknown as Member[]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!currentTenantId) return;
 
     const shiftData = {
+      tenant_id: currentTenantId,
       title: formData.title,
       hospital: formData.hospital,
       location: formData.location || null,
@@ -137,9 +152,10 @@ export default function AdminShifts() {
 
   async function handleAssign(e: React.FormEvent) {
     e.preventDefault();
-    if (!selectedShift) return;
+    if (!selectedShift || !currentTenantId) return;
 
     const { error } = await supabase.from('shift_assignments').insert({
+      tenant_id: currentTenantId,
       shift_id: selectedShift.id,
       user_id: assignData.user_id,
       assigned_value: parseFloat(assignData.assigned_value) || selectedShift.base_value,
@@ -197,7 +213,7 @@ export default function AdminShifts() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Plantões</h2>
-          <p className="text-muted-foreground">Gerencie os plantões do sistema</p>
+          <p className="text-muted-foreground">Gerencie os plantões do hospital</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeDialog()}>
           <DialogTrigger asChild>
@@ -222,7 +238,7 @@ export default function AdminShifts() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="hospital">Hospital</Label>
+                  <Label htmlFor="hospital">Hospital/Setor</Label>
                   <Input
                     id="hospital"
                     value={formData.hospital}
@@ -232,7 +248,7 @@ export default function AdminShifts() {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label htmlFor="location">Local/Setor</Label>
+                <Label htmlFor="location">Local/Sala</Label>
                 <Input
                   id="location"
                   value={formData.location}
@@ -305,7 +321,7 @@ export default function AdminShifts() {
               <TableRow>
                 <TableHead>Data</TableHead>
                 <TableHead>Título</TableHead>
-                <TableHead>Hospital</TableHead>
+                <TableHead>Setor</TableHead>
                 <TableHead>Horário</TableHead>
                 <TableHead>Valor</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -373,9 +389,9 @@ export default function AdminShifts() {
                   <SelectValue placeholder="Selecione um usuário" />
                 </SelectTrigger>
                 <SelectContent>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name || 'Sem nome'}
+                  {members.map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.profile?.name || 'Sem nome'}
                     </SelectItem>
                   ))}
                 </SelectContent>

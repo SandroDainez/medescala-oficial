@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useTenant } from '@/hooks/useTenant';
+import { TenantSelector } from '@/components/TenantSelector';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -20,6 +22,7 @@ const navItems = [
 
 export function UserLayout() {
   const { user, signOut } = useAuth();
+  const { currentTenantName } = useTenant();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -43,8 +46,14 @@ export function UserLayout() {
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
             <h1 className="text-xl font-bold text-primary">MedEscala</h1>
+            <TenantSelector />
           </div>
           <div className="flex items-center gap-4">
+            {currentTenantName && (
+              <span className="hidden text-sm font-medium text-foreground lg:inline">
+                {currentTenantName}
+              </span>
+            )}
             <span className="hidden text-sm text-muted-foreground sm:inline">
               {user?.email}
             </span>

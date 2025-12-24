@@ -1,5 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { useTenant } from '@/hooks/useTenant';
+import { TenantSelector } from '@/components/TenantSelector';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -24,6 +26,7 @@ const navItems = [
 
 export function AdminLayout() {
   const { user, signOut } = useAuth();
+  const { currentTenantName } = useTenant();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -50,8 +53,14 @@ export function AdminLayout() {
             <span className="hidden rounded bg-primary/10 px-2 py-1 text-xs font-medium text-primary sm:inline">
               Admin
             </span>
+            <TenantSelector />
           </div>
           <div className="flex items-center gap-4">
+            {currentTenantName && (
+              <span className="hidden text-sm font-medium text-foreground lg:inline">
+                {currentTenantName}
+              </span>
+            )}
             <span className="hidden text-sm text-muted-foreground sm:inline">
               {user?.email}
             </span>
