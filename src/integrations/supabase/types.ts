@@ -871,6 +871,10 @@ export type Database = {
     Functions: {
       calculate_trial_end_date: { Args: never; Returns: string }
       can_add_user_to_tenant: { Args: { _tenant_id: string }; Returns: boolean }
+      can_admin_access_profile: {
+        Args: { _profile_id: string }
+        Returns: boolean
+      }
       check_tenant_shift_limit: {
         Args: { _tenant_id: string }
         Returns: boolean
