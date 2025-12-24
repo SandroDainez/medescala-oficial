@@ -442,11 +442,12 @@ export default function ShiftCalendar() {
           
           toast({ title: `Plantão atualizado e ${repeatWeeks} cópias criadas!` });
         } else {
-          toast({ title: 'Plantão atualizado!' });
+        toast({ title: 'Plantão atualizado!' });
         }
         
         fetchData();
         closeShiftDialog();
+        setDayDialogOpen(false);
       }
     } else {
       const quantity = Math.max(1, Math.min(20, Number(formData.quantity) || 1));
