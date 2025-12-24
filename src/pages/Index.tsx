@@ -33,7 +33,7 @@ const Index = () => {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-2xl text-primary">Pega Plantão</CardTitle>
+              <CardTitle className="text-2xl text-primary">MedEscala</CardTitle>
               <CardDescription>Gestão de Escalas Médicas</CardDescription>
             </div>
             <div className="flex items-center gap-3">
