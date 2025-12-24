@@ -268,7 +268,7 @@ export default function ShiftCalendar() {
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
-    : shifts.filter(s => s.sector_id === filterSector || s.hospital === filterSector);
+    : shifts.filter(s => s.sector_id === filterSector);
 
   // Get shifts for a specific date
   function getShiftsForDate(date: Date) {
