@@ -911,6 +911,17 @@ export default function AdminFinancial() {
                 <div className="space-y-6 p-4">
                   {summaries.map(s => {
                     const userShifts = shiftDetails.filter(d => d.user_id === s.user_id);
+                    
+                    // Group shifts by sector
+                    const shiftsBySector: Record<string, ShiftDetail[]> = {};
+                    userShifts.forEach(shift => {
+                      const sectorKey = shift.sector_id || 'sem-setor';
+                      if (!shiftsBySector[sectorKey]) {
+                        shiftsBySector[sectorKey] = [];
+                      }
+                      shiftsBySector[sectorKey].push(shift);
+                    });
+
                     return (
                       <div key={s.user_id} className="border rounded-lg overflow-hidden">
                         {/* User Header */}
@@ -918,7 +929,7 @@ export default function AdminFinancial() {
                           <div>
                             <h3 className="font-bold text-lg text-foreground">{s.user_name || 'N/A'}</h3>
                             <p className="text-sm text-muted-foreground">
-                              {s.total_shifts} plantão(ões) • {s.total_hours.toFixed(1)} horas
+                              {s.total_shifts} plantão(ões) • {s.total_hours.toFixed(1)} horas • {s.sectors.length} setor(es)
                             </p>
                           </div>
                           <div className="flex items-center gap-4">
@@ -943,51 +954,129 @@ export default function AdminFinancial() {
                           </div>
                         </div>
                         
-                        {/* User Shifts Table */}
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/50">
-                              <TableHead>Data</TableHead>
-                              <TableHead>Horário</TableHead>
-                              <TableHead>Duração</TableHead>
-                              <TableHead>Setor/Local</TableHead>
-                              <TableHead className="text-right">Valor</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {userShifts.map(shift => (
-                              <TableRow key={shift.id}>
-                                <TableCell className="font-medium">
-                                  {shift.shift_date && format(parseISO(shift.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}
-                                </TableCell>
-                                <TableCell>
-                                  {shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant="outline">{shift.duration_hours.toFixed(1)}h</Badge>
-                                </TableCell>
-                                <TableCell>{shift.sector_name}</TableCell>
-                                <TableCell className="text-right font-semibold">
-                                  {shift.assigned_value > 0 ? (
-                                    <span className="text-green-600">R$ {shift.assigned_value.toFixed(2)}</span>
+                        {/* Shifts grouped by Sector */}
+                        {Object.entries(shiftsBySector).map(([sectorKey, sectorShifts]) => {
+                          const sectorName = sectorShifts[0]?.sector_name || 'Sem Setor';
+                          const sectorTotalValue = sectorShifts.reduce((sum, sh) => sum + sh.assigned_value, 0);
+                          const sectorTotalHours = sectorShifts.reduce((sum, sh) => sum + sh.duration_hours, 0);
+                          
+                          return (
+                            <div key={sectorKey} className="border-t">
+                              {/* Sector Header */}
+                              <div className="bg-muted/30 p-3 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <Building className="h-4 w-4 text-primary" />
+                                  <span className="font-semibold text-foreground">{sectorName}</span>
+                                  <Badge variant="secondary" className="ml-2">{sectorShifts.length} plantões</Badge>
+                                </div>
+                                <div className="flex items-center gap-4 text-sm">
+                                  <span>{sectorTotalHours.toFixed(1)}h</span>
+                                  {sectorTotalValue > 0 ? (
+                                    <span className="font-semibold text-green-600">R$ {sectorTotalValue.toFixed(2)}</span>
                                   ) : (
                                     <span className="text-muted-foreground italic">Sem valor</span>
                                   )}
-                                </TableCell>
+                                </div>
+                              </div>
+                              
+                              {/* Sector Shifts Table */}
+                              <Table>
+                                <TableHeader>
+                                  <TableRow className="bg-muted/20">
+                                    <TableHead>Data</TableHead>
+                                    <TableHead>Horário</TableHead>
+                                    <TableHead>Duração</TableHead>
+                                    <TableHead className="text-right">Valor</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {sectorShifts.map(shift => (
+                                    <TableRow key={shift.id}>
+                                      <TableCell className="font-medium">
+                                        {shift.shift_date && format(parseISO(shift.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}
+                                      </TableCell>
+                                      <TableCell>
+                                        {shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="outline">{shift.duration_hours.toFixed(1)}h</Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right font-semibold">
+                                        {shift.assigned_value > 0 ? (
+                                          <span className="text-green-600">R$ {shift.assigned_value.toFixed(2)}</span>
+                                        ) : (
+                                          <span className="text-muted-foreground italic">Sem valor</span>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                                <tfoot>
+                                  <tr className="bg-muted/40 font-semibold text-sm">
+                                    <td colSpan={2} className="p-2 text-right">Subtotal {sectorName}:</td>
+                                    <td className="p-2">{sectorTotalHours.toFixed(1)}h</td>
+                                    <td className="p-2 text-right text-green-600">
+                                      {sectorTotalValue > 0 ? `R$ ${sectorTotalValue.toFixed(2)}` : 'Sem valor'}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              </Table>
+                            </div>
+                          );
+                        })}
+
+                        {/* User Summary by Sector */}
+                        <div className="bg-primary/5 border-t p-4">
+                          <h4 className="font-semibold mb-3 flex items-center gap-2">
+                            <MapPin className="h-4 w-4" />
+                            Resumo por Local de Atuação
+                          </h4>
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/30">
+                                <TableHead>Setor/Local</TableHead>
+                                <TableHead className="text-center">Plantões</TableHead>
+                                <TableHead className="text-center">Horas</TableHead>
+                                <TableHead className="text-right">Valor Total</TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                          <tfoot>
-                            <tr className="bg-muted/30 font-bold">
-                              <td colSpan={2} className="p-4 text-right">TOTAL:</td>
-                              <td className="p-4">{s.total_hours.toFixed(1)}h</td>
-                              <td className="p-4">{s.total_shifts} plantões</td>
-                              <td className="p-4 text-right text-green-600">
-                                {s.total_value > 0 ? `R$ ${s.total_value.toFixed(2)}` : 'Sem valor'}
-                              </td>
-                            </tr>
-                          </tfoot>
-                        </Table>
+                            </TableHeader>
+                            <TableBody>
+                              {s.sectors.map(sector => (
+                                <TableRow key={sector.sector_id}>
+                                  <TableCell className="font-medium">
+                                    <div className="flex items-center gap-2">
+                                      <Building className="h-4 w-4 text-muted-foreground" />
+                                      {sector.sector_name}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="secondary">{sector.total_shifts}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right font-semibold">
+                                    {sector.total_value > 0 ? (
+                                      <span className="text-green-600">R$ {sector.total_value.toFixed(2)}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground italic">Sem valor</span>
+                                    )}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                            <tfoot>
+                              <tr className="bg-primary/10 font-bold">
+                                <td className="p-3">TOTAL GERAL</td>
+                                <td className="p-3 text-center">{s.total_shifts} plantões</td>
+                                <td className="p-3 text-center">{s.total_hours.toFixed(1)}h</td>
+                                <td className="p-3 text-right text-green-600 text-lg">
+                                  {s.total_value > 0 ? `R$ ${s.total_value.toFixed(2)}` : 'Sem valor'}
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </Table>
+                        </div>
                       </div>
                     );
                   })}
