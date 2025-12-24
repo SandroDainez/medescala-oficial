@@ -387,6 +387,109 @@ export default function ShiftCalendar() {
     setAssignDialogOpen(true);
   }
 
+  // Render calendar grid for a given set of shifts
+  function renderCalendarGrid(shiftsToRender: Shift[]) {
+    function getShiftsForDateFiltered(date: Date) {
+      return shiftsToRender.filter(s => isSameDay(parseISO(s.shift_date), date));
+    }
+
+    return (
+      <>
+        {/* Weekday headers */}
+        <div className="grid grid-cols-7 gap-1 mb-2">
+          {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
+            <div key={day} className="text-center text-sm font-medium text-muted-foreground py-2">
+              {day}
+            </div>
+          ))}
+        </div>
+
+        {/* Calendar days */}
+        <div className="grid grid-cols-7 gap-1">
+          {emptyCells.map((_, index) => (
+            <div key={`empty-${index}`} className={viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} />
+          ))}
+          
+          {days.map(day => {
+            const dayShifts = getShiftsForDateFiltered(day);
+            const hasShifts = dayShifts.length > 0;
+            
+            return (
+              <div
+                key={day.toISOString()}
+                className={`${viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} p-1 border rounded-lg cursor-pointer transition-colors
+                  ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
+                `}
+                onClick={() => openDayView(day)}
+              >
+                <div className={`text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
+                  {format(day, 'd')}
+                  {viewMode === 'week' && (
+                    <span className="text-muted-foreground ml-1 text-xs">
+                      {format(day, 'EEE', { locale: ptBR })}
+                    </span>
+                  )}
+                </div>
+                
+                {hasShifts && (
+                  <div className="space-y-1">
+                    {dayShifts.slice(0, viewMode === 'week' ? 6 : 3).map(shift => {
+                      const shiftAssignments = getAssignmentsForShift(shift.id);
+                      const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
+                      const sectorName = getSectorName(shift.sector_id, shift.hospital);
+                      
+                      return (
+                        <div
+                          key={shift.id}
+                          className="text-xs p-1.5 rounded"
+                          style={{ 
+                            backgroundColor: `${sectorColor}20`,
+                            borderLeft: `3px solid ${sectorColor}`
+                          }}
+                          title={`${shift.title} - ${sectorName}`}
+                        >
+                          <div className="font-medium truncate" style={{ color: sectorColor }}>
+                            {sectorName}
+                          </div>
+                          <div className="flex items-center gap-1 text-muted-foreground text-[10px]">
+                            <Clock className="h-2.5 w-2.5" />
+                            {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                          </div>
+                          {shiftAssignments.length > 0 && (
+                            <div className="mt-0.5 flex flex-wrap gap-0.5">
+                              {shiftAssignments.slice(0, 2).map(a => (
+                                <span 
+                                  key={a.id} 
+                                  className="bg-background/80 px-1 py-0.5 rounded text-[9px] truncate max-w-[60px]"
+                                >
+                                  {a.profile?.name?.split(' ')[0] || '?'}
+                                </span>
+                              ))}
+                              {shiftAssignments.length > 2 && (
+                                <span className="text-[9px] text-muted-foreground">
+                                  +{shiftAssignments.length - 2}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {dayShifts.length > (viewMode === 'week' ? 6 : 3) && (
+                      <div className="text-xs text-muted-foreground text-center">
+                        +{dayShifts.length - (viewMode === 'week' ? 6 : 3)} mais
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </>
+    );
+  }
+
   // Stats
   const totalShifts = filteredShifts.length;
   const totalAssignments = assignments.length;
@@ -540,102 +643,52 @@ export default function ShiftCalendar() {
           </div>
         )}
 
-      {/* Calendar Grid */}
-      <Card>
-        <CardContent className="p-2 sm:p-4">
-          {/* Weekday headers */}
-          <div className="grid grid-cols-7 gap-1 mb-2">
-            {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(day => (
-              <div key={day} className="text-center text-sm font-medium text-muted-foreground py-2">
-                {day}
-              </div>
-            ))}
-          </div>
+        {/* TabsContent for All Sectors */}
+        <TabsContent value="all" className="mt-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <LayoutGrid className="h-5 w-5" />
+                Todos os Setores
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 sm:p-4">
+              {renderCalendarGrid(shifts)}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-          {/* Calendar days */}
-          <div className="grid grid-cols-7 gap-1">
-            {emptyCells.map((_, index) => (
-              <div key={`empty-${index}`} className={viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} />
-            ))}
-            
-            {days.map(day => {
-              const dayShifts = getShiftsForDate(day);
-              const hasShifts = dayShifts.length > 0;
-              
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`${viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} p-1 border rounded-lg cursor-pointer transition-colors
-                    ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
-                  `}
-                  onClick={() => openDayView(day)}
-                >
-                  <div className={`text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
-                    {format(day, 'd')}
-                    {viewMode === 'week' && (
-                      <span className="text-muted-foreground ml-1 text-xs">
-                        {format(day, 'EEE', { locale: ptBR })}
-                      </span>
-                    )}
-                  </div>
-                  
-                  {hasShifts && (
-                    <div className="space-y-1">
-                      {dayShifts.slice(0, viewMode === 'week' ? 6 : 3).map(shift => {
-                        const shiftAssignments = getAssignmentsForShift(shift.id);
-                        const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
-                        const sectorName = getSectorName(shift.sector_id, shift.hospital);
-                        
-                        return (
-                          <div
-                            key={shift.id}
-                            className="text-xs p-1.5 rounded"
-                            style={{ 
-                              backgroundColor: `${sectorColor}20`,
-                              borderLeft: `3px solid ${sectorColor}`
-                            }}
-                            title={`${shift.title} - ${sectorName}`}
-                          >
-                            <div className="font-medium truncate" style={{ color: sectorColor }}>
-                              {sectorName}
-                            </div>
-                            <div className="flex items-center gap-1 text-muted-foreground text-[10px]">
-                              <Clock className="h-2.5 w-2.5" />
-                              {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
-                            </div>
-                            {shiftAssignments.length > 0 && (
-                              <div className="mt-0.5 flex flex-wrap gap-0.5">
-                                {shiftAssignments.slice(0, 2).map(a => (
-                                  <span 
-                                    key={a.id} 
-                                    className="bg-background/80 px-1 py-0.5 rounded text-[9px] truncate max-w-[60px]"
-                                  >
-                                    {a.profile?.name?.split(' ')[0] || '?'}
-                                  </span>
-                                ))}
-                                {shiftAssignments.length > 2 && (
-                                  <span className="text-[9px] text-muted-foreground">
-                                    +{shiftAssignments.length - 2}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      {dayShifts.length > (viewMode === 'week' ? 6 : 3) && (
-                        <div className="text-xs text-muted-foreground text-center">
-                          +{dayShifts.length - (viewMode === 'week' ? 6 : 3)} mais
-                        </div>
-                      )}
+        {/* TabsContent for Each Sector */}
+        {sectors.map(sector => {
+          const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
+          const sectorAssignments = assignments.filter(a => sectorShifts.some(s => s.id === a.shift_id));
+          
+          return (
+            <TabsContent key={sector.id} value={sector.id} className="mt-4">
+              <Card style={{ borderColor: sector.color || '#22c55e', borderWidth: '2px' }}>
+                <CardHeader className="pb-2" style={{ backgroundColor: `${sector.color || '#22c55e'}10` }}>
+                  <CardTitle className="text-lg flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: sector.color || '#22c55e' }}
+                      />
+                      {sector.name}
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                    <div className="flex items-center gap-4 text-sm font-normal text-muted-foreground">
+                      <span>{sectorShifts.length} plantões</span>
+                      <span>{sectorAssignments.length} atribuições</span>
+                      <span>{[...new Set(sectorAssignments.map(a => a.user_id))].length} plantonistas</span>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-2 sm:p-4">
+                  {renderCalendarGrid(sectorShifts)}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          );
+        })}
       </Tabs>
 
       {/* Day Detail Dialog */}
