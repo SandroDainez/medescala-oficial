@@ -16,6 +16,14 @@ import { Download, Lock, Printer, DollarSign, Users, Calendar, MapPin, Eye, File
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
+interface UserSectorSummary {
+  sector_id: string;
+  sector_name: string;
+  total_shifts: number;
+  total_hours: number;
+  total_value: number;
+}
+
 interface PaymentSummary {
   user_id: string;
   user_name: string | null;
@@ -23,6 +31,7 @@ interface PaymentSummary {
   total_hours: number;
   total_value: number;
   payment_status: string | null;
+  sectors: UserSectorSummary[];
 }
 
 interface ShiftDetail {
@@ -71,6 +80,7 @@ export default function AdminFinancial() {
   const [selectedUser, setSelectedUser] = useState<PaymentSummary | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
 
   // Quick date presets
   function setThisMonth() {
@@ -183,8 +193,9 @@ export default function AdminFinancial() {
       });
       setShiftDetails(details);
 
-      // Build summaries
+      // Build summaries with sector breakdown
       const userSummaries: Record<string, PaymentSummary> = {};
+      const userSectorMap: Record<string, Record<string, UserSectorSummary>> = {};
       
       members?.forEach((m: any) => {
         userSummaries[m.user_id] = {
@@ -193,8 +204,10 @@ export default function AdminFinancial() {
           total_shifts: 0,
           total_hours: 0,
           total_value: 0,
-          payment_status: null
+          payment_status: null,
+          sectors: []
         };
+        userSectorMap[m.user_id] = {};
       });
       
       details.forEach(d => {
@@ -205,12 +218,35 @@ export default function AdminFinancial() {
             total_shifts: 0,
             total_hours: 0,
             total_value: 0,
-            payment_status: null
+            payment_status: null,
+            sectors: []
           };
+          userSectorMap[d.user_id] = {};
         }
         userSummaries[d.user_id].total_shifts++;
         userSummaries[d.user_id].total_hours += d.duration_hours;
         userSummaries[d.user_id].total_value += d.assigned_value;
+
+        // Track sector breakdown per user
+        const sectorKey = d.sector_id || 'sem-setor';
+        if (!userSectorMap[d.user_id][sectorKey]) {
+          userSectorMap[d.user_id][sectorKey] = {
+            sector_id: sectorKey,
+            sector_name: d.sector_name || 'Sem Setor',
+            total_shifts: 0,
+            total_hours: 0,
+            total_value: 0
+          };
+        }
+        userSectorMap[d.user_id][sectorKey].total_shifts++;
+        userSectorMap[d.user_id][sectorKey].total_hours += d.duration_hours;
+        userSectorMap[d.user_id][sectorKey].total_value += d.assigned_value;
+      });
+
+      // Assign sectors to each user summary
+      Object.keys(userSummaries).forEach(userId => {
+        userSummaries[userId].sectors = Object.values(userSectorMap[userId] || {})
+          .sort((a, b) => b.total_value - a.total_value);
       });
 
       setSummaries(Object.values(userSummaries).filter(s => s.total_shifts > 0));
@@ -271,6 +307,18 @@ export default function AdminFinancial() {
         newSet.delete(sectorId);
       } else {
         newSet.add(sectorId);
+      }
+      return newSet;
+    });
+  }
+
+  function toggleUser(userId: string) {
+    setExpandedUsers(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
       }
       return newSet;
     });
@@ -713,38 +761,50 @@ export default function AdminFinancial() {
               <CardTitle>Resumo por Plantonista</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Plantonista</TableHead>
-                    <TableHead className="text-center">Plantões</TableHead>
-                    <TableHead className="text-center">Carga Horária</TableHead>
-                    <TableHead className="text-right">Valor Total</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {summaries.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
-                        Nenhum dado para o período selecionado
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    summaries.map(s => (
-                      <TableRow key={s.user_id}>
-                        <TableCell className="font-medium">{s.user_name || 'N/A'}</TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="secondary">{s.total_shifts}</Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="outline">{s.total_hours.toFixed(1)}h</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-green-600">
-                          R$ {s.total_value.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
+              {summaries.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8">
+                  Nenhum dado para o período selecionado
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {summaries.map(s => (
+                    <div key={s.user_id}>
+                      {/* User Header Row */}
+                      <div 
+                        className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                        onClick={() => toggleUser(s.user_id)}
+                      >
+                        <div className="flex items-center gap-3">
+                          {s.sectors.length > 0 ? (
+                            expandedUsers.has(s.user_id) ? (
+                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            )
+                          ) : (
+                            <div className="w-5" />
+                          )}
+                          <div>
+                            <h3 className="font-semibold text-foreground">{s.user_name || 'N/A'}</h3>
+                            <p className="text-sm text-muted-foreground">
+                              {s.sectors.length} setor{s.sectors.length !== 1 ? 'es' : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4 sm:gap-6">
+                          <div className="text-center hidden sm:block">
+                            <Badge variant="secondary">{s.total_shifts}</Badge>
+                            <p className="text-xs text-muted-foreground mt-1">plantões</p>
+                          </div>
+                          <div className="text-center hidden sm:block">
+                            <Badge variant="outline">{s.total_hours.toFixed(1)}h</Badge>
+                            <p className="text-xs text-muted-foreground mt-1">horas</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="font-semibold text-green-600">R$ {s.total_value.toFixed(2)}</p>
+                            <p className="text-xs text-muted-foreground">total</p>
+                          </div>
+                          <div className="flex gap-1" onClick={e => e.stopPropagation()}>
                             <Button 
                               variant="ghost" 
                               size="sm"
@@ -767,16 +827,52 @@ export default function AdminFinancial() {
                               onClick={() => closePayment(s.user_id, s.total_shifts, s.total_value, s.total_hours)}
                               title="Fechar período"
                             >
-                              <Lock className="mr-1 h-4 w-4" />
-                              Fechar
+                              <Lock className="h-4 w-4" />
                             </Button>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
+                        </div>
+                      </div>
+
+                      {/* Sector Breakdown */}
+                      {expandedUsers.has(s.user_id) && s.sectors.length > 0 && (
+                        <div className="bg-muted/30 border-t">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="bg-muted/50">
+                                <TableHead className="pl-12">Setor</TableHead>
+                                <TableHead className="text-center">Plantões</TableHead>
+                                <TableHead className="text-center">Carga Horária</TableHead>
+                                <TableHead className="text-right pr-6">Valor</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {s.sectors.map(sector => (
+                                <TableRow key={sector.sector_id} className="bg-background/50">
+                                  <TableCell className="pl-12">
+                                    <div className="flex items-center gap-2">
+                                      <Building className="h-4 w-4 text-muted-foreground" />
+                                      <span className="font-medium">{sector.sector_name}</span>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="secondary">{sector.total_shifts}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-center">
+                                    <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right pr-6 font-semibold text-green-600">
+                                    R$ {sector.total_value.toFixed(2)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
