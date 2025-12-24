@@ -877,21 +877,36 @@ export default function UserManagement() {
                                         ) : (
                                           sectors.map(sector => {
                                             const isInSector = userSectorIds.includes(sector.id);
-                                            const toggle = () => toggleSectorMembership(member.user_id, sector.id);
 
                                             return (
                                               <button
                                                 type="button"
                                                 key={sector.id}
                                                 className="flex w-full items-center gap-2 rounded-sm p-1 text-left hover:bg-accent"
-                                                onClick={toggle}
+                                                onClick={() => toggleSectorMembership(member.user_id, sector.id)}
                                               >
-                                                <Checkbox
-                                                  id={`sector-${member.user_id}-${sector.id}`}
-                                                  checked={isInSector}
-                                                  onCheckedChange={toggle}
-                                                  onClick={(e) => e.stopPropagation()}
-                                                />
+                                                <span
+                                                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                                                    isInSector
+                                                      ? 'border-primary bg-primary text-primary-foreground'
+                                                      : 'border-input'
+                                                  }`}
+                                                >
+                                                  {isInSector && (
+                                                    <svg
+                                                      xmlns="http://www.w3.org/2000/svg"
+                                                      viewBox="0 0 24 24"
+                                                      fill="none"
+                                                      stroke="currentColor"
+                                                      strokeWidth="3"
+                                                      strokeLinecap="round"
+                                                      strokeLinejoin="round"
+                                                      className="h-3 w-3"
+                                                    >
+                                                      <polyline points="20 6 9 17 4 12" />
+                                                    </svg>
+                                                  )}
+                                                </span>
                                                 <span
                                                   className="w-3 h-3 rounded-full shrink-0"
                                                   style={{ backgroundColor: sector.color || '#22c55e' }}
