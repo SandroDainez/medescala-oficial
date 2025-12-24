@@ -1266,7 +1266,13 @@ export default function ShiftCalendar() {
         
         let assigneeText = '';
         if (shiftAssignments.length > 0) {
-          assigneeText = shiftAssignments.map(a => {
+          // Sort assignees alphabetically by name
+          const sortedAssignments = [...shiftAssignments].sort((a, b) => {
+            const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
+            const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+            return nameA.localeCompare(nameB, 'pt-BR');
+          });
+          assigneeText = sortedAssignments.map(a => {
             const name = a.profile?.name || 'Sem nome';
             // Truncate long names
             return name.length > 15 ? name.substring(0, 15) + '...' : name;
