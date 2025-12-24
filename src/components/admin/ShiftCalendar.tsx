@@ -1319,27 +1319,35 @@ export default function ShiftCalendar() {
                           Plantão Disponível (usuários podem se oferecer)
                         </span>
                       </SelectItem>
-                      {/* Show only members that belong to the selected sector */}
-                      {formData.sector_id && getMembersForSector(formData.sector_id).length > 0 && (
-                        <>
-                          <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
-                            Plantonistas do Setor
+                      {/* Show members - prefer sector members, fallback to all members */}
+                      {(() => {
+                        const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
+                        const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                        const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
+                        
+                        if (membersToShow.length > 0) {
+                          return (
+                            <>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                                {label}
+                              </div>
+                              {membersToShow.map((m) => (
+                                <SelectItem key={m.user_id} value={m.user_id}>
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-primary" />
+                                    {m.profile?.name || 'Sem nome'}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </>
+                          );
+                        }
+                        return (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                            Nenhum plantonista cadastrado
                           </div>
-                          {getMembersForSector(formData.sector_id).map((m) => (
-                            <SelectItem key={m.user_id} value={m.user_id}>
-                              <span className="flex items-center gap-2">
-                                <span className="w-2 h-2 rounded-full bg-primary" />
-                                {m.profile?.name || 'Sem nome'}
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </>
-                      )}
-                      {formData.sector_id && getMembersForSector(formData.sector_id).length === 0 && (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
-                          Nenhum plantonista vinculado a este setor
-                        </div>
-                      )}
+                        );
+                      })()}
                     </SelectContent>
                   </Select>
                   {formData.assigned_user_id === 'disponivel' && (
