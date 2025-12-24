@@ -375,7 +375,7 @@ export default function AdminDashboard() {
         <TabsList>
           <TabsTrigger value="calendar">
             <Calendar className="mr-2 h-4 w-4" />
-            Calendário
+            Escalas
           </TabsTrigger>
           <TabsTrigger value="swaps">
             <ArrowLeftRight className="mr-2 h-4 w-4" />
