@@ -406,9 +406,19 @@ export default function UserManagement() {
     return `${cleanName}.${random}@interno.hospital`;
   }
 
+  // Generate random password
+  function generateRandomPassword(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  }
+
   async function handleInviteUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!currentTenantId || !invitePassword || !inviteName) return;
+    if (!currentTenantId || !inviteName) return;
 
     setIsCreatingUser(true);
 
@@ -425,11 +435,14 @@ export default function UserManagement() {
 
       // Generate internal email if not provided
       const userEmail = inviteEmail.trim() || generateInternalEmail(inviteName);
+      
+      // Use provided password or generate one automatically
+      const userPassword = invitePassword.trim() || generateRandomPassword();
 
       // Create user via supabase auth
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userEmail,
-        password: invitePassword,
+        password: userPassword,
         options: {
           data: {
             name: inviteName,
@@ -613,18 +626,17 @@ export default function UserManagement() {
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="invitePassword">Senha Inicial *</Label>
+                        <Label htmlFor="invitePassword">Senha Inicial (opcional)</Label>
                         <Input
                           id="invitePassword"
                           type="password"
                           value={invitePassword}
                           onChange={(e) => setInvitePassword(e.target.value)}
-                          placeholder="Mínimo 6 caracteres"
+                          placeholder="Deixe em branco para gerar automática"
                           minLength={6}
-                          required
                         />
                         <p className="text-xs text-muted-foreground">
-                          O usuário poderá alterar depois
+                          Se não informada, será gerada automaticamente
                         </p>
                       </div>
                       <div className="space-y-2">
