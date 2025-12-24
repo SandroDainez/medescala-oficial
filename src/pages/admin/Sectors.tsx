@@ -23,7 +23,12 @@ interface Sector {
 
 interface Member {
   user_id: string;
-  profile: { id: string; name: string | null } | null;
+  role: 'admin' | 'user';
+  profile: {
+    id: string;
+    name: string | null;
+    profile_type: string | null;
+  } | null;
 }
 
 interface SectorMembership {
@@ -69,7 +74,7 @@ export default function AdminSectors() {
         .order('name'),
       supabase
         .from('memberships')
-        .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
+        .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, profile_type)')
         .eq('tenant_id', currentTenantId)
         .eq('active', true),
       supabase
@@ -155,11 +160,34 @@ export default function AdminSectors() {
     }
   }
 
+  async function makePlantonista(userId: string) {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ profile_type: 'plantonista' })
+      .eq('id', userId);
+
+    if (error) {
+      toast({ title: 'Erro ao tornar plantonista', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Perfil atualizado', description: 'Usuário marcado como plantonista.' });
+    fetchData();
+  }
+
   function openMembersDialog(sector: Sector) {
     setSelectedSector(sector);
+    const plantonistasSet = new Set(
+      members
+        .filter((m) => (m.profile?.profile_type || '') === 'plantonista')
+        .map((m) => m.user_id),
+    );
+
     const currentMembers = sectorMemberships
       .filter(sm => sm.sector_id === sector.id)
-      .map(sm => sm.user_id);
+      .map(sm => sm.user_id)
+      .filter((userId) => plantonistasSet.has(userId));
+
     setSelectedMembers(currentMembers);
     setMembersDialogOpen(true);
   }
@@ -416,27 +444,52 @@ export default function AdminSectors() {
               Selecione os plantonistas que fazem parte deste setor:
             </p>
             <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {members.map((member) => (
-                <div
-                  key={member.user_id}
-                  className="flex items-center space-x-3 p-2 rounded hover:bg-accent"
-                >
-                  <Checkbox
-                    id={member.user_id}
-                    checked={selectedMembers.includes(member.user_id)}
-                    onCheckedChange={(checked) => {
-                      if (checked) {
-                        setSelectedMembers([...selectedMembers, member.user_id]);
-                      } else {
-                        setSelectedMembers(selectedMembers.filter(id => id !== member.user_id));
-                      }
-                    }}
-                  />
-                  <Label htmlFor={member.user_id} className="cursor-pointer flex-1">
-                    {member.profile?.name || 'Sem nome'}
-                  </Label>
-                </div>
-              ))}
+              {members.map((member) => {
+                const isPlantonista = (member.profile?.profile_type || '') === 'plantonista';
+                const displayName = member.profile?.name || 'Sem nome';
+
+                return (
+                  <div
+                    key={member.user_id}
+                    className="flex items-center gap-3 p-2 rounded hover:bg-accent"
+                  >
+                    <Checkbox
+                      id={member.user_id}
+                      checked={selectedMembers.includes(member.user_id)}
+                      disabled={!isPlantonista}
+                      onCheckedChange={(checked) => {
+                        if (!isPlantonista) return;
+                        if (checked) {
+                          setSelectedMembers([...selectedMembers, member.user_id]);
+                        } else {
+                          setSelectedMembers(selectedMembers.filter(id => id !== member.user_id));
+                        }
+                      }}
+                    />
+
+                    <Label htmlFor={member.user_id} className="cursor-pointer flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <span>{displayName}</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={isPlantonista ? 'secondary' : 'outline'}>
+                            {isPlantonista ? 'Plantonista' : 'Não é plantonista'}
+                          </Badge>
+                          {!isPlantonista && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => makePlantonista(member.user_id)}
+                            >
+                              Tornar plantonista
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    </Label>
+                  </div>
+                );
+              })}
             </div>
             <div className="flex justify-between pt-4">
               <span className="text-sm text-muted-foreground">
