@@ -15,7 +15,8 @@ import {
   Menu,
   X,
   CreditCard,
-  ListTodo
+  ListTodo,
+  Stethoscope
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -44,33 +45,47 @@ export function AdminLayout() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-card">
-        <div className="flex h-16 items-center justify-between px-4">
+      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80">
+        <div className="flex h-16 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden"
+              className="md:hidden hover:bg-accent"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
-            <h1 className="text-xl font-bold text-primary">MedEscala</h1>
-            <span className="hidden rounded bg-primary/10 px-2 py-1 text-xs font-medium text-primary sm:inline">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground shadow-primary">
+                <Stethoscope className="h-5 w-5" />
+              </div>
+              <span className="text-xl font-bold text-foreground">
+                Med<span className="text-primary">Escala</span>
+              </span>
+            </div>
+            <span className="hidden rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary sm:inline-flex items-center gap-1">
               Admin
             </span>
-            <TenantSelector />
+            <div className="hidden md:block">
+              <TenantSelector />
+            </div>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             {currentTenantName && (
-              <span className="hidden text-sm font-medium text-foreground lg:inline">
+              <span className="hidden text-sm font-medium text-foreground lg:inline px-3 py-1.5 bg-secondary rounded-lg">
                 {currentTenantName}
               </span>
             )}
-            <span className="hidden text-sm text-muted-foreground sm:inline">
+            <span className="hidden text-sm text-muted-foreground sm:inline max-w-[180px] truncate">
               {user?.email}
             </span>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleSignOut}
+              className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+            >
               <LogOut className="h-4 w-4" />
               <span className="ml-2 hidden sm:inline">Sair</span>
             </Button>
@@ -81,23 +96,27 @@ export function AdminLayout() {
       <div className="flex">
         {/* Sidebar - Desktop */}
         <aside className="hidden w-64 border-r bg-card md:block">
-          <nav className="flex flex-col gap-1 p-4">
-            {navItems.map((item) => (
+          <nav className="flex flex-col gap-1 p-4 sticky top-16">
+            {navItems.map((item, index) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.end}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                    'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
                     isActive
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-primary text-primary-foreground shadow-primary'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   )
                 }
+                style={{ animationDelay: `${index * 50}ms` }}
               >
-                <item.icon className="h-4 w-4" />
-                {item.label}
+                <item.icon className={cn(
+                  "h-5 w-5 transition-transform duration-200",
+                  "group-hover:scale-110"
+                )} />
+                <span>{item.label}</span>
               </NavLink>
             ))}
           </nav>
@@ -105,9 +124,12 @@ export function AdminLayout() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 z-40 bg-background md:hidden">
+          <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-sm md:hidden animate-fade-in">
             <nav className="flex flex-col gap-1 p-4">
-              {navItems.map((item) => (
+              <div className="mb-4">
+                <TenantSelector />
+              </div>
+              {navItems.map((item, index) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -115,14 +137,15 @@ export function AdminLayout() {
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
                       isActive
-                        ? 'bg-primary text-primary-foreground'
+                        ? 'bg-primary text-primary-foreground shadow-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                     )
                   }
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  <item.icon className="h-4 w-4" />
+                  <item.icon className="h-5 w-5" />
                   {item.label}
                 </NavLink>
               ))}
@@ -131,7 +154,7 @@ export function AdminLayout() {
         )}
 
         {/* Main Content */}
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in">
           <Outlet />
         </main>
       </div>
