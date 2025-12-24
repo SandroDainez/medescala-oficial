@@ -16,7 +16,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers } from 'lucide-react';
-import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
   id: string;
@@ -1243,27 +1242,52 @@ export default function UserManagement() {
                       return (
                         <div 
                           key={sector.id}
-                          className="flex items-center gap-3 p-3 border rounded-lg hover:bg-accent/50 cursor-pointer"
+                          role="button"
+                          tabIndex={0}
+                          className="flex items-center gap-3 rounded-lg border p-3 hover:bg-accent/50 cursor-pointer"
                           style={{ borderLeftColor: sector.color || '#22c55e', borderLeftWidth: '4px' }}
                           onClick={() => {
-                            if (isChecked) {
-                              setEditSectorIds(editSectorIds.filter(id => id !== sector.id));
-                            } else {
-                              setEditSectorIds([...editSectorIds, sector.id]);
+                            setEditSectorIds((prev) =>
+                              prev.includes(sector.id)
+                                ? prev.filter((id) => id !== sector.id)
+                                : [...prev, sector.id],
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setEditSectorIds((prev) =>
+                                prev.includes(sector.id)
+                                  ? prev.filter((id) => id !== sector.id)
+                                  : [...prev, sector.id],
+                              );
                             }
                           }}
                         >
-                          <Checkbox
-                            id={`sector-${sector.id}`}
-                            checked={isChecked}
-                            onCheckedChange={(checked) => {
-                              if (checked) {
-                                setEditSectorIds([...editSectorIds, sector.id]);
-                              } else {
-                                setEditSectorIds(editSectorIds.filter(id => id !== sector.id));
-                              }
-                            }}
-                          />
+                          <span
+                            aria-hidden
+                            className={
+                              "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border " +
+                              (isChecked
+                                ? 'border-primary bg-primary text-primary-foreground'
+                                : 'border-input')
+                            }
+                          >
+                            {isChecked && (
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3 w-3"
+                              >
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                            )}
+                          </span>
                           <div className="flex items-center gap-2">
                             <span 
                               className="w-3 h-3 rounded-full" 
