@@ -211,6 +211,11 @@ export default function Auth() {
                     <Button type="submit" className="w-full h-11 btn-glow" disabled={isSubmitting}>
                       {isSubmitting ? 'Entrando...' : 'Entrar'}
                     </Button>
+                    <div className="text-center mt-4">
+                      <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                        Esqueceu sua senha?
+                      </Link>
+                    </div>
                   </form>
                 </TabsContent>
                 

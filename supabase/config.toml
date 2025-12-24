@@ -3,5 +3,8 @@ project_id = "bzvvdludfwoxiuqslpha"
 [functions.create-user]
 verify_jwt = false
 
-[functions.process-checkin-alerts]
+[functions.send-invite-email]
+verify_jwt = false
+
+[functions.send-password-reset]
 verify_jwt = false

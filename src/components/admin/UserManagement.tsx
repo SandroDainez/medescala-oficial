@@ -482,6 +482,7 @@ export default function UserManagement() {
             bankAgency: inviteBankAgency || null,
             bankAccount: inviteBankAccount || null,
             pixKey: invitePixKey || null,
+            sendInviteEmail: inviteEmail.trim() && !inviteEmail.includes('@interno.hospital'),
           }),
         }
       );
