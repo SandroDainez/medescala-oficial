@@ -465,6 +465,10 @@ export type Database = {
         Args: { _tenant_id: string }
         Returns: boolean
       }
+      create_tenant_with_admin: {
+        Args: { _name: string; _slug: string }
+        Returns: string
+      }
       get_tenant_plan_info: {
         Args: { _tenant_id: string }
         Returns: {
