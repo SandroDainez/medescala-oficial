@@ -17,6 +17,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import ChangePassword from "./pages/ChangePassword";
 import TrialExpired from "./pages/TrialExpired";
+import SuperAdmin from "./pages/SuperAdmin";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -77,6 +78,7 @@ function AppRoutes() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/change-password" element={<ChangePassword />} />
       <Route path="/trial-expired" element={<TrialExpired />} />
+      <Route path="/super-admin" element={<SuperAdmin />} />
 
       {/* Admin Routes */}
       <Route
