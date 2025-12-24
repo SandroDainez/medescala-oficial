@@ -440,6 +440,7 @@ export default function UserManagement() {
           description: `O hospital já possui ${tenantInfo.max_users} usuários. Faça upgrade do plano para adicionar mais.`,
           variant: 'destructive'
         });
+        setIsCreatingUser(false);
         return;
       }
 
@@ -449,70 +450,67 @@ export default function UserManagement() {
       // Use provided password or generate one automatically
       const userPassword = invitePassword.trim() || generateRandomPassword();
 
-      // Create user via supabase auth
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: userEmail,
-        password: userPassword,
-        options: {
-          data: {
-            name: inviteName,
-          }
-        }
-      });
-
-      if (authError) throw authError;
-
-      if (authData.user) {
-        // Wait a bit for the trigger to create the profile
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        // Upsert profile with name and additional info
-        const profileData = {
-          id: authData.user.id,
-          name: inviteName,
-          profile_type: inviteProfileType,
-          phone: invitePhone || null,
-          cpf: inviteCpf || null,
-          crm: inviteCrm || null,
-          address: inviteAddress || null,
-          bank_name: inviteBankName || null,
-          bank_agency: inviteBankAgency || null,
-          bank_account: inviteBankAccount || null,
-          pix_key: invitePixKey || null,
-        };
-
-        // Use upsert to ensure profile is created if it doesn't exist
-        await supabase
-          .from('profiles')
-          .upsert(profileData);
-
-        // Add membership
-        const { error: membershipError } = await supabase.from('memberships').insert({
-          tenant_id: currentTenantId,
-          user_id: authData.user.id,
-          role: inviteRole,
-          active: true,
-          created_by: user?.id,
-        });
-
-        if (membershipError) throw membershipError;
-
-        // Show credentials dialog
-        setCreatedUserCredentials({
-          name: inviteName,
-          email: userEmail,
-          password: userPassword
-        });
-        setShowCreatedPassword(false);
-        setCopiedField(null);
-        setCredentialsDialogOpen(true);
-        
-        // Reset all form fields
-        resetForm();
-        setInviteDialogOpen(false);
-        fetchMembers();
-        fetchTenantInfo();
+      // Get the current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session?.access_token) {
+        throw new Error('Sessão expirada. Por favor, faça login novamente.');
       }
+
+      // Call edge function to create user (this won't affect current session)
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            email: userEmail,
+            password: userPassword,
+            name: inviteName,
+            tenantId: currentTenantId,
+            role: inviteRole,
+            profileType: inviteProfileType,
+            phone: invitePhone || null,
+            cpf: inviteCpf || null,
+            crm: inviteCrm || null,
+            address: inviteAddress || null,
+            bankName: inviteBankName || null,
+            bankAgency: inviteBankAgency || null,
+            bankAccount: inviteBankAccount || null,
+            pixKey: invitePixKey || null,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao criar usuário');
+      }
+
+      // Show credentials dialog
+      setCreatedUserCredentials({
+        name: inviteName,
+        email: userEmail,
+        password: userPassword
+      });
+      setShowCreatedPassword(false);
+      setCopiedField(null);
+      setCredentialsDialogOpen(true);
+      
+      // Reset all form fields
+      resetForm();
+      setInviteDialogOpen(false);
+      fetchMembers();
+      fetchTenantInfo();
+
+      toast({ 
+        title: 'Usuário criado com sucesso!',
+        description: 'As credenciais foram geradas.'
+      });
     } catch (error: any) {
       console.error('Error creating user:', error);
       toast({ 
