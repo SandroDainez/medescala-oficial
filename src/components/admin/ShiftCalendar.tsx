@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -577,6 +577,155 @@ export default function ShiftCalendar() {
     );
   }
 
+  // Print schedule function
+  function handlePrintSchedule() {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast({ title: 'Erro', description: 'Não foi possível abrir a janela de impressão', variant: 'destructive' });
+      return;
+    }
+
+    const activeSector = filterSector !== 'all' ? sectors.find(s => s.id === filterSector) : null;
+    const scheduleName = activeSector ? activeSector.name : 'Todos os Setores';
+    const periodLabel = viewMode === 'month' 
+      ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+      : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`;
+
+    // Group shifts by date
+    const shiftsByDate: Record<string, Shift[]> = {};
+    filteredShifts.forEach(shift => {
+      if (!shiftsByDate[shift.shift_date]) {
+        shiftsByDate[shift.shift_date] = [];
+      }
+      shiftsByDate[shift.shift_date].push(shift);
+    });
+
+    // Sort dates
+    const sortedDates = Object.keys(shiftsByDate).sort();
+
+    let tableRows = '';
+    sortedDates.forEach(dateStr => {
+      const dayShifts = shiftsByDate[dateStr];
+      const dateFormatted = format(parseISO(dateStr), "EEEE, dd/MM/yyyy", { locale: ptBR });
+      
+      dayShifts.forEach((shift, idx) => {
+        const shiftAssignments = getAssignmentsForShift(shift.id);
+        const sectorName = getSectorName(shift.sector_id, shift.hospital);
+        const isNight = isNightShift(shift.start_time, shift.end_time);
+        const shiftType = isNight ? '🌙 Noturno' : '☀️ Diurno';
+        
+        let assignedNames = '';
+        if (shiftAssignments.length > 0) {
+          assignedNames = shiftAssignments.map(a => a.profile?.name || 'Sem nome').join(', ');
+        } else {
+          // Check if it's marked as available or vacant in notes
+          if (shift.notes?.includes('[DISPONÍVEL]')) {
+            assignedNames = '<span style="color: #2563eb; font-weight: bold;">📋 DISPONÍVEL</span>';
+          } else {
+            assignedNames = '<span style="color: #dc2626; font-weight: bold;">⚠️ VAGO</span>';
+          }
+        }
+
+        tableRows += `
+          <tr>
+            ${idx === 0 ? `<td rowspan="${dayShifts.length}" style="vertical-align: top; font-weight: 600; border: 1px solid #ddd; padding: 8px; background: #f8f9fa;">${dateFormatted}</td>` : ''}
+            <td style="border: 1px solid #ddd; padding: 8px;">${sectorName}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${shift.start_time.slice(0, 5)} - ${shift.end_time.slice(0, 5)}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${shiftType}</td>
+            <td style="border: 1px solid #ddd; padding: 8px;">${assignedNames}</td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${Number(shift.base_value).toFixed(2)}</td>
+          </tr>
+        `;
+      });
+    });
+
+    // Calculate stats
+    const vacantShifts = filteredShifts.filter(s => {
+      const hasAssignment = getAssignmentsForShift(s.id).length > 0;
+      return !hasAssignment && !s.notes?.includes('[DISPONÍVEL]');
+    }).length;
+    const availableShifts = filteredShifts.filter(s => s.notes?.includes('[DISPONÍVEL]')).length;
+    const assignedShifts = filteredShifts.filter(s => getAssignmentsForShift(s.id).length > 0).length;
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Escala - ${scheduleName} - ${periodLabel}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
+          h1 { margin-bottom: 5px; color: #1a1a1a; }
+          h2 { color: #666; font-weight: normal; margin-top: 0; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th { background: #1a1a1a; color: white; padding: 10px; text-align: left; }
+          .stats { display: flex; gap: 20px; margin: 20px 0; }
+          .stat-card { padding: 15px; background: #f5f5f5; border-radius: 8px; text-align: center; }
+          .stat-number { font-size: 24px; font-weight: bold; }
+          .stat-label { font-size: 12px; color: #666; }
+          .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #999; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Escala de Plantões - ${scheduleName}</h1>
+        <h2>${periodLabel}</h2>
+        
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-number">${filteredShifts.length}</div>
+            <div class="stat-label">Total de Plantões</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" style="color: #22c55e;">${assignedShifts}</div>
+            <div class="stat-label">Preenchidos</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" style="color: #2563eb;">${availableShifts}</div>
+            <div class="stat-label">Disponíveis</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" style="color: #dc2626;">${vacantShifts}</div>
+            <div class="stat-label">Vagos</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Setor</th>
+              <th>Horário</th>
+              <th>Tipo</th>
+              <th>Plantonista(s)</th>
+              <th style="text-align: right;">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows || '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #999;">Nenhum plantão no período</td></tr>'}
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+        </div>
+
+        <script>
+          window.onload = function() {
+            window.print();
+          }
+        </script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+  }
+
   // Stats
   const totalShifts = filteredShifts.length;
   const totalAssignments = assignments.length;
@@ -728,6 +877,11 @@ export default function ShiftCalendar() {
                     Mês
                   </Button>
                 </div>
+
+                <Button variant="outline" onClick={handlePrintSchedule}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Imprimir
+                </Button>
 
                 <Button onClick={() => openCreateShift()}>
                   <Plus className="mr-2 h-4 w-4" />
