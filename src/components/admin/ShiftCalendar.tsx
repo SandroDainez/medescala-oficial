@@ -1155,8 +1155,12 @@ export default function ShiftCalendar() {
                           {/* Display assignment status */}
                           <div className="mt-1 space-y-0.5">
                             {shiftAssignments.length > 0 ? (
-                              // Has assigned plantonistas - show each one
-                              shiftAssignments.map(a => (
+                              // Has assigned plantonistas - show each one sorted alphabetically
+                              [...shiftAssignments].sort((a, b) => {
+                                const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
+                                const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+                                return nameA.localeCompare(nameB, 'pt-BR');
+                              }).map(a => (
                                 <div 
                                   key={a.id} 
                                   className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-background/80 text-foreground font-medium"
@@ -2219,7 +2223,11 @@ export default function ShiftCalendar() {
                             <p className="text-sm text-muted-foreground italic">Nenhum plantonista atribuído</p>
                           ) : (
                             <div className="grid gap-2">
-                              {shiftAssignments.map(assignment => (
+                              {[...shiftAssignments].sort((a, b) => {
+                                const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
+                                const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+                                return nameA.localeCompare(nameB, 'pt-BR');
+                              }).map(assignment => (
                                 <div 
                                   key={assignment.id} 
                                   className="flex items-center justify-between p-2 rounded-lg bg-green-50 border border-green-200"
