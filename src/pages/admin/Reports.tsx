@@ -36,6 +36,7 @@ interface Absence {
 interface Sector {
   id: string;
   name: string;
+  checkin_enabled: boolean;
   require_gps_checkin: boolean;
   allowed_checkin_radius_meters: number | null;
 }
@@ -120,11 +121,11 @@ export default function AdminReports() {
   async function fetchSectors() {
     const { data } = await supabase
       .from('sectors')
-      .select('id, name, require_gps_checkin, allowed_checkin_radius_meters')
+      .select('id, name, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
     
-    if (data) setSectors(data);
+    if (data) setSectors(data as Sector[]);
   }
 
   async function fetchUsers() {
@@ -324,6 +325,24 @@ export default function AdminReports() {
     
     toast({ title: `Ausência ${status === 'approved' ? 'aprovada' : 'rejeitada'}` });
     fetchAbsences();
+  }
+
+  async function handleToggleSectorCheckin(sector: Sector) {
+    const { error } = await supabase
+      .from('sectors')
+      .update({
+        checkin_enabled: !sector.checkin_enabled,
+        updated_by: user?.id,
+      })
+      .eq('id', sector.id);
+    
+    if (error) {
+      toast({ title: 'Erro ao atualizar setor', variant: 'destructive' });
+      return;
+    }
+    
+    toast({ title: `Check-in ${!sector.checkin_enabled ? 'ativado' : 'desativado'} para ${sector.name}` });
+    fetchSectors();
   }
 
   async function handleToggleSectorGps(sector: Sector) {
@@ -531,14 +550,18 @@ export default function AdminReports() {
       </Card>
 
       <Tabs defaultValue="report" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="report">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Relatório
           </TabsTrigger>
+          <TabsTrigger value="pending">
+            <Clock className="mr-2 h-4 w-4" />
+            Pendentes
+          </TabsTrigger>
           <TabsTrigger value="absences">
             <UserMinus className="mr-2 h-4 w-4" />
-            Gerenciar Ausências
+            Ausências
           </TabsTrigger>
           <TabsTrigger value="gps">
             <MapPin className="mr-2 h-4 w-4" />
@@ -810,22 +833,85 @@ export default function AdminReports() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="gps">
+        <TabsContent value="pending">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
-                Configurar GPS por Setor
+                <Clock className="h-5 w-5" />
+                Plantões Sem Check-in
               </CardTitle>
             </CardHeader>
             <CardContent>
               <p className="text-sm text-muted-foreground mb-4">
-                Ative o monitoramento por GPS para os setores que deseja controlar a localização do check-in e check-out.
+                Lista de plantonistas que não realizaram check-in nos plantões do período selecionado.
+              </p>
+              <ScrollArea className="h-[500px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Plantonista</TableHead>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Horário Previsto</TableHead>
+                      <TableHead>Setor</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {checkins.filter(c => !c.checkin_at).length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                          Todos os plantonistas do período fizeram check-in
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      checkins.filter(c => !c.checkin_at).map(checkin => (
+                        <TableRow key={checkin.id} className="bg-yellow-50/50">
+                          <TableCell className="font-medium">{checkin.user_name}</TableCell>
+                          <TableCell>{format(parseISO(checkin.shift_date), 'dd/MM/yyyy')}</TableCell>
+                          <TableCell>{checkin.start_time?.slice(0, 5)} - {checkin.end_time?.slice(0, 5)}</TableCell>
+                          <TableCell>{checkin.sector_name}</TableCell>
+                          <TableCell>
+                            <Badge variant="destructive">Sem check-in</Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleAdminCheckin(checkin.id)}
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            >
+                              <LogIn className="mr-2 h-4 w-4" />
+                              Check-in Manual
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="gps">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5" />
+                Configurar Check-in por Setor
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground mb-4">
+                Ative o controle de check-in/check-out e GPS para os setores desejados.
               </p>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Setor</TableHead>
+                    <TableHead>Check-in Ativo</TableHead>
                     <TableHead>GPS Obrigatório</TableHead>
                     <TableHead>Raio Permitido</TableHead>
                     <TableHead>Ações</TableHead>
@@ -841,8 +927,13 @@ export default function AdminReports() {
                         </div>
                       </TableCell>
                       <TableCell>
+                        <Badge variant={sector.checkin_enabled ? 'default' : 'secondary'}>
+                          {sector.checkin_enabled ? 'Ativado' : 'Desativado'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <Badge variant={sector.require_gps_checkin ? 'default' : 'secondary'}>
-                          {sector.require_gps_checkin ? 'Ativado' : 'Desativado'}
+                          {sector.require_gps_checkin ? 'Sim' : 'Não'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -853,25 +944,36 @@ export default function AdminReports() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
                           <Button
-                            variant={sector.require_gps_checkin ? 'destructive' : 'default'}
+                            variant={sector.checkin_enabled ? 'destructive' : 'default'}
                             size="sm"
-                            onClick={() => handleToggleSectorGps(sector)}
+                            onClick={() => handleToggleSectorCheckin(sector)}
                           >
-                            {sector.require_gps_checkin ? 'Desativar GPS' : 'Ativar GPS'}
+                            {sector.checkin_enabled ? 'Desativar Check-in' : 'Ativar Check-in'}
                           </Button>
-                          {sector.require_gps_checkin && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                setSelectedSectorForGps(sector);
-                                setSectorGpsDialogOpen(true);
-                              }}
-                            >
-                              Configurar Raio
-                            </Button>
+                          {sector.checkin_enabled && (
+                            <>
+                              <Button
+                                variant={sector.require_gps_checkin ? 'secondary' : 'outline'}
+                                size="sm"
+                                onClick={() => handleToggleSectorGps(sector)}
+                              >
+                                {sector.require_gps_checkin ? 'Desativar GPS' : 'Ativar GPS'}
+                              </Button>
+                              {sector.require_gps_checkin && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    setSelectedSectorForGps(sector);
+                                    setSectorGpsDialogOpen(true);
+                                  }}
+                                >
+                                  Raio: {sector.allowed_checkin_radius_meters || 500}m
+                                </Button>
+                              )}
+                            </>
                           )}
                         </div>
                       </TableCell>
