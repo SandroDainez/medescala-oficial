@@ -390,6 +390,41 @@ export default function AdminFinancial() {
     a.click();
   }
 
+  function exportSectorBreakdownCSV() {
+    const headers = ['Plantonista', 'Setor', 'Plantões', 'Carga Horária', 'Valor'];
+    const rows: string[][] = [];
+    
+    summaries.forEach(s => {
+      // Add user total row
+      rows.push([
+        s.user_name || 'N/A',
+        'TOTAL',
+        s.total_shifts.toString(),
+        s.total_hours.toFixed(1) + 'h',
+        s.total_value.toFixed(2)
+      ]);
+      
+      // Add sector breakdown rows
+      s.sectors.forEach(sector => {
+        rows.push([
+          '',
+          sector.sector_name,
+          sector.total_shifts.toString(),
+          sector.total_hours.toFixed(1) + 'h',
+          sector.total_value.toFixed(2)
+        ]);
+      });
+    });
+    
+    const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `financeiro-por-setor-${startDate}-a-${endDate}.csv`;
+    a.click();
+  }
+
   function handlePrintReport() {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -772,6 +807,10 @@ export default function AdminFinancial() {
         <Button variant="outline" onClick={exportCSV}>
           <Download className="mr-2 h-4 w-4" />
           Exportar Resumo
+        </Button>
+        <Button variant="outline" onClick={exportSectorBreakdownCSV}>
+          <Building className="mr-2 h-4 w-4" />
+          Exportar por Setor
         </Button>
         <Button variant="outline" onClick={exportDetailedCSV}>
           <FileText className="mr-2 h-4 w-4" />
