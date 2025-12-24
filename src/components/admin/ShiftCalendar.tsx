@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -44,6 +44,15 @@ interface ShiftAssignment {
   profile: { name: string | null } | null;
 }
 
+interface ShiftOffer {
+  id: string;
+  shift_id: string;
+  user_id: string;
+  status: string;
+  message: string | null;
+  profile: { name: string | null } | null;
+}
+
 interface Member {
   user_id: string;
   profile: { id: string; name: string | null } | null;
@@ -67,6 +76,7 @@ export default function ShiftCalendar() {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
+  const [shiftOffers, setShiftOffers] = useState<ShiftOffer[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
@@ -157,19 +167,30 @@ export default function ShiftCalendar() {
     if (shiftsRes.data) {
       setShifts(shiftsRes.data);
       
-      // Fetch assignments for these shifts
+      // Fetch assignments and offers for these shifts
       if (shiftsRes.data.length > 0) {
         const shiftIds = shiftsRes.data.map(s => s.id);
-        const { data: assignmentsData } = await supabase
-          .from('shift_assignments')
-          .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-          .in('shift_id', shiftIds);
+        const [assignmentsData, offersData] = await Promise.all([
+          supabase
+            .from('shift_assignments')
+            .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+            .in('shift_id', shiftIds),
+          supabase
+            .from('shift_offers')
+            .select('id, shift_id, user_id, status, message, profile:profiles!shift_offers_user_id_fkey(name)')
+            .in('shift_id', shiftIds)
+            .eq('status', 'pending')
+        ]);
         
-        if (assignmentsData) {
-          setAssignments(assignmentsData as unknown as ShiftAssignment[]);
+        if (assignmentsData.data) {
+          setAssignments(assignmentsData.data as unknown as ShiftAssignment[]);
+        }
+        if (offersData.data) {
+          setShiftOffers(offersData.data as unknown as ShiftOffer[]);
         }
       } else {
         setAssignments([]);
+        setShiftOffers([]);
       }
     }
 
@@ -236,6 +257,16 @@ export default function ShiftCalendar() {
   // Get assignments for a shift
   function getAssignmentsForShift(shiftId: string) {
     return assignments.filter(a => a.shift_id === shiftId);
+  }
+
+  // Get pending offers for a shift
+  function getOffersForShift(shiftId: string) {
+    return shiftOffers.filter(o => o.shift_id === shiftId);
+  }
+
+  // Check if shift is available (marked in notes)
+  function isShiftAvailable(shift: Shift) {
+    return shift.notes?.includes('[DISPONÍVEL]');
   }
 
   // Calendar navigation
@@ -490,6 +521,82 @@ export default function ShiftCalendar() {
     }
   }
 
+  // Accept a pending offer and assign the plantonista to the shift
+  async function handleAcceptOffer(offer: ShiftOffer, shift: Shift) {
+    if (!currentTenantId || !user?.id) return;
+
+    try {
+      // Create assignment for the offered plantonista
+      const { error: assignError } = await supabase.from('shift_assignments').insert({
+        tenant_id: currentTenantId,
+        shift_id: offer.shift_id,
+        user_id: offer.user_id,
+        assigned_value: shift.base_value,
+        created_by: user.id,
+      });
+
+      if (assignError) {
+        toast({ title: 'Erro ao aceitar oferta', description: assignError.message, variant: 'destructive' });
+        return;
+      }
+
+      // Update this offer to accepted
+      await supabase
+        .from('shift_offers')
+        .update({ 
+          status: 'accepted', 
+          reviewed_by: user.id, 
+          reviewed_at: new Date().toISOString() 
+        })
+        .eq('id', offer.id);
+
+      // Reject other pending offers for this shift
+      await supabase
+        .from('shift_offers')
+        .update({ 
+          status: 'rejected', 
+          reviewed_by: user.id, 
+          reviewed_at: new Date().toISOString() 
+        })
+        .eq('shift_id', offer.shift_id)
+        .eq('status', 'pending')
+        .neq('id', offer.id);
+
+      // Remove [DISPONÍVEL] from shift notes
+      const updatedNotes = (shift.notes || '').replace('[DISPONÍVEL]', '').trim();
+      await supabase
+        .from('shifts')
+        .update({ notes: updatedNotes || null, updated_by: user.id })
+        .eq('id', shift.id);
+
+      toast({ title: 'Oferta aceita!', description: `${offer.profile?.name} foi atribuído ao plantão.` });
+      fetchData();
+    } catch (error) {
+      console.error('Error accepting offer:', error);
+      toast({ title: 'Erro ao aceitar oferta', variant: 'destructive' });
+    }
+  }
+
+  async function handleRejectOffer(offerId: string) {
+    if (!user?.id) return;
+
+    const { error } = await supabase
+      .from('shift_offers')
+      .update({ 
+        status: 'rejected', 
+        reviewed_by: user.id, 
+        reviewed_at: new Date().toISOString() 
+      })
+      .eq('id', offerId);
+
+    if (error) {
+      toast({ title: 'Erro ao rejeitar oferta', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: 'Oferta rejeitada' });
+      fetchData();
+    }
+  }
+
   function openCreateShift(date?: Date, sectorIdOverride?: string) {
     // Use the override sector or the current filter if viewing a specific sector
     const effectiveSectorId = sectorIdOverride || (filterSector !== 'all' ? filterSector : sectors[0]?.id || '');
@@ -607,11 +714,19 @@ export default function ShiftCalendar() {
                 
                 {hasShifts && (
                   <div className="space-y-1">
-                    {dayShifts.slice(0, viewMode === 'week' ? 6 : 3).map(shift => {
+                    {dayShifts.slice(0, viewMode === 'week' ? 8 : 4).map(shift => {
                       const shiftAssignments = getAssignmentsForShift(shift.id);
+                      const shiftPendingOffers = getOffersForShift(shift.id);
                       const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                       const sectorName = getSectorName(shift.sector_id, shift.hospital);
                       const isNight = isNightShift(shift.start_time, shift.end_time);
+                      const isAvailable = isShiftAvailable(shift);
+                      
+                      // Determine what to show for each shift:
+                      // - If has assignments: show assigned plantonistas
+                      // - If available and has offers: show "DISPONÍVEL" + offer names
+                      // - If available and no offers: show "DISPONÍVEL"
+                      // - Otherwise: show "VAGO"
                       
                       return (
                         <div
@@ -629,9 +744,7 @@ export default function ShiftCalendar() {
                             ) : (
                               <Sun className="h-3 w-3 text-amber-500" />
                             )}
-                            <span 
-                              className="font-semibold truncate text-foreground" 
-                            >
+                            <span className="font-semibold truncate text-foreground">
                               {sectorName}
                             </span>
                           </div>
@@ -639,9 +752,12 @@ export default function ShiftCalendar() {
                             <Clock className="h-2.5 w-2.5" />
                             {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                           </div>
-                          {shiftAssignments.length > 0 && (
-                            <div className="mt-1 space-y-0.5">
-                              {shiftAssignments.map(a => (
+                          
+                          {/* Display assignment status */}
+                          <div className="mt-1 space-y-0.5">
+                            {shiftAssignments.length > 0 ? (
+                              // Has assigned plantonistas - show each one
+                              shiftAssignments.map(a => (
                                 <div 
                                   key={a.id} 
                                   className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-background/80 text-foreground font-medium"
@@ -649,15 +765,37 @@ export default function ShiftCalendar() {
                                   <Users className="h-2.5 w-2.5 flex-shrink-0 text-primary" />
                                   <span className="truncate">{a.profile?.name || 'Sem nome'}</span>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              ))
+                            ) : isAvailable ? (
+                              // Available shift - show status + offers
+                              <>
+                                <div className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 font-bold">
+                                  📋 DISPONÍVEL
+                                </div>
+                                {shiftPendingOffers.length > 0 && (
+                                  shiftPendingOffers.map(offer => (
+                                    <div 
+                                      key={offer.id} 
+                                      className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-green-100 text-green-700 font-medium"
+                                    >
+                                      ✋ {offer.profile?.name || 'Plantonista'}
+                                    </div>
+                                  ))
+                                )}
+                              </>
+                            ) : (
+                              // Vacant shift
+                              <div className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-red-100 text-red-700 font-bold">
+                                ⚠️ VAGO
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
-                    {dayShifts.length > (viewMode === 'week' ? 6 : 3) && (
+                    {dayShifts.length > (viewMode === 'week' ? 8 : 4) && (
                       <div className="text-xs text-muted-foreground text-center">
-                        +{dayShifts.length - (viewMode === 'week' ? 6 : 3)} mais
+                        +{dayShifts.length - (viewMode === 'week' ? 8 : 4)} mais
                       </div>
                     )}
                   </div>
@@ -1106,8 +1244,10 @@ export default function ShiftCalendar() {
             ) : (
               selectedDate && getShiftsForDate(selectedDate).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
+                const shiftPendingOffers = getOffersForShift(shift.id);
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
+                const isAvailable = isShiftAvailable(shift);
                 
                 return (
                   <Card 
@@ -1127,6 +1267,14 @@ export default function ShiftCalendar() {
                             >
                               {sectorName}
                             </Badge>
+                            {/* Status Badge */}
+                            {shiftAssignments.length === 0 && (
+                              isAvailable ? (
+                                <Badge className="bg-blue-500 text-white">📋 DISPONÍVEL</Badge>
+                              ) : (
+                                <Badge variant="destructive">⚠️ VAGO</Badge>
+                              )
+                            )}
                           </div>
                           <CardTitle className="text-lg">{shift.title}</CardTitle>
                           <div className="flex flex-wrap gap-3 text-sm text-muted-foreground mt-1">
@@ -1159,41 +1307,95 @@ export default function ShiftCalendar() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <div className="text-sm font-medium">Plantonistas Atribuídos:</div>
-                          <Badge variant="secondary">{shiftAssignments.length} pessoa(s)</Badge>
-                        </div>
-                        {shiftAssignments.length === 0 ? (
-                          <p className="text-sm text-muted-foreground italic">Nenhum plantonista atribuído</p>
-                        ) : (
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {shiftAssignments.map(assignment => (
-                              <div 
-                                key={assignment.id} 
-                                className="flex items-center justify-between p-2 rounded-lg bg-muted/50 border"
-                              >
-                                <div>
-                                  <div className="font-medium text-sm">
-                                    {assignment.profile?.name || 'Sem nome'}
+                      <div className="space-y-4">
+                        {/* Assigned Plantonistas */}
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="text-sm font-medium">Plantonistas Atribuídos:</div>
+                            <Badge variant="secondary">{shiftAssignments.length} pessoa(s)</Badge>
+                          </div>
+                          {shiftAssignments.length === 0 ? (
+                            <p className="text-sm text-muted-foreground italic">Nenhum plantonista atribuído</p>
+                          ) : (
+                            <div className="grid gap-2">
+                              {shiftAssignments.map(assignment => (
+                                <div 
+                                  key={assignment.id} 
+                                  className="flex items-center justify-between p-2 rounded-lg bg-green-50 border border-green-200"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <Users className="h-4 w-4 text-green-600" />
+                                    <div>
+                                      <div className="font-medium text-sm">
+                                        {assignment.profile?.name || 'Sem nome'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Valor: R$ {Number(assignment.assigned_value).toFixed(2)}
+                                      </div>
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    Valor: R$ {Number(assignment.assigned_value).toFixed(2)}
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveAssignment(assignment.id);
+                                    }}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Pending Offers Section */}
+                        {shiftPendingOffers.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-medium text-blue-700">✋ Ofertas Pendentes:</div>
+                              <Badge className="bg-blue-100 text-blue-700">{shiftPendingOffers.length} oferta(s)</Badge>
+                            </div>
+                            <div className="grid gap-2">
+                              {shiftPendingOffers.map(offer => (
+                                <div 
+                                  key={offer.id} 
+                                  className="flex items-center justify-between p-3 rounded-lg bg-blue-50 border border-blue-200"
+                                >
+                                  <div>
+                                    <div className="font-medium text-sm text-blue-800">
+                                      {offer.profile?.name || 'Plantonista'}
+                                    </div>
+                                    {offer.message && (
+                                      <div className="text-xs text-blue-600 mt-1">
+                                        "{offer.message}"
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="bg-green-50 border-green-300 text-green-700 hover:bg-green-100"
+                                      onClick={() => handleAcceptOffer(offer, shift)}
+                                    >
+                                      <Check className="h-4 w-4 mr-1" />
+                                      Aceitar
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="bg-red-50 border-red-300 text-red-700 hover:bg-red-100"
+                                      onClick={() => handleRejectOffer(offer.id)}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
                                   </div>
                                 </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleRemoveAssignment(assignment.id);
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                                </Button>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
