@@ -877,27 +877,27 @@ export default function UserManagement() {
                                         ) : (
                                           sectors.map(sector => {
                                             const isInSector = userSectorIds.includes(sector.id);
+                                            const toggle = () => toggleSectorMembership(member.user_id, sector.id);
+
                                             return (
-                                              <div 
-                                                key={sector.id} 
-                                                className="flex items-center gap-2"
+                                              <button
+                                                type="button"
+                                                key={sector.id}
+                                                className="flex w-full items-center gap-2 rounded-sm p-1 text-left hover:bg-accent"
+                                                onClick={toggle}
                                               >
                                                 <Checkbox
                                                   id={`sector-${member.user_id}-${sector.id}`}
                                                   checked={isInSector}
-                                                  onCheckedChange={() => toggleSectorMembership(member.user_id, sector.id)}
+                                                  onCheckedChange={toggle}
+                                                  onClick={(e) => e.stopPropagation()}
                                                 />
-                                                <label 
-                                                  htmlFor={`sector-${member.user_id}-${sector.id}`}
-                                                  className="flex items-center gap-2 text-sm cursor-pointer flex-1"
-                                                >
-                                                  <span 
-                                                    className="w-3 h-3 rounded-full shrink-0" 
-                                                    style={{ backgroundColor: sector.color || '#22c55e' }}
-                                                  />
-                                                  {sector.name}
-                                                </label>
-                                              </div>
+                                                <span
+                                                  className="w-3 h-3 rounded-full shrink-0"
+                                                  style={{ backgroundColor: sector.color || '#22c55e' }}
+                                                />
+                                                <span className="text-sm flex-1">{sector.name}</span>
+                                              </button>
                                             );
                                           })
                                         )}

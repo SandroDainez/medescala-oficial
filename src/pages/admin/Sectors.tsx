@@ -467,7 +467,16 @@ export default function AdminSectors() {
                       }}
                     />
 
-                    <Label htmlFor={member.user_id} className="cursor-pointer flex-1">
+                    <div
+                      className="cursor-pointer flex-1"
+                      onClick={() => {
+                        if (!isPlantonista) return;
+                        const next = selectedMembers.includes(member.user_id)
+                          ? selectedMembers.filter((id) => id !== member.user_id)
+                          : [...selectedMembers, member.user_id];
+                        setSelectedMembers(next);
+                      }}
+                    >
                       <div className="flex items-center justify-between gap-3">
                         <span>{displayName}</span>
                         <div className="flex items-center gap-2">
@@ -479,14 +488,17 @@ export default function AdminSectors() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              onClick={() => makePlantonista(member.user_id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                makePlantonista(member.user_id);
+                              }}
                             >
                               Tornar plantonista
                             </Button>
                           )}
                         </div>
                       </div>
-                    </Label>
+                    </div>
                   </div>
                 );
               })}
