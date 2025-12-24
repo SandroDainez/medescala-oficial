@@ -677,6 +677,27 @@ export type Database = {
           },
         ]
       }
+      super_admins: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       swap_requests: {
         Row: {
           admin_notes: string | null
@@ -862,6 +883,21 @@ export type Database = {
         Args: { _name: string; _slug: string }
         Returns: string
       }
+      get_all_tenants_admin: {
+        Args: never
+        Returns: {
+          billing_status: string
+          created_at: string
+          current_users_count: number
+          id: string
+          is_unlimited: boolean
+          max_users: number
+          name: string
+          plan_name: string
+          slug: string
+          trial_ends_at: string
+        }[]
+      }
       get_tenant_access_status: {
         Args: { _tenant_id: string }
         Returns: {
@@ -912,6 +948,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
       is_tenant_access_active: {
         Args: { _tenant_id: string }
         Returns: boolean
@@ -922,6 +959,15 @@ export type Database = {
       }
       is_tenant_member: {
         Args: { _tenant_id: string; _user_id: string }
+        Returns: boolean
+      }
+      update_tenant_access: {
+        Args: {
+          _billing_status?: string
+          _is_unlimited?: boolean
+          _tenant_id: string
+          _trial_ends_at?: string
+        }
         Returns: boolean
       }
     }
