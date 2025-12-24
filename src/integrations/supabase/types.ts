@@ -764,6 +764,7 @@ export type Database = {
           created_by: string | null
           current_users_count: number
           id: string
+          is_unlimited: boolean
           logo_url: string | null
           max_shifts_per_month: number
           max_users: number
@@ -781,6 +782,7 @@ export type Database = {
           created_by?: string | null
           current_users_count?: number
           id?: string
+          is_unlimited?: boolean
           logo_url?: string | null
           max_shifts_per_month?: number
           max_users?: number
@@ -798,6 +800,7 @@ export type Database = {
           created_by?: string | null
           current_users_count?: number
           id?: string
+          is_unlimited?: boolean
           logo_url?: string | null
           max_shifts_per_month?: number
           max_users?: number
@@ -845,6 +848,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_trial_end_date: { Args: never; Returns: string }
       can_add_user_to_tenant: { Args: { _tenant_id: string }; Returns: boolean }
       check_tenant_shift_limit: {
         Args: { _tenant_id: string }
@@ -857,6 +861,15 @@ export type Database = {
       create_tenant_with_admin: {
         Args: { _name: string; _slug: string }
         Returns: string
+      }
+      get_tenant_access_status: {
+        Args: { _tenant_id: string }
+        Returns: {
+          days_remaining: number
+          is_unlimited: boolean
+          status: string
+          trial_ends_at: string
+        }[]
       }
       get_tenant_plan_info: {
         Args: { _tenant_id: string }
@@ -897,6 +910,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_tenant_access_active: {
+        Args: { _tenant_id: string }
         Returns: boolean
       }
       is_tenant_admin: {
