@@ -713,6 +713,22 @@ export default function ShiftCalendar() {
     fetchData();
   }
 
+  // Helper to sort shifts by time, then by plantonista name alphabetically
+  function sortShiftsByTimeAndName(shiftsToSort: Shift[]): Shift[] {
+    return [...shiftsToSort].sort((a, b) => {
+      // First sort by start_time
+      const timeCompare = a.start_time.localeCompare(b.start_time);
+      if (timeCompare !== 0) return timeCompare;
+      
+      // If same time, sort by plantonista name alphabetically
+      const assignmentA = assignments.find(asg => asg.shift_id === a.id);
+      const assignmentB = assignments.find(asg => asg.shift_id === b.id);
+      const nameA = (assignmentA?.profile?.name || 'ZZZZZ').toLowerCase(); // Put unassigned at end
+      const nameB = (assignmentB?.profile?.name || 'ZZZZZ').toLowerCase();
+      return nameA.localeCompare(nameB, 'pt-BR');
+    });
+  }
+
   async function handleDeleteShift(id: string) {
     if (!confirm('Deseja excluir este plantão e todas as atribuições?')) return;
 
@@ -1086,7 +1102,7 @@ export default function ShiftCalendar() {
                 
                 {hasShifts && (
                   <div className="space-y-1">
-                    {dayShifts.slice(0, viewMode === 'week' ? 8 : 4).map(shift => {
+                    {sortShiftsByTimeAndName(dayShifts).slice(0, viewMode === 'week' ? 8 : 4).map(shift => {
                       const shiftAssignments = getAssignmentsForShift(shift.id);
                       const shiftPendingOffers = getOffersForShift(shift.id);
                       const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
@@ -2131,7 +2147,7 @@ export default function ShiftCalendar() {
                 Nenhum plantão neste dia
               </p>
             ) : (
-              selectedDate && getShiftsForDate(selectedDate).map(shift => {
+              selectedDate && sortShiftsByTimeAndName(getShiftsForDate(selectedDate)).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
                 const shiftPendingOffers = getOffersForShift(shift.id);
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
