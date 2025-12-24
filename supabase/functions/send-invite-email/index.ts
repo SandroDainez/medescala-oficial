@@ -5,6 +5,19 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// HTML escape function to prevent XSS in email templates
+function escapeHtml(text: string): string {
+  if (!text) return '';
+  const htmlEscapes: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  };
+  return text.replace(/[&<>"']/g, (char) => htmlEscapes[char] || char);
+}
+
 interface InviteEmailRequest {
   name: string;
   email: string;
@@ -45,14 +58,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
         </div>
         
         <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
-          <h2 style="color: #059669; margin-top: 0;">Olá, ${name}!</h2>
+          <h2 style="color: #059669; margin-top: 0;">Olá, ${escapeHtml(name)}!</h2>
           
-          <p>Você foi cadastrado no sistema de escalas do <strong>${hospitalName}</strong>.</p>
+          <p>Você foi cadastrado no sistema de escalas do <strong>${escapeHtml(hospitalName)}</strong>.</p>
           
           <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #374151;">Seus dados de acesso:</h3>
-            <p style="margin: 10px 0;"><strong>Email:</strong> ${email}</p>
-            <p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${password}</code></p>
+            <p style="margin: 10px 0;"><strong>Email:</strong> ${escapeHtml(email)}</p>
+            <p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${escapeHtml(password)}</code></p>
           </div>
           
           <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
@@ -62,7 +75,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${loginUrl}" style="display: inline-block; background: #059669; color: white; text-decoration: none; padding: 14px 30px; border-radius: 8px; font-weight: bold; font-size: 16px;">
+            <a href="${escapeHtml(loginUrl)}" style="display: inline-block; background: #059669; color: white; text-decoration: none; padding: 14px 30px; border-radius: 8px; font-weight: bold; font-size: 16px;">
               Acessar o Sistema
             </a>
           </div>
@@ -88,7 +101,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         from: "MedEscala <onboarding@resend.dev>",
         to: [email],
-        subject: `Bem-vindo ao ${hospitalName} - MedEscala`,
+        subject: `Bem-vindo ao ${escapeHtml(hospitalName)} - MedEscala`,
         html: htmlContent,
       }),
     });
