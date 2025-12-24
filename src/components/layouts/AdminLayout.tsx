@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { TenantSelector } from '@/components/TenantSelector';
+import { TrialBanner } from '@/components/TrialBanner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -46,6 +47,8 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Trial Banner */}
+      <TrialBanner />
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80">
         <div className="flex h-16 items-center justify-between px-4 lg:px-6">

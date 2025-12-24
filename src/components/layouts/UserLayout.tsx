@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { TenantSelector } from '@/components/TenantSelector';
 import { NotificationBell } from '@/components/NotificationBell';
+import { TrialBanner } from '@/components/TrialBanner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
@@ -38,6 +39,9 @@ export function UserLayout() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Trial Banner */}
+      <TrialBanner />
+      
       {/* Header */}
       <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm">
         <div className="flex h-16 items-center justify-between px-4">
