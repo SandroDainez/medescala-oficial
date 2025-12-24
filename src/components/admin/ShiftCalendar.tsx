@@ -2164,7 +2164,7 @@ export default function ShiftCalendar() {
               />
             </div>
             
-            <div className="grid gap-4 sm:grid-cols-3">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="shift_date">Data</Label>
                 <Input
@@ -2185,20 +2185,34 @@ export default function ShiftCalendar() {
                   required
                 />
               </div>
-              {!editingShift && (
-                <div className="space-y-2">
-                  <Label htmlFor="quantity">Quantidade (no dia)</Label>
-                  <Input
-                    id="quantity"
-                    type="number"
-                    min={1}
-                    max={50}
-                    value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value === '' ? 1 : Number(e.target.value) })}
-                  />
-                </div>
-              )}
             </div>
+
+            {/* Quantity field for creating multiple shifts - ONLY for new shifts */}
+            {!editingShift && (
+              <div className="space-y-2 p-3 rounded-lg border bg-blue-50 dark:bg-blue-950/30">
+                <Label htmlFor="quantity" className="flex items-center gap-2">
+                  <Plus className="h-4 w-4 text-blue-600" />
+                  Quantidade de Plantões (neste dia)
+                </Label>
+                <Input
+                  id="quantity"
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={formData.quantity}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value, 10);
+                    setFormData({ ...formData, quantity: isNaN(val) || val < 1 ? 1 : Math.min(val, 50) });
+                  }}
+                  className="max-w-[120px]"
+                />
+                {formData.quantity > 1 && (
+                  <p className="text-xs text-blue-600 font-medium">
+                    Serão criados {formData.quantity} plantões idênticos neste dia
+                  </p>
+                )}
+              </div>
+            )}
             
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
@@ -2393,9 +2407,15 @@ export default function ShiftCalendar() {
                 ? (formData.repeat_weeks > 0 
                     ? `Salvar e Duplicar ${formData.repeat_weeks}x` 
                     : 'Salvar Alterações')
-                : (formData.repeat_weeks > 0 
-                    ? `Criar ${1 + formData.repeat_weeks} Plantões` 
-                    : 'Criar Plantão')}
+                : (() => {
+                    const qty = formData.quantity || 1;
+                    const weeks = formData.repeat_weeks || 0;
+                    const total = qty * (1 + weeks);
+                    if (total > 1) {
+                      return `Criar ${total} Plantões`;
+                    }
+                    return 'Criar Plantão';
+                  })()}
             </Button>
           </form>
         </DialogContent>
