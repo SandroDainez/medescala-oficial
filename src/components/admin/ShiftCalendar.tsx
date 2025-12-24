@@ -1167,9 +1167,9 @@ export default function ShiftCalendar() {
               </div>
             </div>
             
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label>Duração do Plantão</Label>
+                <Label>Duração Rápida</Label>
                 <Select 
                   value="" 
                   onValueChange={(v) => {
@@ -1184,7 +1184,7 @@ export default function ShiftCalendar() {
                   }}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecionar duração" />
+                    <SelectValue placeholder="Selecionar" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="6">6 horas</SelectItem>
@@ -1192,6 +1192,27 @@ export default function ShiftCalendar() {
                     <SelectItem value="24">24 horas</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="custom_duration">Duração (horas)</Label>
+                <Input
+                  id="custom_duration"
+                  type="number"
+                  min="1"
+                  max="48"
+                  placeholder="Ex: 8"
+                  onChange={(e) => {
+                    if (!formData.start_time || !e.target.value) return;
+                    const hours = parseInt(e.target.value, 10);
+                    if (isNaN(hours) || hours < 1) return;
+                    const [h, m] = formData.start_time.split(':').map(Number);
+                    const startMinutes = h * 60 + m;
+                    const endMinutes = (startMinutes + hours * 60) % (24 * 60);
+                    const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
+                    const endM = (endMinutes % 60).toString().padStart(2, '0');
+                    setFormData({ ...formData, end_time: `${endH}:${endM}` });
+                  }}
+                />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="end_time">Término</Label>
