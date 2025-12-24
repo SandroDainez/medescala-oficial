@@ -5,7 +5,9 @@ import { TenantSelector } from '@/components/TenantSelector';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { 
-  Calendar, 
+  Calendar,
+  CalendarDays,
+  ListTodo,
   ArrowLeftRight, 
   DollarSign,
   LogOut,
@@ -15,7 +17,8 @@ import {
 import { useState } from 'react';
 
 const navItems = [
-  { to: '/app', label: 'Meus Plantões', icon: Calendar, end: true },
+  { to: '/app', label: 'Calendário', icon: CalendarDays, end: true },
+  { to: '/app/shifts', label: 'Meus Plantões', icon: ListTodo },
   { to: '/app/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/app/financial', label: 'Financeiro', icon: DollarSign },
 ];
