@@ -119,6 +119,9 @@ export default function ShiftCalendar() {
     quantity: 1,
   });
 
+  // Individual user assignments when creating multiple shifts
+  const [multiAssignments, setMultiAssignments] = useState<string[]>([]);
+
   const [assignData, setAssignData] = useState({
     user_id: '',
     assigned_value: '',
@@ -443,28 +446,33 @@ export default function ShiftCalendar() {
     } else {
       const quantity = Math.max(1, Math.min(50, Number(formData.quantity) || 1));
 
-      const shouldAssignUser =
-        formData.assigned_user_id &&
-        formData.assigned_user_id !== 'vago' &&
-        formData.assigned_user_id !== 'disponivel';
+      async function createOneShift(shiftDate: string, userIdForShift: string | null) {
+        // Determine notes based on assignment type
+        let shiftNotesForThis = formData.notes || '';
+        if (!userIdForShift || userIdForShift === 'vago') {
+          shiftNotesForThis = `[VAGO] ${shiftNotesForThis}`.trim();
+        } else if (userIdForShift === 'disponivel') {
+          shiftNotesForThis = `[DISPONÍVEL] ${shiftNotesForThis}`.trim();
+        }
 
-      async function createOneShift(shiftDate: string) {
         const { data: createdShift, error } = await supabase
           .from('shifts')
           .insert({
             ...shiftData,
             shift_date: shiftDate,
+            notes: shiftNotesForThis || null,
           })
           .select()
           .single();
 
         if (error || !createdShift) return { ok: false as const };
 
-        if (shouldAssignUser) {
+        // Create assignment if a real user was selected
+        if (userIdForShift && userIdForShift !== 'vago' && userIdForShift !== 'disponivel') {
           await supabase.from('shift_assignments').insert({
             tenant_id: currentTenantId,
             shift_id: createdShift.id,
-            user_id: formData.assigned_user_id,
+            user_id: userIdForShift,
             assigned_value: parseFloat(formData.base_value) || 0,
             created_by: user?.id,
           });
@@ -479,9 +487,13 @@ export default function ShiftCalendar() {
       let successCount = 0;
       let errorCount = 0;
 
-      // Create N shifts for the selected day
+      // Create N shifts for the selected day with individual assignments
       for (let i = 0; i < quantity; i++) {
-        const res = await createOneShift(formData.shift_date);
+        // Use individual assignment if available, otherwise use the default
+        const userIdForShift = quantity > 1 && multiAssignments[i] 
+          ? multiAssignments[i] 
+          : formData.assigned_user_id;
+        const res = await createOneShift(formData.shift_date, userIdForShift || null);
         if (res.ok) successCount++; else errorCount++;
       }
 
@@ -491,7 +503,10 @@ export default function ShiftCalendar() {
           const newDate = addWeeks(baseDate, week);
           const dateStr = format(newDate, 'yyyy-MM-dd');
           for (let i = 0; i < quantity; i++) {
-            const res = await createOneShift(dateStr);
+            const userIdForShift = quantity > 1 && multiAssignments[i] 
+              ? multiAssignments[i] 
+              : formData.assigned_user_id;
+            const res = await createOneShift(dateStr, userIdForShift || null);
             if (res.ok) successCount++; else errorCount++;
           }
         }
@@ -500,14 +515,7 @@ export default function ShiftCalendar() {
       if (errorCount > 0) {
         toast({ title: `${successCount} criados, ${errorCount} erros`, variant: 'destructive' });
       } else {
-        const statusMsg = repeatWeeks > 0
-          ? `${successCount} plantões criados (${repeatWeeks} semanas repetidas)!`
-          : formData.assigned_user_id === 'disponivel'
-            ? `${successCount} plantões disponíveis criados!`
-            : formData.assigned_user_id === 'vago'
-              ? `${successCount} plantões vagos criados!`
-              : `${successCount} plantões criados!`;
-        toast({ title: statusMsg });
+        toast({ title: `${successCount} plantões criados!` });
       }
 
       fetchData();
@@ -947,6 +955,7 @@ export default function ShiftCalendar() {
   function closeShiftDialog() {
     setShiftDialogOpen(false);
     setEditingShift(null);
+    setMultiAssignments([]);
     setFormData({
       hospital: '',
       location: '',
@@ -2198,17 +2207,30 @@ export default function ShiftCalendar() {
                   id="quantity"
                   type="number"
                   min={1}
-                  max={50}
+                  max={20}
                   value={formData.quantity}
                   onChange={(e) => {
                     const val = parseInt(e.target.value, 10);
-                    setFormData({ ...formData, quantity: isNaN(val) || val < 1 ? 1 : Math.min(val, 50) });
+                    const newQty = isNaN(val) || val < 1 ? 1 : Math.min(val, 20);
+                    setFormData({ ...formData, quantity: newQty });
+                    // Initialize multiAssignments array when quantity changes
+                    if (newQty > 1) {
+                      setMultiAssignments(prev => {
+                        const newArr = [...prev];
+                        while (newArr.length < newQty) {
+                          newArr.push('vago');
+                        }
+                        return newArr.slice(0, newQty);
+                      });
+                    } else {
+                      setMultiAssignments([]);
+                    }
                   }}
                   className="max-w-[120px]"
                 />
                 {formData.quantity > 1 && (
                   <p className="text-xs text-blue-600 font-medium">
-                    Serão criados {formData.quantity} plantões idênticos neste dia
+                    Serão criados {formData.quantity} plantões - atribua cada um abaixo
                   </p>
                 )}
               </div>
@@ -2289,66 +2311,122 @@ export default function ShiftCalendar() {
                 />
               </div>
               
-              {/* Plantonista selection - for new and editing shifts */}
-              <div className="space-y-2">
-                <Label>Atribuição do Plantão</Label>
-                <Select 
-                  value={formData.assigned_user_id || 'vago'} 
-                  onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecionar tipo" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="vago">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-gray-400" />
-                        Plantão Vago
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="disponivel">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-500" />
-                        Plantão Disponível
-                      </span>
-                    </SelectItem>
-                    {/* Show members - prefer sector members, fallback to all members */}
-                    {(() => {
+              {/* Plantonista selection - show individual selectors when quantity > 1 */}
+              {!editingShift && formData.quantity > 1 ? (
+                <div className="col-span-2 space-y-3 p-3 rounded-lg border bg-green-50 dark:bg-green-950/30">
+                  <Label className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-green-600" />
+                    Atribuição Individual ({formData.quantity} plantões)
+                  </Label>
+                  <div className="grid gap-2 max-h-[200px] overflow-y-auto">
+                    {Array.from({ length: formData.quantity }, (_, i) => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
                       const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
-                      const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
                       
-                      if (membersToShow.length > 0) {
-                        return (
-                          <>
-                            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
-                              {label}
-                            </div>
-                            {membersToShow.map((m) => (
-                              <SelectItem key={m.user_id} value={m.user_id}>
+                      return (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className="text-sm font-medium w-20">Plantão {i + 1}:</span>
+                          <Select 
+                            value={multiAssignments[i] || 'vago'} 
+                            onValueChange={(v) => {
+                              setMultiAssignments(prev => {
+                                const newArr = [...prev];
+                                newArr[i] = v;
+                                return newArr;
+                              });
+                            }}
+                          >
+                            <SelectTrigger className="flex-1">
+                              <SelectValue placeholder="Selecionar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="vago">
                                 <span className="flex items-center gap-2">
-                                  <span className="w-2 h-2 rounded-full bg-primary" />
-                                  {m.profile?.name || 'Sem nome'}
+                                  <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                  Vago
                                 </span>
                               </SelectItem>
-                            ))}
-                          </>
-                        );
-                      }
-                      return (
-                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
-                          Nenhum plantonista cadastrado
+                              <SelectItem value="disponivel">
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                                  Disponível
+                                </span>
+                              </SelectItem>
+                              {membersToShow.map((m) => (
+                                <SelectItem key={m.user_id} value={m.user_id}>
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-primary" />
+                                    {m.profile?.name || 'Sem nome'}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </div>
                       );
-                    })()}
-                  </SelectContent>
-                </Select>
-                {formData.assigned_user_id === 'disponivel' && (
-                  <p className="text-xs text-muted-foreground">
-                    Este plantão ficará visível para plantonistas se oferecerem.
-                  </p>
-                )}
-              </div>
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Atribuição do Plantão</Label>
+                  <Select 
+                    value={formData.assigned_user_id || 'vago'} 
+                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar tipo" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="vago">
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-gray-400" />
+                          Plantão Vago
+                        </span>
+                      </SelectItem>
+                      <SelectItem value="disponivel">
+                        <span className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500" />
+                          Plantão Disponível
+                        </span>
+                      </SelectItem>
+                      {(() => {
+                        const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
+                        const membersToShow = sectorMembers.length > 0 ? sectorMembers : members;
+                        const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
+                        
+                        if (membersToShow.length > 0) {
+                          return (
+                            <>
+                              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1">
+                                {label}
+                              </div>
+                              {membersToShow.map((m) => (
+                                <SelectItem key={m.user_id} value={m.user_id}>
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-primary" />
+                                    {m.profile?.name || 'Sem nome'}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </>
+                          );
+                        }
+                        return (
+                          <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                            Nenhum plantonista cadastrado
+                          </div>
+                        );
+                      })()}
+                    </SelectContent>
+                  </Select>
+                  {formData.assigned_user_id === 'disponivel' && (
+                    <p className="text-xs text-muted-foreground">
+                      Este plantão ficará visível para plantonistas se oferecerem.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
