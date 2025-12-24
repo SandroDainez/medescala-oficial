@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
+import { useSuperAdmin } from '@/hooks/useSuperAdmin';
 import { TenantSelector } from '@/components/TenantSelector';
 import { TrialBanner } from '@/components/TrialBanner';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,8 @@ import {
   CreditCard,
   ListTodo,
   Stethoscope,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Shield
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -37,6 +39,7 @@ const navItems = [
 export function AdminLayout() {
   const { user, signOut } = useAuth();
   const { currentTenantName } = useTenant();
+  const { isSuperAdmin } = useSuperAdmin();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -124,6 +127,24 @@ export function AdminLayout() {
                 <span>{item.label}</span>
               </NavLink>
             ))}
+            
+            {/* Super Admin Link */}
+            {isSuperAdmin && (
+              <NavLink
+                to="/super-admin"
+                className={({ isActive }) =>
+                  cn(
+                    'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mt-4 border-t pt-4',
+                    isActive
+                      ? 'bg-destructive text-destructive-foreground shadow-md'
+                      : 'text-destructive hover:bg-destructive/10'
+                  )
+                }
+              >
+                <Shield className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
+                <span>Super Admin</span>
+              </NavLink>
+            )}
           </nav>
         </aside>
 
@@ -154,6 +175,25 @@ export function AdminLayout() {
                   {item.label}
                 </NavLink>
               ))}
+              
+              {/* Super Admin Link - Mobile */}
+              {isSuperAdmin && (
+                <NavLink
+                  to="/super-admin"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mt-4 border-t pt-4',
+                      isActive
+                        ? 'bg-destructive text-destructive-foreground shadow-md'
+                        : 'text-destructive hover:bg-destructive/10'
+                    )
+                  }
+                >
+                  <Shield className="h-5 w-5" />
+                  Super Admin
+                </NavLink>
+              )}
             </nav>
           </div>
         )}
