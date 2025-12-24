@@ -913,12 +913,8 @@ export default function ShiftCalendar() {
                   ${bulkMode && dayHasSelectedShifts ? 'ring-2 ring-destructive bg-destructive/10' : ''}
                 `}
                 onClick={() => {
-                  if (bulkMode && !hasShifts) {
-                    // In bulk mode with no shifts, toggle date selection for bulk create
-                    toggleDateSelection(dateStr);
-                  } else {
-                    openDayView(day);
-                  }
+                  // Always open day view on click - bulk selection is done via checkboxes
+                  openDayView(day);
                 }}
               >
                 <div className={`flex items-center justify-between text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
