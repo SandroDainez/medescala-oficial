@@ -318,10 +318,11 @@ export default function UserManagement() {
     setIsUpdatingUser(true);
 
     try {
-      // Update profile
+      // Upsert profile to ensure it exists and is updated
       const { error: profileError } = await supabase
         .from('profiles')
-        .update({
+        .upsert({
+          id: editingMember.user_id,
           name: editName,
           phone: editPhone || null,
           cpf: editCpf || null,
@@ -332,8 +333,7 @@ export default function UserManagement() {
           bank_account: editBankAccount || null,
           pix_key: editPixKey || null,
           profile_type: editProfileType,
-        })
-        .eq('id', editingMember.user_id);
+        });
 
       if (profileError) throw profileError;
 
