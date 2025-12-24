@@ -383,7 +383,49 @@ export default function ShiftCalendar() {
           }
         }
         
-        toast({ title: 'Plantão atualizado!' });
+        // Duplicate for additional weeks if specified when editing
+        const repeatWeeks = formData.repeat_weeks || 0;
+        if (repeatWeeks > 0) {
+          const baseDate = parseISO(formData.shift_date);
+          
+          for (let week = 1; week <= repeatWeeks; week++) {
+            const newDate = addWeeks(baseDate, week);
+            const duplicatedShiftData = {
+              ...shiftData,
+              shift_date: format(newDate, 'yyyy-MM-dd'),
+            };
+
+            const { data: duplicatedShift, error: dupError } = await supabase
+              .from('shifts')
+              .insert(duplicatedShiftData)
+              .select()
+              .single();
+
+            if (dupError) {
+              console.error(`Error duplicating shift for week ${week}:`, dupError);
+              continue;
+            }
+
+            // Create assignment for duplicated shift if a plantonista was selected
+            if (formData.assigned_user_id && 
+                formData.assigned_user_id !== 'vago' && 
+                formData.assigned_user_id !== 'disponivel' && 
+                duplicatedShift) {
+              await supabase.from('shift_assignments').insert({
+                tenant_id: currentTenantId,
+                shift_id: duplicatedShift.id,
+                user_id: formData.assigned_user_id,
+                assigned_value: parseFloat(formData.base_value) || 0,
+                created_by: user?.id,
+              });
+            }
+          }
+          
+          toast({ title: `Plantão atualizado e ${repeatWeeks} cópias criadas!` });
+        } else {
+          toast({ title: 'Plantão atualizado!' });
+        }
+        
         fetchData();
         closeShiftDialog();
       }
@@ -1850,45 +1892,55 @@ export default function ShiftCalendar() {
               />
             </div>
 
-            {/* Repeat in next weeks - only show for new shifts */}
-            {!editingShift && (
-              <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
-                <div className="flex items-center gap-2">
-                  <Repeat className="h-4 w-4 text-primary" />
-                  <Label className="font-medium">Repetir nas próximas semanas</Label>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Crie plantões idênticos nas mesmas datas e horários nas próximas semanas.
-                </p>
-                <Select 
-                  value={formData.repeat_weeks.toString()} 
-                  onValueChange={(v) => setFormData({ ...formData, repeat_weeks: parseInt(v, 10) })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Não repetir" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">Não repetir</SelectItem>
-                    <SelectItem value="1">Repetir por 1 semana</SelectItem>
-                    <SelectItem value="2">Repetir por 2 semanas</SelectItem>
-                    <SelectItem value="3">Repetir por 3 semanas</SelectItem>
-                    <SelectItem value="4">Repetir por 4 semanas</SelectItem>
-                    <SelectItem value="5">Repetir por 5 semanas</SelectItem>
-                    <SelectItem value="6">Repetir por 6 semanas</SelectItem>
-                    <SelectItem value="7">Repetir por 7 semanas</SelectItem>
-                    <SelectItem value="8">Repetir por 8 semanas</SelectItem>
-                  </SelectContent>
-                </Select>
-                {formData.repeat_weeks > 0 && (
-                  <p className="text-xs text-primary font-medium">
-                    Serão criados {1 + formData.repeat_weeks} plantões no total (este + {formData.repeat_weeks} semanas)
-                  </p>
-                )}
+            {/* Repeat in next weeks */}
+            <div className="space-y-3 p-4 rounded-lg border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Repeat className="h-4 w-4 text-primary" />
+                <Label className="font-medium">
+                  {editingShift ? 'Duplicar nas próximas semanas' : 'Repetir nas próximas semanas'}
+                </Label>
               </div>
-            )}
+              <p className="text-xs text-muted-foreground">
+                {editingShift 
+                  ? 'Crie cópias deste plantão nas próximas semanas com os mesmos dados.'
+                  : 'Crie plantões idênticos nas mesmas datas e horários nas próximas semanas.'}
+              </p>
+              <Select 
+                value={formData.repeat_weeks.toString()} 
+                onValueChange={(v) => setFormData({ ...formData, repeat_weeks: parseInt(v, 10) })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Não repetir" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Não {editingShift ? 'duplicar' : 'repetir'}</SelectItem>
+                  <SelectItem value="1">{editingShift ? 'Duplicar' : 'Repetir'} por 1 semana</SelectItem>
+                  <SelectItem value="2">{editingShift ? 'Duplicar' : 'Repetir'} por 2 semanas</SelectItem>
+                  <SelectItem value="3">{editingShift ? 'Duplicar' : 'Repetir'} por 3 semanas</SelectItem>
+                  <SelectItem value="4">{editingShift ? 'Duplicar' : 'Repetir'} por 4 semanas</SelectItem>
+                  <SelectItem value="5">{editingShift ? 'Duplicar' : 'Repetir'} por 5 semanas</SelectItem>
+                  <SelectItem value="6">{editingShift ? 'Duplicar' : 'Repetir'} por 6 semanas</SelectItem>
+                  <SelectItem value="7">{editingShift ? 'Duplicar' : 'Repetir'} por 7 semanas</SelectItem>
+                  <SelectItem value="8">{editingShift ? 'Duplicar' : 'Repetir'} por 8 semanas</SelectItem>
+                </SelectContent>
+              </Select>
+              {formData.repeat_weeks > 0 && (
+                <p className="text-xs text-primary font-medium">
+                  {editingShift 
+                    ? `Serão criadas ${formData.repeat_weeks} cópias deste plantão nas próximas semanas`
+                    : `Serão criados ${1 + formData.repeat_weeks} plantões no total (este + ${formData.repeat_weeks} semanas)`}
+                </p>
+              )}
+            </div>
 
             <Button type="submit" className="w-full">
-              {editingShift ? 'Salvar Alterações' : formData.repeat_weeks > 0 ? `Criar ${1 + formData.repeat_weeks} Plantões` : 'Criar Plantão'}
+              {editingShift 
+                ? (formData.repeat_weeks > 0 
+                    ? `Salvar e Duplicar ${formData.repeat_weeks}x` 
+                    : 'Salvar Alterações')
+                : (formData.repeat_weeks > 0 
+                    ? `Criar ${1 + formData.repeat_weeks} Plantões` 
+                    : 'Criar Plantão')}
             </Button>
           </form>
         </DialogContent>
