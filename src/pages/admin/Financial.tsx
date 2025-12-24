@@ -3,22 +3,24 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Download, Lock, Printer, DollarSign, Users, Calendar, MapPin, Eye, FileText } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { Download, Lock, Printer, DollarSign, Users, Calendar, MapPin, Eye, FileText, Clock, Filter } from 'lucide-react';
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, addMonths, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface PaymentSummary {
   user_id: string;
   user_name: string | null;
   total_shifts: number;
+  total_hours: number;
   total_value: number;
   payment_status: string | null;
 }
@@ -32,6 +34,7 @@ interface ShiftDetail {
   shift_date: string;
   start_time: string;
   end_time: string;
+  duration_hours: number;
   sector_name: string;
   hospital: string;
 }
@@ -43,95 +46,71 @@ export default function AdminFinancial() {
   const [summaries, setSummaries] = useState<PaymentSummary[]>([]);
   const [shiftDetails, setShiftDetails] = useState<ShiftDetail[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  
+  // Date range selection
+  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  
   const [selectedUser, setSelectedUser] = useState<PaymentSummary | null>(null);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
-  
-  const months = [
-    { value: 1, label: 'Janeiro' },
-    { value: 2, label: 'Fevereiro' },
-    { value: 3, label: 'Março' },
-    { value: 4, label: 'Abril' },
-    { value: 5, label: 'Maio' },
-    { value: 6, label: 'Junho' },
-    { value: 7, label: 'Julho' },
-    { value: 8, label: 'Agosto' },
-    { value: 9, label: 'Setembro' },
-    { value: 10, label: 'Outubro' },
-    { value: 11, label: 'Novembro' },
-    { value: 12, label: 'Dezembro' }
-  ];
-  const years = [2024, 2025, 2026];
+
+  // Quick date presets
+  function setThisMonth() {
+    setStartDate(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
+    setEndDate(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
+  }
+
+  function setLastMonth() {
+    const lastMonth = subMonths(new Date(), 1);
+    setStartDate(format(startOfMonth(lastMonth), 'yyyy-MM-dd'));
+    setEndDate(format(endOfMonth(lastMonth), 'yyyy-MM-dd'));
+  }
+
+  function setLast30Days() {
+    const today = new Date();
+    const thirtyDaysAgo = new Date(today);
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    setStartDate(format(thirtyDaysAgo, 'yyyy-MM-dd'));
+    setEndDate(format(today, 'yyyy-MM-dd'));
+  }
+
+  function setLast7Days() {
+    const today = new Date();
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    setStartDate(format(sevenDaysAgo, 'yyyy-MM-dd'));
+    setEndDate(format(today, 'yyyy-MM-dd'));
+  }
+
+  // Calculate duration in hours
+  function calculateDuration(start: string, end: string): number {
+    if (!start || !end) return 0;
+    
+    const [startH, startM] = start.split(':').map(Number);
+    const [endH, endM] = end.split(':').map(Number);
+    
+    let hours = endH - startH;
+    let minutes = endM - startM;
+    
+    // Handle overnight shifts
+    if (hours < 0 || (hours === 0 && minutes < 0)) {
+      hours += 24;
+    }
+    
+    return hours + (minutes / 60);
+  }
 
   useEffect(() => {
     if (currentTenantId) {
-      fetchSummaries();
-      fetchShiftDetails();
+      fetchData();
     }
-  }, [currentTenantId, selectedMonth, selectedYear]);
+  }, [currentTenantId, startDate, endDate]);
 
-  async function fetchSummaries() {
+  async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
-    
-    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
-    const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-    
-    const { data: assignments } = await supabase
-      .from('shift_assignments')
-      .select('user_id, assigned_value, shift:shifts!inner(shift_date)')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift.shift_date', startDate)
-      .lte('shift.shift_date', endDate);
-    
-    const { data: members } = await supabase
-      .from('memberships')
-      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(name)')
-      .eq('tenant_id', currentTenantId);
-    
-    const { data: payments } = await supabase
-      .from('payments')
-      .select('user_id, status')
-      .eq('tenant_id', currentTenantId)
-      .eq('month', selectedMonth)
-      .eq('year', selectedYear);
 
-    const userSummaries: Record<string, PaymentSummary> = {};
-    
-    members?.forEach((m: any) => {
-      userSummaries[m.user_id] = {
-        user_id: m.user_id,
-        user_name: m.profile?.name,
-        total_shifts: 0,
-        total_value: 0,
-        payment_status: null
-      };
-    });
-    
-    assignments?.forEach((a: any) => {
-      if (userSummaries[a.user_id]) {
-        userSummaries[a.user_id].total_shifts += 1;
-        userSummaries[a.user_id].total_value += Number(a.assigned_value) || 0;
-      }
-    });
-    
-    payments?.forEach((p: any) => {
-      if (userSummaries[p.user_id]) {
-        userSummaries[p.user_id].payment_status = p.status;
-      }
-    });
-
-    setSummaries(Object.values(userSummaries).filter(s => s.total_shifts > 0 || s.payment_status));
-    setLoading(false);
-  }
-
-  async function fetchShiftDetails() {
-    if (!currentTenantId) return;
-    
-    const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
-    const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-
+    // Fetch all assignments with shift details
     const { data } = await supabase
       .from('shift_assignments')
       .select(`
@@ -153,35 +132,90 @@ export default function AdminFinancial() {
       .lte('shift.shift_date', endDate)
       .order('shift.shift_date', { ascending: true });
 
+    // Fetch members for payment status
+    const { data: members } = await supabase
+      .from('memberships')
+      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(name)')
+      .eq('tenant_id', currentTenantId);
+
+    // Fetch payments
+    const { data: payments } = await supabase
+      .from('payments')
+      .select('user_id, status, month, year')
+      .eq('tenant_id', currentTenantId);
+
     if (data) {
-      const details: ShiftDetail[] = data.map((d: any) => ({
-        id: d.id,
-        shift_id: d.shift_id,
-        user_id: d.user_id,
-        user_name: d.profile?.name || 'N/A',
-        assigned_value: Number(d.assigned_value) || 0,
-        shift_date: d.shift?.shift_date,
-        start_time: d.shift?.start_time,
-        end_time: d.shift?.end_time,
-        sector_name: d.shift?.sector?.name || 'N/A',
-        hospital: d.shift?.hospital || 'N/A'
-      }));
+      const details: ShiftDetail[] = data.map((d: any) => {
+        const duration = calculateDuration(d.shift?.start_time || '', d.shift?.end_time || '');
+        return {
+          id: d.id,
+          shift_id: d.shift_id,
+          user_id: d.user_id,
+          user_name: d.profile?.name || 'N/A',
+          assigned_value: Number(d.assigned_value) || 0,
+          shift_date: d.shift?.shift_date,
+          start_time: d.shift?.start_time,
+          end_time: d.shift?.end_time,
+          duration_hours: duration,
+          sector_name: d.shift?.sector?.name || 'N/A',
+          hospital: d.shift?.hospital || 'N/A'
+        };
+      });
       setShiftDetails(details);
+
+      // Build summaries
+      const userSummaries: Record<string, PaymentSummary> = {};
+      
+      members?.forEach((m: any) => {
+        userSummaries[m.user_id] = {
+          user_id: m.user_id,
+          user_name: m.profile?.name,
+          total_shifts: 0,
+          total_hours: 0,
+          total_value: 0,
+          payment_status: null
+        };
+      });
+      
+      details.forEach(d => {
+        if (!userSummaries[d.user_id]) {
+          userSummaries[d.user_id] = {
+            user_id: d.user_id,
+            user_name: d.user_name,
+            total_shifts: 0,
+            total_hours: 0,
+            total_value: 0,
+            payment_status: null
+          };
+        }
+        userSummaries[d.user_id].total_shifts++;
+        userSummaries[d.user_id].total_hours += d.duration_hours;
+        userSummaries[d.user_id].total_value += d.assigned_value;
+      });
+
+      setSummaries(Object.values(userSummaries).filter(s => s.total_shifts > 0));
     }
+
+    setLoading(false);
   }
 
-  async function closeMonth(userId: string, totalShifts: number, totalValue: number) {
+  async function closePayment(userId: string, totalShifts: number, totalValue: number, totalHours: number) {
     if (!currentTenantId) return;
+    
+    const selectedStartDate = parseISO(startDate);
+    const month = selectedStartDate.getMonth() + 1;
+    const year = selectedStartDate.getFullYear();
     
     const { error } = await supabase
       .from('payments')
       .upsert({
         tenant_id: currentTenantId,
         user_id: userId,
-        month: selectedMonth,
-        year: selectedYear,
+        month,
+        year,
         total_shifts: totalShifts,
         total_value: totalValue,
+        total_hours: totalHours,
         status: 'closed',
         closed_at: new Date().toISOString(),
         closed_by: user?.id
@@ -190,35 +224,36 @@ export default function AdminFinancial() {
     if (error) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: 'Mês fechado!' });
-      fetchSummaries();
+      toast({ title: 'Período fechado!' });
+      fetchData();
     }
   }
 
   function exportCSV() {
-    const headers = ['Nome', 'Plantões', 'Valor Total', 'Status'];
+    const headers = ['Plantonista', 'Plantões', 'Carga Horária', 'Valor Total'];
     const rows = summaries.map(s => [
       s.user_name || 'N/A',
       s.total_shifts.toString(),
-      s.total_value.toFixed(2),
-      s.payment_status || 'aberto'
+      s.total_hours.toFixed(1) + 'h',
+      s.total_value.toFixed(2)
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `financeiro-${selectedMonth}-${selectedYear}.csv`;
+    a.download = `financeiro-${startDate}-a-${endDate}.csv`;
     a.click();
   }
 
   function exportDetailedCSV() {
-    const headers = ['Plantonista', 'Data', 'Local/Setor', 'Horário', 'Valor'];
+    const headers = ['Plantonista', 'Data', 'Local/Setor', 'Horário', 'Duração', 'Valor'];
     const rows = shiftDetails.map(s => [
       s.user_name,
       format(parseISO(s.shift_date), 'dd/MM/yyyy'),
       s.sector_name,
       `${s.start_time?.slice(0, 5) || ''} - ${s.end_time?.slice(0, 5) || ''}`,
+      s.duration_hours.toFixed(1) + 'h',
       s.assigned_value.toFixed(2)
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -226,7 +261,7 @@ export default function AdminFinancial() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `plantoes-detalhado-${selectedMonth}-${selectedYear}.csv`;
+    a.download = `plantoes-detalhado-${startDate}-a-${endDate}.csv`;
     a.click();
   }
 
@@ -237,7 +272,7 @@ export default function AdminFinancial() {
       return;
     }
 
-    const monthLabel = months.find(m => m.value === selectedMonth)?.label || '';
+    const periodLabel = `${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`;
     
     // Group shifts by user
     const userShifts: Record<string, ShiftDetail[]> = {};
@@ -253,14 +288,16 @@ export default function AdminFinancial() {
     Object.entries(userShifts).forEach(([userId, shifts]) => {
       const userName = shifts[0]?.user_name || 'N/A';
       const totalValue = shifts.reduce((sum, s) => sum + s.assigned_value, 0);
+      const totalHours = shifts.reduce((sum, s) => sum + s.duration_hours, 0);
       
       shifts.forEach((shift, idx) => {
         tableRows += `
           <tr>
-            ${idx === 0 ? `<td rowspan="${shifts.length}" style="vertical-align: top; font-weight: 600; border: 1px solid #ddd; padding: 8px; background: #f8f9fa;">${userName}<br><small style="font-weight: normal; color: #666;">${shifts.length} plantões</small></td>` : ''}
+            ${idx === 0 ? `<td rowspan="${shifts.length}" style="vertical-align: top; font-weight: 600; border: 1px solid #ddd; padding: 8px; background: #f8f9fa;">${userName}<br><small style="font-weight: normal; color: #666;">${shifts.length} plantões<br>${totalHours.toFixed(1)}h</small></td>` : ''}
             <td style="border: 1px solid #ddd; padding: 8px;">${format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</td>
             <td style="border: 1px solid #ddd; padding: 8px;">${shift.sector_name}</td>
             <td style="border: 1px solid #ddd; padding: 8px;">${shift.start_time?.slice(0, 5) || ''} - ${shift.end_time?.slice(0, 5) || ''}</td>
+            <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${shift.duration_hours.toFixed(1)}h</td>
             <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${shift.assigned_value.toFixed(2)}</td>
             ${idx === 0 ? `<td rowspan="${shifts.length}" style="vertical-align: top; font-weight: 700; border: 1px solid #ddd; padding: 8px; background: #e8f5e9; text-align: right;">R$ ${totalValue.toFixed(2)}</td>` : ''}
           </tr>
@@ -268,8 +305,8 @@ export default function AdminFinancial() {
       });
     });
 
-    // Calculate grand totals
     const grandTotalShifts = shiftDetails.length;
+    const grandTotalHours = shiftDetails.reduce((sum, s) => sum + s.duration_hours, 0);
     const grandTotalValue = shiftDetails.reduce((sum, s) => sum + s.assigned_value, 0);
     const uniqueUsers = [...new Set(shiftDetails.map(s => s.user_id))].length;
 
@@ -278,27 +315,24 @@ export default function AdminFinancial() {
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Relatório Financeiro - ${monthLabel} ${selectedYear}</title>
+        <title>Relatório Financeiro - ${periodLabel}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
           h1 { margin-bottom: 5px; color: #1a1a1a; }
           h2 { color: #666; font-weight: normal; margin-top: 0; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th { background: #1a1a1a; color: white; padding: 10px; text-align: left; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
+          th { background: #1a1a1a; color: white; padding: 8px; text-align: left; }
           .stats { display: flex; gap: 20px; margin: 20px 0; flex-wrap: wrap; }
           .stat-card { padding: 15px 25px; background: #f5f5f5; border-radius: 8px; text-align: center; min-width: 120px; }
           .stat-number { font-size: 24px; font-weight: bold; }
-          .stat-label { font-size: 12px; color: #666; }
-          .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #999; }
-          @media print {
-            body { padding: 0; }
-            .no-print { display: none; }
-          }
+          .stat-label { font-size: 11px; color: #666; }
+          .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 11px; color: #999; }
+          @media print { body { padding: 0; } }
         </style>
       </head>
       <body>
         <h1>Relatório Financeiro - ${currentTenantName || 'Hospital'}</h1>
-        <h2>${monthLabel} de ${selectedYear}</h2>
+        <h2>Período: ${periodLabel}</h2>
 
         <div class="stats">
           <div class="stat-card">
@@ -308,6 +342,10 @@ export default function AdminFinancial() {
           <div class="stat-card">
             <div class="stat-number">${grandTotalShifts}</div>
             <div class="stat-label">Total de Plantões</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotalHours.toFixed(1)}h</div>
+            <div class="stat-label">Carga Horária Total</div>
           </div>
           <div class="stat-card">
             <div class="stat-number">R$ ${grandTotalValue.toFixed(2)}</div>
@@ -322,12 +360,13 @@ export default function AdminFinancial() {
               <th>Data</th>
               <th>Local/Setor</th>
               <th>Horário</th>
+              <th>Duração</th>
               <th>Valor</th>
               <th>Total</th>
             </tr>
           </thead>
           <tbody>
-            ${tableRows || '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #666;">Nenhum plantão neste período</td></tr>'}
+            ${tableRows || '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #666;">Nenhum plantão neste período</td></tr>'}
           </tbody>
         </table>
 
@@ -335,11 +374,7 @@ export default function AdminFinancial() {
           Relatório gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
         </div>
 
-        <script>
-          window.onload = function() {
-            window.print();
-          }
-        </script>
+        <script>window.onload = function() { window.print(); }</script>
       </body>
       </html>
     `;
@@ -355,7 +390,7 @@ export default function AdminFinancial() {
       return;
     }
 
-    const monthLabel = months.find(m => m.value === selectedMonth)?.label || '';
+    const periodLabel = `${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`;
     const userDetails = shiftDetails.filter(d => d.user_id === userSummary.user_id);
 
     let tableRows = userDetails.map(shift => `
@@ -363,6 +398,7 @@ export default function AdminFinancial() {
         <td style="border: 1px solid #ddd; padding: 8px;">${format(parseISO(shift.shift_date), 'EEEE, dd/MM/yyyy', { locale: ptBR })}</td>
         <td style="border: 1px solid #ddd; padding: 8px;">${shift.sector_name}</td>
         <td style="border: 1px solid #ddd; padding: 8px;">${shift.start_time?.slice(0, 5) || ''} - ${shift.end_time?.slice(0, 5) || ''}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${shift.duration_hours.toFixed(1)}h</td>
         <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${shift.assigned_value.toFixed(2)}</td>
       </tr>
     `).join('');
@@ -372,7 +408,7 @@ export default function AdminFinancial() {
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Extrato - ${userSummary.user_name} - ${monthLabel} ${selectedYear}</title>
+        <title>Extrato - ${userSummary.user_name} - ${periodLabel}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
           h1 { margin-bottom: 5px; color: #1a1a1a; }
@@ -388,12 +424,16 @@ export default function AdminFinancial() {
       </head>
       <body>
         <h1>Extrato de Plantões</h1>
-        <h2>${userSummary.user_name || 'Plantonista'} - ${monthLabel} de ${selectedYear}</h2>
+        <h2>${userSummary.user_name || 'Plantonista'} - ${periodLabel}</h2>
 
         <div class="summary">
           <div class="summary-row">
             <span>Total de Plantões:</span>
             <strong>${userSummary.total_shifts}</strong>
+          </div>
+          <div class="summary-row">
+            <span>Carga Horária Total:</span>
+            <strong>${userSummary.total_hours.toFixed(1)} horas</strong>
           </div>
           <div class="summary-row">
             <span>Valor Total:</span>
@@ -407,15 +447,17 @@ export default function AdminFinancial() {
               <th>Data</th>
               <th>Local/Setor</th>
               <th>Horário</th>
+              <th>Duração</th>
               <th>Valor</th>
             </tr>
           </thead>
           <tbody>
-            ${tableRows || '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #666;">Nenhum plantão</td></tr>'}
+            ${tableRows || '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #666;">Nenhum plantão</td></tr>'}
           </tbody>
           <tfoot>
             <tr style="background: #f5f5f5; font-weight: bold;">
               <td colspan="3" style="border: 1px solid #ddd; padding: 8px; text-align: right;">TOTAL:</td>
+              <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${userSummary.total_hours.toFixed(1)}h</td>
               <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${userSummary.total_value.toFixed(2)}</td>
             </tr>
           </tfoot>
@@ -425,11 +467,7 @@ export default function AdminFinancial() {
           ${currentTenantName || 'Hospital'} - Extrato gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
         </div>
 
-        <script>
-          window.onload = function() {
-            window.print();
-          }
-        </script>
+        <script>window.onload = function() { window.print(); }</script>
       </body>
       </html>
     `;
@@ -445,6 +483,7 @@ export default function AdminFinancial() {
 
   // Calculate totals
   const totalShiftsAll = summaries.reduce((sum, s) => sum + s.total_shifts, 0);
+  const totalHoursAll = summaries.reduce((sum, s) => sum + s.total_hours, 0);
   const totalValueAll = summaries.reduce((sum, s) => sum + s.total_value, 0);
 
   if (loading) return <div className="text-muted-foreground p-4">Carregando...</div>;
@@ -455,34 +494,58 @@ export default function AdminFinancial() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Financeiro</h2>
-          <p className="text-muted-foreground">Resumo e relatórios financeiros</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {months.map(m => (
-                <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map(y => (
-                <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="text-muted-foreground">Relatórios de plantões, carga horária e valores</p>
         </div>
       </div>
 
+      {/* Date Range Selection */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Filter className="h-4 w-4" />
+            Selecionar Período
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-4 items-end">
+            <div className="space-y-1">
+              <Label className="text-xs">Data Inicial</Label>
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Data Final</Label>
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" onClick={setLast7Days}>
+                Últimos 7 dias
+              </Button>
+              <Button variant="outline" size="sm" onClick={setLast30Days}>
+                Últimos 30 dias
+              </Button>
+              <Button variant="outline" size="sm" onClick={setThisMonth}>
+                Este mês
+              </Button>
+              <Button variant="outline" size="sm" onClick={setLastMonth}>
+                Mês passado
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
@@ -508,6 +571,17 @@ export default function AdminFinancial() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-blue-600" />
+              <div>
+                <p className="text-2xl font-bold">{totalHoursAll.toFixed(1)}h</p>
+                <p className="text-xs text-muted-foreground">Carga Horária</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-green-600" />
               <div>
                 <p className="text-2xl font-bold">R$ {totalValueAll.toFixed(2)}</p>
@@ -524,36 +598,35 @@ export default function AdminFinancial() {
                 <p className="text-2xl font-bold">
                   R$ {summaries.length > 0 ? (totalValueAll / summaries.length).toFixed(2) : '0.00'}
                 </p>
-                <p className="text-xs text-muted-foreground">Média por Plantonista</p>
+                <p className="text-xs text-muted-foreground">Média/Plantonista</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
+      {/* Action Buttons */}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="outline" onClick={handlePrintReport}>
+          <Printer className="mr-2 h-4 w-4" />
+          Imprimir Relatório
+        </Button>
+        <Button variant="outline" onClick={exportCSV}>
+          <Download className="mr-2 h-4 w-4" />
+          Exportar Resumo
+        </Button>
+        <Button variant="outline" onClick={exportDetailedCSV}>
+          <FileText className="mr-2 h-4 w-4" />
+          Exportar Detalhado
+        </Button>
+      </div>
+
       {/* Tabs for different views */}
       <Tabs defaultValue="summary" className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <TabsList>
-            <TabsTrigger value="summary">Resumo</TabsTrigger>
-            <TabsTrigger value="detailed">Detalhado</TabsTrigger>
-          </TabsList>
-          
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={handlePrintReport}>
-              <Printer className="mr-2 h-4 w-4" />
-              Imprimir Relatório
-            </Button>
-            <Button variant="outline" onClick={exportCSV}>
-              <Download className="mr-2 h-4 w-4" />
-              Exportar Resumo
-            </Button>
-            <Button variant="outline" onClick={exportDetailedCSV}>
-              <FileText className="mr-2 h-4 w-4" />
-              Exportar Detalhado
-            </Button>
-          </div>
-        </div>
+        <TabsList>
+          <TabsTrigger value="summary">Resumo por Plantonista</TabsTrigger>
+          <TabsTrigger value="detailed">Todos os Plantões</TabsTrigger>
+        </TabsList>
 
         {/* Summary Tab */}
         <TabsContent value="summary">
@@ -567,8 +640,8 @@ export default function AdminFinancial() {
                   <TableRow>
                     <TableHead>Plantonista</TableHead>
                     <TableHead className="text-center">Plantões</TableHead>
+                    <TableHead className="text-center">Carga Horária</TableHead>
                     <TableHead className="text-right">Valor Total</TableHead>
-                    <TableHead className="text-center">Status</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -586,13 +659,11 @@ export default function AdminFinancial() {
                         <TableCell className="text-center">
                           <Badge variant="secondary">{s.total_shifts}</Badge>
                         </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline">{s.total_hours.toFixed(1)}h</Badge>
+                        </TableCell>
                         <TableCell className="text-right font-semibold text-green-600">
                           R$ {s.total_value.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant={s.payment_status === 'closed' ? 'default' : s.payment_status === 'paid' ? 'secondary' : 'outline'}>
-                            {s.payment_status === 'closed' ? 'Fechado' : s.payment_status === 'paid' ? 'Pago' : 'Aberto'}
-                          </Badge>
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
@@ -600,6 +671,7 @@ export default function AdminFinancial() {
                               variant="ghost" 
                               size="sm"
                               onClick={() => openUserDetails(s)}
+                              title="Ver detalhes"
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
@@ -607,19 +679,19 @@ export default function AdminFinancial() {
                               variant="ghost" 
                               size="sm"
                               onClick={() => handlePrintUserDetail(s)}
+                              title="Imprimir extrato"
                             >
                               <Printer className="h-4 w-4" />
                             </Button>
-                            {(!s.payment_status || s.payment_status === 'open') && s.total_shifts > 0 && (
-                              <Button 
-                                variant="outline" 
-                                size="sm" 
-                                onClick={() => closeMonth(s.user_id, s.total_shifts, s.total_value)}
-                              >
-                                <Lock className="mr-1 h-4 w-4" />
-                                Fechar
-                              </Button>
-                            )}
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              onClick={() => closePayment(s.user_id, s.total_shifts, s.total_value, s.total_hours)}
+                              title="Fechar período"
+                            >
+                              <Lock className="mr-1 h-4 w-4" />
+                              Fechar
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -648,13 +720,14 @@ export default function AdminFinancial() {
                     <TableHead>Data</TableHead>
                     <TableHead>Local/Setor</TableHead>
                     <TableHead>Horário</TableHead>
+                    <TableHead className="text-center">Duração</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {shiftDetails.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                         Nenhum plantão para o período selecionado
                       </TableCell>
                     </TableRow>
@@ -668,6 +741,9 @@ export default function AdminFinancial() {
                         <TableCell>{detail.sector_name}</TableCell>
                         <TableCell>
                           {detail.start_time?.slice(0, 5)} - {detail.end_time?.slice(0, 5)}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline">{detail.duration_hours.toFixed(1)}h</Badge>
                         </TableCell>
                         <TableCell className="text-right font-semibold text-green-600">
                           R$ {detail.assigned_value.toFixed(2)}
@@ -705,12 +781,16 @@ export default function AdminFinancial() {
                 {/* Summary */}
                 <Card className="bg-green-50 dark:bg-green-950/20 border-green-200">
                   <CardContent className="p-4">
-                    <div className="flex justify-between items-center">
+                    <div className="grid grid-cols-3 gap-4 text-center">
                       <div>
-                        <p className="text-sm text-muted-foreground">Total de Plantões</p>
+                        <p className="text-sm text-muted-foreground">Plantões</p>
                         <p className="text-2xl font-bold">{selectedUser.total_shifts}</p>
                       </div>
-                      <div className="text-right">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Carga Horária</p>
+                        <p className="text-2xl font-bold">{selectedUser.total_hours.toFixed(1)}h</p>
+                      </div>
+                      <div>
                         <p className="text-sm text-muted-foreground">Valor Total</p>
                         <p className="text-2xl font-bold text-green-600">
                           R$ {selectedUser.total_value.toFixed(2)}
@@ -727,6 +807,7 @@ export default function AdminFinancial() {
                       <TableHead>Data</TableHead>
                       <TableHead>Local/Setor</TableHead>
                       <TableHead>Horário</TableHead>
+                      <TableHead className="text-center">Duração</TableHead>
                       <TableHead className="text-right">Valor</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -736,11 +817,14 @@ export default function AdminFinancial() {
                       .map(detail => (
                         <TableRow key={detail.id}>
                           <TableCell>
-                            {detail.shift_date && format(parseISO(detail.shift_date), "EEEE, dd/MM", { locale: ptBR })}
+                            {detail.shift_date && format(parseISO(detail.shift_date), "EEE, dd/MM", { locale: ptBR })}
                           </TableCell>
                           <TableCell>{detail.sector_name}</TableCell>
                           <TableCell>
                             {detail.start_time?.slice(0, 5)} - {detail.end_time?.slice(0, 5)}
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="outline">{detail.duration_hours.toFixed(1)}h</Badge>
                           </TableCell>
                           <TableCell className="text-right font-semibold text-green-600">
                             R$ {detail.assigned_value.toFixed(2)}
