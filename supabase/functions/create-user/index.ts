@@ -53,7 +53,8 @@ Deno.serve(async (req) => {
       bankName,
       bankAgency,
       bankAccount,
-      pixKey
+      pixKey,
+      sendInviteEmail
     } = await req.json()
 
     // Verify the requesting user is an admin of the tenant
@@ -68,6 +69,13 @@ Deno.serve(async (req) => {
     if (membershipError || !membership || membership.role !== 'admin') {
       throw new Error('Only tenant admins can create users')
     }
+
+    // Get tenant info for the email
+    const { data: tenant } = await supabaseAdmin
+      .from('tenants')
+      .select('name')
+      .eq('id', tenantId)
+      .single()
 
     // Create the new user using admin API
     const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
@@ -90,7 +98,7 @@ Deno.serve(async (req) => {
     // Wait for the trigger to create the profile
     await new Promise(resolve => setTimeout(resolve, 500))
 
-    // Update/upsert the profile with additional info
+    // Update/upsert the profile with additional info and must_change_password flag
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
@@ -104,7 +112,8 @@ Deno.serve(async (req) => {
         bank_name: bankName || null,
         bank_agency: bankAgency || null,
         bank_account: bankAccount || null,
-        pix_key: pixKey || null
+        pix_key: pixKey || null,
+        must_change_password: true // User must change password on first login
       })
 
     if (profileError) {
@@ -140,11 +149,96 @@ Deno.serve(async (req) => {
       // Don't throw, main user creation succeeded
     }
 
+    // Send invite email if requested and we have a real email
+    let emailSent = false
+    if (sendInviteEmail && email && !email.includes('@interno.hospital')) {
+      try {
+        const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
+        if (RESEND_API_KEY) {
+          const loginUrl = `${req.headers.get('origin') || 'https://app.medescala.com'}/auth`
+          
+          const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
+                <h1 style="color: white; margin: 0; font-size: 28px;">MedEscala</h1>
+                <p style="color: rgba(255,255,255,0.9); margin: 10px 0 0 0;">Sistema de Gestão de Escalas</p>
+              </div>
+              
+              <div style="background: #f9fafb; padding: 30px; border: 1px solid #e5e7eb; border-top: none;">
+                <h2 style="color: #059669; margin-top: 0;">Olá, ${name}!</h2>
+                
+                <p>Você foi cadastrado no sistema de escalas do <strong>${tenant?.name || 'Hospital'}</strong>.</p>
+                
+                <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                  <h3 style="margin-top: 0; color: #374151;">Seus dados de acesso:</h3>
+                  <p style="margin: 10px 0;"><strong>Email:</strong> ${email}</p>
+                  <p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${password}</code></p>
+                </div>
+                
+                <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
+                  <p style="margin: 0; color: #92400e;">
+                    <strong>⚠️ Importante:</strong> Por segurança, você deverá alterar sua senha no primeiro acesso.
+                  </p>
+                </div>
+                
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="${loginUrl}" style="display: inline-block; background: #059669; color: white; text-decoration: none; padding: 14px 30px; border-radius: 8px; font-weight: bold; font-size: 16px;">
+                    Acessar o Sistema
+                  </a>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 14px;">
+                  Se você não reconhece este email, por favor ignore-o.
+                </p>
+              </div>
+              
+              <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
+                <p>© ${new Date().getFullYear()} MedEscala. Todos os direitos reservados.</p>
+              </div>
+            </body>
+            </html>
+          `
+
+          const emailResponse = await fetch("https://api.resend.com/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${RESEND_API_KEY}`,
+            },
+            body: JSON.stringify({
+              from: "MedEscala <onboarding@resend.dev>",
+              to: [email],
+              subject: `Bem-vindo ao ${tenant?.name || 'Hospital'} - MedEscala`,
+              html: htmlContent,
+            }),
+          })
+
+          if (emailResponse.ok) {
+            emailSent = true
+            console.log('Invite email sent successfully')
+          } else {
+            const emailError = await emailResponse.json()
+            console.error('Failed to send invite email:', emailError)
+          }
+        }
+      } catch (emailError) {
+        console.error('Error sending invite email:', emailError)
+        // Don't throw, user creation succeeded
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
         userId: newUser.user.id,
-        email: newUser.user.email
+        email: newUser.user.email,
+        emailSent
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

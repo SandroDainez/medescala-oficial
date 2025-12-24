@@ -313,6 +313,7 @@ export type Database = {
           created_at: string
           crm: string | null
           id: string
+          must_change_password: boolean
           name: string | null
           phone: string | null
           pix_key: string | null
@@ -328,6 +329,7 @@ export type Database = {
           created_at?: string
           crm?: string | null
           id: string
+          must_change_password?: boolean
           name?: string | null
           phone?: string | null
           pix_key?: string | null
@@ -343,6 +345,7 @@ export type Database = {
           created_at?: string
           crm?: string | null
           id?: string
+          must_change_password?: boolean
           name?: string | null
           phone?: string | null
           pix_key?: string | null

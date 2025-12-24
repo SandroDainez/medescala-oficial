@@ -13,6 +13,9 @@ import Auth from "./pages/Auth";
 import Landing from "./pages/Landing";
 import Onboarding from "./pages/Onboarding";
 import NotFound from "./pages/NotFound";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import ChangePassword from "./pages/ChangePassword";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -69,6 +72,9 @@ function AppRoutes() {
       <Route path="/home" element={<RoleRedirect />} />
       <Route path="/auth" element={<Auth />} />
       <Route path="/onboarding" element={<Onboarding />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/change-password" element={<ChangePassword />} />
 
       {/* Admin Routes */}
       <Route
