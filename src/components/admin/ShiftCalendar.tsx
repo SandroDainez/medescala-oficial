@@ -85,6 +85,10 @@ export default function ShiftCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [filterSector, setFilterSector] = useState<string>(searchParams.get('sector') || 'all');
+
+  // When viewing a specific sector card while filter is "all",
+  // keep the day dialog scoped to that sector.
+  const [dayDialogSectorId, setDayDialogSectorId] = useState<string | null>(null);
   
   // Bulk selection mode
   const [bulkMode, setBulkMode] = useState(false);
@@ -953,6 +957,12 @@ export default function ShiftCalendar() {
     setShiftDialogOpen(true);
   }
 
+  function openDayView(date: Date, sectorId?: string) {
+    setSelectedDate(date);
+    setDayDialogSectorId(sectorId || null);
+    setDayDialogOpen(true);
+  }
+
   function openEditShift(shift: Shift) {
     setEditingShift(shift);
     // Get current assignment for this shift
@@ -994,11 +1004,6 @@ export default function ShiftCalendar() {
     });
   }
 
-  function openDayView(date: Date) {
-    setSelectedDate(date);
-    setDayDialogOpen(true);
-  }
-
   function openAssignDialog(shift: Shift) {
     setSelectedShift(shift);
     setAssignData({ user_id: '', assigned_value: shift.base_value.toString() });
@@ -1006,7 +1011,10 @@ export default function ShiftCalendar() {
   }
 
   // Render calendar grid for a given set of shifts
-  function renderCalendarGrid(shiftsToRender: Shift[], options?: { hideSectorName?: boolean }) {
+  function renderCalendarGrid(
+    shiftsToRender: Shift[],
+    options?: { hideSectorName?: boolean; sectorContextId?: string }
+  ) {
     function getShiftsForDateFiltered(date: Date) {
       return shiftsToRender.filter(s => isSameDay(parseISO(s.shift_date), date));
     }
@@ -1045,7 +1053,7 @@ export default function ShiftCalendar() {
                 `}
                 onClick={() => {
                   // Always open day view on click - bulk selection is done via checkboxes
-                  openDayView(day);
+                  openDayView(day, options?.sectorContextId);
                 }}
               >
                 <div className={`flex items-center justify-between text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
@@ -1802,7 +1810,7 @@ export default function ShiftCalendar() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-2 sm:p-4">
-                      {renderCalendarGrid(sectorShifts, { hideSectorName: true })}
+                      {renderCalendarGrid(sectorShifts, { hideSectorName: true, sectorContextId: sector.id })}
                     </CardContent>
                   </Card>
                 );
@@ -1844,7 +1852,7 @@ export default function ShiftCalendar() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2 sm:p-4">
-                    {renderCalendarGrid(sectorShifts, { hideSectorName: true })}
+                    {renderCalendarGrid(sectorShifts, { hideSectorName: true, sectorContextId: filterSector })}
                   </CardContent>
                 </Card>
               );
@@ -1854,7 +1862,13 @@ export default function ShiftCalendar() {
       </div>
 
       {/* Day Detail Dialog */}
-      <Dialog open={dayDialogOpen} onOpenChange={setDayDialogOpen}>
+      <Dialog
+        open={dayDialogOpen}
+        onOpenChange={(open) => {
+          setDayDialogOpen(open);
+          if (!open) setDayDialogSectorId(null);
+        }}
+      >
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
@@ -1919,7 +1933,12 @@ export default function ShiftCalendar() {
                     })()}
                   </>
                 )}
-                <Button size="sm" onClick={() => selectedDate && openCreateShift(selectedDate)}>
+                <Button
+                  size="sm"
+                  onClick={() =>
+                    selectedDate && openCreateShift(selectedDate, dayDialogSectorId || undefined)
+                  }
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Adicionar
                 </Button>
