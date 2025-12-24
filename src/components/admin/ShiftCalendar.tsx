@@ -982,14 +982,14 @@ export default function ShiftCalendar() {
                 <div className="space-y-2">
                   <Label>Plantonista (opcional)</Label>
                   <Select 
-                    value={formData.assigned_user_id} 
-                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
+                    value={formData.assigned_user_id || 'none'} 
+                    onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v === 'none' ? '' : v })}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecionar plantonista" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Nenhum (atribuir depois)</SelectItem>
+                      <SelectItem value="none">Nenhum (atribuir depois)</SelectItem>
                       {members.map((m) => (
                         <SelectItem key={m.user_id} value={m.user_id}>
                           {m.profile?.name || 'Sem nome'}
