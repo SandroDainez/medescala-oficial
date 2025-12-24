@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -819,21 +820,24 @@ export default function UserManagement() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Perfil</TableHead>
-                    <TableHead>Setores</TableHead>
+                    <TableHead>Perfil / Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      <TableCell colSpan={3} className="text-center text-muted-foreground">
                         Nenhum membro ativo
                       </TableCell>
                     </TableRow>
                   ) : (
                     activeMembers.map((member) => {
                       const userSectorIds = getUserSectors(member.user_id);
+                      const userSectorsNames = sectors
+                        .filter(s => userSectorIds.includes(s.id))
+                        .map(s => s.name);
+                      
                       return (
                         <TableRow key={member.id}>
                           <TableCell className="font-medium">
@@ -843,43 +847,71 @@ export default function UserManagement() {
                             )}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
-                              {member.role === 'admin' ? (
-                                <><Shield className="mr-1 h-3 w-3" /> Admin</>
-                              ) : (
-                                <><User className="mr-1 h-3 w-3" /> Plantonista</>
-                              )}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {sectors.map(sector => {
-                                const isInSector = userSectorIds.includes(sector.id);
-                                return (
-                                  <button
-                                    key={sector.id}
-                                    type="button"
-                                    onClick={() => toggleSectorMembership(member.user_id, sector.id)}
-                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border ${
-                                      isInSector 
-                                        ? 'border-transparent text-white' 
-                                        : 'border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50'
-                                    }`}
-                                    style={isInSector ? { backgroundColor: sector.color || '#22c55e' } : {}}
-                                    title={isInSector ? `Remover de ${sector.name}` : `Adicionar a ${sector.name}`}
-                                  >
-                                    {!isInSector && (
-                                      <span 
-                                        className="w-2 h-2 rounded-full" 
-                                        style={{ backgroundColor: sector.color || '#22c55e' }}
-                                      />
-                                    )}
-                                    {sector.name}
-                                  </button>
-                                );
-                              })}
-                              {sectors.length === 0 && (
-                                <span className="text-xs text-muted-foreground">Sem setores</span>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
+                                {member.role === 'admin' ? (
+                                  <><Shield className="mr-1 h-3 w-3" /> Admin</>
+                                ) : (
+                                  <><User className="mr-1 h-3 w-3" /> Plantonista</>
+                                )}
+                              </Badge>
+                              
+                              {/* Setores Popover - só para plantonistas */}
+                              {member.role === 'user' && (
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button variant="outline" size="sm" className="h-7 gap-1">
+                                      <Layers className="h-3 w-3" />
+                                      {userSectorIds.length > 0 
+                                        ? `${userSectorIds.length} setor${userSectorIds.length > 1 ? 'es' : ''}`
+                                        : 'Setores'
+                                      }
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-64 p-3" align="start">
+                                    <div className="space-y-3">
+                                      <div className="font-medium text-sm">Selecione os setores</div>
+                                      <div className="space-y-2">
+                                        {sectors.length === 0 ? (
+                                          <p className="text-sm text-muted-foreground">Nenhum setor cadastrado</p>
+                                        ) : (
+                                          sectors.map(sector => {
+                                            const isInSector = userSectorIds.includes(sector.id);
+                                            return (
+                                              <div 
+                                                key={sector.id} 
+                                                className="flex items-center gap-2"
+                                              >
+                                                <Checkbox
+                                                  id={`sector-${member.user_id}-${sector.id}`}
+                                                  checked={isInSector}
+                                                  onCheckedChange={() => toggleSectorMembership(member.user_id, sector.id)}
+                                                />
+                                                <label 
+                                                  htmlFor={`sector-${member.user_id}-${sector.id}`}
+                                                  className="flex items-center gap-2 text-sm cursor-pointer flex-1"
+                                                >
+                                                  <span 
+                                                    className="w-3 h-3 rounded-full shrink-0" 
+                                                    style={{ backgroundColor: sector.color || '#22c55e' }}
+                                                  />
+                                                  {sector.name}
+                                                </label>
+                                              </div>
+                                            );
+                                          })
+                                        )}
+                                      </div>
+                                      {userSectorsNames.length > 0 && (
+                                        <div className="pt-2 border-t">
+                                          <p className="text-xs text-muted-foreground">
+                                            Selecionados: {userSectorsNames.join(', ')}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
                               )}
                             </div>
                           </TableCell>
@@ -936,44 +968,38 @@ export default function UserManagement() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
-                    <TableHead>Perfil</TableHead>
-                    <TableHead>Setores</TableHead>
+                    <TableHead>Perfil / Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {inactiveMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                      <TableCell colSpan={3} className="text-center text-muted-foreground">
                         Nenhum membro inativo
                       </TableCell>
                     </TableRow>
                   ) : (
                     inactiveMembers.map((member) => {
                       const userSectorIds = getUserSectors(member.user_id);
+                      const userSectorsNames = sectors
+                        .filter(s => userSectorIds.includes(s.id))
+                        .map(s => s.name);
+                      
                       return (
                         <TableRow key={member.id}>
                           <TableCell className="font-medium text-muted-foreground">
                             {member.profile?.name || 'Sem nome'}
                           </TableCell>
                           <TableCell>
-                            <Badge variant="outline">
-                              {member.role === 'admin' ? 'Admin' : 'Plantonista'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-wrap gap-1">
-                              {sectors.filter(s => userSectorIds.includes(s.id)).map(sector => (
-                                <span
-                                  key={sector.id}
-                                  className="inline-flex items-center px-2 py-0.5 rounded-md text-xs text-white opacity-60"
-                                  style={{ backgroundColor: sector.color || '#22c55e' }}
-                                >
-                                  {sector.name}
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline">
+                                {member.role === 'admin' ? 'Admin' : 'Plantonista'}
+                              </Badge>
+                              {userSectorsNames.length > 0 && (
+                                <span className="text-xs text-muted-foreground">
+                                  ({userSectorsNames.join(', ')})
                                 </span>
-                              ))}
-                              {userSectorIds.length === 0 && (
-                                <span className="text-xs text-muted-foreground">-</span>
                               )}
                             </div>
                           </TableCell>
