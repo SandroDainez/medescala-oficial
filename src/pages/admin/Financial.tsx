@@ -873,7 +873,11 @@ export default function AdminFinancial() {
                             <p className="text-xs text-muted-foreground mt-1">horas</p>
                           </div>
                           <div className="text-center">
-                            <p className="font-semibold text-green-600">R$ {s.total_value.toFixed(2)}</p>
+                            {s.total_value > 0 ? (
+                              <p className="font-semibold text-green-600">R$ {s.total_value.toFixed(2)}</p>
+                            ) : (
+                              <p className="font-semibold text-muted-foreground italic">Sem valor</p>
+                            )}
                             <p className="text-xs text-muted-foreground">total</p>
                           </div>
                           <div className="flex gap-1" onClick={e => e.stopPropagation()}>
@@ -932,8 +936,12 @@ export default function AdminFinancial() {
                                   <TableCell className="text-center">
                                     <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
                                   </TableCell>
-                                  <TableCell className="text-right pr-6 font-semibold text-green-600">
-                                    R$ {sector.total_value.toFixed(2)}
+                                  <TableCell className="text-right pr-6 font-semibold">
+                                    {sector.total_value > 0 ? (
+                                      <span className="text-green-600">R$ {sector.total_value.toFixed(2)}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground italic">Sem valor</span>
+                                    )}
                                   </TableCell>
                                 </TableRow>
                               ))}
@@ -951,91 +959,160 @@ export default function AdminFinancial() {
 
         {/* Sectors Tab */}
         <TabsContent value="sectors">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Building className="h-5 w-5" />
-                Resumo por Setor
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {sectorSummaries.length === 0 ? (
-                <div className="text-center text-muted-foreground py-8">
-                  Nenhum dado para o período selecionado
+          <div className="space-y-4">
+            {/* Balanço Geral de Setores */}
+            <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <Building className="h-5 w-5 text-primary" />
+                  Balanço Geral de Todos os Setores
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="text-center p-3 bg-background rounded-lg">
+                    <p className="text-2xl font-bold text-primary">{sectorSummaries.length}</p>
+                    <p className="text-xs text-muted-foreground">Setores Ativos</p>
+                  </div>
+                  <div className="text-center p-3 bg-background rounded-lg">
+                    <p className="text-2xl font-bold">{totalShiftsAll}</p>
+                    <p className="text-xs text-muted-foreground">Total Plantões</p>
+                  </div>
+                  <div className="text-center p-3 bg-background rounded-lg">
+                    <p className="text-2xl font-bold">{totalHoursAll.toFixed(1)}h</p>
+                    <p className="text-xs text-muted-foreground">Carga Horária Total</p>
+                  </div>
+                  <div className="text-center p-3 bg-background rounded-lg">
+                    <p className="text-2xl font-bold text-green-600">R$ {totalValueAll.toFixed(2)}</p>
+                    <p className="text-xs text-muted-foreground">Valor Total</p>
+                  </div>
                 </div>
-              ) : (
-                <div className="divide-y">
-                  {sectorSummaries.map(sector => (
-                    <div key={sector.sector_id}>
-                      {/* Sector Header */}
-                      <div 
-                        className="flex items-center justify-between p-4 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
-                        onClick={() => toggleSector(sector.sector_id)}
-                      >
-                        <div className="flex items-center gap-3">
-                          {expandedSectors.has(sector.sector_id) ? (
-                            <ChevronDown className="h-5 w-5 text-muted-foreground" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5 text-muted-foreground" />
-                          )}
-                          <div>
-                            <h3 className="font-semibold text-foreground">{sector.sector_name}</h3>
-                            <p className="text-sm text-muted-foreground">
-                              {sector.users.length} plantonista{sector.users.length !== 1 ? 's' : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-6 text-sm">
-                          <div className="text-center">
-                            <p className="font-semibold">{sector.total_shifts}</p>
-                            <p className="text-xs text-muted-foreground">plantões</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold">{sector.total_hours.toFixed(1)}h</p>
-                            <p className="text-xs text-muted-foreground">horas</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="font-semibold text-green-600">R$ {sector.total_value.toFixed(2)}</p>
-                            <p className="text-xs text-muted-foreground">total</p>
-                          </div>
-                        </div>
-                      </div>
+              </CardContent>
+            </Card>
 
-                      {/* Sector Users */}
-                      {expandedSectors.has(sector.sector_id) && (
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-background">
-                              <TableHead className="pl-12">Plantonista</TableHead>
-                              <TableHead className="text-center">Plantões</TableHead>
-                              <TableHead className="text-center">Carga Horária</TableHead>
-                              <TableHead className="text-right pr-6">Valor a Receber</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {sector.users.map(u => (
-                              <TableRow key={u.user_id} className="bg-background">
-                                <TableCell className="pl-12 font-medium">{u.user_name || 'N/A'}</TableCell>
-                                <TableCell className="text-center">
-                                  <Badge variant="secondary">{u.total_shifts}</Badge>
-                                </TableCell>
-                                <TableCell className="text-center">
-                                  <Badge variant="outline">{u.total_hours.toFixed(1)}h</Badge>
-                                </TableCell>
-                                <TableCell className="text-right pr-6 font-semibold text-green-600">
-                                  R$ {u.total_value.toFixed(2)}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      )}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building className="h-5 w-5" />
+                  Resumo por Setor
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {sectorSummaries.length === 0 ? (
+                  <div className="text-center text-muted-foreground py-8">
+                    Nenhum dado para o período selecionado
+                  </div>
+                ) : (
+                  <div className="divide-y">
+                    {sectorSummaries.map(sector => (
+                      <div key={sector.sector_id}>
+                        {/* Sector Header */}
+                        <div 
+                          className="flex items-center justify-between p-4 bg-muted/30 cursor-pointer hover:bg-muted/50 transition-colors"
+                          onClick={() => toggleSector(sector.sector_id)}
+                        >
+                          <div className="flex items-center gap-3">
+                            {expandedSectors.has(sector.sector_id) ? (
+                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
+                            )}
+                            <div>
+                              <h3 className="font-semibold text-foreground">{sector.sector_name}</h3>
+                              <p className="text-sm text-muted-foreground">
+                                {sector.users.length} plantonista{sector.users.length !== 1 ? 's' : ''}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-6 text-sm">
+                            <div className="text-center">
+                              <p className="font-semibold">{sector.total_shifts}</p>
+                              <p className="text-xs text-muted-foreground">plantões</p>
+                            </div>
+                            <div className="text-center">
+                              <p className="font-semibold">{sector.total_hours.toFixed(1)}h</p>
+                              <p className="text-xs text-muted-foreground">horas</p>
+                            </div>
+                            <div className="text-center">
+                              {sector.total_value > 0 ? (
+                                <p className="font-semibold text-green-600">R$ {sector.total_value.toFixed(2)}</p>
+                              ) : (
+                                <p className="font-semibold text-muted-foreground italic">Sem valor</p>
+                              )}
+                              <p className="text-xs text-muted-foreground">total</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sector Users */}
+                        {expandedSectors.has(sector.sector_id) && (
+                          <>
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-background">
+                                  <TableHead className="pl-12">Plantonista</TableHead>
+                                  <TableHead className="text-center">Plantões</TableHead>
+                                  <TableHead className="text-center">Carga Horária</TableHead>
+                                  <TableHead className="text-right pr-6">Valor a Receber</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {sector.users.map(u => (
+                                  <TableRow key={u.user_id} className="bg-background">
+                                    <TableCell className="pl-12 font-medium">{u.user_name || 'N/A'}</TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant="secondary">{u.total_shifts}</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                      <Badge variant="outline">{u.total_hours.toFixed(1)}h</Badge>
+                                    </TableCell>
+                                    <TableCell className="text-right pr-6 font-semibold">
+                                      {u.total_value > 0 ? (
+                                        <span className="text-green-600">R$ {u.total_value.toFixed(2)}</span>
+                                      ) : (
+                                        <span className="text-muted-foreground italic">Sem valor</span>
+                                      )}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                            {/* Subtotal do Setor */}
+                            <div className="bg-primary/5 border-t p-3 flex justify-between items-center">
+                              <span className="pl-12 text-sm font-medium text-muted-foreground">
+                                Subtotal do setor: {sector.sector_name}
+                              </span>
+                              <div className="flex items-center gap-6 pr-6 text-sm">
+                                <span>{sector.total_shifts} plantões</span>
+                                <span>{sector.total_hours.toFixed(1)}h</span>
+                                {sector.total_value > 0 ? (
+                                  <span className="font-bold text-green-600">R$ {sector.total_value.toFixed(2)}</span>
+                                ) : (
+                                  <span className="font-medium text-muted-foreground italic">Sem valor</span>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    {/* Total Geral de todos os setores */}
+                    <div className="bg-primary/10 p-4 flex justify-between items-center">
+                      <span className="font-bold text-foreground flex items-center gap-2">
+                        <DollarSign className="h-5 w-5 text-primary" />
+                        TOTAL GERAL DE TODOS OS SETORES
+                      </span>
+                      <div className="flex items-center gap-6 text-sm">
+                        <span className="font-semibold">{totalShiftsAll} plantões</span>
+                        <span className="font-semibold">{totalHoursAll.toFixed(1)}h</span>
+                        <span className="font-bold text-green-600 text-lg">R$ {totalValueAll.toFixed(2)}</span>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* Detailed Tab */}
@@ -1080,8 +1157,12 @@ export default function AdminFinancial() {
                         <TableCell className="text-center">
                           <Badge variant="outline">{detail.duration_hours.toFixed(1)}h</Badge>
                         </TableCell>
-                        <TableCell className="text-right font-semibold text-green-600">
-                          R$ {detail.assigned_value.toFixed(2)}
+                        <TableCell className="text-right font-semibold">
+                          {detail.assigned_value > 0 ? (
+                            <span className="text-green-600">R$ {detail.assigned_value.toFixed(2)}</span>
+                          ) : (
+                            <span className="text-muted-foreground italic">Sem valor</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))
@@ -1161,8 +1242,12 @@ export default function AdminFinancial() {
                           <TableCell className="text-center">
                             <Badge variant="outline">{detail.duration_hours.toFixed(1)}h</Badge>
                           </TableCell>
-                          <TableCell className="text-right font-semibold text-green-600">
-                            R$ {detail.assigned_value.toFixed(2)}
+                          <TableCell className="text-right font-semibold">
+                            {detail.assigned_value > 0 ? (
+                              <span className="text-green-600">R$ {detail.assigned_value.toFixed(2)}</span>
+                            ) : (
+                              <span className="text-muted-foreground italic">Sem valor</span>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))
