@@ -166,6 +166,52 @@ export default function UserManagement() {
     }
   }
 
+  // Toggle sector membership for a user
+  async function toggleSectorMembership(userId: string, sectorId: string) {
+    if (!currentTenantId) return;
+
+    const existing = sectorMemberships.find(
+      sm => sm.user_id === userId && sm.sector_id === sectorId
+    );
+
+    if (existing) {
+      // Remove membership
+      const { error } = await supabase
+        .from('sector_memberships')
+        .delete()
+        .eq('id', existing.id);
+
+      if (error) {
+        toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      } else {
+        fetchSectorMemberships();
+      }
+    } else {
+      // Add membership
+      const { error } = await supabase
+        .from('sector_memberships')
+        .insert({
+          tenant_id: currentTenantId,
+          user_id: userId,
+          sector_id: sectorId,
+          created_by: user?.id,
+        });
+
+      if (error) {
+        toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      } else {
+        fetchSectorMemberships();
+      }
+    }
+  }
+
+  // Get sectors for a user
+  function getUserSectors(userId: string): string[] {
+    return sectorMemberships
+      .filter(sm => sm.user_id === userId)
+      .map(sm => sm.sector_id);
+  }
+
   async function toggleRole(membershipId: string, currentRole: 'admin' | 'user') {
     const newRole = currentRole === 'admin' ? 'user' : 'admin';
 
@@ -774,72 +820,108 @@ export default function UserManagement() {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>Perfil</TableHead>
+                    <TableHead>Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {activeMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         Nenhum membro ativo
                       </TableCell>
                     </TableRow>
                   ) : (
-                    activeMembers.map((member) => (
-                      <TableRow key={member.id}>
-                        <TableCell className="font-medium">
-                          {member.profile?.name || 'Sem nome'}
-                          {member.user_id === user?.id && (
-                            <Badge variant="outline" className="ml-2">Você</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
-                            {member.role === 'admin' ? (
-                              <><Shield className="mr-1 h-3 w-3" /> Administrador</>
-                            ) : (
-                              <><User className="mr-1 h-3 w-3" /> Plantonista</>
+                    activeMembers.map((member) => {
+                      const userSectorIds = getUserSectors(member.user_id);
+                      return (
+                        <TableRow key={member.id}>
+                          <TableCell className="font-medium">
+                            {member.profile?.name || 'Sem nome'}
+                            {member.user_id === user?.id && (
+                              <Badge variant="outline" className="ml-2">Você</Badge>
                             )}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => openEditDialog(member)}
-                              title="Editar usuário"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleRole(member.id, member.role)}
-                              disabled={member.user_id === user?.id}
-                            >
-                              {member.role === 'admin' ? 'Tornar Plantonista' : 'Tornar Admin'}
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => toggleActive(member.id, member.active)}
-                              disabled={member.user_id === user?.id}
-                            >
-                              Desativar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeMember(member.id, member.user_id)}
-                              disabled={member.user_id === user?.id}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={member.role === 'admin' ? 'default' : 'secondary'}>
+                              {member.role === 'admin' ? (
+                                <><Shield className="mr-1 h-3 w-3" /> Admin</>
+                              ) : (
+                                <><User className="mr-1 h-3 w-3" /> Plantonista</>
+                              )}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {sectors.map(sector => {
+                                const isInSector = userSectorIds.includes(sector.id);
+                                return (
+                                  <button
+                                    key={sector.id}
+                                    type="button"
+                                    onClick={() => toggleSectorMembership(member.user_id, sector.id)}
+                                    className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all cursor-pointer border ${
+                                      isInSector 
+                                        ? 'border-transparent text-white' 
+                                        : 'border-dashed border-muted-foreground/30 text-muted-foreground hover:border-muted-foreground/50'
+                                    }`}
+                                    style={isInSector ? { backgroundColor: sector.color || '#22c55e' } : {}}
+                                    title={isInSector ? `Remover de ${sector.name}` : `Adicionar a ${sector.name}`}
+                                  >
+                                    {!isInSector && (
+                                      <span 
+                                        className="w-2 h-2 rounded-full" 
+                                        style={{ backgroundColor: sector.color || '#22c55e' }}
+                                      />
+                                    )}
+                                    {sector.name}
+                                  </button>
+                                );
+                              })}
+                              {sectors.length === 0 && (
+                                <span className="text-xs text-muted-foreground">Sem setores</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openEditDialog(member)}
+                                title="Editar usuário"
+                              >
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleRole(member.id, member.role)}
+                                disabled={member.user_id === user?.id}
+                              >
+                                {member.role === 'admin' ? 'Plantonista' : 'Admin'}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleActive(member.id, member.active)}
+                                disabled={member.user_id === user?.id}
+                              >
+                                Desativar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeMember(member.id, member.user_id)}
+                                disabled={member.user_id === user?.id}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
@@ -855,47 +937,67 @@ export default function UserManagement() {
                   <TableRow>
                     <TableHead>Nome</TableHead>
                     <TableHead>Perfil</TableHead>
+                    <TableHead>Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {inactiveMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         Nenhum membro inativo
                       </TableCell>
                     </TableRow>
                   ) : (
-                    inactiveMembers.map((member) => (
-                      <TableRow key={member.id}>
-                        <TableCell className="font-medium text-muted-foreground">
-                          {member.profile?.name || 'Sem nome'}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {member.role === 'admin' ? 'Administrador' : 'Plantonista'}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => toggleActive(member.id, member.active)}
-                            >
-                              Reativar
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeMember(member.id, member.user_id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    inactiveMembers.map((member) => {
+                      const userSectorIds = getUserSectors(member.user_id);
+                      return (
+                        <TableRow key={member.id}>
+                          <TableCell className="font-medium text-muted-foreground">
+                            {member.profile?.name || 'Sem nome'}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">
+                              {member.role === 'admin' ? 'Admin' : 'Plantonista'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {sectors.filter(s => userSectorIds.includes(s.id)).map(sector => (
+                                <span
+                                  key={sector.id}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-md text-xs text-white opacity-60"
+                                  style={{ backgroundColor: sector.color || '#22c55e' }}
+                                >
+                                  {sector.name}
+                                </span>
+                              ))}
+                              {userSectorIds.length === 0 && (
+                                <span className="text-xs text-muted-foreground">-</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => toggleActive(member.id, member.active)}
+                              >
+                                Reativar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeMember(member.id, member.user_id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
                   )}
                 </TableBody>
               </Table>
