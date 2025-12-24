@@ -671,7 +671,7 @@ export default function ShiftCalendar() {
   }
 
   // Render calendar grid for a given set of shifts
-  function renderCalendarGrid(shiftsToRender: Shift[]) {
+  function renderCalendarGrid(shiftsToRender: Shift[], options?: { hideSectorName?: boolean }) {
     function getShiftsForDateFiltered(date: Date) {
       return shiftsToRender.filter(s => isSameDay(parseISO(s.shift_date), date));
     }
@@ -723,7 +723,7 @@ export default function ShiftCalendar() {
                       const sectorName = getSectorName(shift.sector_id, shift.hospital);
                       const isNight = isNightShift(shift.start_time, shift.end_time);
                       const isAvailable = isShiftAvailable(shift);
-                      const showSectorName = filterSector === 'all';
+                      const showSectorName = !options?.hideSectorName && filterSector === 'all';
                       
                       // Determine what to show for each shift:
                       // - If has assignments: show assigned plantonistas
@@ -1359,7 +1359,7 @@ export default function ShiftCalendar() {
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-2 sm:p-4">
-                      {renderCalendarGrid(sectorShifts)}
+                      {renderCalendarGrid(sectorShifts, { hideSectorName: true })}
                     </CardContent>
                   </Card>
                 );
@@ -1401,7 +1401,7 @@ export default function ShiftCalendar() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="p-2 sm:p-4">
-                    {renderCalendarGrid(sectorShifts)}
+                    {renderCalendarGrid(sectorShifts, { hideSectorName: true })}
                   </CardContent>
                 </Card>
               );
