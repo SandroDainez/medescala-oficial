@@ -14,7 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2 } from 'lucide-react';
+import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -42,11 +42,13 @@ interface Sector {
 
 interface CheckinRecord {
   id: string;
+  user_id: string;
   user_name: string;
   shift_date: string;
   start_time: string;
   end_time: string;
   sector_name: string;
+  status: string;
   checkin_at: string | null;
   checkout_at: string | null;
   checkin_latitude: number | null;
@@ -209,7 +211,7 @@ export default function AdminReports() {
         id, user_id, checkin_at, checkout_at,
         checkin_latitude, checkin_longitude,
         checkout_latitude, checkout_longitude,
-        shift_id
+        shift_id, status
       `)
       .in('shift_id', shiftIds);
     
@@ -245,11 +247,13 @@ export default function AdminReports() {
         const shift = shiftMap.get(a.shift_id);
         return {
           id: a.id,
+          user_id: a.user_id,
           user_name: profileMap.get(a.user_id) || 'Sem nome',
           shift_date: shift?.shift_date || '',
           start_time: shift?.start_time || '',
           end_time: shift?.end_time || '',
           sector_name: shift?.sector_id ? sectorMap.get(shift.sector_id) || 'Sem setor' : 'Sem setor',
+          status: a.status || 'assigned',
           checkin_at: a.checkin_at,
           checkout_at: a.checkout_at,
           checkin_latitude: a.checkin_latitude,
@@ -357,6 +361,69 @@ export default function AdminReports() {
     toast({ title: 'Raio de check-in atualizado' });
     setSectorGpsDialogOpen(false);
     fetchSectors();
+  }
+
+  // Admin manual check-in/check-out
+  async function handleAdminCheckin(assignmentId: string) {
+    const { error } = await supabase
+      .from('shift_assignments')
+      .update({
+        checkin_at: new Date().toISOString(),
+        status: 'confirmed',
+        updated_by: user?.id,
+      })
+      .eq('id', assignmentId);
+    
+    if (error) {
+      toast({ title: 'Erro ao registrar check-in', variant: 'destructive' });
+      return;
+    }
+    
+    toast({ title: 'Check-in registrado manualmente' });
+    fetchCheckins();
+  }
+
+  async function handleAdminCheckout(assignmentId: string) {
+    const { error } = await supabase
+      .from('shift_assignments')
+      .update({
+        checkout_at: new Date().toISOString(),
+        status: 'completed',
+        updated_by: user?.id,
+      })
+      .eq('id', assignmentId);
+    
+    if (error) {
+      toast({ title: 'Erro ao registrar check-out', variant: 'destructive' });
+      return;
+    }
+    
+    toast({ title: 'Check-out registrado manualmente' });
+    fetchCheckins();
+  }
+
+  async function handleClearCheckin(assignmentId: string) {
+    const { error } = await supabase
+      .from('shift_assignments')
+      .update({
+        checkin_at: null,
+        checkin_latitude: null,
+        checkin_longitude: null,
+        checkout_at: null,
+        checkout_latitude: null,
+        checkout_longitude: null,
+        status: 'assigned',
+        updated_by: user?.id,
+      })
+      .eq('id', assignmentId);
+    
+    if (error) {
+      toast({ title: 'Erro ao limpar registros', variant: 'destructive' });
+      return;
+    }
+    
+    toast({ title: 'Registros de presença limpos' });
+    fetchCheckins();
   }
 
   function exportToXLS() {
@@ -557,12 +624,13 @@ export default function AdminReports() {
                         <TableHead>Check-in</TableHead>
                         <TableHead>Check-out</TableHead>
                         <TableHead>GPS</TableHead>
+                        <TableHead>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {checkins.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                             Nenhum registro de check-in encontrado no período
                           </TableCell>
                         </TableRow>
@@ -605,6 +673,43 @@ export default function AdminReports() {
                               ) : (
                                 <span className="text-muted-foreground">-</span>
                               )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-1">
+                                {!checkin.checkin_at && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAdminCheckin(checkin.id)}
+                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                    title="Registrar check-in manual"
+                                  >
+                                    <LogIn className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {checkin.checkin_at && !checkin.checkout_at && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAdminCheckout(checkin.id)}
+                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                    title="Registrar check-out manual"
+                                  >
+                                    <LogOut className="h-4 w-4" />
+                                  </Button>
+                                )}
+                                {checkin.checkin_at && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleClearCheckin(checkin.id)}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                    title="Limpar registros de presença"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))
