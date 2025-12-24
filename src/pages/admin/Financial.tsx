@@ -518,6 +518,16 @@ export default function AdminFinancial() {
     const periodLabel = `${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`;
     const userDetails = shiftDetails.filter(d => d.user_id === userSummary.user_id);
 
+    // Build sector summary rows
+    let sectorRows = userSummary.sectors.map(sector => `
+      <tr>
+        <td style="border: 1px solid #ddd; padding: 8px; font-weight: 500;">${sector.sector_name}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${sector.total_shifts}</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: center;">${sector.total_hours.toFixed(1)}h</td>
+        <td style="border: 1px solid #ddd; padding: 8px; text-align: right;">R$ ${sector.total_value.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
     let tableRows = userDetails.map(shift => `
       <tr>
         <td style="border: 1px solid #ddd; padding: 8px;">${format(parseISO(shift.shift_date), 'EEEE, dd/MM/yyyy', { locale: ptBR })}</td>
@@ -538,11 +548,14 @@ export default function AdminFinancial() {
           body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
           h1 { margin-bottom: 5px; color: #1a1a1a; }
           h2 { color: #666; font-weight: normal; margin-top: 0; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          h3 { margin-top: 30px; margin-bottom: 10px; color: #1a1a1a; font-size: 16px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           th { background: #1a1a1a; color: white; padding: 10px; text-align: left; }
           .summary { margin: 20px 0; padding: 20px; background: #e8f5e9; border-radius: 8px; }
           .summary-row { display: flex; justify-content: space-between; margin: 5px 0; }
           .summary-total { font-size: 24px; font-weight: bold; color: #2e7d32; }
+          .sector-summary { margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 8px; }
+          .sector-summary h3 { margin-top: 0; margin-bottom: 10px; }
           .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; font-size: 12px; color: #999; }
           @media print { body { padding: 0; } }
         </style>
@@ -566,6 +579,26 @@ export default function AdminFinancial() {
           </div>
         </div>
 
+        ${userSummary.sectors.length > 0 ? `
+        <div class="sector-summary">
+          <h3>📊 Resumo por Setor</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Setor</th>
+                <th style="text-align: center;">Plantões</th>
+                <th style="text-align: center;">Horas</th>
+                <th style="text-align: right;">Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${sectorRows}
+            </tbody>
+          </table>
+        </div>
+        ` : ''}
+
+        <h3>📋 Detalhamento dos Plantões</h3>
         <table>
           <thead>
             <tr>
