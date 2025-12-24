@@ -370,196 +370,68 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Main Content Tabs */}
-      <Tabs defaultValue="calendar" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="calendar">
-            <Calendar className="mr-2 h-4 w-4" />
-            Escalas
-          </TabsTrigger>
-          <TabsTrigger value="swaps">
-            <ArrowLeftRight className="mr-2 h-4 w-4" />
-            Trocas ({swaps.length})
-          </TabsTrigger>
-          <TabsTrigger value="financial">
-            <DollarSign className="mr-2 h-4 w-4" />
-            Financeiro
-          </TabsTrigger>
-          <TabsTrigger value="members">
-            <Users className="mr-2 h-4 w-4" />
-            Equipe
-          </TabsTrigger>
-        </TabsList>
-
-        {/* Calendar Tab */}
-        <TabsContent value="calendar" className="space-y-4">
-          {/* Main Layout: Vertical Sector Sidebar + Calendar */}
-          <div className="flex gap-4">
-            {/* Vertical Sector Sidebar */}
-            <div className="w-48 flex-shrink-0">
-              <Card className="sticky top-4">
-                <CardContent className="p-2">
-                  <div className="flex flex-col gap-1">
-                    {sectors.map(sector => {
-                      const sectorShifts = shifts.filter(s => s.sector?.id === sector.id);
-                      
-                      return (
-                        <Button
-                          key={sector.id}
-                          variant="ghost"
-                          className="w-full justify-start gap-2 h-auto py-3 hover:bg-accent"
-                          style={{ 
-                            backgroundColor: `${sector.color}10`,
-                            borderLeft: `3px solid ${sector.color}`
-                          }}
-                          onClick={() => navigate('/admin/calendar')}
-                        >
-                          <span 
-                            className="w-3 h-3 rounded-full flex-shrink-0" 
-                            style={{ backgroundColor: sector.color }}
-                          />
-                          <span className="flex flex-col items-start truncate">
-                            <span className="truncate text-xs font-medium">{sector.name}</span>
-                            <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
-                          </span>
-                        </Button>
-                      );
-                    })}
-                    {sectors.length === 0 && (
-                      <Button variant="link" size="sm" onClick={() => navigate('/admin/sectors')}>
-                        Criar primeiro setor
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Calendar Area */}
-            <div className="flex-1 min-w-0">
-              {/* Calendar Navigation */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon" onClick={navigatePrevious}>
-                    <ChevronLeft className="h-4 w-4" />
+      {/* Main Content - Sectors Sidebar + Tabs */}
+      <div className="flex gap-4">
+        {/* Vertical Sector Sidebar */}
+        <div className="w-48 flex-shrink-0">
+          <Card className="sticky top-4">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Setores</CardTitle>
+            </CardHeader>
+            <CardContent className="p-2 pt-0">
+              <div className="flex flex-col gap-1">
+                {sectors.map(sector => {
+                  const sectorShifts = shifts.filter(s => s.sector?.id === sector.id);
+                  
+                  return (
+                    <Button
+                      key={sector.id}
+                      variant="ghost"
+                      className="w-full justify-start gap-2 h-auto py-3 hover:bg-accent"
+                      style={{ 
+                        backgroundColor: `${sector.color}10`,
+                        borderLeft: `3px solid ${sector.color}`
+                      }}
+                      onClick={() => navigate('/admin/calendar')}
+                    >
+                      <span 
+                        className="w-3 h-3 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: sector.color }}
+                      />
+                      <span className="flex flex-col items-start truncate">
+                        <span className="truncate text-xs font-medium">{sector.name}</span>
+                        <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
+                      </span>
+                    </Button>
+                  );
+                })}
+                {sectors.length === 0 && (
+                  <Button variant="link" size="sm" onClick={() => navigate('/admin/sectors')}>
+                    Criar primeiro setor
                   </Button>
-                  <h3 className="text-lg font-semibold min-w-[200px] text-center">
-                    {viewMode === 'week' 
-                      ? `Semana de ${format(calendarDays[0], 'dd/MM')} a ${format(calendarDays[6], 'dd/MM')}`
-                      : format(currentDate, 'MMMM yyyy', { locale: ptBR })}
-                  </h3>
-                  <Button variant="outline" size="icon" onClick={navigateNext}>
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-                <Select value={viewMode} onValueChange={(v) => setViewMode(v as 'week' | 'month')}>
-                  <SelectTrigger className="w-[140px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="week">Semana</SelectItem>
-                    <SelectItem value="month">Mês</SelectItem>
-                  </SelectContent>
-                </Select>
+                )}
               </div>
+            </CardContent>
+          </Card>
+        </div>
 
-              {/* Weekly View */}
-              {viewMode === 'week' && (
-            <div className="grid grid-cols-7 gap-2">
-              {calendarDays.map(day => {
-                const dayShifts = getShiftsForDate(day);
-                return (
-                  <Card 
-                    key={day.toISOString()} 
-                    className={`cursor-pointer hover:bg-accent/50 transition-colors ${isToday(day) ? 'ring-2 ring-primary' : ''}`}
-                    onClick={() => openDayDetail(day)}
-                  >
-                    <CardHeader className="pb-2">
-                      <CardTitle className={`text-sm ${isToday(day) ? 'text-primary' : ''}`}>
-                        {format(day, 'EEE', { locale: ptBR })}
-                      </CardTitle>
-                      <CardDescription className="text-lg font-bold">
-                        {format(day, 'd')}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="space-y-1">
-                      {dayShifts.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">Sem plantões</p>
-                      ) : (
-                        dayShifts.slice(0, 3).map(shift => {
-                          const shiftAssignments = getAssignmentsForShift(shift.id);
-                          return (
-                            <div 
-                              key={shift.id} 
-                              className="text-xs p-1 rounded"
-                              style={{ 
-                                backgroundColor: `${shift.sector?.color || '#22c55e'}20`,
-                                borderLeft: `3px solid ${shift.sector?.color || '#22c55e'}`
-                              }}
-                            >
-                              <div className="font-medium truncate">{shift.sector?.name || shift.hospital}</div>
-                              <div className="flex items-center gap-1 text-muted-foreground">
-                                <Users className="h-3 w-3" />
-                                {shiftAssignments.length}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                      {dayShifts.length > 3 && (
-                        <p className="text-xs text-muted-foreground">+{dayShifts.length - 3} mais</p>
-                      )}
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-              )}
-
-              {/* Monthly View */}
-              {viewMode === 'month' && (
-            <Card>
-              <CardContent className="p-4">
-                <div className="grid grid-cols-7 gap-1 mb-2">
-                  {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map(d => (
-                    <div key={d} className="text-center text-sm font-medium text-muted-foreground py-2">{d}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {Array(startOfMonth(currentDate).getDay()).fill(null).map((_, i) => (
-                    <div key={`empty-${i}`} className="min-h-[60px]" />
-                  ))}
-                  {calendarDays.map(day => {
-                    const dayShifts = getShiftsForDate(day);
-                    const totalAssignments = dayShifts.reduce((sum, s) => sum + getAssignmentsForShift(s.id).length, 0);
-                    return (
-                      <div
-                        key={day.toISOString()}
-                        className={`min-h-[60px] p-1 border rounded cursor-pointer hover:bg-accent/50
-                          ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border'}
-                        `}
-                        onClick={() => openDayDetail(day)}
-                      >
-                        <div className={`text-xs font-medium ${isToday(day) ? 'text-primary' : ''}`}>
-                          {format(day, 'd')}
-                        </div>
-                        {dayShifts.length > 0 && (
-                          <div className="mt-1">
-                            <Badge variant="secondary" className="text-[10px]">
-                              {dayShifts.length} plantões • {totalAssignments} pessoas
-                            </Badge>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-            </div>
-          </div>
-        </TabsContent>
+        {/* Main Content Area */}
+        <div className="flex-1 min-w-0">
+          <Tabs defaultValue="swaps" className="space-y-4">
+            <TabsList>
+              <TabsTrigger value="swaps">
+                <ArrowLeftRight className="mr-2 h-4 w-4" />
+                Trocas ({swaps.length})
+              </TabsTrigger>
+              <TabsTrigger value="financial">
+                <DollarSign className="mr-2 h-4 w-4" />
+                Financeiro
+              </TabsTrigger>
+              <TabsTrigger value="members">
+                <Users className="mr-2 h-4 w-4" />
+                Equipe
+              </TabsTrigger>
+            </TabsList>
 
         {/* Swaps Tab */}
         <TabsContent value="swaps">
@@ -722,7 +594,9 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+          </Tabs>
+        </div>
+      </div>
 
       {/* Day Detail Dialog */}
       <Dialog open={dayDialogOpen} onOpenChange={setDayDialogOpen}>
