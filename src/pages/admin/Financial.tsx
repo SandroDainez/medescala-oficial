@@ -606,10 +606,10 @@ export default function AdminFinancial() {
                       </Table>
                       {/* Lista detalhada de plantões */}
                       <div className="p-4 border-t">
-                        <p className="text-sm font-medium mb-2">Detalhamento:</p>
-                        <ScrollArea className="max-h-[300px]">
+                        <p className="text-sm font-medium mb-2">Detalhamento: ({report.entries.length} plantões)</p>
+                        <div className="max-h-[400px] overflow-y-auto border rounded">
                           <Table>
-                            <TableHeader>
+                            <TableHeader className="sticky top-0 bg-background z-10">
                               <TableRow>
                                 <TableHead>Data</TableHead>
                                 <TableHead>Horário</TableHead>
@@ -618,7 +618,10 @@ export default function AdminFinancial() {
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {report.entries.map(e => {
+                              {report.entries
+                                .slice()
+                                .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''))
+                                .map(e => {
                                 const val = e.value_source === 'invalid' ? null : e.final_value;
                                 return (
                                   <TableRow key={e.id}>
@@ -633,7 +636,7 @@ export default function AdminFinancial() {
                               })}
                             </TableBody>
                           </Table>
-                        </ScrollArea>
+                        </div>
                       </div>
                     </CardContent>
                   )}
