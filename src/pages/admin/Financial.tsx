@@ -8,6 +8,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
@@ -56,6 +63,8 @@ export default function AdminFinancial() {
   const [expandedPlantonistas, setExpandedPlantonistas] = useState<Set<string>>(new Set());
   const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
 
+  // Modal de detalhamento (tabela por plantonista)
+  const [selectedPlantonista, setSelectedPlantonista] = useState<PlantonistaReport | null>(null);
   // Unique sectors and plantonistas for filters
   const sectors = useMemo(() => {
     const map = new Map<string, string>();
@@ -451,10 +460,11 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Dia a Dia | Por Plantonista | Por Setor | Todos os Plantões */}
+      {/* TABS: Dia a Dia | Tabela de Plantonistas | Por Plantonista | Por Setor | Todos os Plantões */}
       <Tabs defaultValue="dia" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
+          <TabsTrigger value="plantonistas_tabela">Plantonistas (tabela)</TabsTrigger>
           <TabsTrigger value="plantonista">Por Plantonista</TabsTrigger>
           <TabsTrigger value="setor">Por Setor</TabsTrigger>
           <TabsTrigger value="todos">Todos os Plantões</TabsTrigger>
@@ -549,6 +559,123 @@ export default function AdminFinancial() {
               );
             })()
           )}
+        </TabsContent>
+
+        {/* TAB: Plantonistas (tabela) */}
+        <TabsContent value="plantonistas_tabela" className="space-y-4 mt-4">
+          {plantonistaReports.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Nenhum plantão encontrado no período.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Plantonistas — totais do período</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableRow>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead className="text-center">Plantões</TableHead>
+                        <TableHead className="text-center">Horas</TableHead>
+                        <TableHead className="text-center">Sem valor</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {plantonistaReports.map((p) => (
+                        <TableRow key={p.assignee_id}>
+                          <TableCell className="font-medium">{p.assignee_name}</TableCell>
+                          <TableCell className="text-center">{p.total_shifts}</TableCell>
+                          <TableCell className="text-center">{p.total_hours.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">
+                            {p.unpriced_shifts > 0 ? (
+                              <Badge variant="outline" className="text-amber-500 border-amber-500">
+                                {p.unpriced_shifts}
+                              </Badge>
+                            ) : (
+                              '0'
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {p.total_to_receive > 0 ? (
+                              <span className="text-green-600 font-medium">{formatCurrency(p.total_to_receive)}</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="outline" size="sm" onClick={() => setSelectedPlantonista(p)}>
+                              Ver plantões
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Dialog open={!!selectedPlantonista} onOpenChange={(open) => !open && setSelectedPlantonista(null)}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {selectedPlantonista?.assignee_name}
+                </DialogTitle>
+                <DialogDescription>
+                  Total: {selectedPlantonista?.total_shifts ?? 0} plantões · Lista: {(selectedPlantonista?.entries ?? []).length} linhas.
+                  {' '}"Sem valor definido" quando não há valor atribuído.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="max-h-[70vh] overflow-y-auto border rounded">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead>Data</TableHead>
+                      <TableHead>Horário</TableHead>
+                      <TableHead>Setor</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(selectedPlantonista?.entries ?? [])
+                      .slice()
+                      .sort(
+                        (a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || '')
+                      )
+                      .map((e) => {
+                        const val = e.value_source === 'invalid' ? null : e.final_value;
+                        return (
+                          <TableRow key={e.id}>
+                            <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
+                            <TableCell>
+                              {e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}
+                            </TableCell>
+                            <TableCell>{e.sector_name}</TableCell>
+                            <TableCell className="text-right">
+                              {val !== null ? (
+                                <span className="text-green-600 font-medium">{formatCurrency(val)}</span>
+                              ) : (
+                                <span className="text-amber-500 text-sm">Sem valor definido</span>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                  </TableBody>
+                </Table>
+              </div>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* TAB: Por Plantonista */}
