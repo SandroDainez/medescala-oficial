@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -12,99 +12,20 @@ import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { runFinancialSelfTest } from '@/lib/financial/selfTest';
+import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
+import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // ============================================================
-// INTERFACES - Modelo de Dados
+// MODELO ÚNICO (mesma fonte da Escala)
 // ============================================================
-interface RawShiftEntry {
-  id: string;                    // shift_assignment.id
-  shift_id: string;
-  shift_date: string;            // YYYY-MM-DD (fonte: shifts.shift_date)
-  start_time: string;
-  end_time: string;
-  sector_id: string | null;
-  sector_name: string;
-  assignee_id: string;           // user_id da atribuição
-  assignee_name: string;
-  assigned_value: number | null; // valor atribuído (pode ser null)
-  base_value: number | null;     // valor base do plantão (pode ser null)
-  duration_hours: number;        // calculado de start_time/end_time
-}
 
-interface PlantonistaReport {
-  assignee_id: string;
-  assignee_name: string;
-  total_shifts: number;
-  total_hours: number;
-  paid_shifts: number;
-  unpriced_shifts: number;
-  total_to_receive: number;      // soma só dos valores != null
-  sectors: SectorSubtotal[];
-  entries: RawShiftEntry[];
-}
+type RawShiftEntry = FinancialEntry;
 
-interface SectorSubtotal {
-  sector_id: string;
-  sector_name: string;
-  sector_shifts: number;
-  sector_hours: number;
-  sector_paid: number;
-  sector_unpriced: number;
-  sector_total: number;
-}
-
-interface SectorReport {
-  sector_id: string;
-  sector_name: string;
-  total_shifts: number;
-  total_hours: number;
-  paid_shifts: number;
-  unpriced_shifts: number;
-  total_value: number;
-  plantonistas: {
-    assignee_id: string;
-    assignee_name: string;
-    shifts: number;
-    hours: number;
-    paid: number;
-    unpriced: number;
-    value: number;
-  }[];
-}
-
-interface AuditData {
-  totalLoaded: number;
-  withValue: number;
-  withoutValue: number;
-  invalidValue: number;
-  sumDetails: { id: string; assignee: string; value: number }[];
-  finalSum: number;
-}
-
-// ============================================================
-// HELPER FUNCTIONS
-// ============================================================
-function calculateDurationHours(startTime: string, endTime: string): number {
-  if (!startTime || !endTime) return 0;
-  const [startH, startM] = startTime.split(':').map(Number);
-  const [endH, endM] = endTime.split(':').map(Number);
-  let hours = endH - startH;
-  let minutes = endM - startM;
-  if (hours < 0 || (hours === 0 && minutes < 0)) {
-    hours += 24; // overnight shift
-  }
-  return hours + minutes / 60;
-}
-
-function getFinalValue(assignedValue: number | null, baseValue: number | null): number | null {
-  // REGRA: assigned_value tem prioridade. Se null/0, usa base_value. Se ambos null, retorna null.
-  if (assignedValue !== null && assignedValue > 0) return assignedValue;
-  if (baseValue !== null && baseValue > 0) return baseValue;
-  return null;
-}
+type AuditData = ReturnType<typeof buildAuditInfo>;
 
 function formatCurrency(value: number | null): string {
   if (value === null) return '';
@@ -172,59 +93,68 @@ export default function AdminFinancial() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    // FONTE DE VERDADE: shifts + shift_assignments (JOIN)
-    const { data: assignments, error } = await supabase
-      .from('shift_assignments')
-      .select(`
-        id,
-        user_id,
-        assigned_value,
-        shift:shifts!inner(
-          id,
-          shift_date,
-          start_time,
-          end_time,
-          base_value,
-          sector_id,
-          sector:sectors(id, name)
-        ),
-        profile:profiles!shift_assignments_user_id_profiles_fkey(id, name)
-      `)
+    // FONTE REAL DA ESCALA: shifts + shift_assignments (+ sectors + profiles)
+    const { data: shifts, error: shiftsError } = await supabase
+      .from('shifts')
+      .select('id, shift_date, start_time, end_time, sector_id, base_value')
       .eq('tenant_id', currentTenantId)
-      .gte('shift.shift_date', startDate)
-      .lte('shift.shift_date', endDate);
+      .gte('shift_date', startDate)
+      .lte('shift_date', endDate)
+      .order('shift_date', { ascending: true })
+      .order('start_time', { ascending: true });
 
-    if (error) {
-      console.error('[AdminFinancial] Fetch error:', error);
+    if (shiftsError) {
+      console.error('[AdminFinancial] Fetch shifts error:', shiftsError);
       setRawEntries([]);
       setLoading(false);
       return;
     }
 
-    const entries: RawShiftEntry[] = (assignments || []).map((a: any) => {
-      const shift = a.shift;
-      const assignedVal = a.assigned_value !== null ? Number(a.assigned_value) : null;
-      const baseVal = shift?.base_value !== null ? Number(shift.base_value) : null;
-      const duration = calculateDurationHours(shift?.start_time || '', shift?.end_time || '');
+    const shiftIds = (shifts ?? []).map((s) => s.id);
 
-      return {
-        id: a.id,
-        shift_id: shift?.id || '',
-        shift_date: shift?.shift_date || '',
-        start_time: shift?.start_time || '',
-        end_time: shift?.end_time || '',
-        sector_id: shift?.sector?.id || shift?.sector_id || null,
-        sector_name: shift?.sector?.name || 'Sem Setor',
-        assignee_id: a.user_id,
-        assignee_name: a.profile?.name || 'N/A',
-        assigned_value: assignedVal,
-        base_value: baseVal,
-        duration_hours: duration,
-      };
+    const [{ data: assignments, error: assignmentsError }, { data: sectors, error: sectorsError }] =
+      await Promise.all([
+        shiftIds.length
+          ? supabase
+              .from('shift_assignments')
+              .select('id, shift_id, user_id, assigned_value, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+              .eq('tenant_id', currentTenantId)
+              .in('shift_id', shiftIds)
+          : Promise.resolve({ data: [], error: null } as any),
+        supabase
+          .from('sectors')
+          .select('id, name')
+          .eq('tenant_id', currentTenantId)
+          .eq('active', true),
+      ]);
+
+    if (assignmentsError) {
+      console.error('[AdminFinancial] Fetch assignments error:', assignmentsError);
+      setRawEntries([]);
+      setLoading(false);
+      return;
+    }
+
+    if (sectorsError) {
+      console.error('[AdminFinancial] Fetch sectors error:', sectorsError);
+      // still proceed without sector names
+    }
+
+    const mapped = mapScheduleToFinancialEntries({
+      shifts: (shifts ?? []) as unknown as ScheduleShift[],
+      assignments: ((assignments ?? []) as any[]).map(
+        (a): ScheduleAssignment => ({
+          id: a.id,
+          shift_id: a.shift_id,
+          user_id: a.user_id,
+          assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+          profile_name: a.profile?.name ?? null,
+        })
+      ),
+      sectors: (sectors ?? []) as unknown as SectorLookup[],
     });
 
-    console.log(`[AdminFinancial] Loaded ${entries.length} entries from DB`);
-    setRawEntries(entries);
+    setRawEntries(mapped);
     setLoading(false);
   }
 
@@ -238,191 +168,17 @@ export default function AdminFinancial() {
   }, [rawEntries, filterSetor, filterPlantonista]);
 
   // ============================================================
-  // AGGREGATIONS
+  // AGREGAÇÃO ÚNICA (usa final_value já normalizado)
   // ============================================================
 
-  // AUDIT DATA
+  const { grandTotals, plantonistaReports, sectorReports } = useMemo(() => {
+    return aggregateFinancial(filteredEntries);
+  }, [filteredEntries]);
+
   const auditData = useMemo((): AuditData => {
-    let withValue = 0;
-    let withoutValue = 0;
-    let invalidValue = 0;
-    const sumDetails: { id: string; assignee: string; value: number }[] = [];
-    let finalSum = 0;
-
-    filteredEntries.forEach(e => {
-      const val = getFinalValue(e.assigned_value, e.base_value);
-      if (val === null) {
-        withoutValue++;
-      } else if (val < 0 || isNaN(val)) {
-        invalidValue++;
-      } else {
-        withValue++;
-        sumDetails.push({ id: e.id, assignee: e.assignee_name, value: val });
-        finalSum += val;
-      }
-    });
-
-    return {
-      totalLoaded: filteredEntries.length,
-      withValue,
-      withoutValue,
-      invalidValue,
-      sumDetails,
-      finalSum,
-    };
+    return buildAuditInfo(filteredEntries);
   }, [filteredEntries]);
 
-  // POR PLANTONISTA (agrupado por assignee_id)
-  const plantonistaReports = useMemo((): PlantonistaReport[] => {
-    const map = new Map<string, PlantonistaReport>();
-
-    filteredEntries.forEach(e => {
-      if (!map.has(e.assignee_id)) {
-        map.set(e.assignee_id, {
-          assignee_id: e.assignee_id,
-          assignee_name: e.assignee_name,
-          total_shifts: 0,
-          total_hours: 0,
-          paid_shifts: 0,
-          unpriced_shifts: 0,
-          total_to_receive: 0,
-          sectors: [],
-          entries: [],
-        });
-      }
-
-      const report = map.get(e.assignee_id)!;
-      const val = getFinalValue(e.assigned_value, e.base_value);
-
-      report.total_shifts++;
-      report.total_hours += e.duration_hours;
-      report.entries.push(e);
-
-      if (val !== null && val >= 0) {
-        report.paid_shifts++;
-        report.total_to_receive += val;
-      } else {
-        report.unpriced_shifts++;
-      }
-    });
-
-    // Build sector subtotals for each plantonista
-    map.forEach(report => {
-      const sectorMap = new Map<string, SectorSubtotal>();
-
-      report.entries.forEach(e => {
-        const sectorId = e.sector_id || 'sem-setor';
-        if (!sectorMap.has(sectorId)) {
-          sectorMap.set(sectorId, {
-            sector_id: sectorId,
-            sector_name: e.sector_name,
-            sector_shifts: 0,
-            sector_hours: 0,
-            sector_paid: 0,
-            sector_unpriced: 0,
-            sector_total: 0,
-          });
-        }
-        const sub = sectorMap.get(sectorId)!;
-        const val = getFinalValue(e.assigned_value, e.base_value);
-        sub.sector_shifts++;
-        sub.sector_hours += e.duration_hours;
-        if (val !== null && val >= 0) {
-          sub.sector_paid++;
-          sub.sector_total += val;
-        } else {
-          sub.sector_unpriced++;
-        }
-      });
-
-      report.sectors = Array.from(sectorMap.values()).sort((a, b) => a.sector_name.localeCompare(b.sector_name));
-      report.entries.sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime());
-    });
-
-    return Array.from(map.values()).sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
-  }, [filteredEntries]);
-
-  // POR SETOR (agrupado por sector_id)
-  const sectorReports = useMemo((): SectorReport[] => {
-    const map = new Map<string, SectorReport>();
-
-    filteredEntries.forEach(e => {
-      const sectorId = e.sector_id || 'sem-setor';
-      if (!map.has(sectorId)) {
-        map.set(sectorId, {
-          sector_id: sectorId,
-          sector_name: e.sector_name,
-          total_shifts: 0,
-          total_hours: 0,
-          paid_shifts: 0,
-          unpriced_shifts: 0,
-          total_value: 0,
-          plantonistas: [],
-        });
-      }
-
-      const report = map.get(sectorId)!;
-      const val = getFinalValue(e.assigned_value, e.base_value);
-
-      report.total_shifts++;
-      report.total_hours += e.duration_hours;
-
-      if (val !== null && val >= 0) {
-        report.paid_shifts++;
-        report.total_value += val;
-      } else {
-        report.unpriced_shifts++;
-      }
-    });
-
-    // Build plantonistas subtotals for each sector
-    map.forEach((report, sectorId) => {
-      const plantMap = new Map<string, { assignee_id: string; assignee_name: string; shifts: number; hours: number; paid: number; unpriced: number; value: number }>();
-
-      filteredEntries.filter(e => (e.sector_id || 'sem-setor') === sectorId).forEach(e => {
-        if (!plantMap.has(e.assignee_id)) {
-          plantMap.set(e.assignee_id, { assignee_id: e.assignee_id, assignee_name: e.assignee_name, shifts: 0, hours: 0, paid: 0, unpriced: 0, value: 0 });
-        }
-        const p = plantMap.get(e.assignee_id)!;
-        const val = getFinalValue(e.assigned_value, e.base_value);
-        p.shifts++;
-        p.hours += e.duration_hours;
-        if (val !== null && val >= 0) {
-          p.paid++;
-          p.value += val;
-        } else {
-          p.unpriced++;
-        }
-      });
-
-      report.plantonistas = Array.from(plantMap.values()).sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
-    });
-
-    return Array.from(map.values()).sort((a, b) => a.sector_name.localeCompare(b.sector_name));
-  }, [filteredEntries]);
-
-  // GRAND TOTALS
-  const grandTotals = useMemo(() => {
-    let totalShifts = 0;
-    let totalHours = 0;
-    let paidShifts = 0;
-    let unpricedShifts = 0;
-    let totalValue = 0;
-
-    filteredEntries.forEach(e => {
-      const val = getFinalValue(e.assigned_value, e.base_value);
-      totalShifts++;
-      totalHours += e.duration_hours;
-      if (val !== null && val >= 0) {
-        paidShifts++;
-        totalValue += val;
-      } else {
-        unpricedShifts++;
-      }
-    });
-
-    return { totalShifts, totalHours, paidShifts, unpricedShifts, totalValue, totalPlantonistas: plantonistaReports.length };
-  }, [filteredEntries, plantonistaReports]);
 
   // Toggle helpers
   function togglePlantonista(id: string) {
@@ -446,7 +202,7 @@ export default function AdminFinancial() {
   function exportCSV() {
     const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
     const rows = filteredEntries.map(e => {
-      const val = getFinalValue(e.assigned_value, e.base_value);
+      const val = e.value_source === 'invalid' ? null : e.final_value;
       return [
         format(parseISO(e.shift_date), 'dd/MM/yyyy'),
         `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
@@ -679,8 +435,8 @@ export default function AdminFinancial() {
                     {auditData.sumDetails.map(d => (
                       <TableRow key={d.id}>
                         <TableCell className="font-mono text-xs">{d.id}</TableCell>
-                        <TableCell>{d.assignee}</TableCell>
-                        <TableCell className="text-right text-green-600">{formatCurrency(d.value)}</TableCell>
+                        <TableCell>{d.assignee_name}</TableCell>
+                        <TableCell className="text-right text-green-600">{formatCurrency(d.final_value)}</TableCell>
                       </TableRow>
                     ))}
                     <TableRow className="bg-muted/50 font-bold">
@@ -771,7 +527,7 @@ export default function AdminFinancial() {
                             </TableHeader>
                             <TableBody>
                               {report.entries.map(e => {
-                                const val = getFinalValue(e.assigned_value, e.base_value);
+                                const val = e.value_source === 'invalid' ? null : e.final_value;
                                 return (
                                   <TableRow key={e.id}>
                                     <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
@@ -870,7 +626,7 @@ export default function AdminFinancial() {
                     </TableHeader>
                     <TableBody>
                       {filteredEntries.sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime()).map(e => {
-                        const val = getFinalValue(e.assigned_value, e.base_value);
+                        const val = e.value_source === 'invalid' ? null : e.final_value;
                         return (
                           <TableRow key={e.id}>
                             <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -6,24 +6,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
+import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
+import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import { DollarSign, Calendar, Clock, Building, MapPin } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-interface ShiftDetail {
-  id: string;
-  assigned_value: number;
-  checkin_at: string | null;
-  checkout_at: string | null;
-  shift_date: string;
-  title: string;
-  hospital: string;
-  sector_name: string;
-  sector_id: string | null;
-  start_time: string;
-  end_time: string;
-  duration_hours: number;
-}
+type ShiftDetail = FinancialEntry;
 
 interface SectorSummary {
   sector_id: string;
@@ -38,13 +28,14 @@ interface FinancialSummary {
   totalShifts: number;
   totalHours: number;
   totalValue: number;
+  unpricedShifts: number;
   status: string | null;
 }
 
 export default function UserFinancial() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
-  const [summary, setSummary] = useState<FinancialSummary>({ totalShifts: 0, totalHours: 0, totalValue: 0, status: null });
+  const [summary, setSummary] = useState<FinancialSummary>({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: null });
   const [shifts, setShifts] = useState<ShiftDetail[]>([]);
   const [sectorSummaries, setSectorSummaries] = useState<SectorSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,18 +58,6 @@ export default function UserFinancial() {
   ];
   const years = [2024, 2025, 2026, 2027];
 
-  // Calculate duration in hours
-  function calculateDuration(start: string, end: string): number {
-    if (!start || !end) return 0;
-    const [startH, startM] = start.split(':').map(Number);
-    const [endH, endM] = end.split(':').map(Number);
-    let hours = endH - startH;
-    let minutes = endM - startM;
-    if (hours < 0 || (hours === 0 && minutes < 0)) {
-      hours += 24;
-    }
-    return hours + (minutes / 60);
-  }
 
   useEffect(() => {
     if (user && currentTenantId) fetchData();
@@ -129,88 +108,90 @@ export default function UserFinancial() {
       .maybeSingle();
     
     if (assignments && assignments.length > 0) {
-      // Map assignments to detailed shifts with proper value calculation
-      // REGRA: assigned_value tem prioridade. Se null, usa base_value. Se ambos null, valor = null (sem valor)
-      const mappedShifts: ShiftDetail[] = assignments.map((a: any) => {
-        const assignedVal = a.assigned_value !== null ? Number(a.assigned_value) : null;
-        const baseVal = a.shift?.base_value !== null ? Number(a.shift.base_value) : null;
-        // Final value: assigned > 0 tem prioridade, senão base > 0, senão null
-        let finalValue: number | null = null;
-        if (assignedVal !== null && assignedVal > 0) {
-          finalValue = assignedVal;
-        } else if (baseVal !== null && baseVal > 0) {
-          finalValue = baseVal;
-        }
-        const duration = calculateDuration(a.shift?.start_time || '', a.shift?.end_time || '');
-        
-        return {
-          id: a.id,
-          assigned_value: finalValue ?? 0, // para manter compatibilidade com a interface
-          checkin_at: a.checkin_at,
-          checkout_at: a.checkout_at,
-          shift_date: a.shift?.shift_date,
-          title: a.shift?.title || '',
-          hospital: a.shift?.hospital || '',
-          sector_name: a.shift?.sector?.name || 'Sem Setor',
-          sector_id: a.shift?.sector?.id || a.shift?.sector_id || null,
-          start_time: a.shift?.start_time || '',
-          end_time: a.shift?.end_time || '',
-          duration_hours: duration,
-          _hasValue: finalValue !== null, // flag interna
-        };
-      }).sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime());
-      
-      console.log('[UserFinancial] Processed shifts:', mappedShifts.slice(0, 3).map(s => ({
-        date: s.shift_date,
-        value: s.assigned_value,
-        sector: s.sector_name
-      })));
-      
-      setShifts(mappedShifts);
-      
+      // Normaliza a partir da MESMA fonte da Escala
+      const scheduleShifts: ScheduleShift[] = assignments
+        .map((a: any) => a.shift)
+        .filter(Boolean)
+        .map((s: any) => ({
+          id: s.id ?? '',
+          shift_date: s.shift_date,
+          start_time: s.start_time,
+          end_time: s.end_time,
+          sector_id: s.sector?.id ?? s.sector_id ?? null,
+          base_value: s.base_value !== null ? Number(s.base_value) : null,
+          title: s.title,
+          hospital: s.hospital,
+        }));
+
+      const scheduleAssignments: ScheduleAssignment[] = assignments.map((a: any) => ({
+        id: a.id,
+        shift_id: a.shift?.id ?? '',
+        user_id: user.id,
+        assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+        profile_name: undefined, // user view doesn't need this
+      }));
+
+      const sectors: SectorLookup[] = Array.from(
+        new Map(
+          assignments
+            .map((a: any) => a.shift?.sector)
+            .filter(Boolean)
+            .map((sec: any) => [sec.id, { id: sec.id, name: sec.name }])
+        ).values()
+      );
+
+      const mappedEntries = mapScheduleToFinancialEntries({
+        shifts: scheduleShifts,
+        assignments: scheduleAssignments,
+        sectors,
+        unassignedLabel: { id: 'unassigned', name: 'Vago' },
+      }).map((e) => ({
+        ...e,
+        assignee_name: 'Você',
+      }));
+
+      setShifts(mappedEntries);
+
       // Build sector summaries
       const sectorMap: Record<string, SectorSummary> = {};
-      
-      mappedShifts.forEach(shift => {
-        const sectorKey = shift.sector_id || 'sem-setor';
+      mappedEntries.forEach((entry) => {
+        const sectorKey = entry.sector_id || 'sem-setor';
         if (!sectorMap[sectorKey]) {
           sectorMap[sectorKey] = {
             sector_id: sectorKey,
-            sector_name: shift.sector_name,
+            sector_name: entry.sector_name,
             total_shifts: 0,
             total_hours: 0,
             total_value: 0,
-            shifts: []
+            shifts: [],
           };
         }
         sectorMap[sectorKey].total_shifts++;
-        sectorMap[sectorKey].total_hours += shift.duration_hours;
-        // Só soma valor se _hasValue for true (valor definido)
-        if ((shift as any)._hasValue) {
-          sectorMap[sectorKey].total_value += shift.assigned_value;
+        sectorMap[sectorKey].total_hours += entry.duration_hours;
+        if (entry.value_source !== 'invalid' && entry.final_value !== null) {
+          sectorMap[sectorKey].total_value += entry.final_value;
         }
-        sectorMap[sectorKey].shifts.push(shift);
+        sectorMap[sectorKey].shifts.push(entry);
       });
-      
-      const sectors = Object.values(sectorMap).sort((a, b) => b.total_value - a.total_value);
-      setSectorSummaries(sectors);
-      
-      // Calculate totals (só soma valor se _hasValue)
-      const totalHours = mappedShifts.reduce((sum, s) => sum + s.duration_hours, 0);
-      const totalValue = mappedShifts.reduce((sum, s) => (s as any)._hasValue ? sum + s.assigned_value : sum, 0);
-      
+
+      const sectorList = Object.values(sectorMap).sort((a, b) => b.total_value - a.total_value);
+      setSectorSummaries(sectorList);
+
+      const { grandTotals } = aggregateFinancial(mappedEntries);
+
       setSummary({
-        totalShifts: mappedShifts.length,
-        totalHours,
-        totalValue,
-        status: payment?.status || null
+        totalShifts: grandTotals.totalShifts,
+        totalHours: grandTotals.totalHours,
+        totalValue: grandTotals.totalValue,
+        unpricedShifts: grandTotals.unpricedShifts,
+        status: payment?.status || null,
       });
     } else {
       setShifts([]);
       setSectorSummaries([]);
-      setSummary({ totalShifts: 0, totalHours: 0, totalValue: 0, status: payment?.status || null });
+      setSummary({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: payment?.status || null });
     }
-    
+
     setLoading(false);
   }
 
