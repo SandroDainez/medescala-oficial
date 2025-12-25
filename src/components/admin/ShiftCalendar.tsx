@@ -1204,6 +1204,9 @@ export default function ShiftCalendar() {
       setBulkApplyDialogOpen(false);
       setBulkApplyShiftIds([]);
       setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
+      setSelectedShiftIds(new Set());
+      setDayDialogOpen(false);
+      setDayDialogSectorId(null);
       fetchData();
     } catch (error: any) {
       console.error('Error applying bulk edits:', error);
