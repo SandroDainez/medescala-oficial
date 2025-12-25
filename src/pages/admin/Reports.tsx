@@ -219,20 +219,25 @@ export default function AdminReports() {
     
     const shiftIds = shiftsData.map(s => s.id);
     
+    // Fetch assignments (without GPS columns - they're in separate table now)
     const { data: assignments } = await supabase
       .from('shift_assignments')
-      .select(`
-        id, user_id, checkin_at, checkout_at,
-        checkin_latitude, checkin_longitude,
-        checkout_latitude, checkout_longitude,
-        shift_id, status
-      `)
+      .select(`id, user_id, checkin_at, checkout_at, shift_id, status`)
       .in('shift_id', shiftIds);
     
     if (!assignments) {
       setCheckins([]);
       return;
     }
+
+    // Fetch location data from the new table
+    const assignmentIds = assignments.map(a => a.id);
+    const { data: locations } = await supabase
+      .from('shift_assignment_locations')
+      .select('assignment_id, checkin_latitude, checkin_longitude, checkout_latitude, checkout_longitude')
+      .in('assignment_id', assignmentIds);
+
+    const locationMap = new Map(locations?.map(l => [l.assignment_id, l]) || []);
     
     // Get user names
     const userIds = [...new Set(assignments.map(a => a.user_id))];
@@ -256,6 +261,7 @@ export default function AdminReports() {
       })
       .map(a => {
         const shift = shiftMap.get(a.shift_id);
+        const loc = locationMap.get(a.id);
         return {
           id: a.id,
           user_id: a.user_id,
@@ -267,10 +273,10 @@ export default function AdminReports() {
           status: a.status || 'assigned',
           checkin_at: a.checkin_at,
           checkout_at: a.checkout_at,
-          checkin_latitude: a.checkin_latitude,
-          checkin_longitude: a.checkin_longitude,
-          checkout_latitude: a.checkout_latitude,
-          checkout_longitude: a.checkout_longitude,
+          checkin_latitude: loc?.checkin_latitude ?? null,
+          checkin_longitude: loc?.checkin_longitude ?? null,
+          checkout_latitude: loc?.checkout_latitude ?? null,
+          checkout_longitude: loc?.checkout_longitude ?? null,
         };
       })
       .sort((a, b) => b.shift_date.localeCompare(a.shift_date)); // Ordenar por data mais recente
@@ -433,15 +439,12 @@ export default function AdminReports() {
   }
 
   async function handleClearCheckin(assignmentId: string) {
+    // Clear checkin data in shift_assignments
     const { error } = await supabase
       .from('shift_assignments')
       .update({
         checkin_at: null,
-        checkin_latitude: null,
-        checkin_longitude: null,
         checkout_at: null,
-        checkout_latitude: null,
-        checkout_longitude: null,
         status: 'assigned',
         updated_by: user?.id,
       })
@@ -451,6 +454,17 @@ export default function AdminReports() {
       toast({ title: 'Erro ao limpar registros', variant: 'destructive' });
       return;
     }
+
+    // Clear location data in separate table
+    await supabase
+      .from('shift_assignment_locations')
+      .update({
+        checkin_latitude: null,
+        checkin_longitude: null,
+        checkout_latitude: null,
+        checkout_longitude: null,
+      })
+      .eq('assignment_id', assignmentId);
     
     toast({ title: 'Registros de presença limpos' });
     fetchCheckins();

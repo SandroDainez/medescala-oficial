@@ -305,6 +305,33 @@ export type Database = {
       }
       profiles: {
         Row: {
+          created_at: string
+          id: string
+          must_change_password: boolean
+          name: string | null
+          profile_type: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          must_change_password?: boolean
+          name?: string | null
+          profile_type?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          must_change_password?: boolean
+          name?: string | null
+          profile_type?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      profiles_private: {
+        Row: {
           address: string | null
           bank_account: string | null
           bank_agency: string | null
@@ -312,13 +339,10 @@ export type Database = {
           cpf: string | null
           created_at: string
           crm: string | null
-          id: string
-          must_change_password: boolean
-          name: string | null
           phone: string | null
           pix_key: string | null
-          profile_type: string | null
           updated_at: string
+          user_id: string
         }
         Insert: {
           address?: string | null
@@ -328,13 +352,10 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           crm?: string | null
-          id: string
-          must_change_password?: boolean
-          name?: string | null
           phone?: string | null
           pix_key?: string | null
-          profile_type?: string | null
           updated_at?: string
+          user_id: string
         }
         Update: {
           address?: string | null
@@ -344,15 +365,20 @@ export type Database = {
           cpf?: string | null
           created_at?: string
           crm?: string | null
-          id?: string
-          must_change_password?: boolean
-          name?: string | null
           phone?: string | null
           pix_key?: string | null
-          profile_type?: string | null
           updated_at?: string
+          user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_private_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sector_memberships: {
         Row: {
@@ -462,15 +488,69 @@ export type Database = {
           },
         ]
       }
+      shift_assignment_locations: {
+        Row: {
+          assignment_id: string
+          checkin_latitude: number | null
+          checkin_longitude: number | null
+          checkout_latitude: number | null
+          checkout_longitude: number | null
+          created_at: string
+          tenant_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          assignment_id: string
+          checkin_latitude?: number | null
+          checkin_longitude?: number | null
+          checkout_latitude?: number | null
+          checkout_longitude?: number | null
+          created_at?: string
+          tenant_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string
+          checkin_latitude?: number | null
+          checkin_longitude?: number | null
+          checkout_latitude?: number | null
+          checkout_longitude?: number | null
+          created_at?: string
+          tenant_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_assignment_locations_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: true
+            referencedRelation: "shift_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_assignment_locations_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_assignment_locations_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shift_assignments: {
         Row: {
           assigned_value: number
           checkin_at: string | null
-          checkin_latitude: number | null
-          checkin_longitude: number | null
           checkout_at: string | null
-          checkout_latitude: number | null
-          checkout_longitude: number | null
           created_at: string
           created_by: string | null
           id: string
@@ -485,11 +565,7 @@ export type Database = {
         Insert: {
           assigned_value?: number
           checkin_at?: string | null
-          checkin_latitude?: number | null
-          checkin_longitude?: number | null
           checkout_at?: string | null
-          checkout_latitude?: number | null
-          checkout_longitude?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
@@ -504,11 +580,7 @@ export type Database = {
         Update: {
           assigned_value?: number
           checkin_at?: string | null
-          checkin_latitude?: number | null
-          checkin_longitude?: number | null
           checkout_at?: string | null
-          checkout_latitude?: number | null
-          checkout_longitude?: number | null
           created_at?: string
           created_by?: string | null
           id?: string
