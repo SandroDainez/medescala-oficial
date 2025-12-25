@@ -130,15 +130,22 @@ export default function UserFinancial() {
     
     if (assignments && assignments.length > 0) {
       // Map assignments to detailed shifts with proper value calculation
+      // REGRA: assigned_value tem prioridade. Se null, usa base_value. Se ambos null, valor = null (sem valor)
       const mappedShifts: ShiftDetail[] = assignments.map((a: any) => {
-        const assignedVal = Number(a.assigned_value) || 0;
-        const baseVal = Number(a.shift?.base_value) || 0;
-        const finalValue = assignedVal > 0 ? assignedVal : baseVal;
+        const assignedVal = a.assigned_value !== null ? Number(a.assigned_value) : null;
+        const baseVal = a.shift?.base_value !== null ? Number(a.shift.base_value) : null;
+        // Final value: assigned > 0 tem prioridade, senão base > 0, senão null
+        let finalValue: number | null = null;
+        if (assignedVal !== null && assignedVal > 0) {
+          finalValue = assignedVal;
+        } else if (baseVal !== null && baseVal > 0) {
+          finalValue = baseVal;
+        }
         const duration = calculateDuration(a.shift?.start_time || '', a.shift?.end_time || '');
         
         return {
           id: a.id,
-          assigned_value: finalValue,
+          assigned_value: finalValue ?? 0, // para manter compatibilidade com a interface
           checkin_at: a.checkin_at,
           checkout_at: a.checkout_at,
           shift_date: a.shift?.shift_date,
@@ -148,7 +155,8 @@ export default function UserFinancial() {
           sector_id: a.shift?.sector?.id || a.shift?.sector_id || null,
           start_time: a.shift?.start_time || '',
           end_time: a.shift?.end_time || '',
-          duration_hours: duration
+          duration_hours: duration,
+          _hasValue: finalValue !== null, // flag interna
         };
       }).sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime());
       
@@ -177,16 +185,19 @@ export default function UserFinancial() {
         }
         sectorMap[sectorKey].total_shifts++;
         sectorMap[sectorKey].total_hours += shift.duration_hours;
-        sectorMap[sectorKey].total_value += shift.assigned_value;
+        // Só soma valor se _hasValue for true (valor definido)
+        if ((shift as any)._hasValue) {
+          sectorMap[sectorKey].total_value += shift.assigned_value;
+        }
         sectorMap[sectorKey].shifts.push(shift);
       });
       
       const sectors = Object.values(sectorMap).sort((a, b) => b.total_value - a.total_value);
       setSectorSummaries(sectors);
       
-      // Calculate totals
+      // Calculate totals (só soma valor se _hasValue)
       const totalHours = mappedShifts.reduce((sum, s) => sum + s.duration_hours, 0);
-      const totalValue = mappedShifts.reduce((sum, s) => sum + s.assigned_value, 0);
+      const totalValue = mappedShifts.reduce((sum, s) => (s as any)._hasValue ? sum + s.assigned_value : sum, 0);
       
       setSummary({
         totalShifts: mappedShifts.length,

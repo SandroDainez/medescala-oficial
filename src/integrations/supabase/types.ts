@@ -548,7 +548,7 @@ export type Database = {
       }
       shift_assignments: {
         Row: {
-          assigned_value: number
+          assigned_value: number | null
           checkin_at: string | null
           checkout_at: string | null
           created_at: string
@@ -563,7 +563,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
-          assigned_value?: number
+          assigned_value?: number | null
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
@@ -578,7 +578,7 @@ export type Database = {
           user_id: string
         }
         Update: {
-          assigned_value?: number
+          assigned_value?: number | null
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
@@ -763,7 +763,7 @@ export type Database = {
       }
       shifts: {
         Row: {
-          base_value: number
+          base_value: number | null
           created_at: string
           created_by: string | null
           end_time: string
@@ -780,7 +780,7 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
-          base_value?: number
+          base_value?: number | null
           created_at?: string
           created_by?: string | null
           end_time: string
@@ -797,7 +797,7 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
-          base_value?: number
+          base_value?: number | null
           created_at?: string
           created_by?: string | null
           end_time?: string

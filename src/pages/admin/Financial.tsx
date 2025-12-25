@@ -7,328 +7,422 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
-import { useSyncShiftEntries } from '@/hooks/useSyncShiftEntries';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, RefreshCw } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye } from 'lucide-react';
+import { format, parseISO, startOfMonth, endOfMonth, subMonths, differenceInHours, differenceInMinutes } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Interfaces para o modelo de dados
-interface ShiftEntry {
-  id: string;
-  setor_id: string;
-  setor_name: string;
-  data: string; // YYYY-MM-DD
-  plantonista_id: string;
-  plantonista_name: string;
-  valor: number | null;
-  status_valor: 'COM_VALOR' | 'SEM_VALOR';
-  horario?: string;
-  duracao_horas?: number;
+// ============================================================
+// INTERFACES - Modelo de Dados
+// ============================================================
+interface RawShiftEntry {
+  id: string;                    // shift_assignment.id
+  shift_id: string;
+  shift_date: string;            // YYYY-MM-DD (fonte: shifts.shift_date)
+  start_time: string;
+  end_time: string;
+  sector_id: string | null;
+  sector_name: string;
+  assignee_id: string;           // user_id da atribuição
+  assignee_name: string;
+  assigned_value: number | null; // valor atribuído (pode ser null)
+  base_value: number | null;     // valor base do plantão (pode ser null)
+  duration_hours: number;        // calculado de start_time/end_time
 }
 
-interface PlantonistaSectorSummary {
-  plantonista_id: string;
-  plantonista_name: string;
-  total_valor: number;
-  total_plantoes: number;
-  total_sem_valor: number;
-  entries: ShiftEntry[];
+interface PlantonistaReport {
+  assignee_id: string;
+  assignee_name: string;
+  total_shifts: number;
+  total_hours: number;
+  paid_shifts: number;
+  unpriced_shifts: number;
+  total_to_receive: number;      // soma só dos valores != null
+  sectors: SectorSubtotal[];
+  entries: RawShiftEntry[];
+}
+
+interface SectorSubtotal {
+  sector_id: string;
+  sector_name: string;
+  sector_shifts: number;
+  sector_hours: number;
+  sector_paid: number;
+  sector_unpriced: number;
+  sector_total: number;
 }
 
 interface SectorReport {
-  setor_id: string;
-  setor_name: string;
-  total_valor: number;
-  total_plantoes: number;
-  total_sem_valor: number;
-  plantonistas: PlantonistaSectorSummary[];
+  sector_id: string;
+  sector_name: string;
+  total_shifts: number;
+  total_hours: number;
+  paid_shifts: number;
+  unpriced_shifts: number;
+  total_value: number;
+  plantonistas: {
+    assignee_id: string;
+    assignee_name: string;
+    shifts: number;
+    hours: number;
+    paid: number;
+    unpriced: number;
+    value: number;
+  }[];
 }
 
-interface Sector {
-  id: string;
-  name: string;
+interface AuditData {
+  totalLoaded: number;
+  withValue: number;
+  withoutValue: number;
+  invalidValue: number;
+  sumDetails: { id: string; assignee: string; value: number }[];
+  finalSum: number;
 }
 
-interface Plantonista {
-  id: string;
-  name: string;
+// ============================================================
+// HELPER FUNCTIONS
+// ============================================================
+function calculateDurationHours(startTime: string, endTime: string): number {
+  if (!startTime || !endTime) return 0;
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  let hours = endH - startH;
+  let minutes = endM - startM;
+  if (hours < 0 || (hours === 0 && minutes < 0)) {
+    hours += 24; // overnight shift
+  }
+  return hours + minutes / 60;
 }
 
+function getFinalValue(assignedValue: number | null, baseValue: number | null): number | null {
+  // REGRA: assigned_value tem prioridade. Se null/0, usa base_value. Se ambos null, retorna null.
+  if (assignedValue !== null && assignedValue > 0) return assignedValue;
+  if (baseValue !== null && baseValue > 0) return baseValue;
+  return null;
+}
+
+function formatCurrency(value: number | null): string {
+  if (value === null) return '';
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+}
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
 export default function AdminFinancial() {
   const { currentTenantId } = useTenant();
-  const { syncAndNotify } = useSyncShiftEntries();
   
-  // States
-  const [shiftEntries, setShiftEntries] = useState<ShiftEntry[]>([]);
-  const [sectors, setSectors] = useState<Sector[]>([]);
-  const [plantonistas, setPlantonistas] = useState<Plantonista[]>([]);
+  // Raw data from DB
+  const [rawEntries, setRawEntries] = useState<RawShiftEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   
-  // Filtros
+  // Filters
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [filterSetor, setFilterSetor] = useState<string>('all');
   const [filterPlantonista, setFilterPlantonista] = useState<string>('all');
   
-  // Expanded state (setor -> plantonista)
-  const [expandedSetores, setExpandedSetores] = useState<Set<string>>(new Set());
+  // Audit mode
+  const [auditMode, setAuditMode] = useState(false);
+  
+  // Expand/collapse
   const [expandedPlantonistas, setExpandedPlantonistas] = useState<Set<string>>(new Set());
+  const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
+
+  // Unique sectors and plantonistas for filters
+  const sectors = useMemo(() => {
+    const map = new Map<string, string>();
+    rawEntries.forEach(e => {
+      if (e.sector_id) map.set(e.sector_id, e.sector_name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rawEntries]);
+
+  const plantonistas = useMemo(() => {
+    const map = new Map<string, string>();
+    rawEntries.forEach(e => {
+      map.set(e.assignee_id, e.assignee_name);
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rawEntries]);
 
   // Quick date presets
   function setThisMonth() {
     setStartDate(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
     setEndDate(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   }
-
   function setLastMonth() {
     const lastMonth = subMonths(new Date(), 1);
     setStartDate(format(startOfMonth(lastMonth), 'yyyy-MM-dd'));
     setEndDate(format(endOfMonth(lastMonth), 'yyyy-MM-dd'));
   }
 
-  function setLast30Days() {
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    setStartDate(format(thirtyDaysAgo, 'yyyy-MM-dd'));
-    setEndDate(format(today, 'yyyy-MM-dd'));
-  }
-
+  // Fetch data
   useEffect(() => {
-    if (currentTenantId) {
-      fetchData();
-    }
+    if (currentTenantId) fetchData();
   }, [currentTenantId, startDate, endDate]);
-
-  async function handleSync() {
-    if (!currentTenantId) return;
-    setSyncing(true);
-    try {
-      await syncAndNotify(currentTenantId, startDate, endDate);
-      await fetchData();
-    } catch (e) {
-      // Error already shown by syncAndNotify
-    } finally {
-      setSyncing(false);
-    }
-  }
 
   async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    // Fetch sectors
-    const { data: sectorsData } = await supabase
-      .from('sectors')
-      .select('id, name')
-      .eq('tenant_id', currentTenantId)
-      .eq('active', true);
-    
-    setSectors(sectorsData || []);
-
-    // Fetch plantonistas (members)
-    const { data: membersData } = await supabase
-      .from('memberships')
-      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
-      .eq('tenant_id', currentTenantId)
-      .eq('active', true);
-    
-    const plantonistasList = (membersData || []).map((m: any) => ({
-      id: m.user_id,
-      name: m.profile?.name || 'N/A'
-    }));
-    setPlantonistas(plantonistasList);
-
-    // First try to fetch from shift_entries table
-    const { data: entriesData, error: entriesError } = await supabase
-      .from('shift_entries')
+    // FONTE DE VERDADE: shifts + shift_assignments (JOIN)
+    const { data: assignments, error } = await supabase
+      .from('shift_assignments')
       .select(`
         id,
-        setor_id,
-        data,
-        plantonista_id,
-        valor,
-        status_valor,
-        sector:sectors!shift_entries_setor_id_fkey(id, name),
-        profile:profiles!shift_entries_plantonista_id_fkey(id, name)
+        user_id,
+        assigned_value,
+        shift:shifts!inner(
+          id,
+          shift_date,
+          start_time,
+          end_time,
+          base_value,
+          sector_id,
+          sector:sectors(id, name)
+        ),
+        profile:profiles!shift_assignments_user_id_profiles_fkey(id, name)
       `)
       .eq('tenant_id', currentTenantId)
-      .gte('data', startDate)
-      .lte('data', endDate);
+      .gte('shift.shift_date', startDate)
+      .lte('shift.shift_date', endDate);
 
-    let entries: ShiftEntry[] = [];
-
-    if (!entriesError && entriesData && entriesData.length > 0) {
-      // Use data from shift_entries table
-      entries = entriesData.map((e: any) => ({
-        id: e.id,
-        setor_id: e.setor_id,
-        setor_name: e.sector?.name || 'Sem Setor',
-        data: e.data,
-        plantonista_id: e.plantonista_id,
-        plantonista_name: e.profile?.name || 'N/A',
-        valor: e.valor !== null ? Number(e.valor) : null,
-        status_valor: e.status_valor as 'COM_VALOR' | 'SEM_VALOR',
-      }));
-    } else {
-      // Fallback: read directly from shift_assignments + shifts
-      const { data: shiftsInRange } = await supabase
-        .from('shifts')
-        .select('id')
-        .eq('tenant_id', currentTenantId)
-        .gte('shift_date', startDate)
-        .lte('shift_date', endDate);
-
-      const shiftIds = shiftsInRange?.map(s => s.id) || [];
-
-      if (shiftIds.length > 0) {
-        const { data: assignments } = await supabase
-          .from('shift_assignments')
-          .select(`
-            id,
-            shift_id,
-            user_id,
-            assigned_value,
-            profile:profiles!shift_assignments_user_id_profiles_fkey(id, name),
-            shift:shifts!inner(
-              id,
-              shift_date,
-              start_time,
-              end_time,
-              base_value,
-              sector_id,
-              sector:sectors(id, name)
-            )
-          `)
-          .eq('tenant_id', currentTenantId)
-          .in('shift_id', shiftIds);
-
-        entries = (assignments || []).map((a: any) => {
-          const assignedVal = Number(a.assigned_value) || 0;
-          const baseVal = Number(a.shift?.base_value) || 0;
-          const finalValue = assignedVal > 0 ? assignedVal : (baseVal > 0 ? baseVal : null);
-          
-          return {
-            id: a.id,
-            setor_id: a.shift?.sector?.id || a.shift?.sector_id || '',
-            setor_name: a.shift?.sector?.name || 'Sem Setor',
-            data: a.shift?.shift_date,
-            plantonista_id: a.user_id,
-            plantonista_name: a.profile?.name || 'N/A',
-            valor: finalValue,
-            status_valor: (finalValue !== null ? 'COM_VALOR' : 'SEM_VALOR') as 'COM_VALOR' | 'SEM_VALOR',
-            horario: `${a.shift?.start_time?.slice(0, 5) || ''} - ${a.shift?.end_time?.slice(0, 5) || ''}`,
-          };
-        });
-      }
+    if (error) {
+      console.error('[AdminFinancial] Fetch error:', error);
+      setRawEntries([]);
+      setLoading(false);
+      return;
     }
 
-    setShiftEntries(entries);
+    const entries: RawShiftEntry[] = (assignments || []).map((a: any) => {
+      const shift = a.shift;
+      const assignedVal = a.assigned_value !== null ? Number(a.assigned_value) : null;
+      const baseVal = shift?.base_value !== null ? Number(shift.base_value) : null;
+      const duration = calculateDurationHours(shift?.start_time || '', shift?.end_time || '');
 
-    setShiftEntries(entries);
+      return {
+        id: a.id,
+        shift_id: shift?.id || '',
+        shift_date: shift?.shift_date || '',
+        start_time: shift?.start_time || '',
+        end_time: shift?.end_time || '',
+        sector_id: shift?.sector?.id || shift?.sector_id || null,
+        sector_name: shift?.sector?.name || 'Sem Setor',
+        assignee_id: a.user_id,
+        assignee_name: a.profile?.name || 'N/A',
+        assigned_value: assignedVal,
+        base_value: baseVal,
+        duration_hours: duration,
+      };
+    });
+
+    console.log(`[AdminFinancial] Loaded ${entries.length} entries from DB`);
+    setRawEntries(entries);
     setLoading(false);
   }
 
+  // Filtered entries
   const filteredEntries = useMemo(() => {
-    return shiftEntries.filter((e) => {
-      if (filterPlantonista !== 'all' && e.plantonista_id !== filterPlantonista) return false;
-      if (filterSetor !== 'all' && e.setor_id !== filterSetor) return false;
+    return rawEntries.filter(e => {
+      if (filterSetor !== 'all' && e.sector_id !== filterSetor) return false;
+      if (filterPlantonista !== 'all' && e.assignee_id !== filterPlantonista) return false;
       return true;
     });
-  }, [shiftEntries, filterPlantonista, filterSetor]);
+  }, [rawEntries, filterSetor, filterPlantonista]);
 
+  // ============================================================
+  // AGGREGATIONS
+  // ============================================================
+
+  // AUDIT DATA
+  const auditData = useMemo((): AuditData => {
+    let withValue = 0;
+    let withoutValue = 0;
+    let invalidValue = 0;
+    const sumDetails: { id: string; assignee: string; value: number }[] = [];
+    let finalSum = 0;
+
+    filteredEntries.forEach(e => {
+      const val = getFinalValue(e.assigned_value, e.base_value);
+      if (val === null) {
+        withoutValue++;
+      } else if (val < 0 || isNaN(val)) {
+        invalidValue++;
+      } else {
+        withValue++;
+        sumDetails.push({ id: e.id, assignee: e.assignee_name, value: val });
+        finalSum += val;
+      }
+    });
+
+    return {
+      totalLoaded: filteredEntries.length,
+      withValue,
+      withoutValue,
+      invalidValue,
+      sumDetails,
+      finalSum,
+    };
+  }, [filteredEntries]);
+
+  // POR PLANTONISTA (agrupado por assignee_id)
+  const plantonistaReports = useMemo((): PlantonistaReport[] => {
+    const map = new Map<string, PlantonistaReport>();
+
+    filteredEntries.forEach(e => {
+      if (!map.has(e.assignee_id)) {
+        map.set(e.assignee_id, {
+          assignee_id: e.assignee_id,
+          assignee_name: e.assignee_name,
+          total_shifts: 0,
+          total_hours: 0,
+          paid_shifts: 0,
+          unpriced_shifts: 0,
+          total_to_receive: 0,
+          sectors: [],
+          entries: [],
+        });
+      }
+
+      const report = map.get(e.assignee_id)!;
+      const val = getFinalValue(e.assigned_value, e.base_value);
+
+      report.total_shifts++;
+      report.total_hours += e.duration_hours;
+      report.entries.push(e);
+
+      if (val !== null && val >= 0) {
+        report.paid_shifts++;
+        report.total_to_receive += val;
+      } else {
+        report.unpriced_shifts++;
+      }
+    });
+
+    // Build sector subtotals for each plantonista
+    map.forEach(report => {
+      const sectorMap = new Map<string, SectorSubtotal>();
+
+      report.entries.forEach(e => {
+        const sectorId = e.sector_id || 'sem-setor';
+        if (!sectorMap.has(sectorId)) {
+          sectorMap.set(sectorId, {
+            sector_id: sectorId,
+            sector_name: e.sector_name,
+            sector_shifts: 0,
+            sector_hours: 0,
+            sector_paid: 0,
+            sector_unpriced: 0,
+            sector_total: 0,
+          });
+        }
+        const sub = sectorMap.get(sectorId)!;
+        const val = getFinalValue(e.assigned_value, e.base_value);
+        sub.sector_shifts++;
+        sub.sector_hours += e.duration_hours;
+        if (val !== null && val >= 0) {
+          sub.sector_paid++;
+          sub.sector_total += val;
+        } else {
+          sub.sector_unpriced++;
+        }
+      });
+
+      report.sectors = Array.from(sectorMap.values()).sort((a, b) => a.sector_name.localeCompare(b.sector_name));
+      report.entries.sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime());
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
+  }, [filteredEntries]);
+
+  // POR SETOR (agrupado por sector_id)
   const sectorReports = useMemo((): SectorReport[] => {
-    const sectorMap = new Map<string, SectorReport>();
+    const map = new Map<string, SectorReport>();
 
-    filteredEntries.forEach((entry) => {
-      const setorId = entry.setor_id || 'sem-setor';
-      const setorName = entry.setor_name || 'Sem Setor';
-
-      if (!sectorMap.has(setorId)) {
-        sectorMap.set(setorId, {
-          setor_id: setorId,
-          setor_name: setorName,
-          total_valor: 0,
-          total_plantoes: 0,
-          total_sem_valor: 0,
+    filteredEntries.forEach(e => {
+      const sectorId = e.sector_id || 'sem-setor';
+      if (!map.has(sectorId)) {
+        map.set(sectorId, {
+          sector_id: sectorId,
+          sector_name: e.sector_name,
+          total_shifts: 0,
+          total_hours: 0,
+          paid_shifts: 0,
+          unpriced_shifts: 0,
+          total_value: 0,
           plantonistas: [],
         });
       }
 
-      const sector = sectorMap.get(setorId)!;
-      let plant = sector.plantonistas.find((p) => p.plantonista_id === entry.plantonista_id);
+      const report = map.get(sectorId)!;
+      const val = getFinalValue(e.assigned_value, e.base_value);
 
-      if (!plant) {
-        plant = {
-          plantonista_id: entry.plantonista_id,
-          plantonista_name: entry.plantonista_name,
-          total_valor: 0,
-          total_plantoes: 0,
-          total_sem_valor: 0,
-          entries: [],
-        };
-        sector.plantonistas.push(plant);
-      }
+      report.total_shifts++;
+      report.total_hours += e.duration_hours;
 
-      plant.entries.push(entry);
-      plant.total_plantoes += 1;
-      sector.total_plantoes += 1;
-
-      if (entry.valor !== null) {
-        const v = Number(entry.valor);
-        plant.total_valor += v;
-        sector.total_valor += v;
+      if (val !== null && val >= 0) {
+        report.paid_shifts++;
+        report.total_value += val;
       } else {
-        plant.total_sem_valor += 1;
-        sector.total_sem_valor += 1;
+        report.unpriced_shifts++;
       }
     });
 
-    // sort
-    sectorMap.forEach((sector) => {
-      sector.plantonistas.forEach((p) => {
-        p.entries.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
+    // Build plantonistas subtotals for each sector
+    map.forEach((report, sectorId) => {
+      const plantMap = new Map<string, { assignee_id: string; assignee_name: string; shifts: number; hours: number; paid: number; unpriced: number; value: number }>();
+
+      filteredEntries.filter(e => (e.sector_id || 'sem-setor') === sectorId).forEach(e => {
+        if (!plantMap.has(e.assignee_id)) {
+          plantMap.set(e.assignee_id, { assignee_id: e.assignee_id, assignee_name: e.assignee_name, shifts: 0, hours: 0, paid: 0, unpriced: 0, value: 0 });
+        }
+        const p = plantMap.get(e.assignee_id)!;
+        const val = getFinalValue(e.assigned_value, e.base_value);
+        p.shifts++;
+        p.hours += e.duration_hours;
+        if (val !== null && val >= 0) {
+          p.paid++;
+          p.value += val;
+        } else {
+          p.unpriced++;
+        }
       });
-      sector.plantonistas.sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
+
+      report.plantonistas = Array.from(plantMap.values()).sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
     });
 
-    return Array.from(sectorMap.values()).sort((a, b) => a.setor_name.localeCompare(b.setor_name));
+    return Array.from(map.values()).sort((a, b) => a.sector_name.localeCompare(b.sector_name));
   }, [filteredEntries]);
 
-  const plantonistaTotals = useMemo(() => {
-    const map = new Map<string, { plantonista_id: string; plantonista_name: string; total_plantoes: number; total_sem_valor: number; total_valor: number }>();
-
-    filteredEntries.forEach((e) => {
-      if (!map.has(e.plantonista_id)) {
-        map.set(e.plantonista_id, {
-          plantonista_id: e.plantonista_id,
-          plantonista_name: e.plantonista_name,
-          total_plantoes: 0,
-          total_sem_valor: 0,
-          total_valor: 0,
-        });
-      }
-      const row = map.get(e.plantonista_id)!;
-      row.total_plantoes += 1;
-      if (e.valor !== null) row.total_valor += Number(e.valor);
-      else row.total_sem_valor += 1;
-    });
-
-    return Array.from(map.values()).sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
-  }, [filteredEntries]);
-
+  // GRAND TOTALS
   const grandTotals = useMemo(() => {
-    return {
-      total_valor: plantonistaTotals.reduce((acc, r) => acc + r.total_valor, 0),
-      total_plantoes: plantonistaTotals.reduce((acc, r) => acc + r.total_plantoes, 0),
-      total_sem_valor: plantonistaTotals.reduce((acc, r) => acc + r.total_sem_valor, 0),
-      total_plantonistas: plantonistaTotals.length,
-    };
-  }, [plantonistaTotals]);
+    let totalShifts = 0;
+    let totalHours = 0;
+    let paidShifts = 0;
+    let unpricedShifts = 0;
+    let totalValue = 0;
 
+    filteredEntries.forEach(e => {
+      const val = getFinalValue(e.assigned_value, e.base_value);
+      totalShifts++;
+      totalHours += e.duration_hours;
+      if (val !== null && val >= 0) {
+        paidShifts++;
+        totalValue += val;
+      } else {
+        unpricedShifts++;
+      }
+    });
+
+    return { totalShifts, totalHours, paidShifts, unpricedShifts, totalValue, totalPlantonistas: plantonistaReports.length };
+  }, [filteredEntries, plantonistaReports]);
+
+  // Toggle helpers
   function togglePlantonista(id: string) {
     setExpandedPlantonistas(prev => {
       const newSet = new Set(prev);
@@ -337,53 +431,32 @@ export default function AdminFinancial() {
       return newSet;
     });
   }
-
-  function toggleSetor(key: string) {
-    setExpandedSetores(prev => {
+  function toggleSector(id: string) {
+    setExpandedSectors(prev => {
       const newSet = new Set(prev);
-      if (newSet.has(key)) newSet.delete(key);
-      else newSet.add(key);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
       return newSet;
     });
   }
 
-  function expandAll() {
-    const allSetores = new Set<string>(sectorReports.map((s) => s.setor_id));
-    const allPlantonistas = new Set<string>();
-    sectorReports.forEach((s) => {
-      s.plantonistas.forEach((p) => allPlantonistas.add(`${s.setor_id}-${p.plantonista_id}`));
-    });
-    setExpandedSetores(allSetores);
-    setExpandedPlantonistas(allPlantonistas);
-  }
-
-  function collapseAll() {
-    setExpandedSetores(new Set<string>());
-    setExpandedPlantonistas(new Set<string>());
-  }
-
+  // Export CSV
   function exportCSV() {
-    const headers = ['Setor', 'Plantonista', 'Data', 'Valor', 'Status'];
-
-    const sorted = [...filteredEntries].sort((a, b) => {
-      const setor = a.setor_name.localeCompare(b.setor_name);
-      if (setor !== 0) return setor;
-      const pl = a.plantonista_name.localeCompare(b.plantonista_name);
-      if (pl !== 0) return pl;
-      return new Date(a.data).getTime() - new Date(b.data).getTime();
+    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
+    const rows = filteredEntries.map(e => {
+      const val = getFinalValue(e.assigned_value, e.base_value);
+      return [
+        format(parseISO(e.shift_date), 'dd/MM/yyyy'),
+        `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
+        e.duration_hours.toFixed(1),
+        e.sector_name,
+        e.assignee_name,
+        val !== null ? val.toFixed(2) : 'Sem valor',
+      ];
     });
+    rows.push(['', '', '', '', 'TOTAL', grandTotals.totalValue.toFixed(2)]);
 
-    const rows: string[][] = sorted.map((e) => [
-      e.setor_name,
-      e.plantonista_name,
-      format(parseISO(e.data), 'dd/MM/yyyy'),
-      e.valor !== null ? Number(e.valor).toFixed(2) : '',
-      e.status_valor === 'COM_VALOR' ? 'Com valor' : 'Sem valor',
-    ]);
-
-    rows.push(['TOTAL GERAL', '', '', grandTotals.total_valor.toFixed(2), '']);
-
-    const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -393,11 +466,9 @@ export default function AdminFinancial() {
     URL.revokeObjectURL(url);
   }
 
-  function formatCurrency(value: number | null): string {
-    if (value === null) return '';
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-  }
-
+  // ============================================================
+  // RENDER
+  // ============================================================
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -415,13 +486,16 @@ export default function AdminFinancial() {
             <DollarSign className="h-6 w-6 text-primary" />
             Financeiro
           </h1>
-          <p className="text-muted-foreground">Relatório detalhado por plantonista e setor</p>
+          <p className="text-muted-foreground">Relatório detalhado de plantões e valores</p>
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Sincronizando...' : 'Sincronizar'}
-          </Button>
+        <div className="flex gap-2 flex-wrap items-center">
+          <div className="flex items-center gap-2 mr-4">
+            <Switch checked={auditMode} onCheckedChange={setAuditMode} id="audit-mode" />
+            <Label htmlFor="audit-mode" className="flex items-center gap-1 cursor-pointer">
+              <Eye className="h-4 w-4" />
+              Auditoria
+            </Label>
+          </div>
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
@@ -442,34 +516,20 @@ export default function AdminFinancial() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Date Range */}
           <div className="flex flex-wrap gap-4 items-end">
             <div className="space-y-1.5">
               <Label>Data Início</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-40"
-              />
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
             </div>
             <div className="space-y-1.5">
               <Label>Data Fim</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-40"
-              />
+              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
             </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={setThisMonth}>Este mês</Button>
               <Button variant="outline" size="sm" onClick={setLastMonth}>Mês anterior</Button>
-              <Button variant="outline" size="sm" onClick={setLast30Days}>Últimos 30 dias</Button>
             </div>
           </div>
-
-          {/* Other Filters */}
           <div className="flex flex-wrap gap-4">
             <div className="space-y-1.5 min-w-[200px]">
               <Label>Setor</Label>
@@ -479,9 +539,7 @@ export default function AdminFinancial() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os setores</SelectItem>
-                  {sectors.map(s => (
-                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
-                  ))}
+                  {sectors.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -493,9 +551,7 @@ export default function AdminFinancial() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos os plantonistas</SelectItem>
-                  {plantonistas.map(p => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
+                  {plantonistas.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -504,16 +560,14 @@ export default function AdminFinancial() {
       </Card>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Users className="h-5 w-5 text-primary" />
-              </div>
+              <div className="p-2 bg-primary/10 rounded-lg"><Users className="h-5 w-5 text-primary" /></div>
               <div>
                 <p className="text-sm text-muted-foreground">Plantonistas</p>
-                <p className="text-2xl font-bold">{grandTotals.total_plantonistas}</p>
+                <p className="text-2xl font-bold">{grandTotals.totalPlantonistas}</p>
               </div>
             </div>
           </CardContent>
@@ -521,12 +575,10 @@ export default function AdminFinancial() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Calendar className="h-5 w-5 text-blue-500" />
-              </div>
+              <div className="p-2 bg-blue-500/10 rounded-lg"><Calendar className="h-5 w-5 text-blue-500" /></div>
               <div>
                 <p className="text-sm text-muted-foreground">Plantões</p>
-                <p className="text-2xl font-bold">{grandTotals.total_plantoes}</p>
+                <p className="text-2xl font-bold">{grandTotals.totalShifts}</p>
               </div>
             </div>
           </CardContent>
@@ -534,12 +586,21 @@ export default function AdminFinancial() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-amber-500/10 rounded-lg">
-                <AlertCircle className="h-5 w-5 text-amber-500" />
+              <div className="p-2 bg-purple-500/10 rounded-lg"><Clock className="h-5 w-5 text-purple-500" /></div>
+              <div>
+                <p className="text-sm text-muted-foreground">Horas</p>
+                <p className="text-2xl font-bold">{grandTotals.totalHours.toFixed(1)}h</p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/10 rounded-lg"><AlertCircle className="h-5 w-5 text-amber-500" /></div>
               <div>
                 <p className="text-sm text-muted-foreground">Sem Valor</p>
-                <p className="text-2xl font-bold">{grandTotals.total_sem_valor}</p>
+                <p className="text-2xl font-bold">{grandTotals.unpricedShifts}</p>
               </div>
             </div>
           </CardContent>
@@ -547,197 +608,274 @@ export default function AdminFinancial() {
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-500/10 rounded-lg">
-                <DollarSign className="h-5 w-5 text-green-500" />
-              </div>
+              <div className="p-2 bg-green-500/10 rounded-lg"><DollarSign className="h-5 w-5 text-green-500" /></div>
               <div>
                 <p className="text-sm text-muted-foreground">Total Geral</p>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(grandTotals.total_valor)}</p>
+                <p className="text-2xl font-bold text-green-600">{formatCurrency(grandTotals.totalValue)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Controls */}
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={expandAll}>Expandir Todos</Button>
-        <Button variant="outline" size="sm" onClick={collapseAll}>Recolher Todos</Button>
-      </div>
-
-      {/* Relatório por Setor (tabela separada por plantonista) */}
-      {sectorReports.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
-            <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhum plantão encontrado no período selecionado.</p>
-            <p className="text-sm mt-2">Clique em "Sincronizar" para atualizar os dados das escalas.</p>
+      {/* AUDIT MODE PANEL */}
+      {auditMode && (
+        <Card className="border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg flex items-center gap-2 text-amber-700 dark:text-amber-400">
+              <Eye className="h-5 w-5" />
+              Modo Auditoria
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div><span className="font-medium">Total carregado:</span> {auditData.totalLoaded}</div>
+              <div><span className="font-medium text-green-600">Com valor:</span> {auditData.withValue}</div>
+              <div><span className="font-medium text-amber-600">Sem valor:</span> {auditData.withoutValue}</div>
+              <div><span className="font-medium text-red-600">Valor inválido:</span> {auditData.invalidValue}</div>
+            </div>
+            <div className="border-t pt-4">
+              <p className="font-medium mb-2">Detalhamento da soma (IDs incluídos):</p>
+              <ScrollArea className="max-h-[200px] border rounded p-2 bg-background">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[300px]">ID</TableHead>
+                      <TableHead>Plantonista</TableHead>
+                      <TableHead className="text-right">Valor</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {auditData.sumDetails.map(d => (
+                      <TableRow key={d.id}>
+                        <TableCell className="font-mono text-xs">{d.id}</TableCell>
+                        <TableCell>{d.assignee}</TableCell>
+                        <TableCell className="text-right text-green-600">{formatCurrency(d.value)}</TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/50 font-bold">
+                      <TableCell colSpan={2} className="text-right">SOMA FINAL</TableCell>
+                      <TableCell className="text-right text-green-600 text-lg">{formatCurrency(auditData.finalSum)}</TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            </div>
           </CardContent>
         </Card>
-      ) : (
-        <div className="space-y-4">
-          {sectorReports.map((sector) => {
-            const setorId = sector.setor_id;
-            const setorExpanded = expandedSetores.has(setorId);
-
-            return (
-              <Card key={setorId} className="overflow-hidden">
-                <div
-                  className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
-                  onClick={() => toggleSetor(setorId)}
-                >
-                  <div className="flex items-center gap-3">
-                    {setorExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                    <div>
-                      <h3 className="font-semibold text-lg flex items-center gap-2">
-                        <Building className="h-5 w-5 text-muted-foreground" />
-                        {sector.setor_name}
-                      </h3>
-                      <p className="text-sm text-muted-foreground">
-                        {sector.total_plantoes} plantões · {sector.plantonistas.length} plantonista(s)
-                        {sector.total_sem_valor > 0 && (
-                          <span className="text-amber-500 ml-2">({sector.total_sem_valor} sem valor)</span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xl font-bold text-green-600">{formatCurrency(sector.total_valor)}</p>
-                  </div>
-                </div>
-
-                {setorExpanded && (
-                  <CardContent className="p-0">
-                    {sector.plantonistas.map((p) => {
-                      const key = `${setorId}-${p.plantonista_id}`;
-                      const expanded = expandedPlantonistas.has(key);
-
-                      return (
-                        <div key={p.plantonista_id} className="border-t">
-                          <div
-                            className="flex items-center justify-between p-3 pl-8 bg-background cursor-pointer hover:bg-muted/30 transition-colors"
-                            onClick={() => togglePlantonista(key)}
-                          >
-                            <div className="flex items-center gap-3">
-                              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                              <div>
-                                <p className="font-medium">{p.plantonista_name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {p.total_plantoes} plantões
-                                  {p.total_sem_valor > 0 && (
-                                    <span className="text-amber-500 ml-1">({p.total_sem_valor} sem valor)</span>
-                                  )}
-                                </p>
-                              </div>
-                            </div>
-                            <Badge variant="secondary" className="text-green-600 bg-green-100">
-                              {formatCurrency(p.total_valor)}
-                            </Badge>
-                          </div>
-
-                          {expanded && (
-                            <div className="pl-12 pr-4 pb-4">
-                              <ScrollArea className="max-h-[400px]">
-                                <Table>
-                                  <TableHeader>
-                                    <TableRow>
-                                      <TableHead className="w-[160px]">Data</TableHead>
-                                      <TableHead className="text-right">Valor</TableHead>
-                                    </TableRow>
-                                  </TableHeader>
-                                  <TableBody>
-                                    {p.entries.map((entry) => (
-                                      <TableRow key={entry.id}>
-                                        <TableCell className="font-medium">
-                                          {format(parseISO(entry.data), 'dd/MM/yyyy (EEEE)', { locale: ptBR })}
-                                        </TableCell>
-                                        <TableCell className="text-right">
-                                          {entry.valor !== null ? (
-                                            <span className="font-medium text-green-600">{formatCurrency(entry.valor)}</span>
-                                          ) : (
-                                            <Badge variant="outline" className="text-amber-500 border-amber-500">
-                                              Sem valor atribuído
-                                            </Badge>
-                                          )}
-                                        </TableCell>
-                                      </TableRow>
-                                    ))}
-
-                                    <TableRow className="bg-muted/30 font-medium">
-                                      <TableCell className="text-right">
-                                        Subtotal {p.plantonista_name}
-                                        {p.total_sem_valor > 0 && (
-                                          <span className="text-amber-500 font-normal ml-2">({p.total_sem_valor} sem valor)</span>
-                                        )}
-                                      </TableCell>
-                                      <TableCell className="text-right text-green-600">{formatCurrency(p.total_valor)}</TableCell>
-                                    </TableRow>
-                                  </TableBody>
-                                </Table>
-                              </ScrollArea>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                )}
-              </Card>
-            );
-          })}
-
-          {/* Resumo por Plantonista (somando todos os setores) */}
-          <Card className="bg-primary/5">
-            <CardHeader>
-              <CardTitle className="text-lg">Resumo por plantonista (todos os setores)</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead>Plantonista</TableHead>
-                    <TableHead className="text-center">Plantões</TableHead>
-                    <TableHead className="text-center">Sem valor</TableHead>
-                    <TableHead className="text-right">Total a receber</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {plantonistaTotals.map((p) => (
-                    <TableRow key={p.plantonista_id}>
-                      <TableCell className="font-medium">{p.plantonista_name}</TableCell>
-                      <TableCell className="text-center"><Badge variant="secondary">{p.total_plantoes}</Badge></TableCell>
-                      <TableCell className="text-center">
-                        {p.total_sem_valor > 0 ? (
-                          <Badge variant="outline" className="text-amber-500 border-amber-500">{p.total_sem_valor}</Badge>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-600">{formatCurrency(p.total_valor)}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
       )}
 
+      {/* TABS: Por Plantonista | Por Setor | Todos os Plantões */}
+      <Tabs defaultValue="plantonista" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="plantonista">Por Plantonista</TabsTrigger>
+          <TabsTrigger value="setor">Por Setor</TabsTrigger>
+          <TabsTrigger value="todos">Todos os Plantões</TabsTrigger>
+        </TabsList>
+
+        {/* TAB: Por Plantonista */}
+        <TabsContent value="plantonista" className="space-y-4 mt-4">
+          {plantonistaReports.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
+          ) : (
+            plantonistaReports.map(report => {
+              const isExpanded = expandedPlantonistas.has(report.assignee_id);
+              return (
+                <Card key={report.assignee_id}>
+                  <div className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70" onClick={() => togglePlantonista(report.assignee_id)}>
+                    <div className="flex items-center gap-3">
+                      {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                      <div>
+                        <h3 className="font-semibold text-lg">{report.assignee_name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {report.total_shifts} plantões · {report.total_hours.toFixed(1)}h
+                          {report.unpriced_shifts > 0 && <span className="text-amber-500 ml-2">({report.unpriced_shifts} sem valor)</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      {report.paid_shifts === 0 ? (
+                        <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>
+                      ) : (
+                        <p className="text-xl font-bold text-green-600">{formatCurrency(report.total_to_receive)}</p>
+                      )}
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <CardContent className="p-0">
+                      {/* Subtotais por setor */}
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/30">
+                            <TableHead>Setor</TableHead>
+                            <TableHead className="text-center">Plantões</TableHead>
+                            <TableHead className="text-center">Horas</TableHead>
+                            <TableHead className="text-center">Sem valor</TableHead>
+                            <TableHead className="text-right">Subtotal</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {report.sectors.map(s => (
+                            <TableRow key={s.sector_id}>
+                              <TableCell className="font-medium"><Building className="h-4 w-4 inline mr-2 text-muted-foreground" />{s.sector_name}</TableCell>
+                              <TableCell className="text-center">{s.sector_shifts}</TableCell>
+                              <TableCell className="text-center">{s.sector_hours.toFixed(1)}h</TableCell>
+                              <TableCell className="text-center">{s.sector_unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{s.sector_unpriced}</Badge> : '0'}</TableCell>
+                              <TableCell className="text-right font-medium text-green-600">{s.sector_paid > 0 ? formatCurrency(s.sector_total) : <span className="text-muted-foreground">—</span>}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      {/* Lista detalhada de plantões */}
+                      <div className="p-4 border-t">
+                        <p className="text-sm font-medium mb-2">Detalhamento:</p>
+                        <ScrollArea className="max-h-[300px]">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Data</TableHead>
+                                <TableHead>Horário</TableHead>
+                                <TableHead>Setor</TableHead>
+                                <TableHead className="text-right">Valor</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {report.entries.map(e => {
+                                const val = getFinalValue(e.assigned_value, e.base_value);
+                                return (
+                                  <TableRow key={e.id}>
+                                    <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
+                                    <TableCell>{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
+                                    <TableCell>{e.sector_name}</TableCell>
+                                    <TableCell className="text-right">
+                                      {val !== null ? <span className="text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </ScrollArea>
+                      </div>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </TabsContent>
+
+        {/* TAB: Por Setor */}
+        <TabsContent value="setor" className="space-y-4 mt-4">
+          {sectorReports.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
+          ) : (
+            sectorReports.map(report => {
+              const isExpanded = expandedSectors.has(report.sector_id);
+              return (
+                <Card key={report.sector_id}>
+                  <div className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70" onClick={() => toggleSector(report.sector_id)}>
+                    <div className="flex items-center gap-3">
+                      {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                      <div>
+                        <h3 className="font-semibold text-lg flex items-center gap-2"><Building className="h-5 w-5 text-muted-foreground" />{report.sector_name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {report.total_shifts} plantões · {report.total_hours.toFixed(1)}h · {report.plantonistas.length} plantonista(s)
+                          {report.unpriced_shifts > 0 && <span className="text-amber-500 ml-2">({report.unpriced_shifts} sem valor)</span>}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(report.total_value)}</p>
+                  </div>
+                  {isExpanded && (
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/30">
+                            <TableHead>Plantonista</TableHead>
+                            <TableHead className="text-center">Plantões</TableHead>
+                            <TableHead className="text-center">Horas</TableHead>
+                            <TableHead className="text-center">Sem valor</TableHead>
+                            <TableHead className="text-right">Subtotal</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {report.plantonistas.map(p => (
+                            <TableRow key={p.assignee_id}>
+                              <TableCell className="font-medium">{p.assignee_name}</TableCell>
+                              <TableCell className="text-center">{p.shifts}</TableCell>
+                              <TableCell className="text-center">{p.hours.toFixed(1)}h</TableCell>
+                              <TableCell className="text-center">{p.unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{p.unpriced}</Badge> : '0'}</TableCell>
+                              <TableCell className="text-right font-medium text-green-600">{p.paid > 0 ? formatCurrency(p.value) : <span className="text-muted-foreground">—</span>}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  )}
+                </Card>
+              );
+            })
+          )}
+        </TabsContent>
+
+        {/* TAB: Todos os Plantões */}
+        <TabsContent value="todos" className="mt-4">
+          {filteredEntries.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
+          ) : (
+            <Card>
+              <CardContent className="p-0">
+                <ScrollArea className="max-h-[600px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Horário</TableHead>
+                        <TableHead className="text-center">Duração</TableHead>
+                        <TableHead>Setor</TableHead>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead className="text-right">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEntries.sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime()).map(e => {
+                        const val = getFinalValue(e.assigned_value, e.base_value);
+                        return (
+                          <TableRow key={e.id}>
+                            <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
+                            <TableCell>{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
+                            <TableCell className="text-center"><Badge variant="outline">{e.duration_hours.toFixed(1)}h</Badge></TableCell>
+                            <TableCell>{e.sector_name}</TableCell>
+                            <TableCell>{e.assignee_name}</TableCell>
+                            <TableCell className="text-right">
+                              {val !== null ? <span className="font-medium text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
+
       {/* Grand Total Card */}
-      {sectorReports.length > 0 && (
+      {filteredEntries.length > 0 && (
         <Card className="border-2 border-primary">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-lg font-semibold">TOTAL GERAL</p>
                 <p className="text-sm text-muted-foreground">
-                  {grandTotals.total_plantonistas} plantonistas · {grandTotals.total_plantoes} plantões
-                  {grandTotals.total_sem_valor > 0 && (
-                    <span className="text-amber-500 ml-2">· {grandTotals.total_sem_valor} sem valor atribuído</span>
-                  )}
+                  {grandTotals.totalPlantonistas} plantonistas · {grandTotals.totalShifts} plantões · {grandTotals.totalHours.toFixed(1)}h
+                  {grandTotals.unpricedShifts > 0 && <span className="text-amber-500 ml-2">· {grandTotals.unpricedShifts} sem valor</span>}
                 </p>
               </div>
-              <p className="text-3xl font-bold text-green-600">{formatCurrency(grandTotals.total_valor)}</p>
+              <p className="text-3xl font-bold text-green-600">{formatCurrency(grandTotals.totalValue)}</p>
             </div>
           </CardContent>
         </Card>
