@@ -2250,11 +2250,11 @@ export default function ShiftCalendar() {
       >
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center justify-between">
+            <DialogTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span>
                 {selectedDate && format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
                 {selectedDate && getShiftsForDate(selectedDate).length > 0 && (
                   <>
                     {/* Select all in this day */}
