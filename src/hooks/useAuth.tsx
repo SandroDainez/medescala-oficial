@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       await supabase.auth.signOut({ scope: 'local' });
     }
+
+    // Ensure UI updates immediately even if the auth event is delayed.
+    setSession(null);
+    setUser(null);
+    setLoading(false);
   };
 
   return (
