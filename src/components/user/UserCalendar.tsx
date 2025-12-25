@@ -160,17 +160,6 @@ export default function UserCalendar() {
     return hour >= 18 || hour < 6;
   }
 
-  // Sort shifts: day shifts first, then night shifts
-  function sortShiftsByTime(shiftsToSort: Shift[]) {
-    return [...shiftsToSort].sort((a, b) => {
-      const aIsNight = isNightShift(a.start_time);
-      const bIsNight = isNightShift(b.start_time);
-      if (aIsNight !== bIsNight) return aIsNight ? 1 : -1; // Day first
-      // Within same type, sort by start time
-      return a.start_time.localeCompare(b.start_time);
-    });
-  }
-
   // Calendar setup
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -185,33 +174,33 @@ export default function UserCalendar() {
 
   // Get shifts for selected date
   const selectedDateShifts = getShiftsForDate(selectedDate);
-  const filteredShifts = activeTab === 'meus' 
+  const filteredShifts = activeTab === 'meus'
     ? selectedDateShifts.filter(s => isMyShift(s.id))
     : selectedDateShifts;
 
-  // Sort shifts: day first, then night
-  const sortedShifts = sortShiftsByTime(filteredShifts);
+  // Split by period (day first, then night) and sort by start time inside each period
+  const dayShifts = filteredShifts
+    .filter(s => !isNightShift(s.start_time))
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
-  // Group shifts by sector/hospital
-  const groupedShifts = sortedShifts.reduce((acc, shift) => {
-    const key = shift.sector?.name || shift.hospital;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(shift);
-    return acc;
-  }, {} as Record<string, Shift[]>);
+  const nightShifts = filteredShifts
+    .filter(s => isNightShift(s.start_time))
+    .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
-  // Ensure group order follows the first shift time (day groups first, then night)
-  const orderedGroupedShifts = Object.entries(groupedShifts).sort(([, aShifts], [, bShifts]) => {
-    const aFirst = sortShiftsByTime(aShifts)[0];
-    const bFirst = sortShiftsByTime(bShifts)[0];
-    if (!aFirst || !bFirst) return 0;
+  // Group shifts by sector/hospital within each period
+  const groupBySectorOrHospital = (list: Shift[]) =>
+    list.reduce((acc, shift) => {
+      const key = shift.sector?.name || shift.hospital;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(shift);
+      return acc;
+    }, {} as Record<string, Shift[]>);
 
-    const aIsNight = isNightShift(aFirst.start_time);
-    const bIsNight = isNightShift(bFirst.start_time);
-    if (aIsNight !== bIsNight) return aIsNight ? 1 : -1;
+  const groupedDayShifts = groupBySectorOrHospital(dayShifts);
+  const groupedNightShifts = groupBySectorOrHospital(nightShifts);
 
-    return aFirst.start_time.localeCompare(bFirst.start_time);
-  });
+  const hasAnyShiftsForSelectedDate = dayShifts.length + nightShifts.length > 0;
+
 
   const weekDays = ['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
 
@@ -342,95 +331,174 @@ export default function UserCalendar() {
         {/* Shifts List */}
         {panelExpanded && (
           <div className="flex-1 overflow-auto">
-            {Object.keys(groupedShifts).length === 0 ? (
+            {!hasAnyShiftsForSelectedDate ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
                 Nenhum plantão para {format(selectedDate, "d 'de' MMMM", { locale: ptBR })}
               </div>
             ) : (
-              orderedGroupedShifts.map(([group, groupShifts]) => (
-                <div key={group}>
-                  {/* Group Header */}
-                  <div className="px-4 py-2 bg-muted/50 border-b">
-                    <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                      {group}
-                    </span>
-                  </div>
-
-                  {/* Shifts in group */}
-                  {groupShifts.map(shift => {
-                    const shiftAssignments = getAssignmentsForShift(shift.id);
-                    const isMine = isMyShift(shift.id);
-
-                    const isNight = isNightShift(shift.start_time);
-
-                    return (
-                      <div key={shift.id} className={cn(
-                        "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
-                        isNight
-                          ? "bg-info/10 hover:bg-info/15 border-l-info"
-                          : "hover:bg-accent/30 border-l-warning"
-                      )}>
-                        {/* Avatar stack or single */}
-                        <div className="flex -space-x-2">
-                          {shiftAssignments.slice(0, 3).map((assignment) => (
-                            <Avatar key={assignment.id} className={cn(
-                              "h-10 w-10 border-2",
-                              isMine && assignment.user_id === user?.id ? "border-primary" : "border-card"
-                            )}>
-                              <AvatarFallback className="bg-muted text-muted-foreground text-xs">
-                                {assignment.profile?.name?.slice(0, 2).toUpperCase() || 'U'}
-                              </AvatarFallback>
-                            </Avatar>
-                          ))}
-                          {shiftAssignments.length === 0 && (
-                            <Avatar className="h-10 w-10 border-2 border-card">
-                              <AvatarFallback className="bg-muted/50 text-muted-foreground text-xs">?</AvatarFallback>
-                            </Avatar>
-                          )}
-                        </div>
-
-                        {/* Shift info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            {isNight ? (
-                              <Moon className="h-3.5 w-3.5 text-info" />
-                            ) : (
-                              <Sun className="h-3.5 w-3.5 text-warning" />
-                            )}
-                            <span className={cn(
-                              "text-sm",
-                              isNight ? "text-info" : "text-muted-foreground"
-                            )}>
-                              {shift.start_time.slice(0, 5)}
-                            </span>
-                            <span className="font-medium text-foreground truncate">
-                              {shiftAssignments[0]?.profile?.name || shift.title}
-                            </span>
-                            {isMine && (
-                              <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">
-                                EU
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-muted-foreground">
-                            {shift.end_time.slice(0, 5)} • {calculateHours(shift.start_time, shift.end_time)}
-                          </div>
-                        </div>
-
-                        {/* Hospital */}
-                        <div className="text-right">
-                          <span className="text-xs text-muted-foreground truncate max-w-[100px] block">
-                            {shift.hospital}
-                          </span>
-                        </div>
+              <div>
+                {/* Day shifts first */}
+                {dayShifts.length > 0 && (
+                  <div className="border-b">
+                    <div className="px-4 py-2 bg-warning/10 border-b">
+                      <div className="flex items-center gap-2">
+                        <Sun className="h-4 w-4 text-warning" />
+                        <span className="text-xs font-semibold text-foreground">Diurnos</span>
                       </div>
-                    );
-                  })}
-                </div>
-              ))
+                    </div>
+
+                    {Object.entries(groupedDayShifts).map(([group, groupShifts]) => (
+                      <div key={`day-${group}`}>
+                        <div className="px-4 py-2 bg-muted/50 border-b">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
+                        </div>
+
+                        {groupShifts.map((shift) => {
+                          const shiftAssignments = getAssignmentsForShift(shift.id);
+                          const isMine = isMyShift(shift.id);
+
+                          return (
+                            <div
+                              key={shift.id}
+                              className={cn(
+                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
+                                "bg-warning/5 hover:bg-warning/10 border-l-warning"
+                              )}
+                            >
+                              <div className="flex -space-x-2">
+                                {shiftAssignments.slice(0, 3).map((assignment) => (
+                                  <Avatar
+                                    key={assignment.id}
+                                    className={cn(
+                                      "h-10 w-10 border-2",
+                                      isMine && assignment.user_id === user?.id ? "border-primary" : "border-card"
+                                    )}
+                                  >
+                                    <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+                                      {assignment.profile?.name?.slice(0, 2).toUpperCase() || 'U'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                ))}
+                                {shiftAssignments.length === 0 && (
+                                  <Avatar className="h-10 w-10 border-2 border-card">
+                                    <AvatarFallback className="bg-muted/50 text-muted-foreground text-xs">?</AvatarFallback>
+                                  </Avatar>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <Sun className="h-3.5 w-3.5 text-warning" />
+                                  <span className="text-sm text-muted-foreground">{shift.start_time.slice(0, 5)}</span>
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
+                                    Diurno
+                                  </span>
+                                  <span className="font-medium text-foreground truncate">
+                                    {shiftAssignments[0]?.profile?.name || shift.title}
+                                  </span>
+                                  {isMine && (
+                                    <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">EU</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {shift.end_time.slice(0, 5)} • {calculateHours(shift.start_time, shift.end_time)}
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Night shifts after */}
+                {nightShifts.length > 0 && (
+                  <div>
+                    <div className="px-4 py-2 bg-info/10 border-b">
+                      <div className="flex items-center gap-2">
+                        <Moon className="h-4 w-4 text-info" />
+                        <span className="text-xs font-semibold text-foreground">Noturnos</span>
+                      </div>
+                    </div>
+
+                    {Object.entries(groupedNightShifts).map(([group, groupShifts]) => (
+                      <div key={`night-${group}`}>
+                        <div className="px-4 py-2 bg-muted/50 border-b">
+                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
+                        </div>
+
+                        {groupShifts.map((shift) => {
+                          const shiftAssignments = getAssignmentsForShift(shift.id);
+                          const isMine = isMyShift(shift.id);
+
+                          return (
+                            <div
+                              key={shift.id}
+                              className={cn(
+                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
+                                "bg-info/5 hover:bg-info/10 border-l-info"
+                              )}
+                            >
+                              <div className="flex -space-x-2">
+                                {shiftAssignments.slice(0, 3).map((assignment) => (
+                                  <Avatar
+                                    key={assignment.id}
+                                    className={cn(
+                                      "h-10 w-10 border-2",
+                                      isMine && assignment.user_id === user?.id ? "border-primary" : "border-card"
+                                    )}
+                                  >
+                                    <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+                                      {assignment.profile?.name?.slice(0, 2).toUpperCase() || 'U'}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                ))}
+                                {shiftAssignments.length === 0 && (
+                                  <Avatar className="h-10 w-10 border-2 border-card">
+                                    <AvatarFallback className="bg-muted/50 text-muted-foreground text-xs">?</AvatarFallback>
+                                  </Avatar>
+                                )}
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <Moon className="h-3.5 w-3.5 text-info" />
+                                  <span className="text-sm text-info">{shift.start_time.slice(0, 5)}</span>
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-info/15 text-info">
+                                    Noturno
+                                  </span>
+                                  <span className="font-medium text-foreground truncate">
+                                    {shiftAssignments[0]?.profile?.name || shift.title}
+                                  </span>
+                                  {isMine && (
+                                    <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">EU</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {shift.end_time.slice(0, 5)} • {calculateHours(shift.start_time, shift.end_time)}
+                                </div>
+                              </div>
+
+                              <div className="text-right">
+                                <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
+
       </div>
     </div>
   );
