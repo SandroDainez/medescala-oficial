@@ -238,6 +238,7 @@ export default function AdminFinancial() {
           const dateB = new Date(b.shift_date);
           return dateA.getTime() - dateB.getTime();
         });
+      console.log('[AdminFinancial] sample values', details.slice(0, 5).map(d => ({ date: d.shift_date, user: d.user_name, value: d.assigned_value })));
       setShiftDetails(details);
 
       // Build summaries with sector breakdown

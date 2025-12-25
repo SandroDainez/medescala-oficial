@@ -37,11 +37,13 @@ export default function UserFinancial() {
         ...a,
         assigned_value: Number(a.assigned_value) > 0 ? Number(a.assigned_value) : Number(a.shift?.base_value) || 0
       }));
+      console.log('[UserFinancial] sample values', mappedAssignments.slice(0, 5).map((a: any) => ({ date: a.shift?.shift_date, title: a.shift?.title, assigned_value: a.assigned_value, base_value: a.shift?.base_value })));
       setShifts(mappedAssignments as unknown as CompletedShift[]);
       let totalHours = 0;
       mappedAssignments.forEach((a: any) => { if (a.checkin_at && a.checkout_at) totalHours += (new Date(a.checkout_at).getTime() - new Date(a.checkin_at).getTime()) / 3600000; });
       setSummary({ totalShifts: mappedAssignments.length, totalHours, totalValue: mappedAssignments.reduce((s: number, a: any) => s + Number(a.assigned_value || 0), 0), status: payment?.status || null });
     }
+
     setLoading(false);
   }
 
