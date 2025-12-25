@@ -912,6 +912,13 @@ export type Database = {
           trial_ends_at: string
         }[]
       }
+      get_tenant_member_names: {
+        Args: { _tenant_id: string }
+        Returns: {
+          name: string
+          user_id: string
+        }[]
+      }
       get_tenant_plan_info: {
         Args: { _tenant_id: string }
         Returns: {
