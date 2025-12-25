@@ -606,8 +606,11 @@ export default function AdminFinancial() {
                       </Table>
                       {/* Lista detalhada de plantões */}
                       <div className="p-4 border-t">
-                        <p className="text-sm font-medium mb-2">Detalhamento: ({report.entries.length} plantões)</p>
-                        <div className="max-h-[400px] overflow-y-auto border rounded">
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <p className="text-sm font-medium">Detalhamento: ({report.entries.length} plantões)</p>
+                          <p className="text-xs text-muted-foreground">Role a lista para ver todos</p>
+                        </div>
+                        <div className="max-h-[60vh] overflow-y-scroll border rounded">
                           <Table>
                             <TableHeader className="sticky top-0 bg-background z-10">
                               <TableRow>
