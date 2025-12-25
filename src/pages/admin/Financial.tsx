@@ -558,6 +558,16 @@ export default function AdminFinancial() {
           ) : (
             sectorReports.map(report => {
               const isExpanded = expandedSectors.has(report.sector_id);
+              // Agrupar plantões por dia para este setor
+              const entriesBySector = filteredEntries.filter(e => e.sector_id === report.sector_id);
+              const entriesByDay = entriesBySector.reduce((acc, entry) => {
+                const day = entry.shift_date;
+                if (!acc[day]) acc[day] = [];
+                acc[day].push(entry);
+                return acc;
+              }, {} as Record<string, typeof entriesBySector>);
+              const sortedDays = Object.keys(entriesByDay).sort();
+              
               return (
                 <Card key={report.sector_id}>
                   <div className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70" onClick={() => toggleSector(report.sector_id)}>
@@ -575,28 +585,72 @@ export default function AdminFinancial() {
                   </div>
                   {isExpanded && (
                     <CardContent className="p-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/30">
-                            <TableHead>Plantonista</TableHead>
-                            <TableHead className="text-center">Plantões</TableHead>
-                            <TableHead className="text-center">Horas</TableHead>
-                            <TableHead className="text-center">Sem valor</TableHead>
-                            <TableHead className="text-right">Subtotal</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {report.plantonistas.map(p => (
-                            <TableRow key={p.assignee_id}>
-                              <TableCell className="font-medium">{p.assignee_name}</TableCell>
-                              <TableCell className="text-center">{p.shifts}</TableCell>
-                              <TableCell className="text-center">{p.hours.toFixed(1)}h</TableCell>
-                              <TableCell className="text-center">{p.unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{p.unpriced}</Badge> : '0'}</TableCell>
-                              <TableCell className="text-right font-medium text-green-600">{p.paid > 0 ? formatCurrency(p.value) : <span className="text-muted-foreground">—</span>}</TableCell>
+                      {/* Resumo por plantonista */}
+                      <div className="border-b">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-muted/30">
+                              <TableHead>Plantonista</TableHead>
+                              <TableHead className="text-center">Plantões</TableHead>
+                              <TableHead className="text-center">Horas</TableHead>
+                              <TableHead className="text-center">Sem valor</TableHead>
+                              <TableHead className="text-right">Subtotal</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {report.plantonistas.map(p => (
+                              <TableRow key={p.assignee_id}>
+                                <TableCell className="font-medium">{p.assignee_name}</TableCell>
+                                <TableCell className="text-center">{p.shifts}</TableCell>
+                                <TableCell className="text-center">{p.hours.toFixed(1)}h</TableCell>
+                                <TableCell className="text-center">{p.unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{p.unpriced}</Badge> : '0'}</TableCell>
+                                <TableCell className="text-right font-medium text-green-600">{p.paid > 0 ? formatCurrency(p.value) : <span className="text-muted-foreground">—</span>}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      {/* Lista detalhada por dia */}
+                      <div className="p-4">
+                        <p className="text-sm font-medium mb-3">Plantões por dia:</p>
+                        <ScrollArea className="max-h-[400px]">
+                          <div className="space-y-4">
+                            {sortedDays.map(day => {
+                              const dayEntries = entriesByDay[day];
+                              const dayTotal = dayEntries.reduce((sum, e) => {
+                                if (e.value_source !== 'invalid' && e.final_value !== null) {
+                                  return sum + e.final_value;
+                                }
+                                return sum;
+                              }, 0);
+                              return (
+                                <div key={day} className="border rounded-lg overflow-hidden">
+                                  <div className="bg-muted/50 px-4 py-2 flex items-center justify-between">
+                                    <span className="font-medium">{format(parseISO(day), "dd/MM/yyyy (EEEE)", { locale: ptBR })}</span>
+                                    <span className="text-sm text-green-600 font-medium">{dayTotal > 0 ? formatCurrency(dayTotal) : ''}</span>
+                                  </div>
+                                  <Table>
+                                    <TableBody>
+                                      {dayEntries.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '')).map(e => {
+                                        const val = e.value_source === 'invalid' ? null : e.final_value;
+                                        return (
+                                          <TableRow key={e.id}>
+                                            <TableCell className="w-32">{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
+                                            <TableCell>{e.assignee_name}</TableCell>
+                                            <TableCell className="text-right w-32">
+                                              {val !== null ? <span className="text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
+                                            </TableCell>
+                                          </TableRow>
+                                        );
+                                      })}
+                                    </TableBody>
+                                  </Table>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
+                      </div>
                     </CardContent>
                   )}
                 </Card>
