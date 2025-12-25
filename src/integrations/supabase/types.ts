@@ -902,6 +902,7 @@ export type Database = {
           trial_ends_at: string
         }[]
       }
+      get_shift_tenant_id: { Args: { _shift_id: string }; Returns: string }
       get_tenant_access_status: {
         Args: { _tenant_id: string }
         Returns: {
