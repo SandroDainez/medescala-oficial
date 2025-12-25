@@ -451,13 +451,78 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Por Plantonista | Por Setor | Todos os Plantões */}
-      <Tabs defaultValue="plantonista" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+      {/* TABS: Dia a Dia | Por Plantonista | Por Setor | Todos os Plantões */}
+      <Tabs defaultValue="dia" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
           <TabsTrigger value="plantonista">Por Plantonista</TabsTrigger>
           <TabsTrigger value="setor">Por Setor</TabsTrigger>
           <TabsTrigger value="todos">Todos os Plantões</TabsTrigger>
         </TabsList>
+
+        {/* TAB: Dia a Dia */}
+        <TabsContent value="dia" className="space-y-2 mt-4">
+          {filteredEntries.length === 0 ? (
+            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
+          ) : (
+            (() => {
+              // Agrupar por dia
+              const byDay = filteredEntries.reduce((acc, entry) => {
+                const day = entry.shift_date;
+                if (!acc[day]) acc[day] = [];
+                acc[day].push(entry);
+                return acc;
+              }, {} as Record<string, FinancialEntry[]>);
+              const sortedDays = Object.keys(byDay).sort();
+              
+              return (
+                <ScrollArea className="max-h-[600px]">
+                  <div className="space-y-1">
+                    {sortedDays.map(day => {
+                      const dayEntries = byDay[day].sort((a, b) => (a.start_time || '').localeCompare(b.start_time || ''));
+                      const dayTotal = dayEntries.reduce((sum, e) => {
+                        if (e.value_source !== 'invalid' && e.final_value !== null) {
+                          return sum + e.final_value;
+                        }
+                        return sum;
+                      }, 0);
+                      
+                      return (
+                        <Card key={day} className="overflow-hidden">
+                          <div className="bg-muted/60 px-4 py-2 flex items-center justify-between border-b">
+                            <span className="font-semibold">{format(parseISO(day), "dd/MM (EEEE)", { locale: ptBR })}</span>
+                            <span className="text-green-600 font-bold">{dayTotal > 0 ? formatCurrency(dayTotal) : ''}</span>
+                          </div>
+                          <CardContent className="p-0">
+                            <Table>
+                              <TableBody>
+                                {dayEntries.map(e => {
+                                  const val = e.value_source === 'invalid' ? null : e.final_value;
+                                  return (
+                                    <TableRow key={e.id}>
+                                      <TableCell className="w-28 text-muted-foreground">{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
+                                      <TableCell className="font-medium">{e.assignee_name}</TableCell>
+                                      <TableCell className="text-muted-foreground text-sm">{e.sector_name}</TableCell>
+                                      <TableCell className="text-right w-32">
+                                        {val !== null 
+                                          ? <span className="text-green-600 font-medium">{formatCurrency(val)}</span> 
+                                          : <span className="text-amber-500 text-sm">Sem valor definido</span>}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              );
+            })()
+          )}
+        </TabsContent>
 
         {/* TAB: Por Plantonista */}
         <TabsContent value="plantonista" className="space-y-4 mt-4">
