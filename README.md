@@ -60,6 +60,12 @@ This project is built with:
 - shadcn-ui
 - Tailwind CSS
 
+## Segurança: decisões registradas
+
+Alguns alertas recorrentes na área de Segurança são **intencionais** e fazem parte da regra de negócio.
+
+- Veja o documento: `docs/SECURITY_DECISIONS.md`
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
