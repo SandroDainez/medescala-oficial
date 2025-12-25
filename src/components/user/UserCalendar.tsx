@@ -200,6 +200,19 @@ export default function UserCalendar() {
     return acc;
   }, {} as Record<string, Shift[]>);
 
+  // Ensure group order follows the first shift time (day groups first, then night)
+  const orderedGroupedShifts = Object.entries(groupedShifts).sort(([, aShifts], [, bShifts]) => {
+    const aFirst = sortShiftsByTime(aShifts)[0];
+    const bFirst = sortShiftsByTime(bShifts)[0];
+    if (!aFirst || !bFirst) return 0;
+
+    const aIsNight = isNightShift(aFirst.start_time);
+    const bIsNight = isNightShift(bFirst.start_time);
+    if (aIsNight !== bIsNight) return aIsNight ? 1 : -1;
+
+    return aFirst.start_time.localeCompare(bFirst.start_time);
+  });
+
   const weekDays = ['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
 
   if (loading) {
@@ -334,7 +347,7 @@ export default function UserCalendar() {
                 Nenhum plantão para {format(selectedDate, "d 'de' MMMM", { locale: ptBR })}
               </div>
             ) : (
-              Object.entries(groupedShifts).map(([group, groupShifts]) => (
+              orderedGroupedShifts.map(([group, groupShifts]) => (
                 <div key={group}>
                   {/* Group Header */}
                   <div className="px-4 py-2 bg-muted/50 border-b">
@@ -352,14 +365,14 @@ export default function UserCalendar() {
 
                     return (
                       <div key={shift.id} className={cn(
-                        "flex items-center gap-3 px-4 py-3 border-b transition-colors",
-                        isNight 
-                          ? "bg-indigo-950/30 hover:bg-indigo-950/50 border-l-2 border-l-indigo-400" 
-                          : "hover:bg-accent/30 border-l-2 border-l-amber-400"
+                        "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
+                        isNight
+                          ? "bg-info/10 hover:bg-info/15 border-l-info"
+                          : "hover:bg-accent/30 border-l-warning"
                       )}>
                         {/* Avatar stack or single */}
                         <div className="flex -space-x-2">
-                          {shiftAssignments.slice(0, 3).map((assignment, idx) => (
+                          {shiftAssignments.slice(0, 3).map((assignment) => (
                             <Avatar key={assignment.id} className={cn(
                               "h-10 w-10 border-2",
                               isMine && assignment.user_id === user?.id ? "border-primary" : "border-card"
@@ -380,13 +393,13 @@ export default function UserCalendar() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             {isNight ? (
-                              <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                              <Moon className="h-3.5 w-3.5 text-info" />
                             ) : (
-                              <Sun className="h-3.5 w-3.5 text-amber-500" />
+                              <Sun className="h-3.5 w-3.5 text-warning" />
                             )}
                             <span className={cn(
                               "text-sm",
-                              isNight ? "text-indigo-300" : "text-muted-foreground"
+                              isNight ? "text-info" : "text-muted-foreground"
                             )}>
                               {shift.start_time.slice(0, 5)}
                             </span>
