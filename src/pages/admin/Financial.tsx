@@ -12,25 +12,23 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer } from 'lucide-react';
+import { useSyncShiftEntries } from '@/hooks/useSyncShiftEntries';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, RefreshCw } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // Interfaces para o modelo de dados
 interface ShiftEntry {
   id: string;
-  shift_id: string;
-  setor_id: string | null;
+  setor_id: string;
   setor_name: string;
   data: string; // YYYY-MM-DD
   plantonista_id: string;
   plantonista_name: string;
-  valor: number | null; // null = sem valor
+  valor: number | null;
   status_valor: 'COM_VALOR' | 'SEM_VALOR';
-  horario: string;
-  duracao_horas: number;
-  hospital: string;
-  titulo: string;
+  horario?: string;
+  duracao_horas?: number;
 }
 
 interface SectorSummary {
@@ -63,8 +61,9 @@ interface Plantonista {
 
 export default function AdminFinancial() {
   const { user } = useAuth();
-  const { currentTenantId, currentTenantName } = useTenant();
+  const { currentTenantId } = useTenant();
   const { toast } = useToast();
+  const { syncAndNotify } = useSyncShiftEntries();
   
   // States
   const [shiftEntries, setShiftEntries] = useState<ShiftEntry[]>([]);
@@ -72,6 +71,7 @@ export default function AdminFinancial() {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [plantonistas, setPlantonistas] = useState<Plantonista[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   
   // Filtros
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -103,28 +103,24 @@ export default function AdminFinancial() {
     setEndDate(format(today, 'yyyy-MM-dd'));
   }
 
-  // Calculate duration in hours
-  function calculateDuration(start: string, end: string): number {
-    if (!start || !end) return 0;
-    
-    const [startH, startM] = start.split(':').map(Number);
-    const [endH, endM] = end.split(':').map(Number);
-    
-    let hours = endH - startH;
-    let minutes = endM - startM;
-    
-    if (hours < 0 || (hours === 0 && minutes < 0)) {
-      hours += 24;
-    }
-    
-    return hours + (minutes / 60);
-  }
-
   useEffect(() => {
     if (currentTenantId) {
       fetchData();
     }
   }, [currentTenantId, startDate, endDate]);
+
+  async function handleSync() {
+    if (!currentTenantId) return;
+    setSyncing(true);
+    try {
+      await syncAndNotify(currentTenantId, startDate, endDate);
+      await fetchData();
+    } catch (e) {
+      // Error already shown by syncAndNotify
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function fetchData() {
     if (!currentTenantId) return;
@@ -152,76 +148,89 @@ export default function AdminFinancial() {
     }));
     setPlantonistas(plantonistasList);
 
-    // Fetch shifts in date range
-    const { data: shiftsInRange } = await supabase
-      .from('shifts')
-      .select('id')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', startDate)
-      .lte('shift_date', endDate);
-
-    const shiftIds = shiftsInRange?.map(s => s.id) || [];
-
-    if (shiftIds.length === 0) {
-      setShiftEntries([]);
-      setReports([]);
-      setLoading(false);
-      return;
-    }
-
-    // Fetch all assignments with full details
-    const { data: assignments, error } = await supabase
-      .from('shift_assignments')
+    // First try to fetch from shift_entries table
+    const { data: entriesData, error: entriesError } = await supabase
+      .from('shift_entries')
       .select(`
         id,
-        shift_id,
-        user_id,
-        assigned_value,
-        profile:profiles!shift_assignments_user_id_profiles_fkey(id, name),
-        shift:shifts!inner(
-          id,
-          shift_date,
-          start_time,
-          end_time,
-          hospital,
-          title,
-          sector_id,
-          base_value,
-          sector:sectors(id, name)
-        )
+        setor_id,
+        data,
+        plantonista_id,
+        valor,
+        status_valor,
+        sector:sectors!shift_entries_setor_id_fkey(id, name),
+        profile:profiles!shift_entries_plantonista_id_fkey(id, name)
       `)
       .eq('tenant_id', currentTenantId)
-      .in('shift_id', shiftIds);
+      .gte('data', startDate)
+      .lte('data', endDate);
 
-    if (error) {
-      console.error('[Financial] Error:', error);
-      toast({ title: 'Erro ao carregar dados', variant: 'destructive' });
-      setLoading(false);
-      return;
+    let entries: ShiftEntry[] = [];
+
+    if (!entriesError && entriesData && entriesData.length > 0) {
+      // Use data from shift_entries table
+      entries = entriesData.map((e: any) => ({
+        id: e.id,
+        setor_id: e.setor_id,
+        setor_name: e.sector?.name || 'Sem Setor',
+        data: e.data,
+        plantonista_id: e.plantonista_id,
+        plantonista_name: e.profile?.name || 'N/A',
+        valor: e.valor !== null ? Number(e.valor) : null,
+        status_valor: e.status_valor as 'COM_VALOR' | 'SEM_VALOR',
+      }));
+    } else {
+      // Fallback: read directly from shift_assignments + shifts
+      const { data: shiftsInRange } = await supabase
+        .from('shifts')
+        .select('id')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', startDate)
+        .lte('shift_date', endDate);
+
+      const shiftIds = shiftsInRange?.map(s => s.id) || [];
+
+      if (shiftIds.length > 0) {
+        const { data: assignments } = await supabase
+          .from('shift_assignments')
+          .select(`
+            id,
+            shift_id,
+            user_id,
+            assigned_value,
+            profile:profiles!shift_assignments_user_id_profiles_fkey(id, name),
+            shift:shifts!inner(
+              id,
+              shift_date,
+              start_time,
+              end_time,
+              base_value,
+              sector_id,
+              sector:sectors(id, name)
+            )
+          `)
+          .eq('tenant_id', currentTenantId)
+          .in('shift_id', shiftIds);
+
+        entries = (assignments || []).map((a: any) => {
+          const assignedVal = Number(a.assigned_value) || 0;
+          const baseVal = Number(a.shift?.base_value) || 0;
+          const finalValue = assignedVal > 0 ? assignedVal : (baseVal > 0 ? baseVal : null);
+          
+          return {
+            id: a.id,
+            setor_id: a.shift?.sector?.id || a.shift?.sector_id || '',
+            setor_name: a.shift?.sector?.name || 'Sem Setor',
+            data: a.shift?.shift_date,
+            plantonista_id: a.user_id,
+            plantonista_name: a.profile?.name || 'N/A',
+            valor: finalValue,
+            status_valor: (finalValue !== null ? 'COM_VALOR' : 'SEM_VALOR') as 'COM_VALOR' | 'SEM_VALOR',
+            horario: `${a.shift?.start_time?.slice(0, 5) || ''} - ${a.shift?.end_time?.slice(0, 5) || ''}`,
+          };
+        });
+      }
     }
-
-    // Transform to ShiftEntries
-    const entries: ShiftEntry[] = (assignments || []).map((a: any) => {
-      const assignedVal = Number(a.assigned_value) || 0;
-      const baseVal = Number(a.shift?.base_value) || 0;
-      const finalValue = assignedVal > 0 ? assignedVal : (baseVal > 0 ? baseVal : null);
-      
-      return {
-        id: a.id,
-        shift_id: a.shift_id,
-        setor_id: a.shift?.sector?.id || a.shift?.sector_id || null,
-        setor_name: a.shift?.sector?.name || 'Sem Setor',
-        data: a.shift?.shift_date,
-        plantonista_id: a.user_id,
-        plantonista_name: a.profile?.name || 'N/A',
-        valor: finalValue,
-        status_valor: finalValue !== null ? 'COM_VALOR' : 'SEM_VALOR',
-        horario: `${a.shift?.start_time?.slice(0, 5) || ''} - ${a.shift?.end_time?.slice(0, 5) || ''}`,
-        duracao_horas: calculateDuration(a.shift?.start_time || '', a.shift?.end_time || ''),
-        hospital: a.shift?.hospital || '',
-        titulo: a.shift?.title || ''
-      };
-    });
 
     setShiftEntries(entries);
 
@@ -229,7 +238,6 @@ export default function AdminFinancial() {
     const reportMap = new Map<string, PlantonistaReport>();
 
     entries.forEach(entry => {
-      // Get or create plantonista report
       if (!reportMap.has(entry.plantonista_id)) {
         reportMap.set(entry.plantonista_id, {
           plantonista_id: entry.plantonista_id,
@@ -243,7 +251,6 @@ export default function AdminFinancial() {
       
       const report = reportMap.get(entry.plantonista_id)!;
       
-      // Find or create sector summary
       let sectorSummary = report.setores.find(s => s.setor_id === entry.setor_id);
       if (!sectorSummary) {
         sectorSummary = {
@@ -257,7 +264,6 @@ export default function AdminFinancial() {
         report.setores.push(sectorSummary);
       }
       
-      // Add entry to sector
       sectorSummary.entries.push(entry);
       
       if (entry.valor !== null) {
@@ -280,7 +286,6 @@ export default function AdminFinancial() {
       report.setores.sort((a, b) => b.total_valor - a.total_valor);
     });
 
-    // Convert to array and sort by name
     const reportsArray = Array.from(reportMap.values())
       .sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
 
@@ -302,7 +307,6 @@ export default function AdminFinancial() {
         setores: r.setores.filter(s => s.setor_id === filterSetor)
       })).filter(r => r.setores.length > 0);
       
-      // Recalculate totals for filtered sectors
       result = result.map(r => ({
         ...r,
         total_geral: r.setores.reduce((acc, s) => acc + s.total_valor, 0),
@@ -360,7 +364,7 @@ export default function AdminFinancial() {
   }
 
   function exportCSV() {
-    const headers = ['Plantonista', 'Setor', 'Data', 'Título', 'Hospital', 'Horário', 'Duração (h)', 'Valor'];
+    const headers = ['Plantonista', 'Setor', 'Data', 'Valor', 'Status'];
     const rows: string[][] = [];
 
     filteredReports.forEach(report => {
@@ -370,41 +374,29 @@ export default function AdminFinancial() {
             entry.plantonista_name,
             entry.setor_name,
             format(parseISO(entry.data), 'dd/MM/yyyy'),
-            entry.titulo,
-            entry.hospital,
-            entry.horario,
-            entry.duracao_horas.toFixed(1),
-            entry.valor !== null ? entry.valor.toFixed(2) : 'Sem valor'
+            entry.valor !== null ? entry.valor.toFixed(2) : '',
+            entry.status_valor === 'COM_VALOR' ? 'Com valor' : 'Sem valor'
           ]);
         });
-        // Add sector subtotal
         rows.push([
           '',
           `SUBTOTAL ${sector.setor_name}`,
           '',
-          '',
-          '',
-          '',
-          '',
-          sector.total_valor.toFixed(2) + ` (${sector.count_sem_valor} sem valor)`
+          sector.total_valor.toFixed(2),
+          `(${sector.count_sem_valor} sem valor)`
         ]);
       });
-      // Add plantonista total
       rows.push([
         `TOTAL ${report.plantonista_name}`,
         '',
         '',
-        '',
-        '',
-        '',
-        '',
-        report.total_geral.toFixed(2)
+        report.total_geral.toFixed(2),
+        ''
       ]);
-      rows.push(['', '', '', '', '', '', '', '']);
+      rows.push(['', '', '', '', '']);
     });
 
-    // Grand total
-    rows.push(['TOTAL GERAL', '', '', '', '', '', '', grandTotals.total_valor.toFixed(2)]);
+    rows.push(['TOTAL GERAL', '', '', grandTotals.total_valor.toFixed(2), '']);
 
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -440,7 +432,11 @@ export default function AdminFinancial() {
           </h1>
           <p className="text-muted-foreground">Relatório detalhado por plantonista e setor</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Sincronizando...' : 'Sincronizar'}
+          </Button>
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
@@ -590,7 +586,7 @@ export default function AdminFinancial() {
           <CardContent className="p-8 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p>Nenhum plantão encontrado no período selecionado.</p>
-            <p className="text-sm">Ajuste os filtros ou verifique se há escalas cadastradas.</p>
+            <p className="text-sm mt-2">Clique em "Sincronizar" para atualizar os dados das escalas.</p>
           </CardContent>
         </Card>
       ) : (
@@ -668,11 +664,7 @@ export default function AdminFinancial() {
                               <Table>
                                 <TableHeader>
                                   <TableRow>
-                                    <TableHead className="w-[100px]">Data</TableHead>
-                                    <TableHead>Título</TableHead>
-                                    <TableHead>Hospital</TableHead>
-                                    <TableHead>Horário</TableHead>
-                                    <TableHead className="text-center">Duração</TableHead>
+                                    <TableHead className="w-[120px]">Data</TableHead>
                                     <TableHead className="text-right">Valor</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -680,13 +672,7 @@ export default function AdminFinancial() {
                                   {sector.entries.map(entry => (
                                     <TableRow key={entry.id}>
                                       <TableCell className="font-medium">
-                                        {format(parseISO(entry.data), 'dd/MM/yyyy')}
-                                      </TableCell>
-                                      <TableCell>{entry.titulo}</TableCell>
-                                      <TableCell>{entry.hospital}</TableCell>
-                                      <TableCell>{entry.horario}</TableCell>
-                                      <TableCell className="text-center">
-                                        {entry.duracao_horas.toFixed(1)}h
+                                        {format(parseISO(entry.data), "dd/MM/yyyy (EEEE)", { locale: ptBR })}
                                       </TableCell>
                                       <TableCell className="text-right">
                                         {entry.valor !== null ? (
@@ -703,7 +689,7 @@ export default function AdminFinancial() {
                                   ))}
                                   {/* Sector Total Row */}
                                   <TableRow className="bg-muted/30 font-medium">
-                                    <TableCell colSpan={5} className="text-right">
+                                    <TableCell className="text-right">
                                       Subtotal {sector.setor_name}
                                       {sector.count_sem_valor > 0 && (
                                         <span className="text-amber-500 font-normal ml-2">

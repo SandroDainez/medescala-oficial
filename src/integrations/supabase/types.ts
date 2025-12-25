@@ -616,6 +616,87 @@ export type Database = {
           },
         ]
       }
+      shift_entries: {
+        Row: {
+          created_at: string
+          data: string
+          escala_id: string | null
+          id: string
+          plantonista_id: string
+          setor_id: string
+          source_assignment_id: string | null
+          source_shift_id: string | null
+          status_valor: Database["public"]["Enums"]["value_status"]
+          tenant_id: string
+          updated_at: string
+          valor: number | null
+        }
+        Insert: {
+          created_at?: string
+          data: string
+          escala_id?: string | null
+          id?: string
+          plantonista_id: string
+          setor_id: string
+          source_assignment_id?: string | null
+          source_shift_id?: string | null
+          status_valor?: Database["public"]["Enums"]["value_status"]
+          tenant_id: string
+          updated_at?: string
+          valor?: number | null
+        }
+        Update: {
+          created_at?: string
+          data?: string
+          escala_id?: string | null
+          id?: string
+          plantonista_id?: string
+          setor_id?: string
+          source_assignment_id?: string | null
+          source_shift_id?: string | null
+          status_valor?: Database["public"]["Enums"]["value_status"]
+          tenant_id?: string
+          updated_at?: string
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_entries_plantonista_id_fkey"
+            columns: ["plantonista_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_entries_setor_id_fkey"
+            columns: ["setor_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_entries_source_assignment_id_fkey"
+            columns: ["source_assignment_id"]
+            isOneToOne: false
+            referencedRelation: "shift_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_entries_source_shift_id_fkey"
+            columns: ["source_shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_entries_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       shift_offers: {
         Row: {
           created_at: string
@@ -1077,6 +1158,7 @@ export type Database = {
       app_role: "admin" | "user"
       swap_status: "pending" | "approved" | "rejected" | "cancelled"
       tenant_plan: "free" | "pro" | "premium"
+      value_status: "COM_VALOR" | "SEM_VALOR"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1207,6 +1289,7 @@ export const Constants = {
       app_role: ["admin", "user"],
       swap_status: ["pending", "approved", "rejected", "cancelled"],
       tenant_plan: ["free", "pro", "premium"],
+      value_status: ["COM_VALOR", "SEM_VALOR"],
     },
   },
 } as const
