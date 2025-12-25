@@ -628,7 +628,7 @@ export default function UserManagement() {
                       <div className="space-y-2">
                         <Label htmlFor="inviteEmail" className="flex items-center gap-2">
                           <Mail className="h-4 w-4" />
-                          E-mail *
+                          E-mail
                         </Label>
                         <Input
                           id="inviteEmail"
@@ -636,8 +636,10 @@ export default function UserManagement() {
                           value={inviteEmail}
                           onChange={(e) => setInviteEmail(e.target.value)}
                           placeholder="email@exemplo.com"
-                          required
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Se não informado, será gerado um email interno
+                        </p>
                       </div>
                     </div>
 
