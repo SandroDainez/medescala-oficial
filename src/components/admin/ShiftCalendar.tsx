@@ -1142,9 +1142,10 @@ export default function ShiftCalendar() {
               // Update existing assignment
               await supabase
                 .from('shift_assignments')
-                .update({ 
+                .update({
                   user_id: editData.assigned_user_id,
-                  updated_by: user.id
+                  assigned_value: parseMoneyValue(editData.base_value),
+                  updated_by: user.id,
                 })
                 .eq('id', currentAssignment.id);
             }
@@ -3547,19 +3548,21 @@ export default function ShiftCalendar() {
                         <div className="space-y-2">
                           <Label>Valor (R$)</Label>
                           <Input
-                            type="number"
-                            step="0.01"
+                            type="text"
+                            inputMode="decimal"
+                            placeholder="0,00"
                             value={editData.base_value}
-                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
-                              i === index ? { ...d, base_value: e.target.value } : d
-                            ))}
+                            onChange={(e) =>
+                              setBulkEditData((prev) =>
+                                prev.map((d, i) => (i === index ? { ...d, base_value: e.target.value } : d))
+                              )
+                            }
                             onBlur={() => {
                               if (!editData.base_value) return;
-                              setBulkEditData(prev => prev.map((d, i) => 
-                                i === index ? { ...d, base_value: formatMoneyInput(d.base_value) } : d
-                              ));
+                              setBulkEditData((prev) =>
+                                prev.map((d, i) => (i === index ? { ...d, base_value: formatMoneyInput(d.base_value) } : d))
+                              );
                             }}
-                            placeholder="0.00"
                           />
                         </div>
 
