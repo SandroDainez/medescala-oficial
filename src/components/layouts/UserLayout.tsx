@@ -5,140 +5,180 @@ import { TenantSelector } from '@/components/TenantSelector';
 import { NotificationBell } from '@/components/NotificationBell';
 import { TrialBanner } from '@/components/TrialBanner';
 import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { 
-  Calendar,
   CalendarDays,
   ListTodo,
   ArrowLeftRight, 
   DollarSign,
   LogOut,
   Menu,
-  X,
-  Stethoscope
+  Home,
+  Bell,
+  Settings,
+  HelpCircle,
+  MessageSquare,
+  User
 } from 'lucide-react';
 import { useState } from 'react';
 
-const navItems = [
-  { to: '/app', label: 'Calendário', icon: CalendarDays, end: true },
-  { to: '/app/shifts', label: 'Meus Plantões', icon: ListTodo },
+const mainNavItems = [
+  { to: '/app', label: 'Home', icon: Home, end: true },
+  { to: '/app/calendar', label: 'Agenda Geral', icon: CalendarDays },
+  { to: '/app/shifts', label: 'Minha Agenda', icon: ListTodo },
   { to: '/app/swaps', label: 'Trocas', icon: ArrowLeftRight },
-  { to: '/app/financial', label: 'Financeiro', icon: DollarSign },
+  { to: '/app/notifications', label: 'Notificações', icon: Bell },
+  { to: '/app/financial', label: 'Extrato', icon: DollarSign },
+];
+
+const secondaryNavItems = [
+  { to: '/app/settings', label: 'Preferências', icon: Settings },
+  { to: '/app/help', label: 'Sobre', icon: HelpCircle },
+  { to: '/app/feedback', label: 'Feedback', icon: MessageSquare },
 ];
 
 export function UserLayout() {
   const { user, signOut } = useAuth();
   const { currentTenantName } = useTenant();
   const navigate = useNavigate();
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
   };
 
+  const userInitials = user?.email?.slice(0, 2).toUpperCase() || 'U';
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col">
       {/* Trial Banner */}
       <TrialBanner />
       
-      {/* Header */}
+      {/* Header - Mobile style like Pega Plantão */}
       <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm">
-        <div className="flex h-16 items-center justify-between px-4">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden"
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-            </Button>
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary text-primary-foreground">
-                <Stethoscope className="h-4 w-4" />
+        <div className="flex h-14 items-center justify-between px-4">
+          {/* Left: Menu button */}
+          <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9">
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[280px] p-0 bg-card">
+              {/* Profile section */}
+              <div className="p-6 pb-4">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-14 w-14 border-2 border-muted">
+                    <AvatarFallback className="bg-muted text-muted-foreground text-lg">
+                      {userInitials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-foreground truncate">{userName}</p>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wide">PROFISSIONAL</p>
+                  </div>
+                </div>
+                {currentTenantName && (
+                  <div className="mt-4">
+                    <p className="text-xs text-muted-foreground mb-2">Empresas</p>
+                    <TenantSelector />
+                  </div>
+                )}
               </div>
-              <span className="text-lg font-bold text-foreground">
-                Med<span className="text-primary">Escala</span>
-              </span>
-            </div>
-            <TenantSelector />
+
+              <Separator />
+
+              {/* Main navigation */}
+              <nav className="flex flex-col py-2">
+                {mainNavItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={() => setSheetOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-4 px-6 py-3 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary/10 text-primary border-l-4 border-primary'
+                          : 'text-foreground hover:bg-accent/50'
+                      )
+                    }
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+
+              <Separator />
+
+              {/* Secondary navigation */}
+              <nav className="flex flex-col py-2">
+                {secondaryNavItems.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setSheetOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-4 px-6 py-3 text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary/10 text-primary border-l-4 border-primary'
+                          : 'text-foreground hover:bg-accent/50'
+                      )
+                    }
+                  >
+                    <item.icon className="h-5 w-5" />
+                    {item.label}
+                  </NavLink>
+                ))}
+              </nav>
+
+              <Separator />
+
+              {/* Logout */}
+              <div className="py-2">
+                <button
+                  onClick={handleSignOut}
+                  className="flex items-center gap-4 px-6 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 w-full transition-colors"
+                >
+                  <LogOut className="h-5 w-5" />
+                  Sair
+                </button>
+              </div>
+            </SheetContent>
+          </Sheet>
+
+          {/* Center: Current page or month (will be controlled by child) */}
+          <div className="flex-1 text-center">
+            <span className="font-semibold text-foreground">MedEscala</span>
           </div>
-          <div className="flex items-center gap-3">
-            <NotificationBell />
-            {currentTenantName && (
-              <span className="hidden text-sm font-medium text-foreground lg:inline px-2 py-1 bg-secondary rounded">
-                {currentTenantName}
-              </span>
-            )}
-            <span className="hidden text-sm text-muted-foreground sm:inline max-w-[150px] truncate">
-              {user?.email}
-            </span>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-muted-foreground hover:text-destructive">
-              <LogOut className="h-4 w-4" />
-              <span className="ml-2 hidden sm:inline">Sair</span>
+
+          {/* Right: Today button and notifications */}
+          <div className="flex items-center gap-1">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="h-8 px-2 text-xs font-medium border border-border"
+              onClick={() => navigate('/app')}
+            >
+              HOJE
             </Button>
+            <NotificationBell />
           </div>
         </div>
       </header>
 
-      <div className="flex">
-        {/* Sidebar - Desktop */}
-        <aside className="hidden w-64 border-r bg-card md:block">
-          <nav className="flex flex-col gap-1 p-4">
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                    isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  )
-                }
-              >
-                <item.icon className="h-4 w-4" />
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </aside>
-
-        {/* Mobile Menu */}
-        {mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 z-40 bg-background md:hidden">
-            <nav className="flex flex-col gap-1 p-4">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                    )
-                  }
-                >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
-                </NavLink>
-              ))}
-            </nav>
-          </div>
-        )}
-
-        {/* Main Content */}
-        <main className="flex-1 p-6">
-          <Outlet />
-        </main>
-      </div>
+      {/* Main Content - Full height */}
+      <main className="flex-1 flex flex-col">
+        <Outlet />
+      </main>
     </div>
   );
 }
