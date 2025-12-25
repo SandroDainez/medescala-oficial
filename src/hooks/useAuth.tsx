@@ -65,7 +65,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    // If the server-side session is already gone (common on mobile after long idle),
+    // fallback to a local-only sign out so the app can still log out cleanly.
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      await supabase.auth.signOut({ scope: 'local' });
+    }
   };
 
   return (
