@@ -902,6 +902,24 @@ export type Database = {
           trial_ends_at: string
         }[]
       }
+      get_shift_assignments_without_gps: {
+        Args: { _tenant_id: string }
+        Returns: {
+          assigned_value: number
+          checkin_at: string
+          checkout_at: string
+          created_at: string
+          created_by: string
+          id: string
+          notes: string
+          shift_id: string
+          status: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string
+          user_id: string
+        }[]
+      }
       get_shift_tenant_id: { Args: { _shift_id: string }; Returns: string }
       get_tenant_access_status: {
         Args: { _tenant_id: string }
