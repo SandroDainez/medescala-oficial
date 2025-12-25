@@ -108,6 +108,17 @@ export default function ShiftCalendar() {
   const [copyInProgress, setCopyInProgress] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
+
+  // Bulk edit (apply same changes to selected shifts)
+  const [bulkApplyDialogOpen, setBulkApplyDialogOpen] = useState(false);
+  const [bulkApplyData, setBulkApplyData] = useState({
+    title: '',
+    start_time: '',
+    end_time: '',
+    base_value: '',
+    assigned_user_id: '', // '' means keep
+  });
+  const [bulkApplyShiftIds, setBulkApplyShiftIds] = useState<string[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -1100,6 +1111,104 @@ export default function ShiftCalendar() {
       };
     }));
     setBulkEditDialogOpen(true);
+  }
+
+  function openBulkApplySelectedDialog(date: Date) {
+    const dayShiftIds = getShiftsForDate(date).map((s) => s.id);
+    const selectedInDay = dayShiftIds.filter((id) => selectedShiftIds.has(id));
+
+    if (selectedInDay.length === 0) {
+      toast({ title: 'Nenhum plantão selecionado', description: 'Selecione 1 ou mais plantões deste dia.', variant: 'destructive' });
+      return;
+    }
+
+    setBulkApplyShiftIds(selectedInDay);
+    setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
+    setBulkApplyDialogOpen(true);
+  }
+
+  async function handleBulkApplySave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user?.id || !currentTenantId) return;
+
+    const hasAnyChange =
+      bulkApplyData.title.trim() ||
+      bulkApplyData.start_time ||
+      bulkApplyData.end_time ||
+      bulkApplyData.base_value.trim() ||
+      bulkApplyData.assigned_user_id;
+
+    if (!hasAnyChange) {
+      toast({ title: 'Nada para aplicar', description: 'Preencha ao menos um campo para aplicar aos selecionados.', variant: 'destructive' });
+      return;
+    }
+
+    const shiftIds = bulkApplyShiftIds;
+    if (shiftIds.length === 0) return;
+
+    try {
+      const shiftUpdate: Partial<Pick<Shift, 'title' | 'start_time' | 'end_time' | 'base_value'>> & { updated_by: string } = {
+        updated_by: user.id,
+      };
+
+      if (bulkApplyData.title.trim()) shiftUpdate.title = bulkApplyData.title.trim();
+      if (bulkApplyData.start_time) shiftUpdate.start_time = bulkApplyData.start_time;
+      if (bulkApplyData.end_time) shiftUpdate.end_time = bulkApplyData.end_time;
+      if (bulkApplyData.base_value.trim()) shiftUpdate.base_value = parseMoneyValue(bulkApplyData.base_value);
+
+      const needsShiftUpdate = Object.keys(shiftUpdate).length > 1;
+
+      if (needsShiftUpdate) {
+        const { error } = await supabase.from('shifts').update(shiftUpdate).in('id', shiftIds);
+        if (error) throw error;
+      }
+
+      // Assignment (plantonista) update
+      if (bulkApplyData.assigned_user_id) {
+        const valueToApply = bulkApplyData.base_value.trim() ? parseMoneyValue(bulkApplyData.base_value) : null;
+
+        if (bulkApplyData.assigned_user_id === '__clear__') {
+          const { error } = await supabase.from('shift_assignments').delete().in('shift_id', shiftIds);
+          if (error) throw error;
+        } else {
+          await Promise.all(
+            shiftIds.map(async (shiftId) => {
+              const existing = assignments.find((a) => a.shift_id === shiftId);
+              if (existing) {
+                const updatePayload: any = {
+                  user_id: bulkApplyData.assigned_user_id,
+                  updated_by: user.id,
+                };
+                if (valueToApply !== null) updatePayload.assigned_value = valueToApply;
+
+                const { error } = await supabase.from('shift_assignments').update(updatePayload).eq('id', existing.id);
+                if (error) throw error;
+              } else {
+                const insertPayload: any = {
+                  tenant_id: currentTenantId,
+                  shift_id: shiftId,
+                  user_id: bulkApplyData.assigned_user_id,
+                  assigned_value: valueToApply ?? 0,
+                  created_by: user.id,
+                };
+
+                const { error } = await supabase.from('shift_assignments').insert(insertPayload);
+                if (error) throw error;
+              }
+            })
+          );
+        }
+      }
+
+      toast({ title: 'Edição em bloco aplicada!', description: `${shiftIds.length} plantão(ões) atualizados.` });
+      setBulkApplyDialogOpen(false);
+      setBulkApplyShiftIds([]);
+      setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
+      fetchData();
+    } catch (error: any) {
+      console.error('Error applying bulk edits:', error);
+      toast({ title: 'Erro ao aplicar', description: error?.message || 'Ocorreu um erro ao aplicar as alterações.', variant: 'destructive' });
+    }
   }
 
   async function handleBulkEditSave(e: React.FormEvent) {
@@ -2296,16 +2405,28 @@ export default function ShiftCalendar() {
                       const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
                       if (selectedCount > 0) {
                         return (
-                          <Button 
-                            variant="destructive" 
-                            size="sm"
-                            onClick={() => {
-                              handleBulkDelete();
-                            }}
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            Excluir ({selectedCount})
-                          </Button>
+                          <>
+                            <Button 
+                              variant="destructive" 
+                              size="sm"
+                              onClick={() => {
+                                handleBulkDelete();
+                              }}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Excluir ({selectedCount})
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                if (selectedDate) openBulkApplySelectedDialog(selectedDate);
+                              }}
+                            >
+                              <Edit className="mr-2 h-4 w-4" />
+                              Editar selecionados ({selectedCount})
+                            </Button>
+                          </>
                         );
                       }
                       return null;
@@ -3419,6 +3540,111 @@ export default function ShiftCalendar() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Edit Selected Shifts (Apply same changes) */}
+      <Dialog
+        open={bulkApplyDialogOpen}
+        onOpenChange={(open) => {
+          setBulkApplyDialogOpen(open);
+          if (!open) {
+            setBulkApplyShiftIds([]);
+            setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5" />
+              Edição em bloco ({bulkApplyShiftIds.length})
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleBulkApplySave} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Nome do plantão (opcional)</Label>
+              <Input
+                value={bulkApplyData.title}
+                onChange={(e) => setBulkApplyData((p) => ({ ...p, title: e.target.value }))}
+                placeholder="Ex: Plantão Diurno"
+              />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Início (opcional)</Label>
+                <Input
+                  type="time"
+                  value={bulkApplyData.start_time}
+                  onChange={(e) => setBulkApplyData((p) => ({ ...p, start_time: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Término (opcional)</Label>
+                <Input
+                  type="time"
+                  value={bulkApplyData.end_time}
+                  onChange={(e) => setBulkApplyData((p) => ({ ...p, end_time: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Valor (R$) (opcional)</Label>
+              <Input
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={bulkApplyData.base_value}
+                onChange={(e) => setBulkApplyData((p) => ({ ...p, base_value: e.target.value }))}
+                onBlur={() => {
+                  if (!bulkApplyData.base_value) return;
+                  setBulkApplyData((p) => ({ ...p, base_value: formatMoneyInput(p.base_value) }));
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Plantonista (opcional)</Label>
+              <Select
+                value={bulkApplyData.assigned_user_id}
+                onValueChange={(v) => setBulkApplyData((p) => ({ ...p, assigned_user_id: v }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Manter como está" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Manter como está</SelectItem>
+                  <SelectItem value="__clear__">Remover plantonista (vago)</SelectItem>
+                  {sortMembersAlphabetically(members).map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.profile?.name || 'Sem nome'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  setBulkApplyDialogOpen(false);
+                  setBulkApplyShiftIds([]);
+                  setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" className="flex-1">
+                Aplicar ({bulkApplyShiftIds.length})
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
 
