@@ -29,7 +29,7 @@ export default function UserFinancial() {
     setLoading(true);
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-    const { data: assignments } = await supabase.from('shift_assignments').select('id, assigned_value, checkin_at, checkout_at, shift:shifts!inner(title, hospital, shift_date, base_value)').eq('tenant_id', currentTenantId).eq('user_id', user?.id).eq('status', 'completed').gte('shift.shift_date', startDate).lte('shift.shift_date', endDate);
+    const { data: assignments } = await supabase.from('shift_assignments').select('id, assigned_value, checkin_at, checkout_at, shift:shifts!inner(title, hospital, shift_date, base_value)').eq('tenant_id', currentTenantId).eq('user_id', user?.id).in('status', ['assigned', 'completed']).gte('shift.shift_date', startDate).lte('shift.shift_date', endDate);
     const { data: payment } = await supabase.from('payments').select('status').eq('tenant_id', currentTenantId).eq('user_id', user?.id).eq('month', selectedMonth).eq('year', selectedYear).maybeSingle();
     if (assignments) {
       // Map assignments to use base_value as fallback when assigned_value is 0
