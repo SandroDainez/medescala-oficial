@@ -286,11 +286,33 @@ export default function ShiftCalendar() {
   }
 
   // Helper to parse monetary values with precision (avoids floating point errors)
+  // Accepts "800", "800.00", "800,00", "1.234,56".
   function parseMoneyValue(value: string | number): number {
-    if (typeof value === 'number') return Math.round(value * 100) / 100;
-    const parsed = parseFloat(value);
-    if (isNaN(parsed)) return 0;
-    return Math.round(parsed * 100) / 100;
+    if (typeof value === 'number') return Number(value.toFixed(2));
+
+    const raw = (value ?? '').toString().trim();
+    if (!raw) return 0;
+
+    // Normalize pt-BR formats: remove thousands separators and convert comma to dot.
+    // If it contains a comma, assume comma is decimal separator.
+    const normalized = raw.includes(',')
+      ? raw.replace(/\./g, '').replace(',', '.')
+      : raw;
+
+    // Keep only first number-like token
+    const match = normalized.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return 0;
+
+    const [intPart, decPart = ''] = match[0].split('.');
+    const dec2 = (decPart + '00').slice(0, 2);
+
+    const cents = BigInt(intPart) * 100n + BigInt(dec2);
+    return Number(cents) / 100;
+  }
+
+  function formatMoneyInput(value: string | number): string {
+    const num = parseMoneyValue(value);
+    return num.toFixed(2);
   }
 
   // Filter shifts by sector
@@ -1022,7 +1044,7 @@ export default function ShiftCalendar() {
       shift_date: shift.shift_date,
       start_time: shift.start_time.slice(0, 5), // Remove seconds
       end_time: shift.end_time.slice(0, 5), // Remove seconds
-      base_value: shift.base_value.toString(),
+      base_value: formatMoneyInput(shift.base_value),
       notes: shift.notes || '',
       sector_id: shift.sector_id || '',
       assigned_user_id: currentAssignment?.user_id || '',
@@ -1066,7 +1088,7 @@ export default function ShiftCalendar() {
         location: shift.location || '',
         start_time: shift.start_time.slice(0, 5),
         end_time: shift.end_time.slice(0, 5),
-        base_value: shift.base_value.toString(),
+        base_value: formatMoneyInput(shift.base_value),
         notes: shift.notes || '',
         sector_id: shift.sector_id || '',
         assigned_user_id: currentAssignment?.user_id || '',
@@ -2721,6 +2743,10 @@ export default function ShiftCalendar() {
                   step="0.01"
                   value={formData.base_value}
                   onChange={(e) => setFormData({ ...formData, base_value: e.target.value })}
+                  onBlur={() => {
+                    if (!formData.base_value) return;
+                    setFormData(prev => ({ ...prev, base_value: formatMoneyInput(prev.base_value) }));
+                  }}
                   placeholder="0.00"
                 />
               </div>
@@ -3515,6 +3541,12 @@ export default function ShiftCalendar() {
                             onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
                               i === index ? { ...d, base_value: e.target.value } : d
                             ))}
+                            onBlur={() => {
+                              if (!editData.base_value) return;
+                              setBulkEditData(prev => prev.map((d, i) => 
+                                i === index ? { ...d, base_value: formatMoneyInput(d.base_value) } : d
+                              ));
+                            }}
                             placeholder="0.00"
                           />
                         </div>
