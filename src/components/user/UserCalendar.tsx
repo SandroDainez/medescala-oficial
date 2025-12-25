@@ -69,7 +69,7 @@ export default function UserCalendar() {
     const start = startOfMonth(currentDate);
     const end = endOfMonth(currentDate);
 
-    const [mySectorsRes, shiftsRes] = await Promise.all([
+    const [mySectorsRes, shiftsRes, memberNamesRes] = await Promise.all([
       supabase
         .from('sector_memberships')
         .select('sector_id, sector:sectors(*)')
@@ -82,7 +82,17 @@ export default function UserCalendar() {
         .gte('shift_date', format(start, 'yyyy-MM-dd'))
         .lte('shift_date', format(end, 'yyyy-MM-dd'))
         .order('shift_date', { ascending: true }),
+      // Use safe RPC to get only names (no sensitive data)
+      supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId }),
     ]);
+
+    // Build a map of user_id -> name from RPC result
+    const memberNames = new Map<string, string>();
+    if (memberNamesRes.data) {
+      (memberNamesRes.data as { user_id: string; name: string }[]).forEach(m => {
+        memberNames.set(m.user_id, m.name);
+      });
+    }
 
     if (mySectorsRes.data) {
       setMySectors(mySectorsRes.data as unknown as MySector[]);
@@ -95,11 +105,16 @@ export default function UserCalendar() {
         const shiftIds = shiftsRes.data.map(s => s.id);
         const { data: assignmentsData } = await supabase
           .from('shift_assignments')
-          .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+          .select('id, shift_id, user_id, assigned_value, status')
           .in('shift_id', shiftIds);
 
         if (assignmentsData) {
-          setAssignments(assignmentsData as unknown as ShiftAssignment[]);
+          // Attach profile name from our memberNames map
+          const enrichedAssignments = assignmentsData.map(a => ({
+            ...a,
+            profile: { name: memberNames.get(a.user_id) || null },
+          }));
+          setAssignments(enrichedAssignments as unknown as ShiftAssignment[]);
         }
       }
     }
