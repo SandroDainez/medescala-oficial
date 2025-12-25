@@ -176,7 +176,7 @@ export default function AdminFinancial() {
     const shiftIds = shiftsInRange?.map(s => s.id) || [];
 
     // Fetch all assignments with shift details for shifts in range
-    const { data } = shiftIds.length > 0 
+    const { data, error: fetchError } = shiftIds.length > 0 
       ? await supabase
         .from('shift_assignments')
         .select(`
@@ -184,20 +184,33 @@ export default function AdminFinancial() {
           shift_id,
           user_id,
           assigned_value,
+          status,
           profile:profiles!shift_assignments_user_id_profiles_fkey(name),
           shift:shifts(
+            id,
             shift_date,
             start_time,
             end_time,
             hospital,
             sector_id,
             base_value,
-            sector:sectors(name)
+            sector:sectors(name, id)
           )
         `)
         .eq('tenant_id', currentTenantId)
         .in('shift_id', shiftIds)
-      : { data: [] };
+      : { data: [], error: null };
+    
+    if (fetchError) {
+      console.error('[AdminFinancial] Error fetching assignments:', fetchError);
+    }
+    
+    console.log('[AdminFinancial] Raw data from DB:', data?.slice(0, 3).map((d: any) => ({
+      assigned_value: d.assigned_value,
+      base_value: d.shift?.base_value,
+      shift_date: d.shift?.shift_date,
+      user: d.profile?.name
+    })));
 
     // Fetch members for payment status
     const { data: members } = await supabase
@@ -215,20 +228,32 @@ export default function AdminFinancial() {
         .filter((d: any) => d.shift) // Only include assignments with valid shift data
         .map((d: any) => {
           const duration = calculateDuration(d.shift?.start_time || '', d.shift?.end_time || '');
-          // Use assigned_value if set, otherwise fallback to shift's base_value
-          const value = Number(d.assigned_value) > 0 ? Number(d.assigned_value) : Number(d.shift?.base_value) || 0;
+          
+          // IMPORTANT: Use base_value from shift as primary source when assigned_value is 0
+          const assignedVal = Number(d.assigned_value) || 0;
+          const baseVal = Number(d.shift?.base_value) || 0;
+          const finalValue = assignedVal > 0 ? assignedVal : baseVal;
+          
+          console.log('[AdminFinancial] Value calc:', {
+            user: d.profile?.name,
+            date: d.shift?.shift_date,
+            assignedVal,
+            baseVal,
+            finalValue
+          });
+          
           return {
             id: d.id,
             shift_id: d.shift_id,
             user_id: d.user_id,
             user_name: d.profile?.name || 'N/A',
-            assigned_value: value,
+            assigned_value: finalValue,
             shift_date: d.shift?.shift_date,
             start_time: d.shift?.start_time,
             end_time: d.shift?.end_time,
             duration_hours: duration,
             sector_name: d.shift?.sector?.name || 'Sem Setor',
-            sector_id: d.shift?.sector_id || null,
+            sector_id: d.shift?.sector?.id || d.shift?.sector_id || null,
             hospital: d.shift?.hospital || 'N/A'
           };
         })
@@ -238,7 +263,13 @@ export default function AdminFinancial() {
           const dateB = new Date(b.shift_date);
           return dateA.getTime() - dateB.getTime();
         });
-      console.log('[AdminFinancial] sample values', details.slice(0, 5).map(d => ({ date: d.shift_date, user: d.user_name, value: d.assigned_value })));
+      
+      console.log('[AdminFinancial] Processed details sample:', details.slice(0, 5).map(d => ({ 
+        date: d.shift_date, 
+        user: d.user_name, 
+        value: d.assigned_value,
+        sector: d.sector_name
+      })));
       setShiftDetails(details);
 
       // Build summaries with sector breakdown
