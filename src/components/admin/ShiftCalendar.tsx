@@ -106,6 +106,8 @@ export default function ShiftCalendar() {
   const [copyScheduleDialogOpen, setCopyScheduleDialogOpen] = useState(false);
   const [copyTargetMonth, setCopyTargetMonth] = useState<Date | null>(null);
   const [copyInProgress, setCopyInProgress] = useState(false);
+  const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -130,6 +132,20 @@ export default function ShiftCalendar() {
     end_time: string;
   }
   const [multiShifts, setMultiShifts] = useState<MultiShiftData[]>([]);
+
+  // Bulk edit data for editing all shifts of a day
+  interface BulkEditShiftData {
+    id: string;
+    hospital: string;
+    location: string;
+    start_time: string;
+    end_time: string;
+    base_value: string;
+    notes: string;
+    sector_id: string;
+    assigned_user_id: string;
+  }
+  const [bulkEditData, setBulkEditData] = useState<BulkEditShiftData[]>([]);
 
   const [assignData, setAssignData] = useState({
     user_id: '',
@@ -1027,6 +1043,138 @@ export default function ShiftCalendar() {
       repeat_weeks: 0,
       quantity: 1,
     });
+  }
+
+  function openBulkEditDialog(date: Date) {
+    const dayShifts = getShiftsForDate(date);
+    if (dayShifts.length === 0) return;
+    
+    setBulkEditShifts(dayShifts);
+    setBulkEditData(dayShifts.map(shift => {
+      const currentAssignment = assignments.find(a => a.shift_id === shift.id);
+      return {
+        id: shift.id,
+        hospital: shift.hospital,
+        location: shift.location || '',
+        start_time: shift.start_time.slice(0, 5),
+        end_time: shift.end_time.slice(0, 5),
+        base_value: shift.base_value.toString(),
+        notes: shift.notes || '',
+        sector_id: shift.sector_id || '',
+        assigned_user_id: currentAssignment?.user_id || '',
+      };
+    }));
+    setBulkEditDialogOpen(true);
+  }
+
+  async function handleBulkEditSave(e: React.FormEvent) {
+    e.preventDefault();
+    if (!user?.id || !currentTenantId) return;
+
+    try {
+      for (const editData of bulkEditData) {
+        const originalShift = bulkEditShifts.find(s => s.id === editData.id);
+        if (!originalShift) continue;
+
+        // Update the shift
+        const { error: shiftError } = await supabase
+          .from('shifts')
+          .update({
+            hospital: editData.hospital,
+            location: editData.location || null,
+            start_time: editData.start_time,
+            end_time: editData.end_time,
+            base_value: parseFloat(editData.base_value) || 0,
+            notes: editData.notes || null,
+            sector_id: editData.sector_id || null,
+            title: generateShiftTitle(editData.start_time, editData.end_time),
+            updated_by: user.id,
+          })
+          .eq('id', editData.id);
+
+        if (shiftError) {
+          console.error('Error updating shift:', shiftError);
+          continue;
+        }
+
+        // Handle assignment changes
+        const currentAssignment = assignments.find(a => a.shift_id === editData.id);
+        
+        if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
+          // Assign to user
+          if (currentAssignment) {
+            if (currentAssignment.user_id !== editData.assigned_user_id) {
+              // Update existing assignment
+              await supabase
+                .from('shift_assignments')
+                .update({ 
+                  user_id: editData.assigned_user_id,
+                  updated_by: user.id
+                })
+                .eq('id', currentAssignment.id);
+            }
+          } else {
+            // Create new assignment
+            await supabase
+              .from('shift_assignments')
+              .insert({
+                shift_id: editData.id,
+                user_id: editData.assigned_user_id,
+                assigned_value: parseFloat(editData.base_value) || 0,
+                tenant_id: currentTenantId,
+                created_by: user.id,
+              });
+          }
+          // Remove [DISPONÍVEL] if present
+          if (originalShift.notes?.includes('[DISPONÍVEL]')) {
+            await supabase
+              .from('shifts')
+              .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
+              .eq('id', editData.id);
+          }
+        } else if (editData.assigned_user_id === 'disponivel') {
+          // Make available - remove assignment if exists
+          if (currentAssignment) {
+            await supabase
+              .from('shift_assignments')
+              .delete()
+              .eq('id', currentAssignment.id);
+          }
+          // Add [DISPONÍVEL] tag
+          const newNotes = editData.notes?.includes('[DISPONÍVEL]') 
+            ? editData.notes 
+            : `[DISPONÍVEL] ${editData.notes || ''}`.trim();
+          await supabase
+            .from('shifts')
+            .update({ notes: newNotes })
+            .eq('id', editData.id);
+        } else {
+          // Vago - remove assignment if exists
+          if (currentAssignment) {
+            await supabase
+              .from('shift_assignments')
+              .delete()
+              .eq('id', currentAssignment.id);
+          }
+          // Remove [DISPONÍVEL] if present
+          if (originalShift.notes?.includes('[DISPONÍVEL]')) {
+            await supabase
+              .from('shifts')
+              .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
+              .eq('id', editData.id);
+          }
+        }
+      }
+
+      toast({ title: 'Plantões atualizados!', description: `${bulkEditData.length} plantão(ões) foram salvos.` });
+      setBulkEditDialogOpen(false);
+      setBulkEditData([]);
+      setBulkEditShifts([]);
+      fetchData();
+    } catch (error) {
+      console.error('Error saving bulk edits:', error);
+      toast({ title: 'Erro ao salvar', description: 'Ocorreu um erro ao salvar os plantões.', variant: 'destructive' });
+    }
   }
 
   function openAssignDialog(shift: Shift) {
@@ -2128,6 +2276,20 @@ export default function ShiftCalendar() {
                     })()}
                   </>
                 )}
+                {selectedDate && getShiftsForDate(selectedDate).length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      if (selectedDate) {
+                        openBulkEditDialog(selectedDate);
+                      }
+                    }}
+                  >
+                    <Edit className="mr-2 h-4 w-4" />
+                    Editar Todos ({getShiftsForDate(selectedDate).length})
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   onClick={() =>
@@ -3210,6 +3372,218 @@ export default function ShiftCalendar() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Edit All Shifts of Day Dialog */}
+      <Dialog open={bulkEditDialogOpen} onOpenChange={(open) => {
+        setBulkEditDialogOpen(open);
+        if (!open) {
+          setBulkEditData([]);
+          setBulkEditShifts([]);
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit className="h-5 w-5" />
+              Editar Todos os Plantões do Dia ({bulkEditShifts.length})
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleBulkEditSave} className="space-y-4">
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+              {bulkEditData.map((editData, index) => {
+                const originalShift = bulkEditShifts.find(s => s.id === editData.id);
+                const sectorMembers = editData.sector_id ? getMembersForSector(editData.sector_id) : [];
+                const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
+                const sectorColor = getSectorColor(editData.sector_id, editData.hospital);
+                const isNight = isNightShift(editData.start_time, editData.end_time);
+
+                return (
+                  <Card 
+                    key={editData.id} 
+                    className="border-2"
+                    style={{ borderColor: sectorColor }}
+                  >
+                    <CardHeader className="py-3" style={{ backgroundColor: `${sectorColor}10` }}>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-lg">Plantão {index + 1}</span>
+                          <Badge variant="outline" style={{ borderColor: sectorColor, color: sectorColor }}>
+                            {getSectorName(editData.sector_id, editData.hospital)}
+                          </Badge>
+                          {isNight ? (
+                            <Badge className="bg-indigo-100 text-indigo-700">🌙 Noturno</Badge>
+                          ) : (
+                            <Badge className="bg-amber-100 text-amber-700">☀️ Diurno</Badge>
+                          )}
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          {editData.start_time} - {editData.end_time}
+                        </span>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Sector */}
+                        <div className="space-y-2">
+                          <Label>Setor</Label>
+                          <Select 
+                            value={editData.sector_id} 
+                            onValueChange={(v) => {
+                              const sector = sectors.find(s => s.id === v);
+                              setBulkEditData(prev => prev.map((d, i) => 
+                                i === index 
+                                  ? { ...d, sector_id: v, hospital: sector?.name || d.hospital }
+                                  : d
+                              ));
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sectors.map(sector => (
+                                <SelectItem key={sector.id} value={sector.id}>
+                                  <span className="flex items-center gap-2">
+                                    <span 
+                                      className="w-2 h-2 rounded-full" 
+                                      style={{ backgroundColor: sector.color || '#22c55e' }}
+                                    />
+                                    {sector.name}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        {/* Location */}
+                        <div className="space-y-2">
+                          <Label>Local/Sala</Label>
+                          <Input
+                            value={editData.location}
+                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, location: e.target.value } : d
+                            ))}
+                            placeholder="Ex: Sala 3"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        {/* Start Time */}
+                        <div className="space-y-2">
+                          <Label>Início</Label>
+                          <Input
+                            type="time"
+                            value={editData.start_time}
+                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, start_time: e.target.value } : d
+                            ))}
+                          />
+                        </div>
+
+                        {/* End Time */}
+                        <div className="space-y-2">
+                          <Label>Término</Label>
+                          <Input
+                            type="time"
+                            value={editData.end_time}
+                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, end_time: e.target.value } : d
+                            ))}
+                          />
+                        </div>
+
+                        {/* Base Value */}
+                        <div className="space-y-2">
+                          <Label>Valor (R$)</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={editData.base_value}
+                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, base_value: e.target.value } : d
+                            ))}
+                            placeholder="0.00"
+                          />
+                        </div>
+
+                        {/* Assigned User */}
+                        <div className="space-y-2">
+                          <Label>Plantonista</Label>
+                          <Select 
+                            value={editData.assigned_user_id || 'vago'} 
+                            onValueChange={(v) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, assigned_user_id: v } : d
+                            ))}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecionar" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="vago">
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-gray-400" />
+                                  Vago
+                                </span>
+                              </SelectItem>
+                              <SelectItem value="disponivel">
+                                <span className="flex items-center gap-2">
+                                  <span className="w-2 h-2 rounded-full bg-green-500" />
+                                  Disponível
+                                </span>
+                              </SelectItem>
+                              {membersToShow.map((m) => (
+                                <SelectItem key={m.user_id} value={m.user_id}>
+                                  <span className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-primary" />
+                                    {m.profile?.name || 'Sem nome'}
+                                  </span>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      {/* Notes */}
+                      <div className="space-y-2">
+                        <Label>Observações</Label>
+                        <Input
+                          value={editData.notes}
+                          onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
+                            i === index ? { ...d, notes: e.target.value } : d
+                          ))}
+                          placeholder="Observações adicionais..."
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button 
+                type="button" 
+                variant="outline" 
+                className="flex-1"
+                onClick={() => {
+                  setBulkEditDialogOpen(false);
+                  setBulkEditData([]);
+                  setBulkEditShifts([]);
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit" className="flex-1">
+                Salvar Todos ({bulkEditData.length} plantões)
+              </Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
