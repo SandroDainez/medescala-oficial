@@ -29,13 +29,18 @@ export default function UserFinancial() {
     setLoading(true);
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-    const { data: assignments } = await supabase.from('shift_assignments').select('id, assigned_value, checkin_at, checkout_at, shift:shifts!inner(title, hospital, shift_date)').eq('tenant_id', currentTenantId).eq('user_id', user?.id).eq('status', 'completed').gte('shift.shift_date', startDate).lte('shift.shift_date', endDate);
+    const { data: assignments } = await supabase.from('shift_assignments').select('id, assigned_value, checkin_at, checkout_at, shift:shifts!inner(title, hospital, shift_date, base_value)').eq('tenant_id', currentTenantId).eq('user_id', user?.id).eq('status', 'completed').gte('shift.shift_date', startDate).lte('shift.shift_date', endDate);
     const { data: payment } = await supabase.from('payments').select('status').eq('tenant_id', currentTenantId).eq('user_id', user?.id).eq('month', selectedMonth).eq('year', selectedYear).maybeSingle();
     if (assignments) {
-      setShifts(assignments as unknown as CompletedShift[]);
+      // Map assignments to use base_value as fallback when assigned_value is 0
+      const mappedAssignments = assignments.map((a: any) => ({
+        ...a,
+        assigned_value: Number(a.assigned_value) > 0 ? Number(a.assigned_value) : Number(a.shift?.base_value) || 0
+      }));
+      setShifts(mappedAssignments as unknown as CompletedShift[]);
       let totalHours = 0;
-      assignments.forEach((a: any) => { if (a.checkin_at && a.checkout_at) totalHours += (new Date(a.checkout_at).getTime() - new Date(a.checkin_at).getTime()) / 3600000; });
-      setSummary({ totalShifts: assignments.length, totalHours, totalValue: assignments.reduce((s: number, a: any) => s + Number(a.assigned_value || 0), 0), status: payment?.status || null });
+      mappedAssignments.forEach((a: any) => { if (a.checkin_at && a.checkout_at) totalHours += (new Date(a.checkout_at).getTime() - new Date(a.checkin_at).getTime()) / 3600000; });
+      setSummary({ totalShifts: mappedAssignments.length, totalHours, totalValue: mappedAssignments.reduce((s: number, a: any) => s + Number(a.assigned_value || 0), 0), status: payment?.status || null });
     }
     setLoading(false);
   }
