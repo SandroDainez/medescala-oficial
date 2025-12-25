@@ -194,6 +194,24 @@ export function AdminLayout() {
                   Super Admin
                 </NavLink>
               )}
+              
+              {/* Logout Button - Mobile */}
+              <div className="mt-6 pt-4 border-t">
+                <p className="text-sm text-muted-foreground mb-3 px-4 truncate">
+                  {user?.email}
+                </p>
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-start gap-3 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    handleSignOut();
+                  }}
+                >
+                  <LogOut className="h-5 w-5" />
+                  Sair
+                </Button>
+              </div>
             </nav>
           </div>
         )}
