@@ -111,13 +111,26 @@ Deno.serve(async (req) => {
     // Wait for the trigger to create the profile
     await new Promise(resolve => setTimeout(resolve, 500))
 
-    // Update/upsert the profile with additional info and must_change_password flag
+    // Update/upsert the profile with basic info and must_change_password flag
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .upsert({
         id: newUser.user.id,
         name,
         profile_type: profileType || 'plantonista',
+        must_change_password: true // User must change password on first login
+      })
+
+    if (profileError) {
+      console.error('Profile error:', profileError)
+      // Don't throw, the user is created, profile can be updated later
+    }
+
+    // Save private profile data to profiles_private table
+    const { error: privateProfileError } = await supabaseAdmin
+      .from('profiles_private')
+      .upsert({
+        user_id: newUser.user.id,
         phone: phone || null,
         cpf: cpf || null,
         crm: crm || null,
@@ -126,11 +139,10 @@ Deno.serve(async (req) => {
         bank_agency: bankAgency || null,
         bank_account: bankAccount || null,
         pix_key: pixKey || null,
-        must_change_password: true // User must change password on first login
       })
 
-    if (profileError) {
-      console.error('Profile error:', profileError)
+    if (privateProfileError) {
+      console.error('Private profile error:', privateProfileError)
       // Don't throw, the user is created, profile can be updated later
     }
 

@@ -25,10 +25,12 @@ interface MemberWithProfile {
   email?: string;
   profile: { 
     name: string | null;
+    profile_type: string | null;
+  } | null;
+  privateProfile?: {
     phone: string | null;
     cpf: string | null;
     crm: string | null;
-    profile_type: string | null;
     address: string | null;
     bank_name: string | null;
     bank_agency: string | null;
@@ -127,16 +129,31 @@ export default function UserManagement() {
   async function fetchMembers() {
     if (!currentTenantId) return;
 
+    // Fetch memberships with basic profile info
     const { data, error } = await supabase
       .from('memberships')
       .select(
-        'id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type, address, bank_name, bank_agency, bank_account, pix_key)'
+        'id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, profile_type)'
       )
       .eq('tenant_id', currentTenantId);
 
     if (!error && data) {
       const typed = data as unknown as MemberWithProfile[];
-      const sorted = [...typed].sort((a, b) => {
+      
+      // Fetch private profile data for all users
+      const userIds = typed.map(m => m.user_id);
+      const { data: privateData } = await supabase
+        .from('profiles_private')
+        .select('user_id, phone, cpf, crm, address, bank_name, bank_agency, bank_account, pix_key')
+        .in('user_id', userIds);
+
+      // Merge private data
+      const withPrivate = typed.map(m => ({
+        ...m,
+        privateProfile: privateData?.find(p => p.user_id === m.user_id) || null,
+      }));
+
+      const sorted = [...withPrivate].sort((a, b) => {
         const aName = (a.profile?.name ?? '').trim();
         const bName = (b.profile?.name ?? '').trim();
         if (!aName && !bName) return 0;
@@ -313,14 +330,14 @@ export default function UserManagement() {
   async function openEditDialog(member: MemberWithProfile) {
     setEditingMember(member);
     setEditName(member.profile?.name || '');
-    setEditPhone(member.profile?.phone || '');
-    setEditCpf(member.profile?.cpf || '');
-    setEditCrm(member.profile?.crm || '');
-    setEditAddress(member.profile?.address || '');
-    setEditBankName(member.profile?.bank_name || '');
-    setEditBankAgency(member.profile?.bank_agency || '');
-    setEditBankAccount(member.profile?.bank_account || '');
-    setEditPixKey(member.profile?.pix_key || '');
+    setEditPhone(member.privateProfile?.phone || '');
+    setEditCpf(member.privateProfile?.cpf || '');
+    setEditCrm(member.privateProfile?.crm || '');
+    setEditAddress(member.privateProfile?.address || '');
+    setEditBankName(member.privateProfile?.bank_name || '');
+    setEditBankAgency(member.privateProfile?.bank_agency || '');
+    setEditBankAccount(member.privateProfile?.bank_account || '');
+    setEditPixKey(member.privateProfile?.pix_key || '');
     setEditProfileType(member.profile?.profile_type || 'plantonista');
     setResetPasswordOnSave(false);
     setSendEmailOnSave(false);
@@ -357,12 +374,22 @@ export default function UserManagement() {
     setIsUpdatingUser(true);
 
     try {
-      // Update profile data first
+      // Update basic profile data
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
           id: editingMember.user_id,
           name: editName,
+          profile_type: editProfileType,
+        });
+
+      if (profileError) throw profileError;
+
+      // Update private profile data
+      const { error: privateError } = await supabase
+        .from('profiles_private')
+        .upsert({
+          user_id: editingMember.user_id,
           phone: editPhone || null,
           cpf: editCpf || null,
           crm: editCrm || null,
@@ -371,10 +398,9 @@ export default function UserManagement() {
           bank_agency: editBankAgency || null,
           bank_account: editBankAccount || null,
           pix_key: editPixKey || null,
-          profile_type: editProfileType,
         });
 
-      if (profileError) throw profileError;
+      if (privateError) throw privateError;
 
       // Update sector memberships
       const currentMemberships = sectorMemberships.filter(sm => sm.user_id === editingMember.user_id);
