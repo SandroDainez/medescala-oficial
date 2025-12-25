@@ -126,14 +126,26 @@ export default function UserManagement() {
 
   async function fetchMembers() {
     if (!currentTenantId) return;
-    
+
     const { data, error } = await supabase
       .from('memberships')
-      .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type, address, bank_name, bank_agency, bank_account, pix_key)')
+      .select(
+        'id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, phone, cpf, crm, profile_type, address, bank_name, bank_agency, bank_account, pix_key)'
+      )
       .eq('tenant_id', currentTenantId);
 
     if (!error && data) {
-      setMembers(data as unknown as MemberWithProfile[]);
+      const typed = data as unknown as MemberWithProfile[];
+      const sorted = [...typed].sort((a, b) => {
+        const aName = (a.profile?.name ?? '').trim();
+        const bName = (b.profile?.name ?? '').trim();
+        if (!aName && !bName) return 0;
+        if (!aName) return 1;
+        if (!bName) return -1;
+        return aName.localeCompare(bName, 'pt-BR', { sensitivity: 'base' });
+      });
+
+      setMembers(sorted);
     }
     setLoading(false);
   }
