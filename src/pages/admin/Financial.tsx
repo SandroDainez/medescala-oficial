@@ -191,6 +191,7 @@ export default function AdminFinancial() {
             end_time,
             hospital,
             sector_id,
+            base_value,
             sector:sectors(name)
           )
         `)
@@ -214,12 +215,14 @@ export default function AdminFinancial() {
         .filter((d: any) => d.shift) // Only include assignments with valid shift data
         .map((d: any) => {
           const duration = calculateDuration(d.shift?.start_time || '', d.shift?.end_time || '');
+          // Use assigned_value if set, otherwise fallback to shift's base_value
+          const value = Number(d.assigned_value) > 0 ? Number(d.assigned_value) : Number(d.shift?.base_value) || 0;
           return {
             id: d.id,
             shift_id: d.shift_id,
             user_id: d.user_id,
             user_name: d.profile?.name || 'N/A',
-            assigned_value: Number(d.assigned_value) || 0,
+            assigned_value: value,
             shift_date: d.shift?.shift_date,
             start_time: d.shift?.start_time,
             end_time: d.shift?.end_time,
