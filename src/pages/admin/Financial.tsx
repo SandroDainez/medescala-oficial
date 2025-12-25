@@ -11,8 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
+import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye } from 'lucide-react';
-import { format, parseISO, startOfMonth, endOfMonth, subMonths, differenceInHours, differenceInMinutes } from 'date-fns';
+import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 // ============================================================
@@ -119,6 +120,7 @@ export default function AdminFinancial() {
   // Raw data from DB
   const [rawEntries, setRawEntries] = useState<RawShiftEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selfTestResult, setSelfTestResult] = useState<{ ok: boolean; errors: string[] } | null>(null);
   
   // Filters
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -628,12 +630,40 @@ export default function AdminFinancial() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              <div><span className="font-medium">Total carregado:</span> {auditData.totalLoaded}</div>
-              <div><span className="font-medium text-green-600">Com valor:</span> {auditData.withValue}</div>
-              <div><span className="font-medium text-amber-600">Sem valor:</span> {auditData.withoutValue}</div>
-              <div><span className="font-medium text-red-600">Valor inválido:</span> {auditData.invalidValue}</div>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm flex-1">
+                <div><span className="font-medium">Total carregado:</span> {auditData.totalLoaded}</div>
+                <div><span className="font-medium text-green-600">Com valor:</span> {auditData.withValue}</div>
+                <div><span className="font-medium text-amber-600">Sem valor:</span> {auditData.withoutValue}</div>
+                <div><span className="font-medium text-red-600">Valor inválido:</span> {auditData.invalidValue}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelfTestResult(runFinancialSelfTest())}
+                >
+                  Rodar self-test
+                </Button>
+                {selfTestResult && (
+                  selfTestResult.ok ? (
+                    <Badge variant="secondary" className="text-green-700 bg-green-100">Self-test OK</Badge>
+                  ) : (
+                    <Badge variant="destructive">Self-test FALHOU</Badge>
+                  )
+                )}
+              </div>
             </div>
+            {selfTestResult && !selfTestResult.ok && (
+              <div className="text-sm border rounded p-3 bg-background">
+                <p className="font-medium mb-1 text-red-600">Falhas:</p>
+                <ul className="list-disc pl-5 space-y-1">
+                  {selfTestResult.errors.map((e) => (
+                    <li key={e}>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <div className="border-t pt-4">
               <p className="font-medium mb-2">Detalhamento da soma (IDs incluídos):</p>
               <ScrollArea className="max-h-[200px] border rounded p-2 bg-background">
