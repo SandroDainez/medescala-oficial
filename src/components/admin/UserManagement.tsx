@@ -84,9 +84,13 @@ export default function UserManagement() {
   // Edit form fields
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
+  const [editCurrentEmail, setEditCurrentEmail] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editCpf, setEditCpf] = useState('');
   const [editCrm, setEditCrm] = useState('');
+  const [resetPasswordOnSave, setResetPasswordOnSave] = useState(false);
+  const [sendEmailOnSave, setSendEmailOnSave] = useState(false);
+  const [newPasswordFromReset, setNewPasswordFromReset] = useState<string | null>(null);
   const [editAddress, setEditAddress] = useState('');
   const [editBankName, setEditBankName] = useState('');
   const [editBankAgency, setEditBankAgency] = useState('');
@@ -294,10 +298,9 @@ export default function UserManagement() {
     setInvitePixKey('');
   }
 
-  function openEditDialog(member: MemberWithProfile) {
+  async function openEditDialog(member: MemberWithProfile) {
     setEditingMember(member);
     setEditName(member.profile?.name || '');
-    setEditEmail(''); 
     setEditPhone(member.profile?.phone || '');
     setEditCpf(member.profile?.cpf || '');
     setEditCrm(member.profile?.crm || '');
@@ -307,6 +310,9 @@ export default function UserManagement() {
     setEditBankAccount(member.profile?.bank_account || '');
     setEditPixKey(member.profile?.pix_key || '');
     setEditProfileType(member.profile?.profile_type || 'plantonista');
+    setResetPasswordOnSave(false);
+    setSendEmailOnSave(false);
+    setNewPasswordFromReset(null);
     
     // Load user's current sectors
     const userSectors = sectorMemberships
@@ -314,17 +320,32 @@ export default function UserManagement() {
       .map(sm => sm.sector_id);
     setEditSectorIds(userSectors);
     
+    // Fetch current email from auth via edge function
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        // We'll use a simple approach - store email from memberships if available
+        // For now, just set empty and let admin type new email if needed
+        setEditEmail('');
+        setEditCurrentEmail(member.email || '');
+      }
+    } catch (error) {
+      console.error('Error fetching user email:', error);
+      setEditEmail('');
+      setEditCurrentEmail('');
+    }
+    
     setEditDialogOpen(true);
   }
 
   async function handleUpdateUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!editingMember) return;
+    if (!editingMember || !currentTenantId) return;
 
     setIsUpdatingUser(true);
 
     try {
-      // Upsert profile to ensure it exists and is updated
+      // Update profile data first
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert({
@@ -344,16 +365,12 @@ export default function UserManagement() {
       if (profileError) throw profileError;
 
       // Update sector memberships
-      // First, get current memberships for this user
       const currentMemberships = sectorMemberships.filter(sm => sm.user_id === editingMember.user_id);
       const currentSectorIds = currentMemberships.map(sm => sm.sector_id);
 
-      // Sectors to add
       const sectorsToAdd = editSectorIds.filter(id => !currentSectorIds.includes(id));
-      // Sectors to remove
       const sectorsToRemove = currentSectorIds.filter(id => !editSectorIds.includes(id));
 
-      // Add new sector memberships
       if (sectorsToAdd.length > 0) {
         const newMemberships = sectorsToAdd.map(sectorId => ({
           tenant_id: currentTenantId,
@@ -369,7 +386,6 @@ export default function UserManagement() {
         if (addError) throw addError;
       }
 
-      // Remove old sector memberships
       if (sectorsToRemove.length > 0) {
         const idsToRemove = currentMemberships
           .filter(sm => sectorsToRemove.includes(sm.sector_id))
@@ -383,9 +399,60 @@ export default function UserManagement() {
         if (removeError) throw removeError;
       }
 
-      toast({ title: 'Usuário atualizado!' });
-      setEditDialogOpen(false);
-      setEditingMember(null);
+      // If email change, password reset, or send email is requested, call edge function
+      if (editEmail.trim() || resetPasswordOnSave || sendEmailOnSave) {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${session.access_token}`,
+                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+              },
+              body: JSON.stringify({
+                userId: editingMember.user_id,
+                tenantId: currentTenantId,
+                email: editEmail.trim() || undefined,
+                resetPassword: resetPasswordOnSave,
+                sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
+              }),
+            }
+          );
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            throw new Error(result.error || 'Erro ao atualizar usuário');
+          }
+
+          // Show new password if reset
+          if (result.passwordReset && result.newPassword) {
+            setNewPasswordFromReset(result.newPassword);
+            toast({ 
+              title: 'Senha resetada!',
+              description: result.emailSent 
+                ? 'Nova senha enviada por email.' 
+                : 'Copie a nova senha para o usuário.',
+            });
+          } else {
+            toast({ 
+              title: 'Usuário atualizado!',
+              description: result.emailSent ? 'Email de notificação enviado.' : undefined
+            });
+            setEditDialogOpen(false);
+            setEditingMember(null);
+          }
+        }
+      } else {
+        toast({ title: 'Usuário atualizado!' });
+        setEditDialogOpen(false);
+        setEditingMember(null);
+      }
+
       fetchMembers();
       fetchSectorMemberships();
     } catch (error: any) {
@@ -1168,6 +1235,24 @@ export default function UserManagement() {
                   </div>
                 </div>
 
+                {/* Email field */}
+                <div className="space-y-2">
+                  <Label htmlFor="editEmail" className="flex items-center gap-2">
+                    <Mail className="h-4 w-4" />
+                    E-mail de Acesso
+                  </Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="Novo email (deixe vazio para manter atual)"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Informe apenas se quiser alterar o email de login
+                  </p>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="editPhone">Telefone</Label>
@@ -1364,8 +1449,95 @@ export default function UserManagement() {
                 )}
               </div>
 
+              <Separator />
+
+              {/* Password & Email Actions */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-sm font-medium text-orange-500">
+                  <RefreshCw className="h-4 w-4" />
+                  Ações de Acesso
+                </div>
+                
+                <div className="space-y-3">
+                  <div 
+                    role="button"
+                    tabIndex={0}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${resetPasswordOnSave ? 'bg-orange-50 border-orange-300' : 'hover:bg-accent/50'}`}
+                    onClick={() => setResetPasswordOnSave(!resetPasswordOnSave)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setResetPasswordOnSave(!resetPasswordOnSave); }}
+                  >
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${resetPasswordOnSave ? 'border-orange-500 bg-orange-500 text-white' : 'border-input'}`}
+                    >
+                      {resetPasswordOnSave && (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    <div>
+                      <div className="font-medium">Resetar Senha</div>
+                      <p className="text-xs text-muted-foreground">Gera nova senha e marca para troca no próximo login</p>
+                    </div>
+                  </div>
+
+                  <div 
+                    role="button"
+                    tabIndex={0}
+                    className={`flex items-center gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${sendEmailOnSave ? 'bg-blue-50 border-blue-300' : 'hover:bg-accent/50'}`}
+                    onClick={() => setSendEmailOnSave(!sendEmailOnSave)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSendEmailOnSave(!sendEmailOnSave); }}
+                  >
+                    <span
+                      className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${sendEmailOnSave ? 'border-blue-500 bg-blue-500 text-white' : 'border-input'}`}
+                    >
+                      {sendEmailOnSave && (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </span>
+                    <div>
+                      <div className="font-medium">Enviar Email de Notificação</div>
+                      <p className="text-xs text-muted-foreground">Envia email com dados de acesso atualizados</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Show new password if reset was done */}
+                {newPasswordFromReset && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 space-y-2">
+                    <div className="flex items-center gap-2 text-green-700 font-medium">
+                      <Check className="h-4 w-4" />
+                      Nova senha gerada!
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input 
+                        value={newPasswordFromReset} 
+                        readOnly 
+                        className="font-mono text-sm bg-white"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={async () => {
+                          await navigator.clipboard.writeText(newPasswordFromReset);
+                          toast({ title: 'Senha copiada!' });
+                        }}
+                      >
+                        <Copy className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-green-600">
+                      Compartilhe essa senha com o usuário de forma segura.
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="flex gap-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setEditDialogOpen(false)}>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => { setEditDialogOpen(false); setNewPasswordFromReset(null); }}>
                   Cancelar
                 </Button>
                 <Button type="submit" className="flex-1" disabled={isUpdatingUser}>
