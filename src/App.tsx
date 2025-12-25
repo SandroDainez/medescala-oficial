@@ -112,6 +112,7 @@ function AppRoutes() {
         }
       >
         <Route index element={<UserCalendar />} />
+        <Route path="calendar" element={<UserCalendar />} />
         <Route path="shifts" element={<UserShifts />} />
         <Route path="swaps" element={<UserSwaps />} />
         <Route path="financial" element={<UserFinancial />} />
