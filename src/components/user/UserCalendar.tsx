@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, getDay, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -154,6 +154,23 @@ export default function UserCalendar() {
     return `${hours}h${em > 0 ? em.toString().padStart(2, '0') : '00'}`;
   }
 
+  // Check if shift is nocturnal (starts at 18:00 or later, or before 06:00)
+  function isNightShift(startTime: string) {
+    const [hour] = startTime.split(':').map(Number);
+    return hour >= 18 || hour < 6;
+  }
+
+  // Sort shifts: day shifts first, then night shifts
+  function sortShiftsByTime(shiftsToSort: Shift[]) {
+    return [...shiftsToSort].sort((a, b) => {
+      const aIsNight = isNightShift(a.start_time);
+      const bIsNight = isNightShift(b.start_time);
+      if (aIsNight !== bIsNight) return aIsNight ? 1 : -1; // Day first
+      // Within same type, sort by start time
+      return a.start_time.localeCompare(b.start_time);
+    });
+  }
+
   // Calendar setup
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(currentDate);
@@ -172,8 +189,11 @@ export default function UserCalendar() {
     ? selectedDateShifts.filter(s => isMyShift(s.id))
     : selectedDateShifts;
 
+  // Sort shifts: day first, then night
+  const sortedShifts = sortShiftsByTime(filteredShifts);
+
   // Group shifts by sector/hospital
-  const groupedShifts = filteredShifts.reduce((acc, shift) => {
+  const groupedShifts = sortedShifts.reduce((acc, shift) => {
     const key = shift.sector?.name || shift.hospital;
     if (!acc[key]) acc[key] = [];
     acc[key].push(shift);
@@ -328,8 +348,15 @@ export default function UserCalendar() {
                     const shiftAssignments = getAssignmentsForShift(shift.id);
                     const isMine = isMyShift(shift.id);
 
+                    const isNight = isNightShift(shift.start_time);
+
                     return (
-                      <div key={shift.id} className="flex items-center gap-3 px-4 py-3 border-b hover:bg-accent/30 transition-colors">
+                      <div key={shift.id} className={cn(
+                        "flex items-center gap-3 px-4 py-3 border-b transition-colors",
+                        isNight 
+                          ? "bg-indigo-950/30 hover:bg-indigo-950/50 border-l-2 border-l-indigo-400" 
+                          : "hover:bg-accent/30 border-l-2 border-l-amber-400"
+                      )}>
                         {/* Avatar stack or single */}
                         <div className="flex -space-x-2">
                           {shiftAssignments.slice(0, 3).map((assignment, idx) => (
@@ -352,7 +379,15 @@ export default function UserCalendar() {
                         {/* Shift info */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="text-sm text-muted-foreground">
+                            {isNight ? (
+                              <Moon className="h-3.5 w-3.5 text-indigo-400" />
+                            ) : (
+                              <Sun className="h-3.5 w-3.5 text-amber-500" />
+                            )}
+                            <span className={cn(
+                              "text-sm",
+                              isNight ? "text-indigo-300" : "text-muted-foreground"
+                            )}>
                               {shift.start_time.slice(0, 5)}
                             </span>
                             <span className="font-medium text-foreground truncate">
