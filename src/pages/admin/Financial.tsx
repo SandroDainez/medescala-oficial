@@ -7,11 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
-import { useToast } from '@/hooks/use-toast';
 import { useSyncShiftEntries } from '@/hooks/useSyncShiftEntries';
 import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, RefreshCw } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths } from 'date-fns';
@@ -31,22 +28,22 @@ interface ShiftEntry {
   duracao_horas?: number;
 }
 
-interface SectorSummary {
-  setor_id: string;
-  setor_name: string;
+interface PlantonistaSectorSummary {
+  plantonista_id: string;
+  plantonista_name: string;
   total_valor: number;
-  count_com_valor: number;
-  count_sem_valor: number;
+  total_plantoes: number;
+  total_sem_valor: number;
   entries: ShiftEntry[];
 }
 
-interface PlantonistaReport {
-  plantonista_id: string;
-  plantonista_name: string;
-  setores: SectorSummary[];
-  total_geral: number;
+interface SectorReport {
+  setor_id: string;
+  setor_name: string;
+  total_valor: number;
   total_plantoes: number;
   total_sem_valor: number;
+  plantonistas: PlantonistaSectorSummary[];
 }
 
 interface Sector {
@@ -60,14 +57,11 @@ interface Plantonista {
 }
 
 export default function AdminFinancial() {
-  const { user } = useAuth();
   const { currentTenantId } = useTenant();
-  const { toast } = useToast();
   const { syncAndNotify } = useSyncShiftEntries();
   
   // States
   const [shiftEntries, setShiftEntries] = useState<ShiftEntry[]>([]);
-  const [reports, setReports] = useState<PlantonistaReport[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [plantonistas, setPlantonistas] = useState<Plantonista[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,9 +73,9 @@ export default function AdminFinancial() {
   const [filterSetor, setFilterSetor] = useState<string>('all');
   const [filterPlantonista, setFilterPlantonista] = useState<string>('all');
   
-  // Expanded state
-  const [expandedPlantonistas, setExpandedPlantonistas] = useState<Set<string>>(new Set());
+  // Expanded state (setor -> plantonista)
   const [expandedSetores, setExpandedSetores] = useState<Set<string>>(new Set());
+  const [expandedPlantonistas, setExpandedPlantonistas] = useState<Set<string>>(new Set());
 
   // Quick date presets
   function setThisMonth() {
@@ -234,99 +228,106 @@ export default function AdminFinancial() {
 
     setShiftEntries(entries);
 
-    // Build reports grouped by plantonista and sector
-    const reportMap = new Map<string, PlantonistaReport>();
-
-    entries.forEach(entry => {
-      if (!reportMap.has(entry.plantonista_id)) {
-        reportMap.set(entry.plantonista_id, {
-          plantonista_id: entry.plantonista_id,
-          plantonista_name: entry.plantonista_name,
-          setores: [],
-          total_geral: 0,
-          total_plantoes: 0,
-          total_sem_valor: 0
-        });
-      }
-      
-      const report = reportMap.get(entry.plantonista_id)!;
-      
-      let sectorSummary = report.setores.find(s => s.setor_id === entry.setor_id);
-      if (!sectorSummary) {
-        sectorSummary = {
-          setor_id: entry.setor_id || 'sem-setor',
-          setor_name: entry.setor_name,
-          total_valor: 0,
-          count_com_valor: 0,
-          count_sem_valor: 0,
-          entries: []
-        };
-        report.setores.push(sectorSummary);
-      }
-      
-      sectorSummary.entries.push(entry);
-      
-      if (entry.valor !== null) {
-        sectorSummary.total_valor += entry.valor;
-        sectorSummary.count_com_valor++;
-        report.total_geral += entry.valor;
-      } else {
-        sectorSummary.count_sem_valor++;
-        report.total_sem_valor++;
-      }
-      
-      report.total_plantoes++;
-    });
-
-    // Sort entries by date within each sector
-    reportMap.forEach(report => {
-      report.setores.forEach(sector => {
-        sector.entries.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
-      });
-      report.setores.sort((a, b) => b.total_valor - a.total_valor);
-    });
-
-    const reportsArray = Array.from(reportMap.values())
-      .sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
-
-    setReports(reportsArray);
+    setShiftEntries(entries);
     setLoading(false);
   }
 
-  // Filtered reports based on filters
-  const filteredReports = useMemo(() => {
-    let result = reports;
-    
-    if (filterPlantonista !== 'all') {
-      result = result.filter(r => r.plantonista_id === filterPlantonista);
-    }
-    
-    if (filterSetor !== 'all') {
-      result = result.map(r => ({
-        ...r,
-        setores: r.setores.filter(s => s.setor_id === filterSetor)
-      })).filter(r => r.setores.length > 0);
-      
-      result = result.map(r => ({
-        ...r,
-        total_geral: r.setores.reduce((acc, s) => acc + s.total_valor, 0),
-        total_plantoes: r.setores.reduce((acc, s) => acc + s.entries.length, 0),
-        total_sem_valor: r.setores.reduce((acc, s) => acc + s.count_sem_valor, 0)
-      }));
-    }
-    
-    return result;
-  }, [reports, filterPlantonista, filterSetor]);
+  const filteredEntries = useMemo(() => {
+    return shiftEntries.filter((e) => {
+      if (filterPlantonista !== 'all' && e.plantonista_id !== filterPlantonista) return false;
+      if (filterSetor !== 'all' && e.setor_id !== filterSetor) return false;
+      return true;
+    });
+  }, [shiftEntries, filterPlantonista, filterSetor]);
 
-  // Grand totals
+  const sectorReports = useMemo((): SectorReport[] => {
+    const sectorMap = new Map<string, SectorReport>();
+
+    filteredEntries.forEach((entry) => {
+      const setorId = entry.setor_id || 'sem-setor';
+      const setorName = entry.setor_name || 'Sem Setor';
+
+      if (!sectorMap.has(setorId)) {
+        sectorMap.set(setorId, {
+          setor_id: setorId,
+          setor_name: setorName,
+          total_valor: 0,
+          total_plantoes: 0,
+          total_sem_valor: 0,
+          plantonistas: [],
+        });
+      }
+
+      const sector = sectorMap.get(setorId)!;
+      let plant = sector.plantonistas.find((p) => p.plantonista_id === entry.plantonista_id);
+
+      if (!plant) {
+        plant = {
+          plantonista_id: entry.plantonista_id,
+          plantonista_name: entry.plantonista_name,
+          total_valor: 0,
+          total_plantoes: 0,
+          total_sem_valor: 0,
+          entries: [],
+        };
+        sector.plantonistas.push(plant);
+      }
+
+      plant.entries.push(entry);
+      plant.total_plantoes += 1;
+      sector.total_plantoes += 1;
+
+      if (entry.valor !== null) {
+        const v = Number(entry.valor);
+        plant.total_valor += v;
+        sector.total_valor += v;
+      } else {
+        plant.total_sem_valor += 1;
+        sector.total_sem_valor += 1;
+      }
+    });
+
+    // sort
+    sectorMap.forEach((sector) => {
+      sector.plantonistas.forEach((p) => {
+        p.entries.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
+      });
+      sector.plantonistas.sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
+    });
+
+    return Array.from(sectorMap.values()).sort((a, b) => a.setor_name.localeCompare(b.setor_name));
+  }, [filteredEntries]);
+
+  const plantonistaTotals = useMemo(() => {
+    const map = new Map<string, { plantonista_id: string; plantonista_name: string; total_plantoes: number; total_sem_valor: number; total_valor: number }>();
+
+    filteredEntries.forEach((e) => {
+      if (!map.has(e.plantonista_id)) {
+        map.set(e.plantonista_id, {
+          plantonista_id: e.plantonista_id,
+          plantonista_name: e.plantonista_name,
+          total_plantoes: 0,
+          total_sem_valor: 0,
+          total_valor: 0,
+        });
+      }
+      const row = map.get(e.plantonista_id)!;
+      row.total_plantoes += 1;
+      if (e.valor !== null) row.total_valor += Number(e.valor);
+      else row.total_sem_valor += 1;
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.plantonista_name.localeCompare(b.plantonista_name));
+  }, [filteredEntries]);
+
   const grandTotals = useMemo(() => {
     return {
-      total_valor: filteredReports.reduce((acc, r) => acc + r.total_geral, 0),
-      total_plantoes: filteredReports.reduce((acc, r) => acc + r.total_plantoes, 0),
-      total_sem_valor: filteredReports.reduce((acc, r) => acc + r.total_sem_valor, 0),
-      total_plantonistas: filteredReports.length
+      total_valor: plantonistaTotals.reduce((acc, r) => acc + r.total_valor, 0),
+      total_plantoes: plantonistaTotals.reduce((acc, r) => acc + r.total_plantoes, 0),
+      total_sem_valor: plantonistaTotals.reduce((acc, r) => acc + r.total_sem_valor, 0),
+      total_plantonistas: plantonistaTotals.length,
     };
-  }, [filteredReports]);
+  }, [plantonistaTotals]);
 
   function togglePlantonista(id: string) {
     setExpandedPlantonistas(prev => {
@@ -347,58 +348,42 @@ export default function AdminFinancial() {
   }
 
   function expandAll() {
-    const allPlantonistas = new Set(filteredReports.map(r => r.plantonista_id));
-    const allSetores = new Set<string>();
-    filteredReports.forEach(r => {
-      r.setores.forEach(s => {
-        allSetores.add(`${r.plantonista_id}-${s.setor_id}`);
-      });
+    const allSetores = new Set<string>(sectorReports.map((s) => s.setor_id));
+    const allPlantonistas = new Set<string>();
+    sectorReports.forEach((s) => {
+      s.plantonistas.forEach((p) => allPlantonistas.add(`${s.setor_id}-${p.plantonista_id}`));
     });
-    setExpandedPlantonistas(allPlantonistas);
     setExpandedSetores(allSetores);
+    setExpandedPlantonistas(allPlantonistas);
   }
 
   function collapseAll() {
-    setExpandedPlantonistas(new Set());
-    setExpandedSetores(new Set());
+    setExpandedSetores(new Set<string>());
+    setExpandedPlantonistas(new Set<string>());
   }
 
   function exportCSV() {
-    const headers = ['Plantonista', 'Setor', 'Data', 'Valor', 'Status'];
-    const rows: string[][] = [];
+    const headers = ['Setor', 'Plantonista', 'Data', 'Valor', 'Status'];
 
-    filteredReports.forEach(report => {
-      report.setores.forEach(sector => {
-        sector.entries.forEach(entry => {
-          rows.push([
-            entry.plantonista_name,
-            entry.setor_name,
-            format(parseISO(entry.data), 'dd/MM/yyyy'),
-            entry.valor !== null ? entry.valor.toFixed(2) : '',
-            entry.status_valor === 'COM_VALOR' ? 'Com valor' : 'Sem valor'
-          ]);
-        });
-        rows.push([
-          '',
-          `SUBTOTAL ${sector.setor_name}`,
-          '',
-          sector.total_valor.toFixed(2),
-          `(${sector.count_sem_valor} sem valor)`
-        ]);
-      });
-      rows.push([
-        `TOTAL ${report.plantonista_name}`,
-        '',
-        '',
-        report.total_geral.toFixed(2),
-        ''
-      ]);
-      rows.push(['', '', '', '', '']);
+    const sorted = [...filteredEntries].sort((a, b) => {
+      const setor = a.setor_name.localeCompare(b.setor_name);
+      if (setor !== 0) return setor;
+      const pl = a.plantonista_name.localeCompare(b.plantonista_name);
+      if (pl !== 0) return pl;
+      return new Date(a.data).getTime() - new Date(b.data).getTime();
     });
+
+    const rows: string[][] = sorted.map((e) => [
+      e.setor_name,
+      e.plantonista_name,
+      format(parseISO(e.data), 'dd/MM/yyyy'),
+      e.valor !== null ? Number(e.valor).toFixed(2) : '',
+      e.status_valor === 'COM_VALOR' ? 'Com valor' : 'Sem valor',
+    ]);
 
     rows.push(['TOTAL GERAL', '', '', grandTotals.total_valor.toFixed(2), '']);
 
-    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -580,8 +565,8 @@ export default function AdminFinancial() {
         <Button variant="outline" size="sm" onClick={collapseAll}>Recolher Todos</Button>
       </div>
 
-      {/* Reports by Plantonista */}
-      {filteredReports.length === 0 ? (
+      {/* Relatório por Setor (tabela separada por plantonista) */}
+      {sectorReports.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -591,162 +576,155 @@ export default function AdminFinancial() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredReports.map(report => (
-            <Card key={report.plantonista_id} className="overflow-hidden">
-              {/* Plantonista Header */}
-              <div
-                className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
-                onClick={() => togglePlantonista(report.plantonista_id)}
-              >
-                <div className="flex items-center gap-3">
-                  {expandedPlantonistas.has(report.plantonista_id) 
-                    ? <ChevronDown className="h-5 w-5" />
-                    : <ChevronRight className="h-5 w-5" />
-                  }
-                  <div>
-                    <h3 className="font-semibold text-lg">{report.plantonista_name}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {report.total_plantoes} plantões em {report.setores.length} setor(es)
-                      {report.total_sem_valor > 0 && (
-                        <span className="text-amber-500 ml-2">
-                          ({report.total_sem_valor} sem valor)
-                        </span>
-                      )}
-                    </p>
+          {sectorReports.map((sector) => {
+            const setorId = sector.setor_id;
+            const setorExpanded = expandedSetores.has(setorId);
+
+            return (
+              <Card key={setorId} className="overflow-hidden">
+                <div
+                  className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                  onClick={() => toggleSetor(setorId)}
+                >
+                  <div className="flex items-center gap-3">
+                    {setorExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <div>
+                      <h3 className="font-semibold text-lg flex items-center gap-2">
+                        <Building className="h-5 w-5 text-muted-foreground" />
+                        {sector.setor_name}
+                      </h3>
+                      <p className="text-sm text-muted-foreground">
+                        {sector.total_plantoes} plantões · {sector.plantonistas.length} plantonista(s)
+                        {sector.total_sem_valor > 0 && (
+                          <span className="text-amber-500 ml-2">({sector.total_sem_valor} sem valor)</span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xl font-bold text-green-600">{formatCurrency(sector.total_valor)}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-xl font-bold text-green-600">{formatCurrency(report.total_geral)}</p>
-                </div>
-              </div>
 
-              {/* Expanded Content */}
-              {expandedPlantonistas.has(report.plantonista_id) && (
-                <CardContent className="p-0">
-                  {report.setores.map(sector => {
-                    const sectorKey = `${report.plantonista_id}-${sector.setor_id}`;
-                    const isExpanded = expandedSetores.has(sectorKey);
-                    
-                    return (
-                      <div key={sector.setor_id} className="border-t">
-                        {/* Sector Header */}
-                        <div
-                          className="flex items-center justify-between p-3 pl-8 bg-background cursor-pointer hover:bg-muted/30 transition-colors"
-                          onClick={() => toggleSetor(sectorKey)}
-                        >
-                          <div className="flex items-center gap-3">
-                            {isExpanded
-                              ? <ChevronDown className="h-4 w-4" />
-                              : <ChevronRight className="h-4 w-4" />
-                            }
-                            <Building className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="font-medium">{sector.setor_name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {sector.entries.length} plantões
-                                {sector.count_sem_valor > 0 && (
-                                  <span className="text-amber-500 ml-1">
-                                    ({sector.count_sem_valor} sem valor)
-                                  </span>
-                                )}
-                              </p>
+                {setorExpanded && (
+                  <CardContent className="p-0">
+                    {sector.plantonistas.map((p) => {
+                      const key = `${setorId}-${p.plantonista_id}`;
+                      const expanded = expandedPlantonistas.has(key);
+
+                      return (
+                        <div key={p.plantonista_id} className="border-t">
+                          <div
+                            className="flex items-center justify-between p-3 pl-8 bg-background cursor-pointer hover:bg-muted/30 transition-colors"
+                            onClick={() => togglePlantonista(key)}
+                          >
+                            <div className="flex items-center gap-3">
+                              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                              <div>
+                                <p className="font-medium">{p.plantonista_name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {p.total_plantoes} plantões
+                                  {p.total_sem_valor > 0 && (
+                                    <span className="text-amber-500 ml-1">({p.total_sem_valor} sem valor)</span>
+                                  )}
+                                </p>
+                              </div>
                             </div>
+                            <Badge variant="secondary" className="text-green-600 bg-green-100">
+                              {formatCurrency(p.total_valor)}
+                            </Badge>
                           </div>
-                          <Badge variant="secondary" className="text-green-600 bg-green-100">
-                            {formatCurrency(sector.total_valor)}
-                          </Badge>
-                        </div>
 
-                        {/* Shift Details Table */}
-                        {isExpanded && (
-                          <div className="pl-12 pr-4 pb-4">
-                            <ScrollArea className="max-h-[400px]">
-                              <Table>
-                                <TableHeader>
-                                  <TableRow>
-                                    <TableHead className="w-[120px]">Data</TableHead>
-                                    <TableHead className="text-right">Valor</TableHead>
-                                  </TableRow>
-                                </TableHeader>
-                                <TableBody>
-                                  {sector.entries.map(entry => (
-                                    <TableRow key={entry.id}>
-                                      <TableCell className="font-medium">
-                                        {format(parseISO(entry.data), "dd/MM/yyyy (EEEE)", { locale: ptBR })}
-                                      </TableCell>
+                          {expanded && (
+                            <div className="pl-12 pr-4 pb-4">
+                              <ScrollArea className="max-h-[400px]">
+                                <Table>
+                                  <TableHeader>
+                                    <TableRow>
+                                      <TableHead className="w-[160px]">Data</TableHead>
+                                      <TableHead className="text-right">Valor</TableHead>
+                                    </TableRow>
+                                  </TableHeader>
+                                  <TableBody>
+                                    {p.entries.map((entry) => (
+                                      <TableRow key={entry.id}>
+                                        <TableCell className="font-medium">
+                                          {format(parseISO(entry.data), 'dd/MM/yyyy (EEEE)', { locale: ptBR })}
+                                        </TableCell>
+                                        <TableCell className="text-right">
+                                          {entry.valor !== null ? (
+                                            <span className="font-medium text-green-600">{formatCurrency(entry.valor)}</span>
+                                          ) : (
+                                            <Badge variant="outline" className="text-amber-500 border-amber-500">
+                                              Sem valor atribuído
+                                            </Badge>
+                                          )}
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+
+                                    <TableRow className="bg-muted/30 font-medium">
                                       <TableCell className="text-right">
-                                        {entry.valor !== null ? (
-                                          <span className="font-medium text-green-600">
-                                            {formatCurrency(entry.valor)}
-                                          </span>
-                                        ) : (
-                                          <Badge variant="outline" className="text-amber-500 border-amber-500">
-                                            Sem valor atribuído
-                                          </Badge>
+                                        Subtotal {p.plantonista_name}
+                                        {p.total_sem_valor > 0 && (
+                                          <span className="text-amber-500 font-normal ml-2">({p.total_sem_valor} sem valor)</span>
                                         )}
                                       </TableCell>
+                                      <TableCell className="text-right text-green-600">{formatCurrency(p.total_valor)}</TableCell>
                                     </TableRow>
-                                  ))}
-                                  {/* Sector Total Row */}
-                                  <TableRow className="bg-muted/30 font-medium">
-                                    <TableCell className="text-right">
-                                      Subtotal {sector.setor_name}
-                                      {sector.count_sem_valor > 0 && (
-                                        <span className="text-amber-500 font-normal ml-2">
-                                          ({sector.count_sem_valor} sem valor)
-                                        </span>
-                                      )}
-                                    </TableCell>
-                                    <TableCell className="text-right text-green-600">
-                                      {formatCurrency(sector.total_valor)}
-                                    </TableCell>
-                                  </TableRow>
-                                </TableBody>
-                              </Table>
-                            </ScrollArea>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  {/* Plantonista Total Summary */}
-                  {report.setores.length > 1 && (
-                    <div className="border-t p-4 bg-muted/20">
-                      <div className="space-y-2">
-                        <p className="font-semibold text-sm text-muted-foreground">Resumo por Setor:</p>
-                        <div className="grid gap-2">
-                          {report.setores.map(sector => (
-                            <div key={sector.setor_id} className="flex justify-between text-sm pl-4">
-                              <span>{sector.setor_name}</span>
-                              <span className="font-medium">
-                                {formatCurrency(sector.total_valor)}
-                                {sector.count_sem_valor > 0 && (
-                                  <span className="text-amber-500 ml-2">
-                                    ({sector.count_sem_valor} sem valor)
-                                  </span>
-                                )}
-                              </span>
+                                  </TableBody>
+                                </Table>
+                              </ScrollArea>
                             </div>
-                          ))}
+                          )}
                         </div>
-                        <Separator />
-                        <div className="flex justify-between font-bold">
-                          <span>Total Geral {report.plantonista_name}</span>
-                          <span className="text-green-600">{formatCurrency(report.total_geral)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              )}
-            </Card>
-          ))}
+                      );
+                    })}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
+
+          {/* Resumo por Plantonista (somando todos os setores) */}
+          <Card className="bg-primary/5">
+            <CardHeader>
+              <CardTitle className="text-lg">Resumo por plantonista (todos os setores)</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/30">
+                    <TableHead>Plantonista</TableHead>
+                    <TableHead className="text-center">Plantões</TableHead>
+                    <TableHead className="text-center">Sem valor</TableHead>
+                    <TableHead className="text-right">Total a receber</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {plantonistaTotals.map((p) => (
+                    <TableRow key={p.plantonista_id}>
+                      <TableCell className="font-medium">{p.plantonista_name}</TableCell>
+                      <TableCell className="text-center"><Badge variant="secondary">{p.total_plantoes}</Badge></TableCell>
+                      <TableCell className="text-center">
+                        {p.total_sem_valor > 0 ? (
+                          <Badge variant="outline" className="text-amber-500 border-amber-500">{p.total_sem_valor}</Badge>
+                        ) : (
+                          <span className="text-muted-foreground">0</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-semibold text-green-600">{formatCurrency(p.total_valor)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         </div>
       )}
 
       {/* Grand Total Card */}
-      {filteredReports.length > 0 && (
+      {sectorReports.length > 0 && (
         <Card className="border-2 border-primary">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -755,9 +733,7 @@ export default function AdminFinancial() {
                 <p className="text-sm text-muted-foreground">
                   {grandTotals.total_plantonistas} plantonistas · {grandTotals.total_plantoes} plantões
                   {grandTotals.total_sem_valor > 0 && (
-                    <span className="text-amber-500 ml-2">
-                      · {grandTotals.total_sem_valor} sem valor atribuído
-                    </span>
+                    <span className="text-amber-500 ml-2">· {grandTotals.total_sem_valor} sem valor atribuído</span>
                   )}
                 </p>
               </div>
