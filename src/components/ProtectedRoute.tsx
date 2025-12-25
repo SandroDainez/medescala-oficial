@@ -31,23 +31,32 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
       }
 
       try {
-        // Check password status
-        const { data: profile } = await supabase
+        // Check password status (avoid .single() throwing when profile row is missing)
+        const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('must_change_password')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
+
+        if (profileError) {
+          console.warn('ProtectedRoute: failed to fetch profile:', profileError);
+        }
 
         // Check tenant access status
-        const { data: tenantAccess } = await supabase
+        const { data: tenantAccess, error: accessError } = await supabase
           .rpc('get_tenant_access_status', { _tenant_id: currentTenantId });
+
+        if (accessError) {
+          console.warn('ProtectedRoute: failed to fetch tenant access status:', accessError);
+        }
 
         const accessData = tenantAccess?.[0];
 
         setAccessStatus({
           mustChangePassword: profile?.must_change_password ?? false,
-          isAccessActive: accessData?.is_unlimited || 
-            accessData?.status === 'active' || 
+          isAccessActive:
+            accessData?.is_unlimited ||
+            accessData?.status === 'active' ||
             (accessData?.status === 'trial' && (accessData?.days_remaining ?? 0) > 0),
           isUnlimited: accessData?.is_unlimited ?? false,
           trialEndsAt: accessData?.trial_ends_at ?? null,
@@ -55,7 +64,7 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
         });
       } catch (error) {
         console.error('Error checking access status:', error);
-        // Default to allowing access on error
+        // Default to allowing access on unexpected errors
         setAccessStatus({
           mustChangePassword: false,
           isAccessActive: true,

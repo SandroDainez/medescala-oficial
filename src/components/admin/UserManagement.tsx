@@ -137,16 +137,22 @@ export default function UserManagement() {
   async function fetchTenantInfo() {
     if (!currentTenantId) return;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('tenants')
       .select('slug, max_users, current_users_count')
       .eq('id', currentTenantId)
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      console.warn('UserManagement: failed to fetch tenant info:', error);
+      return;
+    }
 
     if (data) {
       setTenantInfo(data);
     }
   }
+
 
   async function fetchSectors() {
     if (!currentTenantId) return;
