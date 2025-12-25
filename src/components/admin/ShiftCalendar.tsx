@@ -285,6 +285,14 @@ export default function ShiftCalendar() {
     return hospital;
   }
 
+  // Helper to parse monetary values with precision (avoids floating point errors)
+  function parseMoneyValue(value: string | number): number {
+    if (typeof value === 'number') return Math.round(value * 100) / 100;
+    const parsed = parseFloat(value);
+    if (isNaN(parsed)) return 0;
+    return Math.round(parsed * 100) / 100;
+  }
+
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
@@ -367,7 +375,7 @@ export default function ShiftCalendar() {
       shift_date: formData.shift_date,
       start_time: formData.start_time,
       end_time: formData.end_time,
-      base_value: parseFloat(formData.base_value) || 0,
+      base_value: parseMoneyValue(formData.base_value),
       notes: shiftNotes || null,
       sector_id: formData.sector_id || null,
       created_by: user?.id,
@@ -397,7 +405,7 @@ export default function ShiftCalendar() {
                 .from('shift_assignments')
                 .update({ 
                   user_id: formData.assigned_user_id,
-                  assigned_value: parseFloat(formData.base_value) || 0,
+                  assigned_value: parseMoneyValue(formData.base_value),
                   updated_by: user?.id,
                 })
                 .eq('id', currentAssignment.id);
@@ -408,7 +416,7 @@ export default function ShiftCalendar() {
               tenant_id: currentTenantId,
               shift_id: editingShift.id,
               user_id: formData.assigned_user_id,
-              assigned_value: parseFloat(formData.base_value) || 0,
+              assigned_value: parseMoneyValue(formData.base_value),
               created_by: user?.id,
             });
           }
@@ -454,7 +462,7 @@ export default function ShiftCalendar() {
                 tenant_id: currentTenantId,
                 shift_id: duplicatedShift.id,
                 user_id: formData.assigned_user_id,
-                assigned_value: parseFloat(formData.base_value) || 0,
+                assigned_value: parseMoneyValue(formData.base_value),
                 created_by: user?.id,
               });
             }
@@ -510,7 +518,7 @@ export default function ShiftCalendar() {
             tenant_id: currentTenantId,
             shift_id: createdShift.id,
             user_id: userIdForShift,
-            assigned_value: parseFloat(formData.base_value) || 0,
+            assigned_value: parseMoneyValue(formData.base_value),
             created_by: user?.id,
           });
         }
@@ -680,7 +688,7 @@ export default function ShiftCalendar() {
         shift_date: dateStr,
         start_time: formData.start_time,
         end_time: formData.end_time,
-        base_value: parseFloat(formData.base_value) || 0,
+        base_value: parseMoneyValue(formData.base_value),
         notes: shiftNotes || null,
         sector_id: formData.sector_id || null,
         created_by: user?.id,
@@ -708,7 +716,7 @@ export default function ShiftCalendar() {
           tenant_id: currentTenantId,
           shift_id: newShift.id,
           user_id: formData.assigned_user_id,
-          assigned_value: parseFloat(formData.base_value) || 0,
+          assigned_value: parseMoneyValue(formData.base_value),
           created_by: user?.id,
         });
       }
@@ -869,7 +877,7 @@ export default function ShiftCalendar() {
       tenant_id: currentTenantId,
       shift_id: selectedShift.id,
       user_id: assignData.user_id,
-      assigned_value: parseFloat(assignData.assigned_value) || selectedShift.base_value,
+      assigned_value: parseMoneyValue(assignData.assigned_value) || selectedShift.base_value,
       created_by: user?.id,
     });
 
@@ -1084,7 +1092,7 @@ export default function ShiftCalendar() {
             location: editData.location || null,
             start_time: editData.start_time,
             end_time: editData.end_time,
-            base_value: parseFloat(editData.base_value) || 0,
+            base_value: parseMoneyValue(editData.base_value),
             notes: editData.notes || null,
             sector_id: editData.sector_id || null,
             title: generateShiftTitle(editData.start_time, editData.end_time),
@@ -1120,7 +1128,7 @@ export default function ShiftCalendar() {
               .insert({
                 shift_id: editData.id,
                 user_id: editData.assigned_user_id,
-                assigned_value: parseFloat(editData.base_value) || 0,
+                assigned_value: parseMoneyValue(editData.base_value),
                 tenant_id: currentTenantId,
                 created_by: user.id,
               });
