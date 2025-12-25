@@ -65,11 +65,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    // If the server-side session is already gone (common on mobile after long idle),
-    // fallback to a local-only sign out so the app can still log out cleanly.
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      await supabase.auth.signOut({ scope: 'local' });
+    // Make logout resilient on mobile/PWA where server session may already be gone.
+    try {
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
+
+    // Always clear local auth state/storage.
+    await supabase.auth.signOut({ scope: 'local' });
+
+    // Clear app-specific tenant selection so next login starts clean.
+    try {
+      localStorage.removeItem('medescala_current_tenant');
+    } catch {
+      // ignore
     }
 
     // Ensure UI updates immediately even if the auth event is delayed.
