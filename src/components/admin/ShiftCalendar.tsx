@@ -895,11 +895,16 @@ export default function ShiftCalendar() {
     e.preventDefault();
     if (!selectedShift || !currentTenantId) return;
 
+    const hasCustomValue = (assignData.assigned_value ?? '').toString().trim() !== '';
+    const assignedValue = hasCustomValue
+      ? parseMoneyValue(assignData.assigned_value)
+      : Number(selectedShift.base_value);
+
     const { error } = await supabase.from('shift_assignments').insert({
       tenant_id: currentTenantId,
       shift_id: selectedShift.id,
       user_id: assignData.user_id,
-      assigned_value: parseMoneyValue(assignData.assigned_value) || selectedShift.base_value,
+      assigned_value: assignedValue,
       created_by: user?.id,
     });
 
@@ -3011,10 +3016,17 @@ export default function ShiftCalendar() {
               <Label htmlFor="assigned_value">Valor Atribuído (R$)</Label>
               <Input
                 id="assigned_value"
-                type="number"
-                step="0.01"
+                type="text"
+                inputMode="decimal"
+                placeholder="0,00"
                 value={assignData.assigned_value}
                 onChange={(e) => setAssignData({ ...assignData, assigned_value: e.target.value })}
+                onBlur={() =>
+                  setAssignData((prev) => ({
+                    ...prev,
+                    assigned_value: prev.assigned_value ? formatMoneyInput(prev.assigned_value) : '',
+                  }))
+                }
               />
             </div>
             <Button type="submit" className="w-full" disabled={!assignData.user_id}>
