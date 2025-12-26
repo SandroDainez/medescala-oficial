@@ -1,13 +1,12 @@
+import { useParams } from 'react-router-dom';
 import ShiftCalendar from '@/components/admin/ShiftCalendar';
 
 export default function AdminCalendar() {
+  const { sectorId } = useParams<{ sectorId?: string }>();
+  
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">Escalas</h2>
-        <p className="text-muted-foreground">Visualize e gerencie escalas por mês e setor</p>
-      </div>
-      <ShiftCalendar />
+    <div className="space-y-4">
+      <ShiftCalendar initialSectorId={sectorId} />
     </div>
   );
 }

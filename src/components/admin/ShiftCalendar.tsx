@@ -68,7 +68,11 @@ interface SectorMembership {
 type ViewMode = 'month' | 'week';
 type ShiftAssignmentType = 'vago' | 'disponivel' | string; // string is user_id
 
-export default function ShiftCalendar() {
+interface ShiftCalendarProps {
+  initialSectorId?: string;
+}
+
+export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
@@ -84,7 +88,7 @@ export default function ShiftCalendar() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [filterSector, setFilterSector] = useState<string>(searchParams.get('sector') || 'all');
+  const [filterSector, setFilterSector] = useState<string>(initialSectorId || searchParams.get('sector') || 'all');
 
   // When viewing a specific sector card while filter is "all",
   // keep the day dialog scoped to that sector.
@@ -166,6 +170,13 @@ export default function ShiftCalendar() {
     user_id: '',
     assigned_value: '',
   });
+
+  // Update filter when initialSectorId changes (from URL)
+  useEffect(() => {
+    if (initialSectorId !== undefined) {
+      setFilterSector(initialSectorId || 'all');
+    }
+  }, [initialSectorId]);
 
   useEffect(() => {
     if (currentTenantId) {
@@ -2044,8 +2055,36 @@ export default function ShiftCalendar() {
     return <div className="text-muted-foreground p-4">Carregando calendário...</div>;
   }
 
+  // Get current sector name for header
+  const currentSectorName = filterSector === 'all' 
+    ? 'Todos os Setores' 
+    : sectors.find(s => s.id === filterSector)?.name || 'Setor';
+  
+  const currentSectorColor = filterSector !== 'all' 
+    ? sectors.find(s => s.id === filterSector)?.color || '#22c55e'
+    : null;
+
   return (
     <div className="space-y-4">
+      {/* Page Header */}
+      <div className="flex items-center gap-3">
+        {currentSectorColor && (
+          <div 
+            className="w-4 h-4 rounded-full" 
+            style={{ backgroundColor: currentSectorColor }}
+          />
+        )}
+        <div>
+          <h2 className="text-2xl font-bold text-foreground">{currentSectorName}</h2>
+          <p className="text-muted-foreground text-sm">
+            {viewMode === 'month' 
+              ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+              : `Semana de ${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })}`
+            }
+          </p>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -2152,64 +2191,10 @@ export default function ShiftCalendar() {
         </Card>
       )}
 
-      {/* Main Layout: Vertical Sector Sidebar + Calendar */}
-      <div className="flex gap-4">
-        {/* Vertical Sector Sidebar */}
-        <div className="w-64 sm:w-72 md:w-80 flex-shrink-0">
-          <Card className="sticky top-4">
-            <CardContent className="p-2 md:p-3">
-              <div className="flex flex-col gap-1">
-                {/* All Sectors Button */}
-                <Button
-                  variant={filterSector === 'all' ? 'default' : 'ghost'}
-                  className={`w-full justify-start gap-2 h-auto py-3 ${filterSector === 'all' ? '' : 'hover:bg-accent'}`}
-                  onClick={() => setFilterSector('all')}
-                >
-                  <LayoutGrid className="h-5 w-5 flex-shrink-0" />
-                  <span className="text-sm font-medium">Todos os Setores</span>
-                </Button>
-
-                <div className="my-2 border-t" />
-
-                {/* Sector Buttons */}
-                {sectors.map(sector => {
-                  const sectorShifts = shifts.filter(s => s.sector_id === sector.id);
-                  const isActive = filterSector === sector.id;
-
-                  return (
-                    <Button
-                      key={sector.id}
-                      variant={isActive ? 'secondary' : 'ghost'}
-                      className={`w-full justify-start gap-2 h-auto py-3 min-h-[60px] ${isActive ? '' : 'hover:bg-accent'}`}
-                      style={isActive ? {
-                        backgroundColor: `${sector.color || '#22c55e'}20`,
-                        borderLeft: `3px solid ${sector.color || '#22c55e'}`
-                      } : {}}
-                      onClick={() => setFilterSector(sector.id)}
-                      title={sector.name}
-                    >
-                      <span
-                        className="w-4 h-4 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: sector.color || '#22c55e' }}
-                      />
-                      <span className="flex flex-col items-start text-left flex-1 min-w-0">
-                        <span className="text-sm font-medium leading-snug break-words whitespace-normal">
-                          {sector.name}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          {sectorShifts.length} plantões
-                        </span>
-                      </span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
+      {/* Main Layout: Calendar (full width now that sectors are in main sidebar) */}
+      <div>
         {/* Calendar Area */}
-        <div className="flex-1 min-w-0">
+        <div className="w-full">
           {/* Header Controls */}
           <div className="flex flex-col gap-4 mb-4">
             <div className="flex flex-wrap items-center justify-between gap-2">

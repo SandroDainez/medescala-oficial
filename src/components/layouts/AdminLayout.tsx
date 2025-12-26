@@ -22,13 +22,22 @@ import {
   FileSpreadsheet,
   Shield,
   Bell,
-  Hand
+  Hand,
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+
+interface Sector {
+  id: string;
+  name: string;
+  color: string | null;
+}
 
 const navItems = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/admin/calendar', label: 'Escalas', icon: CalendarDays },
   { to: '/admin/shifts', label: 'Lista de Plantões', icon: ListTodo },
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
@@ -42,15 +51,37 @@ const navItems = [
 
 export function AdminLayout() {
   const { user, signOut } = useAuth();
-  const { currentTenantName } = useTenant();
+  const { currentTenantId, currentTenantName } = useTenant();
   const { isSuperAdmin } = useSuperAdmin();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [sectors, setSectors] = useState<Sector[]>([]);
+  const [escalasOpen, setEscalasOpen] = useState(true);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchSectors();
+    }
+  }, [currentTenantId]);
+
+  async function fetchSectors() {
+    if (!currentTenantId) return;
+    const { data } = await supabase
+      .from('sectors')
+      .select('id, name, color')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true)
+      .order('name');
+    if (data) setSectors(data);
+  }
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/auth');
   };
+
+  // Check if current route is a calendar sector route
+  const isCalendarRoute = window.location.pathname.startsWith('/admin/calendar');
 
   return (
     <div className="min-h-screen bg-background">
@@ -109,6 +140,87 @@ export function AdminLayout() {
         {/* Sidebar - Desktop */}
         <aside className="hidden w-64 border-r bg-card md:block">
           <nav className="flex flex-col gap-1 p-4 sticky top-16">
+            {/* Dashboard */}
+            <NavLink
+              to="/admin"
+              end
+              className={({ isActive }) =>
+                cn(
+                  'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                  isActive
+                    ? 'bg-primary text-primary-foreground shadow-primary'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                )
+              }
+            >
+              <LayoutDashboard className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
+              <span>Dashboard</span>
+            </NavLink>
+
+            {/* Escalas - Expandable with sectors */}
+            <Collapsible open={escalasOpen} onOpenChange={setEscalasOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  className={cn(
+                    'group flex items-center justify-between w-full rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                    isCalendarRoute
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )}
+                >
+                  <div className="flex items-center gap-3">
+                    <CalendarDays className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
+                    <span>Escalas</span>
+                  </div>
+                  {escalasOpen ? (
+                    <ChevronDown className="h-4 w-4" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4" />
+                  )}
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pl-4 mt-1 space-y-1">
+                {/* All sectors */}
+                <NavLink
+                  to="/admin/calendar"
+                  end
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    )
+                  }
+                >
+                  <div className="w-2 h-2 rounded-full bg-muted-foreground" />
+                  <span>Todos os Setores</span>
+                </NavLink>
+                {/* Individual sectors */}
+                {sectors.map((sector) => (
+                  <NavLink
+                    key={sector.id}
+                    to={`/admin/calendar/${sector.id}`}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )
+                    }
+                  >
+                    <div 
+                      className="w-2 h-2 rounded-full" 
+                      style={{ backgroundColor: sector.color || '#6b7280' }}
+                    />
+                    <span className="truncate">{sector.name}</span>
+                  </NavLink>
+                ))}
+              </CollapsibleContent>
+            </Collapsible>
+
+            {/* Other nav items */}
             {navItems.map((item, index) => (
               <NavLink
                 key={item.to}
@@ -122,12 +234,8 @@ export function AdminLayout() {
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                   )
                 }
-                style={{ animationDelay: `${index * 50}ms` }}
               >
-                <item.icon className={cn(
-                  "h-5 w-5 transition-transform duration-200",
-                  "group-hover:scale-110"
-                )} />
+                <item.icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
                 <span>{item.label}</span>
               </NavLink>
             ))}
@@ -155,10 +263,93 @@ export function AdminLayout() {
         {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-sm md:hidden animate-fade-in">
-            <nav className="flex flex-col gap-1 p-4">
+            <nav className="flex flex-col gap-1 p-4 overflow-y-auto max-h-[calc(100vh-4rem)]">
               <div className="mb-4">
                 <TenantSelector />
               </div>
+
+              {/* Dashboard - Mobile */}
+              <NavLink
+                to="/admin"
+                end
+                onClick={() => setMobileMenuOpen(false)}
+                className={({ isActive }) =>
+                  cn(
+                    'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                    isActive
+                      ? 'bg-primary text-primary-foreground shadow-primary'
+                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  )
+                }
+              >
+                <LayoutDashboard className="h-5 w-5" />
+                Dashboard
+              </NavLink>
+
+              {/* Escalas - Mobile Expandable */}
+              <Collapsible open={escalasOpen} onOpenChange={setEscalasOpen}>
+                <CollapsibleTrigger asChild>
+                  <button
+                    className={cn(
+                      'flex items-center justify-between w-full rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                      isCalendarRoute
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    )}
+                  >
+                    <div className="flex items-center gap-3">
+                      <CalendarDays className="h-5 w-5" />
+                      <span>Escalas</span>
+                    </div>
+                    {escalasOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pl-4 mt-1 space-y-1">
+                  <NavLink
+                    to="/admin/calendar"
+                    end
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )
+                    }
+                  >
+                    <div className="w-2 h-2 rounded-full bg-muted-foreground" />
+                    <span>Todos os Setores</span>
+                  </NavLink>
+                  {sectors.map((sector) => (
+                    <NavLink
+                      key={sector.id}
+                      to={`/admin/calendar/${sector.id}`}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                          isActive
+                            ? 'bg-primary text-primary-foreground'
+                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                        )
+                      }
+                    >
+                      <div 
+                        className="w-2 h-2 rounded-full" 
+                        style={{ backgroundColor: sector.color || '#6b7280' }}
+                      />
+                      <span className="truncate">{sector.name}</span>
+                    </NavLink>
+                  ))}
+                </CollapsibleContent>
+              </Collapsible>
+
+              {/* Other nav items - Mobile */}
               {navItems.map((item, index) => (
                 <NavLink
                   key={item.to}
