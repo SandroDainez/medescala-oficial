@@ -36,6 +36,10 @@ import UserCalendar from "./pages/user/Calendar";
 import UserShifts from "./pages/user/Shifts";
 import UserSwaps from "./pages/user/Swaps";
 import UserFinancial from "./pages/user/Financial";
+import UserNotifications from "./pages/user/Notifications";
+import UserSettings from "./pages/user/Settings";
+import UserAbout from "./pages/user/About";
+import UserFeedback from "./pages/user/Feedback";
 
 const queryClient = new QueryClient();
 
@@ -116,6 +120,10 @@ function AppRoutes() {
         <Route path="shifts" element={<UserShifts />} />
         <Route path="swaps" element={<UserSwaps />} />
         <Route path="financial" element={<UserFinancial />} />
+        <Route path="notifications" element={<UserNotifications />} />
+        <Route path="settings" element={<UserSettings />} />
+        <Route path="help" element={<UserAbout />} />
+        <Route path="feedback" element={<UserFeedback />} />
       </Route>
 
       <Route path="*" element={<NotFound />} />
