@@ -81,26 +81,30 @@ export default function UserAvailableShifts() {
       .gte('shift_date', today)
       .order('shift_date', { ascending: true });
 
-    // Fetch all active assignments to know which shifts are taken
-    const { data: assignmentsData } = await supabase
-      .from('shift_assignments')
-      .select('shift_id, user_id')
-      .eq('tenant_id', currentTenantId)
-      .in('status', ['assigned', 'confirmed', 'completed']);
+    const shiftIds = (shiftsData || []).map((s) => s.id);
+
+    // Fetch all active assignments for these shifts (some rows may have tenant_id null)
+    const { data: assignmentsData } = shiftIds.length
+      ? await supabase
+          .from('shift_assignments')
+          .select('shift_id, user_id, status')
+          .in('shift_id', shiftIds)
+          .in('status', ['assigned', 'confirmed', 'completed'])
+      : { data: [] as { shift_id: string; user_id: string; status: string }[] };
 
     // Get my assigned shifts
     const myAssigned = new Set(
-      assignmentsData?.filter(a => a.user_id === user.id).map(a => a.shift_id) || []
+      (assignmentsData || []).filter((a) => a.user_id === user.id).map((a) => a.shift_id)
     );
     setMyAssignedShiftIds(myAssigned);
 
     // Get all assigned shift IDs
-    const assignedShiftIds = new Set(assignmentsData?.map(a => a.shift_id) || []);
+    const assignedShiftIds = new Set((assignmentsData || []).map((a) => a.shift_id));
 
     // Filter to only available shifts (not assigned)
     const available = (shiftsData || [])
-      .filter(s => !assignedShiftIds.has(s.id))
-      .map(s => ({
+      .filter((s) => !assignedShiftIds.has(s.id))
+      .map((s) => ({
         ...s,
         sector: s.sector as AvailableShift['sector'],
       }));
