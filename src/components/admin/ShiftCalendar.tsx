@@ -799,65 +799,115 @@ export default function ShiftCalendar() {
     }
   }
 
-  // Copy schedule from current month to target month by DAY OF WEEK
-  // (e.g., Monday shifts copy to Mondays in target month)
+  // Copy schedule from current month to target month by DAY OF WEEK + occurrence in month
+  // Example: shifts on the 1st Monday of the source month will be copied to the 1st Monday of the target month.
   async function handleCopySchedule() {
     if (!currentTenantId || !copyTargetMonth || copyInProgress) return;
 
     setCopyInProgress(true);
 
     try {
-      // Get all shifts from the current month (use the already loaded shifts)
-      const shiftsToProcess = filterSector === 'all' 
-        ? shifts 
-        : shifts.filter(s => s.sector_id === filterSector);
+      const sourceMonthStart = startOfMonth(currentDate);
+      const sourceMonthEnd = endOfMonth(currentDate);
 
-      if (shiftsToProcess.length === 0) {
-        toast({ title: 'Nenhum plantão para copiar', description: 'Este mês não tem plantões cadastrados.', variant: 'destructive' });
-        setCopyInProgress(false);
+      // Always fetch the full source month (the UI might be on week view, which only loads a subset)
+      const shiftsRes = await supabase
+        .from('shifts')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', format(sourceMonthStart, 'yyyy-MM-dd'))
+        .lte('shift_date', format(sourceMonthEnd, 'yyyy-MM-dd'))
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      if (shiftsRes.error) {
+        toast({ title: 'Erro ao carregar plantões', description: shiftsRes.error.message, variant: 'destructive' });
         return;
       }
 
-      // Group shifts by day of week (0=Sunday, 1=Monday, ..., 6=Saturday)
-      const shiftsByDayOfWeek: Map<number, typeof shiftsToProcess> = new Map();
-      for (const shift of shiftsToProcess) {
-        const shiftDate = parseISO(shift.shift_date);
-        const dayOfWeek = shiftDate.getDay();
-        if (!shiftsByDayOfWeek.has(dayOfWeek)) {
-          shiftsByDayOfWeek.set(dayOfWeek, []);
-        }
-        shiftsByDayOfWeek.get(dayOfWeek)!.push(shift);
+      const monthShifts = (shiftsRes.data || []) as Shift[];
+      const shiftsToProcess = filterSector === 'all' ? monthShifts : monthShifts.filter(s => s.sector_id === filterSector);
+
+      if (shiftsToProcess.length === 0) {
+        toast({
+          title: 'Nenhum plantão para copiar',
+          description: 'Este mês não tem plantões cadastrados para o filtro atual.',
+          variant: 'destructive',
+        });
+        return;
       }
 
-      // Get all days in target month grouped by day of week
+      // Fetch assignments for the source shifts we will copy
+      const sourceShiftIds = shiftsToProcess.map(s => s.id);
+      const assignmentsRes = await supabase
+        .from('shift_assignments')
+        .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+        .in('shift_id', sourceShiftIds);
+
+      if (assignmentsRes.error) {
+        toast({ title: 'Erro ao carregar atribuições', description: assignmentsRes.error.message, variant: 'destructive' });
+        return;
+      }
+
+      const sourceAssignments = (assignmentsRes.data || []) as unknown as ShiftAssignment[];
+      const assignmentsByShiftId = new Map<string, ShiftAssignment[]>();
+      for (const a of sourceAssignments) {
+        if (!assignmentsByShiftId.has(a.shift_id)) assignmentsByShiftId.set(a.shift_id, []);
+        assignmentsByShiftId.get(a.shift_id)!.push(a);
+      }
+
+      // Build list of dates in source month grouped by weekday, to compute the occurrence index (1st Monday, 2nd Monday...)
+      const sourceDates = eachDayOfInterval({ start: sourceMonthStart, end: sourceMonthEnd });
+      const sourceDatesByWeekday = new Map<number, Date[]>();
+      for (const d of sourceDates) {
+        const wd = d.getDay();
+        if (!sourceDatesByWeekday.has(wd)) sourceDatesByWeekday.set(wd, []);
+        sourceDatesByWeekday.get(wd)!.push(d);
+      }
+
+      // Group shifts by weekday + occurrence index within month
+      const shiftsByWeekdayAndIndex = new Map<number, Map<number, Shift[]>>();
+      for (const shift of shiftsToProcess) {
+        const shiftDate = parseISO(shift.shift_date);
+        const wd = shiftDate.getDay();
+        const list = sourceDatesByWeekday.get(wd) || [];
+        const idx = list.findIndex(d => isSameDay(d, shiftDate));
+        if (idx < 0) continue;
+
+        if (!shiftsByWeekdayAndIndex.has(wd)) shiftsByWeekdayAndIndex.set(wd, new Map());
+        const byIdx = shiftsByWeekdayAndIndex.get(wd)!;
+        if (!byIdx.has(idx)) byIdx.set(idx, []);
+        byIdx.get(idx)!.push(shift);
+      }
+
+      // Target month weekday date lists (ordered)
       const targetMonthStart = startOfMonth(copyTargetMonth);
       const targetMonthEnd = endOfMonth(copyTargetMonth);
-      const targetDays = eachDayOfInterval({ start: targetMonthStart, end: targetMonthEnd });
-      
-      const targetDaysByDayOfWeek: Map<number, Date[]> = new Map();
-      for (const day of targetDays) {
-        const dayOfWeek = day.getDay();
-        if (!targetDaysByDayOfWeek.has(dayOfWeek)) {
-          targetDaysByDayOfWeek.set(dayOfWeek, []);
-        }
-        targetDaysByDayOfWeek.get(dayOfWeek)!.push(day);
+      const targetDates = eachDayOfInterval({ start: targetMonthStart, end: targetMonthEnd });
+      const targetDatesByWeekday = new Map<number, Date[]>();
+      for (const d of targetDates) {
+        const wd = d.getDay();
+        if (!targetDatesByWeekday.has(wd)) targetDatesByWeekday.set(wd, []);
+        targetDatesByWeekday.get(wd)!.push(d);
       }
 
       let successCount = 0;
       let errorCount = 0;
+      let skippedCount = 0;
 
-      // For each day of week, copy the shifts pattern to all matching days in target month
-      for (const [dayOfWeek, dayShifts] of shiftsByDayOfWeek) {
-        const targetDaysForWeekday = targetDaysByDayOfWeek.get(dayOfWeek) || [];
-        
-        // Get unique shift patterns for this day of week (by user assignment)
-        // We'll create one shift per weekday in target month for each pattern
-        for (const targetDay of targetDaysForWeekday) {
-          const newShiftDateStr = format(targetDay, 'yyyy-MM-dd');
+      for (const [wd, byIdx] of shiftsByWeekdayAndIndex) {
+        const targetList = targetDatesByWeekday.get(wd) || [];
 
-          // For each shift on this weekday, create a copy on the target day
-          for (const shift of dayShifts) {
-            // Create the new shift
+        for (const [idx, sourceShiftsForThatDay] of byIdx) {
+          const targetDate = targetList[idx];
+          if (!targetDate) {
+            skippedCount += sourceShiftsForThatDay.length;
+            continue;
+          }
+
+          const newShiftDateStr = format(targetDate, 'yyyy-MM-dd');
+
+          for (const shift of sourceShiftsForThatDay) {
             const { data: newShift, error } = await supabase
               .from('shifts')
               .insert({
@@ -884,8 +934,7 @@ export default function ShiftCalendar() {
 
             successCount++;
 
-            // Copy assignments for this shift
-            const shiftAssignments = assignments.filter(a => a.shift_id === shift.id);
+            const shiftAssignments = assignmentsByShiftId.get(shift.id) || [];
             for (const assignment of shiftAssignments) {
               await supabase.from('shift_assignments').insert({
                 tenant_id: currentTenantId,
@@ -900,20 +949,14 @@ export default function ShiftCalendar() {
         }
       }
 
-      let message = `${successCount} plantões copiados por dia da semana!`;
-      if (errorCount > 0) {
-        message += ` ${errorCount} erros.`;
-      }
+      let message = `${successCount} plantões copiados por dia da semana (1ª, 2ª, 3ª ocorrência...)`;
+      if (skippedCount > 0) message += `. ${skippedCount} ignorado(s) (não existe essa ocorrência no mês destino)`;
+      if (errorCount > 0) message += `. ${errorCount} erro(s)`;
 
-      toast({ 
-        title: 'Escala copiada!', 
-        description: message 
-      });
+      toast({ title: 'Escala copiada!', description: message });
 
       setCopyScheduleDialogOpen(false);
       setCopyTargetMonth(null);
-
-      // Navigate to the target month to see the copied shifts
       setCurrentDate(copyTargetMonth);
     } catch (error) {
       console.error('Error copying schedule:', error);
@@ -1468,7 +1511,7 @@ export default function ShiftCalendar() {
                               ) : (
                                 <Sun className="h-3 w-3 text-amber-500" />
                               )}
-                              <span className="font-semibold truncate text-foreground">
+                              <span className="font-semibold text-foreground leading-tight break-words whitespace-normal">
                                 {sectorName}
                               </span>
                             </div>
@@ -3536,8 +3579,8 @@ export default function ShiftCalendar() {
             </div>
 
             <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200 text-sm text-yellow-800">
-              <strong>Atenção:</strong> Os plantões serão copiados para os mesmos dias do mês destino. 
-              Dias que não existem no mês destino (ex: dia 31 em fevereiro) serão ignorados.
+              <strong>Atenção:</strong> Os plantões serão copiados para o mesmo <strong>dia da semana</strong> e a mesma <strong>ocorrência no mês</strong>
+              (ex: 2ª segunda-feira → 2ª segunda-feira). Se não existir essa ocorrência no mês destino, será ignorado.
               As atribuições de plantonistas também serão copiadas.
             </div>
 
