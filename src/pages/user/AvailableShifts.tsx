@@ -81,11 +81,12 @@ export default function UserAvailableShifts() {
       .gte('shift_date', today)
       .order('shift_date', { ascending: true });
 
-    // Fetch all assignments to know which shifts are taken
+    // Fetch all active assignments to know which shifts are taken
     const { data: assignmentsData } = await supabase
       .from('shift_assignments')
       .select('shift_id, user_id')
-      .eq('tenant_id', currentTenantId);
+      .eq('tenant_id', currentTenantId)
+      .in('status', ['assigned', 'confirmed', 'completed']);
 
     // Get my assigned shifts
     const myAssigned = new Set(
