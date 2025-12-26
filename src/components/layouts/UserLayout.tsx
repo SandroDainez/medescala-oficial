@@ -21,7 +21,8 @@ import {
   Settings,
   HelpCircle,
   MessageSquare,
-  User
+  User,
+  Hand
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -29,6 +30,7 @@ const mainNavItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
   { to: '/app/calendar', label: 'Agenda Geral', icon: CalendarDays },
   { to: '/app/shifts', label: 'Minha Agenda', icon: ListTodo },
+  { to: '/app/available', label: 'Plantões Disponíveis', icon: Hand },
   { to: '/app/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/app/notifications', label: 'Notificações', icon: Bell },
   { to: '/app/financial', label: 'Extrato', icon: DollarSign },
