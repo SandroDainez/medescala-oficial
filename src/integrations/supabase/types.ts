@@ -1083,6 +1083,12 @@ export type Database = {
         }[]
       }
       get_shift_tenant_id: { Args: { _shift_id: string }; Returns: string }
+      get_taken_shift_ids: {
+        Args: { _start: string; _tenant_id: string }
+        Returns: {
+          shift_id: string
+        }[]
+      }
       get_tenant_access_status: {
         Args: { _tenant_id: string }
         Returns: {
