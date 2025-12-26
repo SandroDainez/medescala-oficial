@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, getDay, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -47,6 +48,7 @@ type FilterTab = 'todos' | 'meus';
 export default function UserCalendar() {
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
+  const { toast } = useToast();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
@@ -85,14 +87,21 @@ export default function UserCalendar() {
         .lte('shift_date', endStr)
         .order('shift_date', { ascending: true }),
       // Use RPC to get roster with names (avoids RLS issues on mobile)
-      supabase.rpc('get_shift_roster', { 
-        _tenant_id: currentTenantId, 
-        _start: startStr, 
-        _end: endStr 
+      supabase.rpc('get_shift_roster', {
+        _tenant_id: currentTenantId,
+        _start: startStr,
+        _end: endStr,
       }),
     ]);
 
-    // Build a map of shift_id -> array of assignments with profile names
+    if (rosterRes.error) {
+      console.error('get_shift_roster error:', rosterRes.error);
+      toast({
+        title: 'Não foi possível carregar os nomes',
+        description: 'Verifique sua conexão e tente novamente.',
+        variant: 'destructive',
+      });
+    }
     const rosterMap = new Map<string, { user_id: string; status: string; name: string | null }[]>();
     if (rosterRes.data) {
       (rosterRes.data as { shift_id: string; user_id: string; status: string; name: string | null }[]).forEach(r => {
