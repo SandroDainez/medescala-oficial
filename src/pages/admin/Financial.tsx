@@ -376,9 +376,9 @@ export default function AdminFinancial() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-green-500/10 rounded-lg"><DollarSign className="h-5 w-5 text-green-500" /></div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Total Geral</p>
-                <p className="text-2xl font-bold text-green-600">{formatCurrency(grandTotals.totalValue)}</p>
+                <p className="text-lg md:text-xl font-bold text-green-600 truncate">{formatCurrency(grandTotals.totalValue)}</p>
               </div>
             </div>
           </CardContent>
