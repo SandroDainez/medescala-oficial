@@ -209,6 +209,12 @@ export default function AdminFinancial() {
 
   // Export CSV
   function exportCSV() {
+    // Debug: log what's being exported
+    console.log('[exportCSV] filterPlantonista:', filterPlantonista);
+    console.log('[exportCSV] filterSetor:', filterSetor);
+    console.log('[exportCSV] filteredEntries count:', filteredEntries.length);
+    console.log('[exportCSV] rawEntries count:', rawEntries.length);
+    
     const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
     const rows = filteredEntries.map(e => {
       const val = e.value_source === 'invalid' ? null : e.final_value;
@@ -228,7 +234,16 @@ export default function AdminFinancial() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `financeiro-${startDate}-a-${endDate}.csv`;
+    
+    // Include filter info in filename
+    const plantonistaName = filterPlantonista !== 'all' 
+      ? plantonistas.find(p => p.id === filterPlantonista)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
+      : 'todos';
+    const setorName = filterSetor !== 'all'
+      ? sectors.find(s => s.id === filterSetor)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
+      : 'todos';
+    
+    a.download = `financeiro-${startDate}-a-${endDate}-${plantonistaName}-${setorName}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
