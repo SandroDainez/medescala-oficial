@@ -370,53 +370,8 @@ export default function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Main Content - Sectors Sidebar + Tabs */}
-      <div className="flex gap-4">
-        {/* Vertical Sector Sidebar */}
-        <div className="w-48 flex-shrink-0">
-          <Card className="sticky top-4">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Setores</CardTitle>
-            </CardHeader>
-            <CardContent className="p-2 pt-0">
-              <div className="flex flex-col gap-1">
-                {sectors.map(sector => {
-                  const sectorShifts = shifts.filter(s => s.sector?.id === sector.id);
-                  
-                  return (
-                    <Button
-                      key={sector.id}
-                      variant="ghost"
-                      className="w-full justify-start gap-2 h-auto py-3 hover:bg-accent"
-                      style={{ 
-                        backgroundColor: `${sector.color}10`,
-                        borderLeft: `3px solid ${sector.color}`
-                      }}
-                      onClick={() => navigate('/admin/calendar')}
-                    >
-                      <span 
-                        className="w-3 h-3 rounded-full flex-shrink-0" 
-                        style={{ backgroundColor: sector.color }}
-                      />
-                      <span className="flex flex-col items-start truncate">
-                        <span className="truncate text-xs font-medium">{sector.name}</span>
-                        <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
-                      </span>
-                    </Button>
-                  );
-                })}
-                {sectors.length === 0 && (
-                  <Button variant="link" size="sm" onClick={() => navigate('/admin/sectors')}>
-                    Criar primeiro setor
-                  </Button>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="flex-1 min-w-0">
+      {/* Main Content */}
+      <div>
           <Tabs defaultValue="swaps" className="space-y-4">
             <TabsList>
               <TabsTrigger value="swaps">
@@ -595,7 +550,6 @@ export default function AdminDashboard() {
           </Card>
         </TabsContent>
           </Tabs>
-        </div>
       </div>
 
       {/* Day Detail Dialog */}
