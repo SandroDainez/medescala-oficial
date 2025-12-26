@@ -81,13 +81,24 @@ export default function UserAvailableShifts() {
       .gte('shift_date', today)
       .order('shift_date', { ascending: true });
 
-    // Call security-definer function to get IDs of shifts that already have assignments
-    const { data: takenData } = await supabase.rpc('get_taken_shift_ids', {
+    // Get taken shifts via security-definer function (works for tenant members)
+    const end = format(new Date(new Date().setMonth(new Date().getMonth() + 12)), 'yyyy-MM-dd');
+    const { data: rosterData, error: rosterError } = await supabase.rpc('get_shift_roster', {
       _tenant_id: currentTenantId,
       _start: today,
+      _end: end,
     });
 
-    const takenShiftIds = new Set((takenData || []).map((r: { shift_id: string }) => r.shift_id));
+    if (rosterError) {
+      console.error('Error loading shift roster:', rosterError);
+      toast({
+        title: 'Erro ao carregar plantões disponíveis',
+        description: rosterError.message,
+        variant: 'destructive',
+      });
+    }
+
+    const takenShiftIds = new Set((rosterData || []).map((r: { shift_id: string }) => r.shift_id));
 
     // Check which of those are mine (for badge display purposes)
     const { data: myAssignmentsData } = await supabase
