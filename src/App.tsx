@@ -100,6 +100,7 @@ function AppRoutes() {
       >
         <Route index element={<AdminDashboard />} />
         <Route path="calendar" element={<AdminCalendar />} />
+        <Route path="calendar/:sectorId" element={<AdminCalendar />} />
         <Route path="shifts" element={<AdminShifts />} />
         <Route path="users" element={<AdminUsers />} />
         <Route path="sectors" element={<AdminSectors />} />
