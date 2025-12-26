@@ -491,8 +491,8 @@ export default function AdminFinancial() {
               }).map((d) => format(d, 'yyyy-MM-dd'));
 
               return (
-                <ScrollArea className="max-h-[600px]">
-                  <div className="space-y-1">
+                <div className="h-[calc(100vh-400px)] min-h-[400px] overflow-y-auto border rounded-lg">
+                  <div className="space-y-1 p-1">
                     {allDays.map((day) => {
                       const dayEntries = (byDay[day] ?? []).sort((a, b) =>
                         (a.start_time || '').localeCompare(b.start_time || '')
@@ -555,7 +555,7 @@ export default function AdminFinancial() {
                       );
                     })}
                   </div>
-                </ScrollArea>
+                </div>
               );
             })()
           )}
@@ -838,8 +838,8 @@ export default function AdminFinancial() {
                       {/* Lista detalhada por dia */}
                       <div className="p-4">
                         <p className="text-sm font-medium mb-3">Plantões por dia:</p>
-                        <ScrollArea className="max-h-[400px]">
-                          <div className="space-y-4">
+                        <div className="max-h-[400px] overflow-y-auto border rounded">
+                          <div className="space-y-4 p-2">
                             {sortedDays.map(day => {
                               const dayEntries = entriesByDay[day];
                               const dayTotal = dayEntries.reduce((sum, e) => {
@@ -874,7 +874,7 @@ export default function AdminFinancial() {
                               );
                             })}
                           </div>
-                        </ScrollArea>
+                        </div>
                       </div>
                     </CardContent>
                   )}
@@ -891,9 +891,9 @@ export default function AdminFinancial() {
           ) : (
             <Card>
               <CardContent className="p-0">
-                <ScrollArea className="max-h-[600px]">
+                <div className="h-[calc(100vh-400px)] min-h-[400px] overflow-y-auto">
                   <Table>
-                    <TableHeader>
+                    <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
                         <TableHead>Data</TableHead>
                         <TableHead>Horário</TableHead>
@@ -921,7 +921,7 @@ export default function AdminFinancial() {
                       })}
                     </TableBody>
                   </Table>
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
           )}
