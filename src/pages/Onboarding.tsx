@@ -168,17 +168,6 @@ export default function Onboarding() {
             <p className="text-xl text-white/90">
               Organize plantões, gerencie equipes e acompanhe a escala do seu hospital de forma simples e eficiente.
             </p>
-            
-            <div className="grid grid-cols-2 gap-4 mt-8">
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-left">
-                <div className="text-3xl font-bold">100%</div>
-                <div className="text-white/70 text-sm">Digital e Seguro</div>
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-left">
-                <div className="text-3xl font-bold">24/7</div>
-                <div className="text-white/70 text-sm">Acesso em qualquer lugar</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
