@@ -2298,6 +2298,14 @@ export default function ShiftCalendar() {
                     <Button 
                       variant="outline" 
                       onClick={() => {
+                        if (filterSector === 'all') {
+                          toast({ 
+                            title: 'Selecione um setor', 
+                            description: 'Para copiar a escala, primeiro selecione um setor específico na lista à esquerda.',
+                            variant: 'destructive' 
+                          });
+                          return;
+                        }
                         setCopyTargetMonth(addMonths(currentDate, 1));
                         setCopyScheduleDialogOpen(true);
                       }}
@@ -3544,14 +3552,22 @@ export default function ShiftCalendar() {
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-muted/50 border">
               <div className="text-sm text-muted-foreground mb-2">Escala atual:</div>
-              <div className="font-semibold text-lg">
-                {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+              <div className="font-semibold text-lg flex items-center gap-2">
+                {(() => {
+                  const sector = sectors.find(s => s.id === filterSector);
+                  return sector ? (
+                    <>
+                      <span 
+                        className="w-4 h-4 rounded-full flex-shrink-0" 
+                        style={{ backgroundColor: sector.color || '#22c55e' }}
+                      />
+                      {sector.name}
+                    </>
+                  ) : 'Setor não encontrado';
+                })()}
               </div>
               <div className="text-sm text-muted-foreground mt-1">
-                {filterSector === 'all' 
-                  ? `${shifts.length} plantões em todos os setores`
-                  : `${shifts.filter(s => s.sector_id === filterSector).length} plantões no setor selecionado`
-                }
+                {format(currentDate, 'MMMM yyyy', { locale: ptBR })} - {shifts.filter(s => s.sector_id === filterSector).length} plantões
               </div>
             </div>
 
