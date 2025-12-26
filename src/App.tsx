@@ -28,6 +28,7 @@ import AdminUsers from "./pages/admin/Users";
 import AdminSectors from "./pages/admin/Sectors";
 import AdminSwaps from "./pages/admin/Swaps";
 import AdminNotifications from "./pages/admin/Notifications";
+import AdminOffers from "./pages/admin/Offers";
 import AdminFinancial from "./pages/admin/Financial";
 import AdminReports from "./pages/admin/Reports";
 import AdminSubscription from "./pages/admin/Subscription";
@@ -41,6 +42,7 @@ import UserNotifications from "./pages/user/Notifications";
 import UserSettings from "./pages/user/Settings";
 import UserAbout from "./pages/user/About";
 import UserFeedback from "./pages/user/Feedback";
+import UserAvailableShifts from "./pages/user/AvailableShifts";
 
 const queryClient = new QueryClient();
 
@@ -102,6 +104,7 @@ function AppRoutes() {
         <Route path="users" element={<AdminUsers />} />
         <Route path="sectors" element={<AdminSectors />} />
         <Route path="swaps" element={<AdminSwaps />} />
+        <Route path="offers" element={<AdminOffers />} />
         <Route path="notifications" element={<AdminNotifications />} />
         <Route path="financial" element={<AdminFinancial />} />
         <Route path="reports" element={<AdminReports />} />
@@ -120,6 +123,7 @@ function AppRoutes() {
         <Route index element={<UserCalendar />} />
         <Route path="calendar" element={<UserCalendar />} />
         <Route path="shifts" element={<UserShifts />} />
+        <Route path="available" element={<UserAvailableShifts />} />
         <Route path="swaps" element={<UserSwaps />} />
         <Route path="financial" element={<UserFinancial />} />
         <Route path="notifications" element={<UserNotifications />} />
