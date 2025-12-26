@@ -18,7 +18,7 @@ import {
   Bell, Send, Users, Calendar, DollarSign, ArrowLeftRight, 
   AlertCircle, CheckCircle, Plus, Trash2, Eye
 } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface Member {
@@ -126,8 +126,10 @@ export default function AdminNotifications() {
       })));
     }
 
-    // Fetch available shifts (without assignments)
+    // Fetch available shifts (without assignments) using get_shift_roster
     const today = new Date().toISOString().split('T')[0];
+    const endDate = format(new Date(new Date().setMonth(new Date().getMonth() + 12)), 'yyyy-MM-dd');
+    
     const { data: shiftsData } = await supabase
       .from('shifts')
       .select(`
@@ -139,16 +141,17 @@ export default function AdminNotifications() {
       .order('shift_date', { ascending: true });
 
     if (shiftsData) {
-      // Get shifts with no assignments
-      const { data: assignmentsData } = await supabase
-        .from('shift_assignments')
-        .select('shift_id')
-        .eq('tenant_id', currentTenantId);
+      // Get taken shifts via security-definer function
+      const { data: rosterData } = await supabase.rpc('get_shift_roster', {
+        _tenant_id: currentTenantId,
+        _start: today,
+        _end: endDate,
+      });
 
-      const assignedShiftIds = new Set(assignmentsData?.map(a => a.shift_id) || []);
+      const takenShiftIds = new Set((rosterData || []).map((r: { shift_id: string }) => r.shift_id));
       
       const available = shiftsData
-        .filter(s => !assignedShiftIds.has(s.id))
+        .filter(s => !takenShiftIds.has(s.id))
         .map(s => ({
           id: s.id,
           title: s.title,
