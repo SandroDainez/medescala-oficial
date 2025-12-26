@@ -37,7 +37,6 @@ interface Sector {
 }
 
 const navItems = [
-  { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/shifts', label: 'Lista de Plantões', icon: ListTodo },
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
@@ -221,11 +220,10 @@ export function AdminLayout() {
             </Collapsible>
 
             {/* Other nav items */}
-            {navItems.map((item, index) => (
+            {navItems.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
-                end={item.end}
                 className={({ isActive }) =>
                   cn(
                     'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
@@ -354,7 +352,6 @@ export function AdminLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.end}
                   onClick={() => setMobileMenuOpen(false)}
                   className={({ isActive }) =>
                     cn(
