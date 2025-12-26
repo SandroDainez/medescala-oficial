@@ -169,11 +169,22 @@ export default function AdminFinancial() {
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
-    return rawEntries.filter(e => {
+    console.log('[filteredEntries] Computing with filterPlantonista:', filterPlantonista, 'filterSetor:', filterSetor);
+    console.log('[filteredEntries] rawEntries count:', rawEntries.length);
+    
+    const result = rawEntries.filter(e => {
       if (filterSetor !== 'all' && e.sector_id !== filterSetor) return false;
       if (filterPlantonista !== 'all' && e.assignee_id !== filterPlantonista) return false;
       return true;
     });
+    
+    console.log('[filteredEntries] Result count:', result.length);
+    if (filterPlantonista !== 'all') {
+      console.log('[filteredEntries] Looking for assignee_id:', filterPlantonista);
+      console.log('[filteredEntries] Available assignee_ids:', [...new Set(rawEntries.map(e => e.assignee_id))]);
+    }
+    
+    return result;
   }, [rawEntries, filterSetor, filterPlantonista]);
 
   // ============================================================
