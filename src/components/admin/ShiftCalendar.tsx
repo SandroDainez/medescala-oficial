@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -100,6 +100,10 @@ export default function ShiftCalendar() {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+
+  // Prevent immediate re-open after a programmatic close (e.g. focus/trigger quirks)
+  const shiftDialogCloseGuardRef = useRef(false);
+
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
   const [bulkCreateDialogOpen, setBulkCreateDialogOpen] = useState(false);
@@ -1086,10 +1090,12 @@ export default function ShiftCalendar() {
   }
 
   function openCreateShift(date?: Date, sectorIdOverride?: string) {
+    if (shiftDialogCloseGuardRef.current) return;
+
     // Use the override sector or the current filter if viewing a specific sector
     const effectiveSectorId = sectorIdOverride || (filterSector !== 'all' ? filterSector : sectors[0]?.id || '');
     const effectiveSector = sectors.find(s => s.id === effectiveSectorId);
-    
+
     setEditingShift(null);
     setFormData({
       hospital: effectiveSector?.name || sectors[0]?.name || '',
@@ -1115,6 +1121,8 @@ export default function ShiftCalendar() {
   }
 
   function openEditShift(shift: Shift) {
+    if (shiftDialogCloseGuardRef.current) return;
+
     setEditingShift(shift);
     // Get current assignment for this shift
     const currentAssignment = assignments.find(a => a.shift_id === shift.id);
@@ -1136,6 +1144,12 @@ export default function ShiftCalendar() {
   }
 
   function closeShiftDialog() {
+    // Guard against immediate reopen caused by trigger focus/click quirks
+    shiftDialogCloseGuardRef.current = true;
+    window.setTimeout(() => {
+      shiftDialogCloseGuardRef.current = false;
+    }, 300);
+
     setShiftDialogOpen(false);
     setEditingShift(null);
     setMultiShifts([]);
