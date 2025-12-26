@@ -332,9 +332,9 @@ export default function AdminFinancial() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-primary/10 rounded-lg"><Users className="h-5 w-5 text-primary" /></div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Plantonistas</p>
-                <p className="text-2xl font-bold">{grandTotals.totalPlantonistas}</p>
+                <p className="text-lg md:text-xl font-bold truncate">{grandTotals.totalPlantonistas}</p>
               </div>
             </div>
           </CardContent>
@@ -343,9 +343,9 @@ export default function AdminFinancial() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-blue-500/10 rounded-lg"><Calendar className="h-5 w-5 text-blue-500" /></div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Plantões</p>
-                <p className="text-2xl font-bold">{grandTotals.totalShifts}</p>
+                <p className="text-lg md:text-xl font-bold truncate">{grandTotals.totalShifts}</p>
               </div>
             </div>
           </CardContent>
@@ -354,9 +354,9 @@ export default function AdminFinancial() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-purple-500/10 rounded-lg"><Clock className="h-5 w-5 text-purple-500" /></div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Horas</p>
-                <p className="text-2xl font-bold">{grandTotals.totalHours.toFixed(1)}h</p>
+                <p className="text-lg md:text-xl font-bold truncate">{grandTotals.totalHours.toFixed(1)}h</p>
               </div>
             </div>
           </CardContent>
@@ -365,9 +365,9 @@ export default function AdminFinancial() {
           <CardContent className="p-4">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-amber-500/10 rounded-lg"><AlertCircle className="h-5 w-5 text-amber-500" /></div>
-              <div>
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Sem Valor</p>
-                <p className="text-2xl font-bold">{grandTotals.unpricedShifts}</p>
+                <p className="text-lg md:text-xl font-bold truncate">{grandTotals.unpricedShifts}</p>
               </div>
             </div>
           </CardContent>
