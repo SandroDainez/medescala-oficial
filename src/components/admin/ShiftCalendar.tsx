@@ -2098,9 +2098,9 @@ export default function ShiftCalendar() {
       {/* Main Layout: Vertical Sector Sidebar + Calendar */}
       <div className="flex gap-4">
         {/* Vertical Sector Sidebar */}
-        <div className="w-16 md:w-48 flex-shrink-0">
+        <div className="w-20 md:w-64 lg:w-72 flex-shrink-0">
           <Card className="sticky top-4">
-            <CardContent className="p-2">
+            <CardContent className="p-2 md:p-3">
               <div className="flex flex-col gap-1">
                 {/* All Sectors Button */}
                 <Button
@@ -2109,7 +2109,7 @@ export default function ShiftCalendar() {
                   onClick={() => setFilterSector('all')}
                 >
                   <LayoutGrid className="h-5 w-5 flex-shrink-0" />
-                  <span className="hidden md:inline truncate">Todos</span>
+                  <span className="hidden md:inline">Todos os Setores</span>
                 </Button>
 
                 <div className="my-2 border-t" />
@@ -2123,19 +2123,20 @@ export default function ShiftCalendar() {
                     <Button
                       key={sector.id}
                       variant={isActive ? 'secondary' : 'ghost'}
-                      className={`w-full justify-start gap-2 h-auto py-3 ${isActive ? '' : 'hover:bg-accent'}`}
+                      className={`w-full justify-start gap-2 h-auto py-3 min-h-[56px] ${isActive ? '' : 'hover:bg-accent'}`}
                       style={isActive ? { 
                         backgroundColor: `${sector.color || '#22c55e'}20`,
                         borderLeft: `3px solid ${sector.color || '#22c55e'}`
                       } : {}}
                       onClick={() => setFilterSector(sector.id)}
+                      title={sector.name}
                     >
                       <span 
                         className="w-4 h-4 rounded-full flex-shrink-0" 
                         style={{ backgroundColor: sector.color || '#22c55e' }}
                       />
-                      <span className="hidden md:flex flex-col items-start truncate">
-                        <span className="truncate text-sm">{sector.name}</span>
+                      <span className="hidden md:flex flex-col items-start text-left flex-1 min-w-0">
+                        <span className="text-sm font-medium leading-tight break-words whitespace-normal">{sector.name}</span>
                         <span className="text-[10px] text-muted-foreground">{sectorShifts.length} plantões</span>
                       </span>
                     </Button>
