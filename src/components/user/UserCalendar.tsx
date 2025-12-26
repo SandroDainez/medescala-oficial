@@ -68,8 +68,10 @@ export default function UserCalendar() {
 
     const start = startOfMonth(currentDate);
     const end = endOfMonth(currentDate);
+    const startStr = format(start, 'yyyy-MM-dd');
+    const endStr = format(end, 'yyyy-MM-dd');
 
-    const [mySectorsRes, shiftsRes, memberNamesRes] = await Promise.all([
+    const [mySectorsRes, shiftsRes, rosterRes] = await Promise.all([
       supabase
         .from('sector_memberships')
         .select('sector_id, sector:sectors(*)')
@@ -79,18 +81,25 @@ export default function UserCalendar() {
         .from('shifts')
         .select('*, sector:sectors(*)')
         .eq('tenant_id', currentTenantId)
-        .gte('shift_date', format(start, 'yyyy-MM-dd'))
-        .lte('shift_date', format(end, 'yyyy-MM-dd'))
+        .gte('shift_date', startStr)
+        .lte('shift_date', endStr)
         .order('shift_date', { ascending: true }),
-      // Use safe RPC to get only names (no sensitive data)
-      supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId }),
+      // Use RPC to get roster with names (avoids RLS issues on mobile)
+      supabase.rpc('get_shift_roster', { 
+        _tenant_id: currentTenantId, 
+        _start: startStr, 
+        _end: endStr 
+      }),
     ]);
 
-    // Build a map of user_id -> name from RPC result
-    const memberNames = new Map<string, string>();
-    if (memberNamesRes.data) {
-      (memberNamesRes.data as { user_id: string; name: string }[]).forEach(m => {
-        memberNames.set(m.user_id, m.name);
+    // Build a map of shift_id -> array of assignments with profile names
+    const rosterMap = new Map<string, { user_id: string; status: string; name: string | null }[]>();
+    if (rosterRes.data) {
+      (rosterRes.data as { shift_id: string; user_id: string; status: string; name: string | null }[]).forEach(r => {
+        if (!rosterMap.has(r.shift_id)) {
+          rosterMap.set(r.shift_id, []);
+        }
+        rosterMap.get(r.shift_id)!.push({ user_id: r.user_id, status: r.status, name: r.name });
       });
     }
 
@@ -101,22 +110,21 @@ export default function UserCalendar() {
     if (shiftsRes.data) {
       setShifts(shiftsRes.data as unknown as Shift[]);
 
-      if (shiftsRes.data.length > 0) {
-        const shiftIds = shiftsRes.data.map(s => s.id);
-        const { data: assignmentsData } = await supabase
-          .from('shift_assignments')
-          .select('id, shift_id, user_id, assigned_value, status')
-          .in('shift_id', shiftIds);
-
-        if (assignmentsData) {
-          // Attach profile name from our memberNames map
-          const enrichedAssignments = assignmentsData.map(a => ({
-            ...a,
-            profile: { name: memberNames.get(a.user_id) || null },
-          }));
-          setAssignments(enrichedAssignments as unknown as ShiftAssignment[]);
-        }
-      }
+      // Build assignments from roster data
+      const enrichedAssignments: ShiftAssignment[] = [];
+      rosterMap.forEach((roster, shiftId) => {
+        roster.forEach((r, idx) => {
+          enrichedAssignments.push({
+            id: `${shiftId}-${idx}`,
+            shift_id: shiftId,
+            user_id: r.user_id,
+            assigned_value: 0, // Not needed for display
+            status: r.status,
+            profile: { name: r.name },
+          });
+        });
+      });
+      setAssignments(enrichedAssignments);
     }
 
     setLoading(false);
