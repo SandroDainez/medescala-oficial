@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => ({
     mode === "development" && componentTagger(),
     VitePWA({
       registerType: "autoUpdate",
+      // Prevent users being stuck on an old cached build
+      selfDestroying: true,
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
       manifest: {
         name: "MedEscala - Gestão de Escalas Médicas",
