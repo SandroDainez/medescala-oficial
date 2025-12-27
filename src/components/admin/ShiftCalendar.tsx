@@ -3801,26 +3801,36 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         {/* Sector */}
                         <div className="space-y-2">
                           <Label>Setor</Label>
-                          <Select 
-                            value={editData.sector_id} 
+                          <Select
+                            value={editData.sector_id || '__none__'}
                             onValueChange={(v) => {
-                              const sector = sectors.find(s => s.id === v);
-                              setBulkEditData(prev => prev.map((d, i) => 
-                                i === index 
-                                  ? { ...d, sector_id: v, hospital: sector?.name || d.hospital }
-                                  : d
-                              ));
+                              if (v === '__none__') {
+                                setBulkEditData((prev) =>
+                                  prev.map((d, i) => (i === index ? { ...d, sector_id: '' } : d))
+                                );
+                                return;
+                              }
+
+                              const sector = sectors.find((s) => s.id === v);
+                              setBulkEditData((prev) =>
+                                prev.map((d, i) =>
+                                  i === index
+                                    ? { ...d, sector_id: v, hospital: sector?.name || d.hospital }
+                                    : d
+                                )
+                              );
                             }}
                           >
                             <SelectTrigger>
                               <SelectValue placeholder="Selecione" />
                             </SelectTrigger>
                             <SelectContent>
-                              {sectors.map(sector => (
+                              <SelectItem value="__none__">Sem setor</SelectItem>
+                              {sectors.map((sector) => (
                                 <SelectItem key={sector.id} value={sector.id}>
                                   <span className="flex items-center gap-2">
-                                    <span 
-                                      className="w-2 h-2 rounded-full" 
+                                    <span
+                                      className="w-2 h-2 rounded-full"
                                       style={{ backgroundColor: sector.color || '#22c55e' }}
                                     />
                                     {sector.name}
