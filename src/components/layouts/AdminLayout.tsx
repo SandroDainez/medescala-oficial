@@ -55,7 +55,7 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sectors, setSectors] = useState<Sector[]>([]);
-  const [escalasOpen, setEscalasOpen] = useState(true);
+  const [escalasOpen, setEscalasOpen] = useState(false);
 
   useEffect(() => {
     if (currentTenantId) {
