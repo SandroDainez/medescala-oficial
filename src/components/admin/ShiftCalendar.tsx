@@ -1160,8 +1160,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function closeShiftDialog() {
-    // Guard against immediate reopen caused by click-through/focus quirks
+    // Guard against immediate reopen caused by click-through/focus restore quirks.
+    // Common culprit: user submits with Enter, dialog closes, focus returns to the trigger,
+    // and the Enter keyup "clicks" it again.
     shiftDialogCloseGuardRef.current = true;
+
+    const active = document.activeElement as HTMLElement | null;
+    active?.blur();
+
+    const stopEnter = (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    window.addEventListener('keyup', stopEnter, true);
+    window.setTimeout(() => {
+      window.removeEventListener('keyup', stopEnter, true);
+    }, 400);
+
     window.setTimeout(() => {
       shiftDialogCloseGuardRef.current = false;
     }, 800);
@@ -2786,7 +2803,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           setShiftDialogOpen(true);
         }}
       >
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-md max-h-[85vh] overflow-y-auto"
+          onCloseAutoFocus={(e) => {
+            // Prevent focus from returning to the trigger (edit button), which can cause an immediate re-open.
+            e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{editingShift ? 'Editar Plantão' : 'Novo Plantão'}</DialogTitle>
           </DialogHeader>
