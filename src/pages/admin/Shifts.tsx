@@ -244,7 +244,13 @@ export default function AdminShifts() {
           <h2 className="text-2xl font-bold text-foreground">Plantões</h2>
           <p className="text-muted-foreground">Gerencie os plantões do hospital</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <Dialog open={dialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            closeDialog();
+          } else {
+            setDialogOpen(true);
+          }
+        }}>
           <DialogTrigger asChild>
             <Button onClick={() => {
               setEditingShift(null);
