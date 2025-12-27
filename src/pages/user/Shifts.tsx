@@ -54,11 +54,13 @@ export default function UserShifts() {
   const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());
 
   const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-11
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [didAutoSelect, setDidAutoSelect] = useState(false);
 
   useEffect(() => {
     if (user && currentTenantId) {
+      setDidAutoSelect(false);
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -182,15 +184,44 @@ export default function UserShifts() {
     []
   );
 
+  // Gera anos dinamicamente baseado nos dados
   const yearOptions = useMemo(() => {
-    const y = new Date().getFullYear();
-    return [y - 1, y, y + 1, y + 2];
-  }, []);
+    const baseYear = new Date().getFullYear();
+    const assignmentYears = assignments.map(a => new Date(a.shift.shift_date).getFullYear());
+    const allYears = new Set([baseYear - 1, baseYear, baseYear + 1, baseYear + 2, ...assignmentYears]);
+    return Array.from(allYears).sort((a, b) => a - b);
+  }, [assignments]);
+
+  // Auto-select: ao carregar dados, navega para o primeiro mês com plantões
+  useEffect(() => {
+    if (didAutoSelect || assignments.length === 0) return;
+
+    // Ordenar plantões por data
+    const sortedDates = assignments
+      .map((a) => new Date(a.shift.shift_date))
+      .sort((a, b) => a.getTime() - b.getTime());
+
+    // Encontrar o primeiro plantão a partir de hoje (ou o mais próximo se todos passados)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const futureShift = sortedDates.find(d => d >= today) || sortedDates[sortedDates.length - 1];
+    
+    if (futureShift) {
+      setSelectedMonth(futureShift.getMonth());
+      setSelectedYear(futureShift.getFullYear());
+      setDidAutoSelect(true);
+    }
+  }, [assignments, didAutoSelect]);
+
+  // Inicializa com mês/ano atual se ainda não selecionado
+  const effectiveMonth = selectedMonth ?? now.getMonth();
+  const effectiveYear = selectedYear ?? now.getFullYear();
 
   const filteredAssignments = useMemo(() => {
     const inMonth = assignments.filter((a) => {
       const d = new Date(a.shift.shift_date);
-      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+      return d.getFullYear() === effectiveYear && d.getMonth() === effectiveMonth;
     });
 
     // Sort by date/time for a predictable agenda
@@ -199,25 +230,7 @@ export default function UserShifts() {
       const bd = `${b.shift.shift_date}T${b.shift.start_time}`;
       return ad.localeCompare(bd);
     });
-  }, [assignments, selectedMonth, selectedYear]);
-
-  // Se o mês atual não tem nada, mas o usuário tem plantões em outro mês, muda automaticamente
-  useEffect(() => {
-    if (assignments.length === 0) return;
-    if (filteredAssignments.length > 0) return;
-
-    const earliest = assignments
-      .map((a) => new Date(a.shift.shift_date))
-      .sort((a, b) => a.getTime() - b.getTime())[0];
-
-    if (!earliest) return;
-
-    const nextMonth = earliest.getMonth();
-    const nextYear = earliest.getFullYear();
-
-    if (nextMonth !== selectedMonth) setSelectedMonth(nextMonth);
-    if (nextYear !== selectedYear) setSelectedYear(nextYear);
-  }, [assignments, filteredAssignments.length, selectedMonth, selectedYear]);
+  }, [assignments, effectiveMonth, effectiveYear]);
 
   // Group assignments by sector (after filtering)
   const groupedAssignments = filteredAssignments.reduce((acc, assignment) => {
@@ -259,7 +272,7 @@ export default function UserShifts() {
       <section aria-label="Filtro de mês" className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
           <div className="text-sm font-medium text-foreground">Mês</div>
-          <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+          <Select value={String(effectiveMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione o mês" />
             </SelectTrigger>
@@ -275,7 +288,7 @@ export default function UserShifts() {
 
         <div className="space-y-2">
           <div className="text-sm font-medium text-foreground">Ano</div>
-          <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+          <Select value={String(effectiveYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
             <SelectTrigger>
               <SelectValue placeholder="Selecione o ano" />
             </SelectTrigger>
