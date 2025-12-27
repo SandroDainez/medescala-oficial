@@ -402,39 +402,51 @@ export default function UserManagement() {
 
       if (privateError) throw privateError;
 
-      // Update sector memberships
-      const currentMemberships = sectorMemberships.filter(sm => sm.user_id === editingMember.user_id);
-      const currentSectorIds = currentMemberships.map(sm => sm.sector_id);
+      // Update sector memberships - fetch fresh data from database to avoid stale state
+      const { data: currentDbMemberships } = await supabase
+        .from('sector_memberships')
+        .select('id, sector_id')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', editingMember.user_id);
+
+      const currentSectorIds = (currentDbMemberships || []).map(sm => sm.sector_id);
 
       const sectorsToAdd = editSectorIds.filter(id => !currentSectorIds.includes(id));
       const sectorsToRemove = currentSectorIds.filter(id => !editSectorIds.includes(id));
 
-      if (sectorsToAdd.length > 0) {
-        const newMemberships = sectorsToAdd.map(sectorId => ({
-          tenant_id: currentTenantId,
-          user_id: editingMember.user_id,
-          sector_id: sectorId,
-          created_by: user?.id,
-        }));
-
+      // Add new sector memberships
+      for (const sectorId of sectorsToAdd) {
         const { error: addError } = await supabase
           .from('sector_memberships')
-          .insert(newMemberships);
+          .upsert({
+            tenant_id: currentTenantId,
+            user_id: editingMember.user_id,
+            sector_id: sectorId,
+            created_by: user?.id,
+          }, {
+            onConflict: 'sector_id,user_id',
+            ignoreDuplicates: true
+          });
 
-        if (addError) throw addError;
+        if (addError && !addError.message.includes('duplicate')) {
+          throw addError;
+        }
       }
 
+      // Remove sector memberships
       if (sectorsToRemove.length > 0) {
-        const idsToRemove = currentMemberships
+        const idsToRemove = (currentDbMemberships || [])
           .filter(sm => sectorsToRemove.includes(sm.sector_id))
           .map(sm => sm.id);
 
-        const { error: removeError } = await supabase
-          .from('sector_memberships')
-          .delete()
-          .in('id', idsToRemove);
+        if (idsToRemove.length > 0) {
+          const { error: removeError } = await supabase
+            .from('sector_memberships')
+            .delete()
+            .in('id', idsToRemove);
 
-        if (removeError) throw removeError;
+          if (removeError) throw removeError;
+        }
       }
 
       // If email change, password reset, or send email is requested, call edge function
