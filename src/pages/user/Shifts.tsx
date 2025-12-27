@@ -1,7 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
@@ -46,36 +53,46 @@ export default function UserShifts() {
   const [loading, setLoading] = useState(true);
   const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());
 
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-11
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+
   useEffect(() => {
     if (user && currentTenantId) {
       fetchData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
 
   async function fetchData() {
-    if (!currentTenantId) return;
+    if (!currentTenantId || !user) return;
+
+    setLoading(true);
 
     const [assignmentsRes, sectorsRes] = await Promise.all([
       supabase
         .from('shift_assignments')
-        .select('id, assigned_value, checkin_at, checkout_at, status, shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)')
+        .select(
+          'id, assigned_value, checkin_at, checkout_at, status, shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
+        )
         .eq('tenant_id', currentTenantId)
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false }),
       supabase
         .from('sectors')
         .select('id, name, color')
         .eq('tenant_id', currentTenantId)
-        .eq('active', true)
+        .eq('active', true),
     ]);
 
     if (assignmentsRes.data) {
-      setAssignments(assignmentsRes.data as unknown as Assignment[]);
+      // Some rows can come with a null join if the shift was deleted; filter those out
+      setAssignments((assignmentsRes.data as unknown as Assignment[]).filter((a) => !!a.shift));
     }
     if (sectorsRes.data) {
       setSectors(sectorsRes.data);
       // Open all sectors by default
-      setOpenSectors(new Set(sectorsRes.data.map(s => s.id)));
+      setOpenSectors(new Set(sectorsRes.data.map((s) => s.id)));
     }
     setLoading(false);
   }
@@ -132,8 +149,45 @@ export default function UserShifts() {
     cancelled: 'Cancelado'
   };
 
-  // Group assignments by sector
-  const groupedAssignments = assignments.reduce((acc, assignment) => {
+  const monthOptions = useMemo(
+    () => [
+      { value: 0, label: 'Janeiro' },
+      { value: 1, label: 'Fevereiro' },
+      { value: 2, label: 'Março' },
+      { value: 3, label: 'Abril' },
+      { value: 4, label: 'Maio' },
+      { value: 5, label: 'Junho' },
+      { value: 6, label: 'Julho' },
+      { value: 7, label: 'Agosto' },
+      { value: 8, label: 'Setembro' },
+      { value: 9, label: 'Outubro' },
+      { value: 10, label: 'Novembro' },
+      { value: 11, label: 'Dezembro' },
+    ],
+    []
+  );
+
+  const yearOptions = useMemo(() => {
+    const y = new Date().getFullYear();
+    return [y - 1, y, y + 1, y + 2];
+  }, []);
+
+  const filteredAssignments = useMemo(() => {
+    const inMonth = assignments.filter((a) => {
+      const d = new Date(a.shift.shift_date);
+      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+    });
+
+    // Sort by date/time for a predictable agenda
+    return inMonth.sort((a, b) => {
+      const ad = `${a.shift.shift_date}T${a.shift.start_time}`;
+      const bd = `${b.shift.shift_date}T${b.shift.start_time}`;
+      return ad.localeCompare(bd);
+    });
+  }, [assignments, selectedMonth, selectedYear]);
+
+  // Group assignments by sector (after filtering)
+  const groupedAssignments = filteredAssignments.reduce((acc, assignment) => {
     const sectorId = assignment.shift.sector_id || 'sem-setor';
     if (!acc[sectorId]) {
       acc[sectorId] = [];
@@ -164,15 +218,49 @@ export default function UserShifts() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-foreground">Meus Plantões</h2>
-        <p className="text-muted-foreground">Visualize e faça check-in/out dos seus plantões</p>
-      </div>
+      <header>
+        <h1 className="text-2xl font-bold text-foreground">Minha Agenda</h1>
+        <p className="text-muted-foreground">Escolha o mês e veja seus plantões</p>
+      </header>
 
-      {assignments.length === 0 ? (
+      <section aria-label="Filtro de mês" className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-foreground">Mês</div>
+          <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione o mês" />
+            </SelectTrigger>
+            <SelectContent>
+              {monthOptions.map((m) => (
+                <SelectItem key={m.value} value={String(m.value)}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <div className="text-sm font-medium text-foreground">Ano</div>
+          <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+            <SelectTrigger>
+              <SelectValue placeholder="Selecione o ano" />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((y) => (
+                <SelectItem key={y} value={String(y)}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </section>
+
+      {filteredAssignments.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Nenhum plantão atribuído</p>
+            <p className="text-muted-foreground">Nenhum plantão neste mês</p>
           </CardContent>
         </Card>
       ) : (
