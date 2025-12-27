@@ -24,6 +24,8 @@ interface Shift {
   end_time: string;
   base_value: number;
   notes: string | null;
+  sector_id?: string | null;
+  sector?: { name: string } | null;
 }
 
 interface ShiftAssignment {
@@ -79,7 +81,7 @@ export default function AdminShifts() {
     
     const { data, error } = await supabase
       .from('shifts')
-      .select('*')
+      .select('id, title, hospital, location, shift_date, start_time, end_time, base_value, notes, sector_id, sector:sectors(name)')
       .eq('tenant_id', currentTenantId)
       .order('shift_date', { ascending: false });
 
@@ -384,7 +386,7 @@ export default function AdminShifts() {
                         {format(new Date(shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
                       </TableCell>
                       <TableCell className="font-medium">{shift.title}</TableCell>
-                      <TableCell>{shift.hospital}</TableCell>
+                      <TableCell>{shift.sector?.name ?? 'Sem Setor'}</TableCell>
                       <TableCell>
                         {shiftAssignments.length > 0 ? (
                           <span className="text-foreground">
