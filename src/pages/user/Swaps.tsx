@@ -17,7 +17,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowRightLeft, Send, Calendar, Clock, MapPin, Check, X, User, Inbox, History } from 'lucide-react';
+import { parseDateOnly } from '@/lib/utils';
+import { ArrowRightLeft, Send, Calendar, Clock, Check, X, User, Inbox, History } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -105,22 +106,21 @@ export default function UserSwaps() {
     []
   );
 
-  // Gera anos dinamicamente baseado nos dados
   const yearOptions = useMemo(() => {
     const baseYear = new Date().getFullYear();
-    const assignmentYears = myAssignments.map(a => new Date(a.shift.shift_date).getFullYear());
+    const assignmentYears = myAssignments.map((a) => Number(a.shift.shift_date.slice(0, 4)));
     const allYears = new Set([baseYear, baseYear + 1, baseYear + 2, ...assignmentYears]);
     return Array.from(allYears).sort((a, b) => a - b);
   }, [myAssignments]);
 
-  // Valores efetivos (usa atual se não selecionado)
   const effectiveMonth = selectedMonth ?? now.getMonth();
   const effectiveYear = selectedYear ?? now.getFullYear();
 
   const monthAssignments = useMemo(() => {
     const inMonth = myAssignments.filter((a) => {
-      const d = new Date(a.shift.shift_date);
-      return d.getFullYear() === effectiveYear && d.getMonth() === effectiveMonth;
+      const year = Number(a.shift.shift_date.slice(0, 4));
+      const month = Number(a.shift.shift_date.slice(5, 7)) - 1;
+      return year === effectiveYear && month === effectiveMonth;
     });
 
     return inMonth.sort((a, b) => {
@@ -130,17 +130,12 @@ export default function UserSwaps() {
     });
   }, [myAssignments, effectiveMonth, effectiveYear]);
 
-  // Auto-select: ao carregar dados, navega para o primeiro mês com plantões
   useEffect(() => {
     if (didAutoSelect || myAssignments.length === 0) return;
-
-    // Ordenar plantões por data
     const sortedDates = myAssignments
-      .map((a) => new Date(a.shift.shift_date))
+      .map((a) => parseDateOnly(a.shift.shift_date))
       .sort((a, b) => a.getTime() - b.getTime());
-
     const firstShift = sortedDates[0];
-    
     if (firstShift) {
       setSelectedMonth(firstShift.getMonth());
       setSelectedYear(firstShift.getFullYear());
@@ -185,7 +180,6 @@ export default function UserSwaps() {
     if (!currentTenantId || !user) return;
     const today = new Date().toISOString().split('T')[0];
 
-    // First get all assignments for the user
     const { data, error } = await supabase
       .from('shift_assignments')
       .select(`
@@ -207,10 +201,9 @@ export default function UserSwaps() {
     }
 
     if (data) {
-      // Filter out null shifts and past dates (filter on frontend since nested column filter doesn't work)
-      const validAssignments = data
-        .filter((a: any) => a.shift !== null && a.shift.shift_date >= today)
-        .sort((a: any, b: any) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
+      const validAssignments = (data as any[])
+        .filter((a) => a.shift !== null && a.shift.shift_date >= today)
+        .sort((a, b) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
       setMyAssignments(validAssignments);
     } else {
       setMyAssignments([]);
@@ -218,11 +211,16 @@ export default function UserSwaps() {
   }
 
   async function fetchTenantMembers() {
-    if (!currentTenantId) return;
-    const { data } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+    if (!currentTenantId || !user) return;
+    const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+    if (error) {
+      console.error('[UserSwaps] get_tenant_member_names error:', error);
+      toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
+      setTenantMembers([]);
+      return;
+    }
     if (data) {
-      // Exclude current user from the list
-      setTenantMembers(data.filter((m: TenantMember) => m.user_id !== user?.id));
+      setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
     }
   }
 
@@ -242,7 +240,7 @@ export default function UserSwaps() {
       .eq('tenant_id', currentTenantId)
       .eq('requester_id', user.id)
       .order('created_at', { ascending: false });
-    
+
     if (data) setMySwapRequests(data as unknown as SwapRequest[]);
   }
 
@@ -263,7 +261,7 @@ export default function UserSwaps() {
       .eq('target_user_id', user.id)
       .eq('status', 'pending')
       .order('created_at', { ascending: false });
-    
+
     if (data) setIncomingSwapRequests(data as unknown as SwapRequest[]);
   }
 
@@ -280,11 +278,10 @@ export default function UserSwaps() {
 
   async function handleSubmitSwapRequest() {
     if (!selectedAssignment || !selectedTargetUser || !currentTenantId || !user) return;
-    
+
     setProcessing(true);
-    
-    // Create swap request
-    const { data: swapData, error: swapError } = await supabase
+
+    const { error: swapError } = await supabase
       .from('swap_requests')
       .insert({
         tenant_id: currentTenantId,
@@ -302,7 +299,6 @@ export default function UserSwaps() {
       return;
     }
 
-    // Send notification to target user
     const { error: notifyError } = await supabase
       .from('notifications')
       .insert({
@@ -310,88 +306,38 @@ export default function UserSwaps() {
         user_id: selectedTargetUser.user_id,
         type: 'swap_request',
         title: 'Solicitação de Troca de Plantão',
-        message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(new Date(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
+        message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
       });
 
     if (notifyError) {
-      console.error('Error sending notification:', notifyError);
+      console.error('[UserSwaps] Error sending notification:', notifyError);
     }
 
     toast({ title: 'Solicitação enviada!', description: `Aguardando ${selectedTargetUser.name} aceitar.` });
-    
+
     setConfirmDialogOpen(false);
     setSelectedAssignment(null);
     setSelectedTargetUser(null);
     setReason('');
     setProcessing(false);
-    
+
     fetchData();
   }
 
   async function handleAcceptSwap(swap: SwapRequest) {
     if (!currentTenantId || !user) return;
-    
+
     setProcessing(true);
 
-    // Update swap status to approved
-    const { error: updateError } = await supabase
-      .from('swap_requests')
-      .update({
-        status: 'approved',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id,
-      })
-      .eq('id', swap.id);
-
-    if (updateError) {
-      toast({ title: 'Erro', description: updateError.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
-    }
-
-    // Update the shift assignment - change user_id to target user
-    const { error: assignmentError } = await supabase
-      .from('shift_assignments')
-      .update({
-        user_id: user.id,
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', swap.origin_assignment_id);
-
-    if (assignmentError) {
-      toast({ title: 'Erro ao atualizar escala', description: assignmentError.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
-    }
-
-    // Notify the requester that their swap was accepted
-    await supabase.from('notifications').insert({
-      tenant_id: currentTenantId,
-      user_id: swap.requester_id,
-      type: 'swap_accepted',
-      title: 'Troca Aceita!',
-      message: `${user.user_metadata?.name || 'O colega'} aceitou assumir o plantão "${swap.origin_assignment.shift.title}" do dia ${format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}.`,
+    const { error } = await supabase.rpc('decide_swap_request', {
+      _swap_request_id: swap.id,
+      _decision: 'approved',
     });
 
-    // Notify all admins about the swap
-    const { data: admins } = await supabase
-      .from('memberships')
-      .select('user_id')
-      .eq('tenant_id', currentTenantId)
-      .eq('role', 'admin')
-      .eq('active', true);
-
-    if (admins) {
-      for (const admin of admins) {
-        await supabase.from('notifications').insert({
-          tenant_id: currentTenantId,
-          user_id: admin.user_id,
-          type: 'swap_completed',
-          title: 'Troca de Plantão Realizada',
-          message: `${swap.requester?.name || 'Plantonista'} passou o plantão "${swap.origin_assignment.shift.title}" do dia ${format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para ${user.user_metadata?.name || 'outro plantonista'}.`,
-        });
-      }
+    if (error) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      setProcessing(false);
+      return;
     }
 
     toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
@@ -401,32 +347,19 @@ export default function UserSwaps() {
 
   async function handleRejectSwap(swap: SwapRequest) {
     if (!currentTenantId || !user) return;
-    
+
     setProcessing(true);
 
-    const { error } = await supabase
-      .from('swap_requests')
-      .update({
-        status: 'rejected',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id,
-      })
-      .eq('id', swap.id);
+    const { error } = await supabase.rpc('decide_swap_request', {
+      _swap_request_id: swap.id,
+      _decision: 'rejected',
+    });
 
     if (error) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
       setProcessing(false);
       return;
     }
-
-    // Notify the requester
-    await supabase.from('notifications').insert({
-      tenant_id: currentTenantId,
-      user_id: swap.requester_id,
-      type: 'swap_rejected',
-      title: 'Troca Recusada',
-      message: `${user.user_metadata?.name || 'O colega'} recusou assumir o plantão "${swap.origin_assignment.shift.title}" do dia ${format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}.`,
-    });
 
     toast({ title: 'Troca recusada.' });
     setProcessing(false);
@@ -494,7 +427,6 @@ export default function UserSwaps() {
           </TabsTrigger>
         </TabsList>
 
-        {/* Tab: Passar Plantão */}
         <TabsContent value="my-shifts" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
@@ -544,7 +476,7 @@ export default function UserSwaps() {
                       <SelectItem value="all">Todos</SelectItem>
                       {availableDays.map((d) => (
                         <SelectItem key={d} value={d}>
-                          {format(new Date(d), 'dd/MM/yyyy', { locale: ptBR })}
+                          {format(parseDateOnly(d), 'dd/MM/yyyy', { locale: ptBR })}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -552,11 +484,10 @@ export default function UserSwaps() {
                 </div>
               </div>
             </CardHeader>
+
             <CardContent>
               {visibleAssignments.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhum plantão disponível para passar neste filtro.
-                </p>
+                <p className="text-center text-muted-foreground py-8">Nenhum plantão disponível para passar neste filtro.</p>
               ) : (
                 <div className="grid gap-3">
                   {visibleAssignments.map((assignment) => (
@@ -570,7 +501,7 @@ export default function UserSwaps() {
                           <div className="font-medium">{assignment.shift.title}</div>
                           <div className="text-sm text-muted-foreground flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
-                            {format(new Date(assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                            {format(parseDateOnly(assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
                           </div>
                           <div className="text-sm text-muted-foreground flex items-center gap-1">
                             <Clock className="h-3 w-3" />
@@ -592,20 +523,15 @@ export default function UserSwaps() {
           </Card>
         </TabsContent>
 
-        {/* Tab: Solicitações Recebidas */}
         <TabsContent value="incoming" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Solicitações Recebidas</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Colegas que querem passar plantões para você
-              </p>
+              <p className="text-sm text-muted-foreground">Colegas que querem passar plantões para você</p>
             </CardHeader>
             <CardContent>
               {incomingSwapRequests.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhuma solicitação pendente.
-                </p>
+                <p className="text-center text-muted-foreground py-8">Nenhuma solicitação pendente.</p>
               ) : (
                 <div className="grid gap-3">
                   {incomingSwapRequests.map((swap) => (
@@ -622,27 +548,20 @@ export default function UserSwaps() {
                             <div className="text-sm text-muted-foreground flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
                               {swap.origin_assignment?.shift?.shift_date &&
-                                format(new Date(swap.origin_assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                                format(parseDateOnly(swap.origin_assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
                             </div>
                             <div className="text-sm text-muted-foreground flex items-center gap-1">
                               <Clock className="h-3 w-3" />
                               {swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}
                             </div>
                             {swap.reason && (
-                              <div className="text-sm text-muted-foreground italic mt-2">
-                                "{swap.reason}"
-                              </div>
+                              <div className="text-sm text-muted-foreground italic mt-2">"{swap.reason}"</div>
                             )}
                           </div>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-4">
-                        <Button
-                          onClick={() => handleAcceptSwap(swap)}
-                          disabled={processing}
-                          className="flex-1"
-                          size="sm"
-                        >
+                        <Button onClick={() => handleAcceptSwap(swap)} disabled={processing} className="flex-1" size="sm">
                           <Check className="h-4 w-4 mr-1" />
                           Aceitar
                         </Button>
@@ -665,20 +584,15 @@ export default function UserSwaps() {
           </Card>
         </TabsContent>
 
-        {/* Tab: Histórico */}
         <TabsContent value="history" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Minhas Solicitações</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Histórico de plantões que você solicitou passar
-              </p>
+              <p className="text-sm text-muted-foreground">Histórico de plantões que você solicitou passar</p>
             </CardHeader>
             <CardContent>
               {mySwapRequests.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">
-                  Nenhuma solicitação enviada.
-                </p>
+                <p className="text-center text-muted-foreground py-8">Nenhuma solicitação enviada.</p>
               ) : (
                 <div className="grid gap-3">
                   {mySwapRequests.map((swap) => (
@@ -689,7 +603,7 @@ export default function UserSwaps() {
                           <div className="text-sm text-muted-foreground flex items-center gap-1">
                             <Calendar className="h-3 w-3" />
                             {swap.origin_assignment?.shift?.shift_date &&
-                              format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
+                              format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
                           </div>
                           <div className="text-sm text-muted-foreground">
                             Para: <span className="font-medium">{swap.target_user?.name || 'N/A'}</span>
@@ -721,20 +635,17 @@ export default function UserSwaps() {
         </TabsContent>
       </Tabs>
 
-      {/* Dialog: Selecionar Usuário */}
       <Dialog open={selectUserDialogOpen} onOpenChange={setSelectUserDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Passar Plantão</DialogTitle>
-            <DialogDescription>
-              Selecione o colega que assumirá este plantão
-            </DialogDescription>
+            <DialogDescription>Selecione o colega que assumirá este plantão</DialogDescription>
           </DialogHeader>
           {selectedAssignment && (
             <div className="p-3 bg-muted rounded-lg mb-4">
               <div className="font-medium">{selectedAssignment.shift.title}</div>
               <div className="text-sm text-muted-foreground">
-                {format(new Date(selectedAssignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                {format(parseDateOnly(selectedAssignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
               </div>
               <div className="text-sm text-muted-foreground">
                 {selectedAssignment.shift.start_time.slice(0, 5)} - {selectedAssignment.shift.end_time.slice(0, 5)}
@@ -743,9 +654,7 @@ export default function UserSwaps() {
           )}
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
             {tenantMembers.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">
-                Nenhum colega disponível.
-              </p>
+              <p className="text-center text-muted-foreground py-4">Nenhum colega disponível.</p>
             ) : (
               tenantMembers.map((member) => (
                 <div
@@ -764,7 +673,6 @@ export default function UserSwaps() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Confirmar Solicitação */}
       <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -777,7 +685,7 @@ export default function UserSwaps() {
             <div className="p-3 bg-muted rounded-lg">
               <div className="font-medium">{selectedAssignment.shift.title}</div>
               <div className="text-sm text-muted-foreground">
-                {format(new Date(selectedAssignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                {format(parseDateOnly(selectedAssignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
               </div>
               <div className="text-sm text-muted-foreground">
                 {selectedAssignment.shift.start_time.slice(0, 5)} - {selectedAssignment.shift.end_time.slice(0, 5)}
@@ -786,25 +694,13 @@ export default function UserSwaps() {
           )}
           <div className="space-y-2">
             <Label>Motivo (opcional)</Label>
-            <Textarea
-              placeholder="Explique o motivo da troca..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-            />
+            <Textarea placeholder="Explique o motivo da troca..." value={reason} onChange={(e) => setReason(e.target.value)} />
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setConfirmDialogOpen(false)}
-              className="flex-1"
-            >
+            <Button variant="outline" onClick={() => setConfirmDialogOpen(false)} className="flex-1">
               Cancelar
             </Button>
-            <Button
-              onClick={handleSubmitSwapRequest}
-              disabled={processing}
-              className="flex-1"
-            >
+            <Button onClick={handleSubmitSwapRequest} disabled={processing} className="flex-1">
               {processing ? 'Enviando...' : 'Enviar Solicitação'}
             </Button>
           </div>

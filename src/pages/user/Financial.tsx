@@ -399,7 +399,7 @@ export default function UserFinancial() {
                   {sector.shifts.map(shift => (
                     <TableRow key={shift.id}>
                       <TableCell className="font-medium">
-                        {shift.shift_date && format(parseISO(shift.shift_date), 'dd/MM (EEE)', { locale: ptBR })}
+                        {shift.shift_date && format(parseDateOnly(shift.shift_date), 'dd/MM (EEE)', { locale: ptBR })}
                       </TableCell>
                       <TableCell>
                         <div>
