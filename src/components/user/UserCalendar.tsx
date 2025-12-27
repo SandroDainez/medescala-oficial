@@ -6,9 +6,9 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, getDay, startOfWeek, addDays } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, getDay, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { cn } from '@/lib/utils';
+import { cn, parseDateOnly } from '@/lib/utils';
 
 interface Sector {
   id: string;
@@ -143,7 +143,7 @@ export default function UserCalendar() {
   const mySectorIds = mySectors.map(ms => ms.sector_id);
 
   function getShiftsForDate(date: Date) {
-    return shifts.filter(s => isSameDay(parseISO(s.shift_date), date));
+    return shifts.filter(s => isSameDay(parseDateOnly(s.shift_date), date));
   }
 
   function getAssignmentsForShift(shiftId: string) {
