@@ -107,6 +107,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Prevent immediate re-open after a programmatic close (e.g. focus/trigger quirks)
   const shiftDialogCloseGuardRef = useRef(false);
+  const bulkEditDialogCloseGuardRef = useRef(false);
 
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
@@ -1180,28 +1181,42 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     });
   }
 
-  function openBulkEditDialog(date: Date) {
-    const dayShifts = getShiftsForDate(date);
-    if (dayShifts.length === 0) return;
-    
-    setBulkEditShifts(dayShifts);
-    setBulkEditData(dayShifts.map(shift => {
-      const currentAssignment = assignments.find(a => a.shift_id === shift.id);
-      return {
-        id: shift.id,
-        hospital: shift.hospital,
-        location: shift.location || '',
-        start_time: shift.start_time.slice(0, 5),
-        end_time: shift.end_time.slice(0, 5),
-        base_value: formatMoneyInput(shift.base_value),
-        notes: shift.notes || '',
-        sector_id: shift.sector_id || '',
-        assigned_user_id: currentAssignment?.user_id || '',
-      };
-    }));
-    setBulkEditDialogOpen(true);
+  function closeBulkEditDialog() {
+    bulkEditDialogCloseGuardRef.current = true;
+    window.setTimeout(() => {
+      bulkEditDialogCloseGuardRef.current = false;
+    }, 800);
+
+    setBulkEditDialogOpen(false);
+    setBulkEditData([]);
+    setBulkEditShifts([]);
   }
 
+  function openBulkEditDialog(date: Date) {
+    if (bulkEditDialogCloseGuardRef.current) return;
+
+    const dayShifts = getShiftsForDate(date);
+    if (dayShifts.length === 0) return;
+
+    setBulkEditShifts(dayShifts);
+    setBulkEditData(
+      dayShifts.map((shift) => {
+        const currentAssignment = assignments.find((a) => a.shift_id === shift.id);
+        return {
+          id: shift.id,
+          hospital: shift.hospital,
+          location: shift.location || '',
+          start_time: shift.start_time.slice(0, 5),
+          end_time: shift.end_time.slice(0, 5),
+          base_value: formatMoneyInput(shift.base_value),
+          notes: shift.notes || '',
+          sector_id: shift.sector_id || '',
+          assigned_user_id: currentAssignment?.user_id || '',
+        };
+      })
+    );
+    setBulkEditDialogOpen(true);
+  }
   function openBulkApplySelectedDialog(date: Date) {
     const dayShiftIds = getShiftsForDate(date).map((s) => s.id);
     const selectedInDay = dayShiftIds.filter((id) => selectedShiftIds.has(id));
@@ -1404,9 +1419,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
 
       toast({ title: 'Plantões atualizados!', description: `${bulkEditData.length} plantão(ões) foram salvos.` });
-      setBulkEditDialogOpen(false);
-      setBulkEditData([]);
-      setBulkEditShifts([]);
+      closeBulkEditDialog();
       fetchData();
     } catch (error) {
       console.error('Error saving bulk edits:', error);
@@ -3749,6 +3762,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Bulk Edit All Shifts of Day Dialog */}
       <Dialog open={bulkEditDialogOpen} onOpenChange={(open) => {
+        if (open && bulkEditDialogCloseGuardRef.current) {
+          setBulkEditDialogOpen(false);
+          return;
+        }
+
         setBulkEditDialogOpen(open);
         if (!open) {
           setBulkEditData([]);
@@ -3961,11 +3979,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 type="button" 
                 variant="outline" 
                 className="flex-1"
-                onClick={() => {
-                  setBulkEditDialogOpen(false);
-                  setBulkEditData([]);
-                  setBulkEditShifts([]);
-                }}
+                onClick={closeBulkEditDialog}
               >
                 Cancelar
               </Button>
