@@ -1182,7 +1182,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function closeBulkEditDialog() {
+    // The bulk edit dialog is typically opened from a button in the day dialog.
+    // When closing, Radix may restore focus to that trigger; if the user submitted with Enter,
+    // the keyup can immediately "click" the trigger again, re-opening the dialog.
     bulkEditDialogCloseGuardRef.current = true;
+
+    const active = document.activeElement as HTMLElement | null;
+    active?.blur();
+
+    const stopEnter = (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    window.addEventListener('keyup', stopEnter, true);
+    window.setTimeout(() => {
+      window.removeEventListener('keyup', stopEnter, true);
+    }, 400);
+
     window.setTimeout(() => {
       bulkEditDialogCloseGuardRef.current = false;
     }, 800);
