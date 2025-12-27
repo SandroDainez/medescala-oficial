@@ -226,7 +226,7 @@ export default function AdminShifts() {
     dialogCloseGuardRef.current = true;
     window.setTimeout(() => {
       dialogCloseGuardRef.current = false;
-    }, 300);
+    }, 800);
 
     setDialogOpen(false);
     setEditingShift(null);

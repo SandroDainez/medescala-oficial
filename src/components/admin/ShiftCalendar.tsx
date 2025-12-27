@@ -1155,11 +1155,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function closeShiftDialog() {
-    // Guard against immediate reopen caused by trigger focus/click quirks
+    // Guard against immediate reopen caused by click-through/focus quirks
     shiftDialogCloseGuardRef.current = true;
     window.setTimeout(() => {
       shiftDialogCloseGuardRef.current = false;
-    }, 300);
+    }, 800);
 
     setShiftDialogOpen(false);
     setEditingShift(null);
@@ -2732,7 +2732,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       </Dialog>
 
       {/* Create/Edit Shift Dialog */}
-      <Dialog open={shiftDialogOpen} onOpenChange={(open) => !open && closeShiftDialog()}>
+      <Dialog
+        open={shiftDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeShiftDialog();
+            return;
+          }
+
+          // Ignore immediate reopen right after a programmatic close
+          if (shiftDialogCloseGuardRef.current) return;
+          setShiftDialogOpen(true);
+        }}
+      >
         <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingShift ? 'Editar Plantão' : 'Novo Plantão'}</DialogTitle>
