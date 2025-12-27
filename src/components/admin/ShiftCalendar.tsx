@@ -109,6 +109,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const shiftDialogCloseGuardRef = useRef(false);
   const bulkEditDialogCloseGuardRef = useRef(false);
 
+  // Extra hard guard: temporarily disable the trigger button to avoid click-through (mouse up)
+  // after closing/saving the bulk edit dialog.
+  const [bulkEditTriggerDisabled, setBulkEditTriggerDisabled] = useState(false);
+
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [acknowledgedConflicts, setAcknowledgedConflicts] = useState<Set<string>>(new Set());
   const [bulkCreateDialogOpen, setBulkCreateDialogOpen] = useState(false);
@@ -1187,6 +1191,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // the keyup can immediately "click" the trigger again, re-opening the dialog.
     bulkEditDialogCloseGuardRef.current = true;
 
+    // Hard-disable the trigger briefly to avoid click-through (mouse up) on the underlying button.
+    setBulkEditTriggerDisabled(true);
+
     const active = document.activeElement as HTMLElement | null;
     active?.blur();
 
@@ -1203,6 +1210,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     window.setTimeout(() => {
       bulkEditDialogCloseGuardRef.current = false;
+      setBulkEditTriggerDisabled(false);
     }, 800);
 
     setBulkEditDialogOpen(false);
@@ -2547,7 +2555,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={bulkEditTriggerDisabled}
                     onClick={() => {
+                      if (bulkEditTriggerDisabled) return;
                       if (selectedDate) {
                         openBulkEditDialog(selectedDate);
                       }
