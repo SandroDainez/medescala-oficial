@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
+import { useToast } from '@/hooks/use-toast';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
@@ -35,13 +36,14 @@ interface FinancialSummary {
 export default function UserFinancial() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
+  const { toast } = useToast();
   const [summary, setSummary] = useState<FinancialSummary>({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: null });
   const [shifts, setShifts] = useState<ShiftDetail[]>([]);
   const [sectorSummaries, setSectorSummaries] = useState<SectorSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  
+  const didAutoSelectPeriod = useRef(false);
   const months = [
     { value: 1, label: 'Janeiro' },
     { value: 2, label: 'Fevereiro' },
@@ -60,7 +62,11 @@ export default function UserFinancial() {
 
 
   useEffect(() => {
-    if (user && currentTenantId) fetchData();
+    if (user && currentTenantId) {
+      didAutoSelectPeriod.current = false;
+      fetchData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId, selectedMonth, selectedYear]);
 
   async function fetchData() {
@@ -78,6 +84,7 @@ export default function UserFinancial() {
         checkin_at, 
         checkout_at, 
         shift:shifts!inner(
+          id,
           title, 
           hospital, 
           shift_date, 
@@ -89,13 +96,14 @@ export default function UserFinancial() {
         )
       `)
       .eq('tenant_id', currentTenantId)
-      .eq('user_id', user?.id)
+      .eq('user_id', user.id)
       .in('status', ['assigned', 'completed'])
       .gte('shift.shift_date', startDate)
       .lte('shift.shift_date', endDate);
-    
+
     if (error) {
       console.error('[UserFinancial] Error fetching:', error);
+      toast({ title: 'Erro ao carregar financeiro', description: error.message, variant: 'destructive' });
     }
     
     const { data: payment } = await supabase
@@ -187,6 +195,37 @@ export default function UserFinancial() {
         status: payment?.status || null,
       });
     } else {
+      // Se o período selecionado não tem dados, tenta pular automaticamente para o último mês com plantões
+      if (!didAutoSelectPeriod.current) {
+        didAutoSelectPeriod.current = true;
+
+        const { data: last } = await supabase
+          .from('shift_assignments')
+          .select(
+            `shift:shifts!inner(shift_date)`
+          )
+          .eq('tenant_id', currentTenantId)
+          .eq('user_id', user.id)
+          .in('status', ['assigned', 'completed'])
+          .order('shift.shift_date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const lastDate = (last as any)?.shift?.shift_date as string | undefined;
+        if (lastDate) {
+          const d = new Date(lastDate);
+          const nextMonth = d.getMonth() + 1;
+          const nextYear = d.getFullYear();
+
+          if (nextMonth !== selectedMonth || nextYear !== selectedYear) {
+            setLoading(false);
+            setSelectedMonth(nextMonth);
+            setSelectedYear(nextYear);
+            return;
+          }
+        }
+      }
+
       setShifts([]);
       setSectorSummaries([]);
       setSummary({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: payment?.status || null });
