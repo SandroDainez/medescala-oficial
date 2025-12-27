@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -49,6 +49,7 @@ export default function AdminShifts() {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const dialogCloseGuardRef = useRef(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
@@ -204,6 +205,8 @@ export default function AdminShifts() {
   }
 
   function openEdit(shift: Shift) {
+    if (dialogCloseGuardRef.current) return;
+
     setEditingShift(shift);
     setFormData({
       title: shift.title,
@@ -219,6 +222,12 @@ export default function AdminShifts() {
   }
 
   function closeDialog() {
+    // Guard against immediate reopen caused by click-through/focus quirks
+    dialogCloseGuardRef.current = true;
+    window.setTimeout(() => {
+      dialogCloseGuardRef.current = false;
+    }, 300);
+
     setDialogOpen(false);
     setEditingShift(null);
     setFormData({
@@ -253,6 +262,7 @@ export default function AdminShifts() {
         }}>
           <DialogTrigger asChild>
             <Button onClick={() => {
+              if (dialogCloseGuardRef.current) return;
               setEditingShift(null);
               setFormData({
                 title: '',
