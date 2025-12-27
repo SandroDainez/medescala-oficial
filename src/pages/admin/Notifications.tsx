@@ -627,15 +627,15 @@ export default function AdminNotifications() {
                   <p>Nenhuma notificação enviada ainda</p>
                 </div>
               ) : (
-                <div className="h-[500px] overflow-y-auto">
-                  <Table>
+                <div className="h-[500px] overflow-auto">
+                  <Table className="min-w-[720px]">
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
                         <TableHead>Data</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Título</TableHead>
                         <TableHead>Destinatário</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
+                        <TableHead className="text-right w-24">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -650,11 +650,11 @@ export default function AdminNotifications() {
                               <Badge variant="outline" className="gap-1">
                                 {typeInfo && <typeInfo.icon className={`h-3 w-3 ${typeInfo.color}`} />}
                                 {typeInfo?.label || notif.type}
-                            </Badge>
+                              </Badge>
                             </TableCell>
                             <TableCell className="font-medium">{notif.title}</TableCell>
                             <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right w-24">
                               <div className="flex items-center justify-end gap-1">
                                 <Button
                                   variant="ghost"
