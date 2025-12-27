@@ -16,7 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Bell, Send, Users, Calendar, DollarSign, ArrowLeftRight, 
-  AlertCircle, CheckCircle, Plus, Trash2, Eye
+  AlertCircle, CheckCircle, Plus, Trash2, Eye, Pencil
 } from 'lucide-react';
 import { format, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -76,6 +76,12 @@ export default function AdminNotifications() {
   
   // Preview dialog
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingNotification, setEditingNotification] = useState<SentNotification | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editMessage, setEditMessage] = useState('');
 
   useEffect(() => {
     if (currentTenantId) {
@@ -302,6 +308,48 @@ export default function AdminNotifications() {
       toast({ title: 'Notificação excluída!' });
       fetchData();
     }
+  }
+
+  function openEditDialog(notif: SentNotification) {
+    setEditingNotification(notif);
+    setEditTitle(notif.title ?? '');
+    setEditMessage(notif.message ?? '');
+    setEditOpen(true);
+  }
+
+  async function saveEdit() {
+    if (!editingNotification) return;
+
+    const nextTitle = editTitle.trim();
+    const nextMessage = editMessage.trim();
+
+    if (!nextTitle || !nextMessage) {
+      toast({
+        title: 'Preencha todos os campos',
+        description: 'Título e mensagem são obrigatórios.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from('notifications')
+      .update({ title: nextTitle, message: nextMessage })
+      .eq('id', editingNotification.id);
+
+    if (error) {
+      toast({
+        title: 'Erro ao editar',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Notificação atualizada!' });
+    setEditOpen(false);
+    setEditingNotification(null);
+    fetchData();
   }
 
   const typeInfo = notificationTypes.find(t => t.value === notificationType);
@@ -607,13 +655,24 @@ export default function AdminNotifications() {
                             <TableCell className="font-medium">{notif.title}</TableCell>
                             <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
                             <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => deleteNotification(notif.id)}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
-                              </Button>
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => openEditDialog(notif)}
+                                  aria-label="Editar notificação"
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => deleteNotification(notif.id)}
+                                  aria-label="Excluir notificação"
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -626,6 +685,39 @@ export default function AdminNotifications() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar notificação</DialogTitle>
+            <DialogDescription>Atualize o título e a mensagem</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="editTitle">Título</Label>
+              <Input
+                id="editTitle"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="editMessage">Mensagem</Label>
+              <Textarea
+                id="editMessage"
+                value={editMessage}
+                onChange={(e) => setEditMessage(e.target.value)}
+                rows={5}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancelar</Button>
+            <Button onClick={saveEdit}>Salvar alterações</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview Dialog */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
