@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
-import { Bell, Check, CheckCheck, Calendar, ArrowLeftRight, DollarSign } from 'lucide-react';
+import { Bell, Check, CheckCheck, Calendar, ArrowLeftRight, DollarSign, AlertCircle } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -86,6 +86,9 @@ export default function UserNotifications() {
         return <ArrowLeftRight className="h-5 w-5 text-purple-500" />;
       case 'payment':
         return <DollarSign className="h-5 w-5 text-green-500" />;
+      case 'urgent':
+        return <AlertCircle className="h-5 w-5 text-red-500" />;
+      case 'general':
       default:
         return <Bell className="h-5 w-5 text-muted-foreground" />;
     }

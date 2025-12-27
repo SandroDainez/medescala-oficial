@@ -242,13 +242,14 @@ export default function AdminNotifications() {
     setSending(true);
 
     // Create notifications for each user
+    // Note: shift_assignment_id is for linking to an assignment, not a shift
+    // We don't set it here since we're sending general notifications
     const notifications = targetUsers.map(userId => ({
       tenant_id: currentTenantId,
       user_id: userId,
       type: notificationType,
       title: title.trim(),
       message: message.trim(),
-      shift_assignment_id: selectedShift || null,
     }));
 
     const { error } = await supabase

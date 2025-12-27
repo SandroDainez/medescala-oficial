@@ -26,6 +26,11 @@ interface Notification {
 }
 
 const typeColors: Record<string, string> = {
+  shift: 'bg-blue-500',
+  payment: 'bg-green-500',
+  swap: 'bg-purple-500',
+  urgent: 'bg-red-500',
+  general: 'bg-gray-500',
   checkin_reminder_15min: 'bg-blue-500',
   checkin_reminder_now: 'bg-yellow-500',
   checkin_reminder_late: 'bg-orange-500',
