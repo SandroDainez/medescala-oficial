@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
@@ -60,13 +67,18 @@ export default function UserSwaps() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
-  
+
   const [myAssignments, setMyAssignments] = useState<Assignment[]>([]);
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
   const [mySwapRequests, setMySwapRequests] = useState<SwapRequest[]>([]);
   const [incomingSwapRequests, setIncomingSwapRequests] = useState<SwapRequest[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-11
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedDay, setSelectedDay] = useState<string>('all'); // yyyy-mm-dd | all
+
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [selectUserDialogOpen, setSelectUserDialogOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
@@ -74,11 +86,62 @@ export default function UserSwaps() {
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(false);
 
+  const monthOptions = useMemo(
+    () => [
+      { value: 0, label: 'Janeiro' },
+      { value: 1, label: 'Fevereiro' },
+      { value: 2, label: 'Março' },
+      { value: 3, label: 'Abril' },
+      { value: 4, label: 'Maio' },
+      { value: 5, label: 'Junho' },
+      { value: 6, label: 'Julho' },
+      { value: 7, label: 'Agosto' },
+      { value: 8, label: 'Setembro' },
+      { value: 9, label: 'Outubro' },
+      { value: 10, label: 'Novembro' },
+      { value: 11, label: 'Dezembro' },
+    ],
+    []
+  );
+
+  const yearOptions = useMemo(() => {
+    const y = new Date().getFullYear();
+    return [y, y + 1, y + 2];
+  }, []);
+
+  const monthAssignments = useMemo(() => {
+    const inMonth = myAssignments.filter((a) => {
+      const d = new Date(a.shift.shift_date);
+      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+    });
+
+    return inMonth.sort((a, b) => {
+      const ad = `${a.shift.shift_date}T${a.shift.start_time}`;
+      const bd = `${b.shift.shift_date}T${b.shift.start_time}`;
+      return ad.localeCompare(bd);
+    });
+  }, [myAssignments, selectedMonth, selectedYear]);
+
+  const availableDays = useMemo(() => {
+    const unique = Array.from(new Set(monthAssignments.map((a) => a.shift.shift_date))).sort();
+    return unique;
+  }, [monthAssignments]);
+
+  const visibleAssignments = useMemo(() => {
+    if (selectedDay === 'all') return monthAssignments;
+    return monthAssignments.filter((a) => a.shift.shift_date === selectedDay);
+  }, [monthAssignments, selectedDay]);
+
   useEffect(() => {
     if (user && currentTenantId) {
       fetchData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
+
+  useEffect(() => {
+    setSelectedDay('all');
+  }, [selectedMonth, selectedYear]);
 
   async function fetchData() {
     setLoading(true);
@@ -405,18 +468,67 @@ export default function UserSwaps() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Meus Plantões</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Clique em um plantão para passá-lo a outro colega
-              </p>
+              <p className="text-sm text-muted-foreground">Escolha o mês/dia e clique em um plantão para passar</p>
+
+              <div className="grid gap-3 pt-3 sm:grid-cols-3">
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-foreground">Mês</div>
+                  <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {monthOptions.map((m) => (
+                        <SelectItem key={m.value} value={String(m.value)}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-foreground">Ano</div>
+                  <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Ano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {yearOptions.map((y) => (
+                        <SelectItem key={y} value={String(y)}>
+                          {y}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-foreground">Dia</div>
+                  <Select value={selectedDay} onValueChange={setSelectedDay}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Dia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      {availableDays.map((d) => (
+                        <SelectItem key={d} value={d}>
+                          {format(new Date(d), 'dd/MM/yyyy', { locale: ptBR })}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
-              {myAssignments.length === 0 ? (
+              {visibleAssignments.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">
-                  Você não tem plantões futuros para passar.
+                  Nenhum plantão disponível para passar neste filtro.
                 </p>
               ) : (
                 <div className="grid gap-3">
-                  {myAssignments.map((assignment) => (
+                  {visibleAssignments.map((assignment) => (
                     <div
                       key={assignment.id}
                       onClick={() => handleShiftClick(assignment)}
@@ -434,14 +546,7 @@ export default function UserSwaps() {
                             {assignment.shift.start_time.slice(0, 5)} - {assignment.shift.end_time.slice(0, 5)}
                           </div>
                           {assignment.shift.sector && (
-                            <Badge
-                              variant="outline"
-                              className="text-xs mt-1"
-                              style={{
-                                borderColor: assignment.shift.sector.color || '#22c55e',
-                                backgroundColor: `${assignment.shift.sector.color || '#22c55e'}20`,
-                              }}
-                            >
+                            <Badge variant="outline" className="text-xs mt-1">
                               {assignment.shift.sector.name}
                             </Badge>
                           )}
