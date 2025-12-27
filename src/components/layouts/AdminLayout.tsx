@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useSuperAdmin } from '@/hooks/useSuperAdmin';
@@ -53,11 +53,15 @@ export function AdminLayout() {
   const { currentTenantId, currentTenantName } = useTenant();
   const { isSuperAdmin } = useSuperAdmin();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [escalasOpen, setEscalasOpen] = useState(false);
 
   useEffect(() => {
+    // Always start with Escalas collapsed when the app/layout loads or tenant changes
+    setEscalasOpen(false);
+
     if (currentTenantId) {
       fetchSectors();
     }
@@ -80,7 +84,7 @@ export function AdminLayout() {
   };
 
   // Check if current route is a calendar sector route
-  const isCalendarRoute = window.location.pathname.startsWith('/admin/calendar');
+  const isCalendarRoute = location.pathname.startsWith('/admin/calendar');
 
   return (
     <div className="min-h-screen bg-background">
