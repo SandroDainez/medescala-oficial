@@ -9,6 +9,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
@@ -16,7 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Bell, Send, Users, Calendar, DollarSign, ArrowLeftRight, 
-  AlertCircle, CheckCircle, Plus, Trash2, Eye, Pencil
+  AlertCircle, CheckCircle, Plus, Trash2, Eye, Pencil, MoreVertical
 } from 'lucide-react';
 import { format, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -635,7 +641,6 @@ export default function AdminNotifications() {
                         <TableHead>Tipo</TableHead>
                         <TableHead>Título</TableHead>
                         <TableHead>Destinatário</TableHead>
-                        <TableHead className="text-right w-24">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -652,28 +657,37 @@ export default function AdminNotifications() {
                                 {typeInfo?.label || notif.type}
                               </Badge>
                             </TableCell>
-                            <TableCell className="font-medium">{notif.title}</TableCell>
-                            <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
-                            <TableCell className="text-right w-24">
-                              <div className="flex items-center justify-end gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => openEditDialog(notif)}
-                                  aria-label="Editar notificação"
-                                >
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => deleteNotification(notif.id)}
-                                  aria-label="Excluir notificação"
-                                >
-                                  <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="truncate">{notif.title}</span>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-8 w-8 shrink-0"
+                                      aria-label="Ações"
+                                    >
+                                      <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuItem onClick={() => openEditDialog(notif)}>
+                                      <Pencil className="mr-2 h-4 w-4" />
+                                      Editar
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      onClick={() => deleteNotification(notif.id)}
+                                      className="text-destructive"
+                                    >
+                                      <Trash2 className="mr-2 h-4 w-4" />
+                                      Excluir
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
                               </div>
                             </TableCell>
+                            <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
                           </TableRow>
                         );
                       })}
