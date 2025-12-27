@@ -85,15 +85,30 @@ export default function UserShifts() {
         .eq('active', true),
     ]);
 
+    if (assignmentsRes.error) {
+      console.error('[UserShifts] Error fetching assignments:', assignmentsRes.error);
+      toast({ title: 'Erro ao carregar agenda', description: assignmentsRes.error.message, variant: 'destructive' });
+    }
+
+    if (sectorsRes.error) {
+      console.error('[UserShifts] Error fetching sectors:', sectorsRes.error);
+    }
+
     if (assignmentsRes.data) {
       // Some rows can come with a null join if the shift was deleted; filter those out
       setAssignments((assignmentsRes.data as unknown as Assignment[]).filter((a) => !!a.shift));
+    } else {
+      setAssignments([]);
     }
+
     if (sectorsRes.data) {
       setSectors(sectorsRes.data);
       // Open all sectors by default
       setOpenSectors(new Set(sectorsRes.data.map((s) => s.id)));
+    } else {
+      setSectors([]);
     }
+
     setLoading(false);
   }
 
@@ -185,6 +200,24 @@ export default function UserShifts() {
       return ad.localeCompare(bd);
     });
   }, [assignments, selectedMonth, selectedYear]);
+
+  // Se o mês atual não tem nada, mas o usuário tem plantões em outro mês, muda automaticamente
+  useEffect(() => {
+    if (assignments.length === 0) return;
+    if (filteredAssignments.length > 0) return;
+
+    const earliest = assignments
+      .map((a) => new Date(a.shift.shift_date))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+
+    if (!earliest) return;
+
+    const nextMonth = earliest.getMonth();
+    const nextYear = earliest.getFullYear();
+
+    if (nextMonth !== selectedMonth) setSelectedMonth(nextMonth);
+    if (nextYear !== selectedYear) setSelectedYear(nextYear);
+  }, [assignments, filteredAssignments.length, selectedMonth, selectedYear]);
 
   // Group assignments by sector (after filtering)
   const groupedAssignments = filteredAssignments.reduce((acc, assignment) => {

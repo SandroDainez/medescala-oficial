@@ -122,6 +122,27 @@ export default function UserSwaps() {
     });
   }, [myAssignments, selectedMonth, selectedYear]);
 
+  // Se o mês atual não tem plantões para passar, mas existe em outro mês, troca automaticamente
+  useEffect(() => {
+    if (myAssignments.length === 0) return;
+
+    const hasInSelected = myAssignments.some((a) => {
+      const d = new Date(a.shift.shift_date);
+      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+    });
+
+    if (hasInSelected) return;
+
+    const earliest = myAssignments
+      .map((a) => new Date(a.shift.shift_date))
+      .sort((a, b) => a.getTime() - b.getTime())[0];
+
+    if (!earliest) return;
+
+    setSelectedMonth(earliest.getMonth());
+    setSelectedYear(earliest.getFullYear());
+  }, [myAssignments, selectedMonth, selectedYear]);
+
   const availableDays = useMemo(() => {
     const unique = Array.from(new Set(monthAssignments.map((a) => a.shift.shift_date))).sort();
     return unique;
@@ -157,7 +178,7 @@ export default function UserSwaps() {
   async function fetchMyAssignments() {
     if (!currentTenantId || !user) return;
     const today = new Date().toISOString().split('T')[0];
-    
+
     // First get all assignments for the user
     const { data, error } = await supabase
       .from('shift_assignments')
@@ -171,18 +192,22 @@ export default function UserSwaps() {
       .eq('tenant_id', currentTenantId)
       .eq('user_id', user.id)
       .in('status', ['assigned', 'confirmed']);
-    
+
     if (error) {
-      console.error('Error fetching assignments:', error);
+      console.error('[UserSwaps] Error fetching assignments:', error);
+      toast({ title: 'Erro ao carregar plantões', description: error.message, variant: 'destructive' });
+      setMyAssignments([]);
       return;
     }
-    
+
     if (data) {
       // Filter out null shifts and past dates (filter on frontend since nested column filter doesn't work)
       const validAssignments = data
         .filter((a: any) => a.shift !== null && a.shift.shift_date >= today)
         .sort((a: any, b: any) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
       setMyAssignments(validAssignments);
+    } else {
+      setMyAssignments([]);
     }
   }
 
