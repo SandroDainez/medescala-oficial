@@ -1040,6 +1040,10 @@ export type Database = {
         Args: { _name: string; _slug: string }
         Returns: string
       }
+      decide_swap_request: {
+        Args: { _decision: string; _swap_request_id: string }
+        Returns: boolean
+      }
       get_all_tenants_admin: {
         Args: never
         Returns: {
