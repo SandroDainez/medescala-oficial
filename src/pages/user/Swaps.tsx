@@ -75,9 +75,10 @@ export default function UserSwaps() {
   const [loading, setLoading] = useState(true);
 
   const now = new Date();
-  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-11
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedDay, setSelectedDay] = useState<string>('all'); // yyyy-mm-dd | all
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string>('all');
+  const [didAutoSelect, setDidAutoSelect] = useState(false);
 
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [selectUserDialogOpen, setSelectUserDialogOpen] = useState(false);
@@ -104,15 +105,22 @@ export default function UserSwaps() {
     []
   );
 
+  // Gera anos dinamicamente baseado nos dados
   const yearOptions = useMemo(() => {
-    const y = new Date().getFullYear();
-    return [y, y + 1, y + 2];
-  }, []);
+    const baseYear = new Date().getFullYear();
+    const assignmentYears = myAssignments.map(a => new Date(a.shift.shift_date).getFullYear());
+    const allYears = new Set([baseYear, baseYear + 1, baseYear + 2, ...assignmentYears]);
+    return Array.from(allYears).sort((a, b) => a - b);
+  }, [myAssignments]);
+
+  // Valores efetivos (usa atual se não selecionado)
+  const effectiveMonth = selectedMonth ?? now.getMonth();
+  const effectiveYear = selectedYear ?? now.getFullYear();
 
   const monthAssignments = useMemo(() => {
     const inMonth = myAssignments.filter((a) => {
       const d = new Date(a.shift.shift_date);
-      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
+      return d.getFullYear() === effectiveYear && d.getMonth() === effectiveMonth;
     });
 
     return inMonth.sort((a, b) => {
@@ -120,28 +128,25 @@ export default function UserSwaps() {
       const bd = `${b.shift.shift_date}T${b.shift.start_time}`;
       return ad.localeCompare(bd);
     });
-  }, [myAssignments, selectedMonth, selectedYear]);
+  }, [myAssignments, effectiveMonth, effectiveYear]);
 
-  // Se o mês atual não tem plantões para passar, mas existe em outro mês, troca automaticamente
+  // Auto-select: ao carregar dados, navega para o primeiro mês com plantões
   useEffect(() => {
-    if (myAssignments.length === 0) return;
+    if (didAutoSelect || myAssignments.length === 0) return;
 
-    const hasInSelected = myAssignments.some((a) => {
-      const d = new Date(a.shift.shift_date);
-      return d.getFullYear() === selectedYear && d.getMonth() === selectedMonth;
-    });
-
-    if (hasInSelected) return;
-
-    const earliest = myAssignments
+    // Ordenar plantões por data
+    const sortedDates = myAssignments
       .map((a) => new Date(a.shift.shift_date))
-      .sort((a, b) => a.getTime() - b.getTime())[0];
+      .sort((a, b) => a.getTime() - b.getTime());
 
-    if (!earliest) return;
-
-    setSelectedMonth(earliest.getMonth());
-    setSelectedYear(earliest.getFullYear());
-  }, [myAssignments, selectedMonth, selectedYear]);
+    const firstShift = sortedDates[0];
+    
+    if (firstShift) {
+      setSelectedMonth(firstShift.getMonth());
+      setSelectedYear(firstShift.getFullYear());
+      setDidAutoSelect(true);
+    }
+  }, [myAssignments, didAutoSelect]);
 
   const availableDays = useMemo(() => {
     const unique = Array.from(new Set(monthAssignments.map((a) => a.shift.shift_date))).sort();
@@ -155,6 +160,7 @@ export default function UserSwaps() {
 
   useEffect(() => {
     if (user && currentTenantId) {
+      setDidAutoSelect(false);
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,7 +168,7 @@ export default function UserSwaps() {
 
   useEffect(() => {
     setSelectedDay('all');
-  }, [selectedMonth, selectedYear]);
+  }, [effectiveMonth, effectiveYear]);
 
   async function fetchData() {
     setLoading(true);
@@ -498,7 +504,7 @@ export default function UserSwaps() {
               <div className="grid gap-3 pt-3 sm:grid-cols-3">
                 <div className="space-y-1">
                   <div className="text-xs font-medium text-foreground">Mês</div>
-                  <Select value={String(selectedMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
+                  <Select value={String(effectiveMonth)} onValueChange={(v) => setSelectedMonth(Number(v))}>
                     <SelectTrigger>
                       <SelectValue placeholder="Mês" />
                     </SelectTrigger>
@@ -514,7 +520,7 @@ export default function UserSwaps() {
 
                 <div className="space-y-1">
                   <div className="text-xs font-medium text-foreground">Ano</div>
-                  <Select value={String(selectedYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
+                  <Select value={String(effectiveYear)} onValueChange={(v) => setSelectedYear(Number(v))}>
                     <SelectTrigger>
                       <SelectValue placeholder="Ano" />
                     </SelectTrigger>

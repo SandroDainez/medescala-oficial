@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
@@ -41,9 +41,15 @@ export default function UserFinancial() {
   const [shifts, setShifts] = useState<ShiftDetail[]>([]);
   const [sectorSummaries, setSectorSummaries] = useState<SectorSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const didAutoSelectPeriod = useRef(false);
+  const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [didAutoSelect, setDidAutoSelect] = useState(false);
+  const [allAssignmentDates, setAllAssignmentDates] = useState<string[]>([]);
+
+  const now = new Date();
+  const effectiveMonth = selectedMonth ?? (now.getMonth() + 1); // 1-12
+  const effectiveYear = selectedYear ?? now.getFullYear();
+
   const months = [
     { value: 1, label: 'Janeiro' },
     { value: 2, label: 'Fevereiro' },
@@ -58,19 +64,72 @@ export default function UserFinancial() {
     { value: 11, label: 'Novembro' },
     { value: 12, label: 'Dezembro' }
   ];
-  const years = [2024, 2025, 2026, 2027];
 
+  // Gera anos dinamicamente baseado nos dados
+  const years = useMemo(() => {
+    const baseYear = new Date().getFullYear();
+    const dataYears = allAssignmentDates.map(d => new Date(d).getFullYear());
+    const allYears = new Set([baseYear - 1, baseYear, baseYear + 1, baseYear + 2, ...dataYears]);
+    return Array.from(allYears).sort((a, b) => a - b);
+  }, [allAssignmentDates]);
 
   useEffect(() => {
     if (user && currentTenantId) {
-      didAutoSelectPeriod.current = false;
+      setDidAutoSelect(false);
+      fetchAllDates();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, currentTenantId]);
+
+  useEffect(() => {
+    if (user && currentTenantId && selectedMonth !== null && selectedYear !== null) {
       fetchData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId, selectedMonth, selectedYear]);
 
-  async function fetchData() {
+  // Fetch all assignment dates to determine available years and auto-select
+  async function fetchAllDates() {
     if (!currentTenantId || !user) return;
+
+    const { data } = await supabase
+      .from('shift_assignments')
+      .select('shift:shifts!inner(shift_date)')
+      .eq('tenant_id', currentTenantId)
+      .eq('user_id', user.id)
+      .in('status', ['assigned', 'completed']);
+
+    if (data && data.length > 0) {
+      const dates = data
+        .map((d: any) => d.shift?.shift_date)
+        .filter(Boolean) as string[];
+      
+      setAllAssignmentDates(dates);
+
+      // Auto-select: navega para o mês mais recente com dados
+      if (!didAutoSelect) {
+        const sortedDates = [...dates].sort((a, b) => b.localeCompare(a)); // Mais recente primeiro
+        const latestDate = sortedDates[0];
+        if (latestDate) {
+          const d = new Date(latestDate);
+          setSelectedMonth(d.getMonth() + 1);
+          setSelectedYear(d.getFullYear());
+          setDidAutoSelect(true);
+        }
+      }
+    } else {
+      setAllAssignmentDates([]);
+      // Se não há dados, mostrar mês atual
+      if (!didAutoSelect) {
+        setSelectedMonth(now.getMonth() + 1);
+        setSelectedYear(now.getFullYear());
+        setDidAutoSelect(true);
+      }
+    }
+  }
+
+  async function fetchData() {
+    if (!currentTenantId || !user || selectedMonth === null || selectedYear === null) return;
     setLoading(true);
     
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
@@ -195,37 +254,6 @@ export default function UserFinancial() {
         status: payment?.status || null,
       });
     } else {
-      // Se o período selecionado não tem dados, tenta pular automaticamente para o último mês com plantões
-      if (!didAutoSelectPeriod.current) {
-        didAutoSelectPeriod.current = true;
-
-        const { data: last } = await supabase
-          .from('shift_assignments')
-          .select(
-            `shift:shifts!inner(shift_date)`
-          )
-          .eq('tenant_id', currentTenantId)
-          .eq('user_id', user.id)
-          .in('status', ['assigned', 'completed'])
-          .order('shift.shift_date', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const lastDate = (last as any)?.shift?.shift_date as string | undefined;
-        if (lastDate) {
-          const d = new Date(lastDate);
-          const nextMonth = d.getMonth() + 1;
-          const nextYear = d.getFullYear();
-
-          if (nextMonth !== selectedMonth || nextYear !== selectedYear) {
-            setLoading(false);
-            setSelectedMonth(nextMonth);
-            setSelectedYear(nextYear);
-            return;
-          }
-        }
-      }
-
       setShifts([]);
       setSectorSummaries([]);
       setSummary({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: payment?.status || null });
