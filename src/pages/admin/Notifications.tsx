@@ -20,9 +20,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { clearPwaCacheAndReload } from '@/lib/pwa';
 import { 
   Bell, Send, Users, Calendar, DollarSign, ArrowLeftRight, 
-  AlertCircle, CheckCircle, Plus, Trash2, Eye, Pencil, MoreVertical
+  AlertCircle, CheckCircle, Plus, Trash2, Eye, Pencil, MoreVertical, RefreshCw
 } from 'lucide-react';
 import { format, parseISO, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -383,9 +384,20 @@ export default function AdminNotifications() {
           </h1>
           <p className="text-muted-foreground">Envie avisos para os plantonistas</p>
         </div>
-        <Badge variant="outline" className="text-lg px-4 py-2">
-          {availableShifts.length} plantões disponíveis
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={clearPwaCacheAndReload}
+            title="Forçar atualização (limpa cache do app)"
+          >
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Atualizar
+          </Button>
+          <Badge variant="outline" className="text-lg px-4 py-2">
+            {availableShifts.length} plantões disponíveis
+          </Badge>
+        </div>
       </div>
 
       <Tabs defaultValue="send" className="space-y-4">
@@ -641,6 +653,7 @@ export default function AdminNotifications() {
                         <TableHead>Tipo</TableHead>
                         <TableHead>Título</TableHead>
                         <TableHead>Destinatário</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -688,6 +701,19 @@ export default function AdminNotifications() {
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              <Button variant="ghost" size="sm" onClick={() => openEditDialog(notif)}>
+                                Editar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => deleteNotification(notif.id)}
+                                className="text-destructive"
+                              >
+                                Excluir
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         );
                       })}
