@@ -242,9 +242,22 @@ export default function AdminShifts() {
           <h2 className="text-2xl font-bold text-foreground">Plantões</h2>
           <p className="text-muted-foreground">Gerencie os plantões do hospital</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeDialog()}>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => setDialogOpen(true)}>
+            <Button onClick={() => {
+              setEditingShift(null);
+              setFormData({
+                title: '',
+                hospital: '',
+                location: '',
+                shift_date: '',
+                start_time: '',
+                end_time: '',
+                base_value: '',
+                notes: '',
+              });
+              setDialogOpen(true);
+            }}>
               <Plus className="mr-2 h-4 w-4" />
               Novo Plantão
             </Button>
