@@ -236,7 +236,7 @@ export default function UserShifts() {
                                   </div>
                                   <div className="flex items-center gap-1">
                                     <MapPin className="h-4 w-4" />
-                                    {a.shift.hospital}
+                                    {sectorInfo.name}
                                   </div>
                                 </div>
 
