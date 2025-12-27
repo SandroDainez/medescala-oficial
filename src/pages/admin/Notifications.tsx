@@ -284,6 +284,26 @@ export default function AdminNotifications() {
     }
   }
 
+  async function deleteNotification(id: string) {
+    if (!confirm('Deseja excluir esta notificação?')) return;
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: 'Notificação excluída!' });
+      fetchData();
+    }
+  }
+
   const typeInfo = notificationTypes.find(t => t.value === notificationType);
   const TypeIcon = typeInfo?.icon || Bell;
   const userCount = sendToAll 
@@ -567,6 +587,7 @@ export default function AdminNotifications() {
                         <TableHead>Tipo</TableHead>
                         <TableHead>Título</TableHead>
                         <TableHead>Destinatário</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -581,10 +602,19 @@ export default function AdminNotifications() {
                               <Badge variant="outline" className="gap-1">
                                 {typeInfo && <typeInfo.icon className={`h-3 w-3 ${typeInfo.color}`} />}
                                 {typeInfo?.label || notif.type}
-                              </Badge>
+                            </Badge>
                             </TableCell>
                             <TableCell className="font-medium">{notif.title}</TableCell>
                             <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteNotification(notif.id)}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </TableCell>
                           </TableRow>
                         );
                       })}
