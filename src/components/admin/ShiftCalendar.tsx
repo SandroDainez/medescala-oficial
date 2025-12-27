@@ -1463,6 +1463,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       toast({ title: 'Plantões atualizados!', description: `${bulkEditData.length} plantão(ões) foram salvos.` });
       closeBulkEditDialog();
+      // After saving "Editar Todos", also close the day dialog to avoid the impression
+      // that the edit flow reopened automatically.
+      setDayDialogOpen(false);
+      setDayDialogSectorId(null);
+      setSelectedDate(null);
       fetchData();
     } catch (error) {
       console.error('Error saving bulk edits:', error);
