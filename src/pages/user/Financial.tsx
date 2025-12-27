@@ -11,8 +11,9 @@ import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntr
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import { DollarSign, Calendar, Clock, Building, MapPin } from 'lucide-react';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { parseDateOnly } from '@/lib/utils';
 
 type ShiftDetail = FinancialEntry;
 
@@ -68,7 +69,7 @@ export default function UserFinancial() {
   // Gera anos dinamicamente baseado nos dados
   const years = useMemo(() => {
     const baseYear = new Date().getFullYear();
-    const dataYears = allAssignmentDates.map(d => new Date(d).getFullYear());
+    const dataYears = allAssignmentDates.map(d => Number(d.slice(0, 4)));
     const allYears = new Set([baseYear - 1, baseYear, baseYear + 1, baseYear + 2, ...dataYears]);
     return Array.from(allYears).sort((a, b) => a - b);
   }, [allAssignmentDates]);
@@ -97,13 +98,13 @@ export default function UserFinancial() {
       .select('shift:shifts!inner(shift_date)')
       .eq('tenant_id', currentTenantId)
       .eq('user_id', user.id)
-      .in('status', ['assigned', 'completed']);
+      .in('status', ['assigned', 'confirmed', 'completed']);
 
     if (data && data.length > 0) {
       const dates = data
         .map((d: any) => d.shift?.shift_date)
         .filter(Boolean) as string[];
-      
+
       setAllAssignmentDates(dates);
 
       // Auto-select: navega para o mês mais recente com dados
@@ -111,7 +112,7 @@ export default function UserFinancial() {
         const sortedDates = [...dates].sort((a, b) => b.localeCompare(a)); // Mais recente primeiro
         const latestDate = sortedDates[0];
         if (latestDate) {
-          const d = new Date(latestDate);
+          const d = parseDateOnly(latestDate);
           setSelectedMonth(d.getMonth() + 1);
           setSelectedYear(d.getFullYear());
           setDidAutoSelect(true);
@@ -131,10 +132,10 @@ export default function UserFinancial() {
   async function fetchData() {
     if (!currentTenantId || !user || selectedMonth === null || selectedYear === null) return;
     setLoading(true);
-    
+
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
-    
+
     const { data: assignments, error } = await supabase
       .from('shift_assignments')
       .select(`
@@ -156,7 +157,7 @@ export default function UserFinancial() {
       `)
       .eq('tenant_id', currentTenantId)
       .eq('user_id', user.id)
-      .in('status', ['assigned', 'completed'])
+      .in('status', ['assigned', 'confirmed', 'completed'])
       .gte('shift.shift_date', startDate)
       .lte('shift.shift_date', endDate);
 
@@ -164,7 +165,7 @@ export default function UserFinancial() {
       console.error('[UserFinancial] Error fetching:', error);
       toast({ title: 'Erro ao carregar financeiro', description: error.message, variant: 'destructive' });
     }
-    
+
     const { data: payment } = await supabase
       .from('payments')
       .select('status')
@@ -173,8 +174,9 @@ export default function UserFinancial() {
       .eq('month', selectedMonth)
       .eq('year', selectedYear)
       .maybeSingle();
-    
+
     if (assignments && assignments.length > 0) {
+
       // Normaliza a partir da MESMA fonte da Escala
       const scheduleShifts: ScheduleShift[] = assignments
         .map((a: any) => a.shift)
