@@ -94,7 +94,9 @@ export default function UserSwaps() {
   async function fetchMyAssignments() {
     if (!currentTenantId || !user) return;
     const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
+    
+    // First get all assignments for the user
+    const { data, error } = await supabase
       .from('shift_assignments')
       .select(`
         id, shift_id,
@@ -105,13 +107,18 @@ export default function UserSwaps() {
       `)
       .eq('tenant_id', currentTenantId)
       .eq('user_id', user.id)
-      .in('status', ['assigned', 'confirmed'])
-      .gte('shift.shift_date', today)
-      .order('shift(shift_date)', { ascending: true });
+      .in('status', ['assigned', 'confirmed']);
+    
+    if (error) {
+      console.error('Error fetching assignments:', error);
+      return;
+    }
     
     if (data) {
-      // Filter out null shifts
-      const validAssignments = data.filter((a: any) => a.shift !== null) as unknown as Assignment[];
+      // Filter out null shifts and past dates (filter on frontend since nested column filter doesn't work)
+      const validAssignments = data
+        .filter((a: any) => a.shift !== null && a.shift.shift_date >= today)
+        .sort((a: any, b: any) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
       setMyAssignments(validAssignments);
     }
   }
