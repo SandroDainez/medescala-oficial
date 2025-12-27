@@ -3773,7 +3773,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           setBulkEditShifts([]);
         }
       }}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent
+          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          onCloseAutoFocus={(e) => {
+            // Prevent focus from returning to the trigger button, which can cause an immediate re-open
+            // when the user released Enter after submitting the form.
+            e.preventDefault();
+          }}
+        >
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Edit className="h-5 w-5" />
