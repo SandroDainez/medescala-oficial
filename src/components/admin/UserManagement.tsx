@@ -449,53 +449,51 @@ export default function UserManagement() {
         }
       }
 
-      // If email change, password reset, or send email is requested, call edge function
+      // If email change, password reset, or send email is requested, call backend function
       if (editEmail.trim() || resetPasswordOnSave || sendEmailOnSave) {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.access_token) {
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/update-user`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${session.access_token}`,
-                'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-              },
-              body: JSON.stringify({
-                userId: editingMember.user_id,
-                tenantId: currentTenantId,
-                email: editEmail.trim() || undefined,
-                resetPassword: resetPasswordOnSave,
-                sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
-              }),
-            }
-          );
+        const nextEmail = editEmail.trim();
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(result.error || 'Erro ao atualizar usuário');
+        if (nextEmail) {
+          // basic client-side validation
+          const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
+          if (!emailLooksValid) {
+            throw new Error('Email inválido');
           }
+        }
 
-          // Show new password if reset
-          if (result.passwordReset && result.newPassword) {
-            setNewPasswordFromReset(result.newPassword);
-            toast({ 
-              title: 'Senha resetada!',
-              description: result.emailSent 
-                ? 'Nova senha enviada por email.' 
-                : 'Copie a nova senha para o usuário.',
-            });
-          } else {
-            toast({ 
-              title: 'Usuário atualizado!',
-              description: result.emailSent ? 'Email de notificação enviado.' : undefined
-            });
-            setEditDialogOpen(false);
-            setEditingMember(null);
-          }
+        const { data, error } = await supabase.functions.invoke('update-user', {
+          body: {
+            userId: editingMember.user_id,
+            tenantId: currentTenantId,
+            email: nextEmail || undefined,
+            resetPassword: resetPasswordOnSave,
+            sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
+          },
+        });
+
+        // supabase.functions.invoke returns an error object on non-2xx responses
+        if (error) {
+          throw new Error(error.message || 'Erro ao atualizar usuário');
+        }
+
+        if (data?.error) {
+          throw new Error(data.error);
+        }
+
+        // Show new password if reset
+        if (data?.passwordReset && data?.newPassword) {
+          setNewPasswordFromReset(data.newPassword);
+          toast({
+            title: 'Senha resetada!',
+            description: data.emailSent ? 'Nova senha enviada por email.' : 'Copie a nova senha para o usuário.',
+          });
+        } else {
+          toast({
+            title: 'Usuário atualizado!',
+            description: data?.emailSent ? 'Email de notificação enviado.' : undefined,
+          });
+          setEditDialogOpen(false);
+          setEditingMember(null);
         }
       } else {
         toast({ title: 'Usuário atualizado!' });

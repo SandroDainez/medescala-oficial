@@ -297,15 +297,17 @@ Deno.serve(async (req) => {
     )
 
   } catch (error: unknown) {
-    console.error('Error updating user:', error)
     const errorMessage = error instanceof Error ? error.message : 'Failed to update user'
+    console.log('update-user error:', errorMessage)
+    console.error('Error updating user:', error)
+
     return new Response(
-      JSON.stringify({ 
-        error: errorMessage
+      JSON.stringify({
+        error: errorMessage,
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
+        status: 400,
       }
     )
   }
