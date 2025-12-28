@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,12 +10,39 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Calendar, Users, ArrowLeftRight, DollarSign, ChevronLeft, ChevronRight,
-  Clock, MapPin, UserPlus, Trash2, Check, X as XIcon, Building2, Eye, Plus
+import {
+  Calendar,
+  Users,
+  ArrowLeftRight,
+  DollarSign,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  MapPin,
+  UserPlus,
+  Trash2,
+  Check,
+  X as XIcon,
+  Building2,
+  Eye,
+  Plus,
 } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addDays } from 'date-fns';
+import {
+  format,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  isSameDay,
+  addMonths,
+  subMonths,
+  isToday,
+  parseISO,
+  startOfWeek,
+  endOfWeek,
+  addDays,
+} from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 interface Sector {
@@ -79,7 +106,8 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  
+  const isMobile = useIsMobile();
+
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
@@ -298,7 +326,7 @@ export default function AdminDashboard() {
   }
 
   // Generate month options (current year ± 2 years)
-  const monthOptions = (() => {
+  const monthOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [];
     const now = new Date();
     for (let yearOffset = -2; yearOffset <= 1; yearOffset++) {
@@ -311,7 +339,7 @@ export default function AdminDashboard() {
       }
     }
     return options;
-  })();
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -332,24 +360,44 @@ export default function AdminDashboard() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Select
-              value={format(currentDate, 'yyyy-MM')}
-              onValueChange={(v) => {
-                const [year, month] = v.split('-').map(Number);
-                setCurrentDate(new Date(year, month - 1, 1));
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-[220px]">
-                <SelectValue placeholder="Selecione o mês" />
-              </SelectTrigger>
-              <SelectContent className="max-h-[300px]">
+
+            {isMobile ? (
+              <select
+                aria-label="Selecionar mês"
+                value={format(currentDate, 'yyyy-MM')}
+                onChange={(e) => {
+                  const [year, month] = e.target.value.split('-').map(Number);
+                  setCurrentDate(new Date(year, month - 1, 1));
+                }}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-[220px]"
+              >
                 {monthOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
+                  <option key={opt.value} value={opt.value}>
                     {opt.label}
-                  </SelectItem>
+                  </option>
                 ))}
-              </SelectContent>
-            </Select>
+              </select>
+            ) : (
+              <Select
+                value={format(currentDate, 'yyyy-MM')}
+                onValueChange={(v) => {
+                  const [year, month] = v.split('-').map(Number);
+                  setCurrentDate(new Date(year, month - 1, 1));
+                }}
+              >
+                <SelectTrigger className="w-full sm:w-[220px]">
+                  <SelectValue placeholder="Selecione o mês" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px]">
+                  {monthOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
             <Button
               variant="outline"
               size="icon"
