@@ -552,9 +552,69 @@ export default function AdminDashboard() {
         {/* Financial Tab */}
         <TabsContent value="financial">
           <Card>
-            <CardHeader>
-              <CardTitle>Resumo Financeiro - {format(currentDate, 'MMMM yyyy', { locale: ptBR })}</CardTitle>
-              <CardDescription>Valores por plantonista e setor</CardDescription>
+            <CardHeader className="gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-1">
+                <CardTitle>Resumo Financeiro - {format(currentDate, 'MMMM yyyy', { locale: ptBR })}</CardTitle>
+                <CardDescription>Valores por plantonista e setor</CardDescription>
+              </div>
+
+              {/* Seletor de mês (também aqui, para não precisar voltar ao topo) */}
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Mês anterior"
+                  onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                {isMobile ? (
+                  <select
+                    aria-label="Selecionar mês do resumo financeiro"
+                    value={format(currentDate, 'yyyy-MM')}
+                    onChange={(e) => {
+                      const [year, month] = e.target.value.split('-').map(Number);
+                      setCurrentDate(new Date(year, month - 1, 1));
+                    }}
+                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-[220px]"
+                  >
+                    {monthOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Select
+                    value={format(currentDate, 'yyyy-MM')}
+                    onValueChange={(v) => {
+                      const [year, month] = v.split('-').map(Number);
+                      setCurrentDate(new Date(year, month - 1, 1));
+                    }}
+                  >
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue placeholder="Selecione o mês" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[300px]">
+                      {monthOptions.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Próximo mês"
+                  onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <Table>
