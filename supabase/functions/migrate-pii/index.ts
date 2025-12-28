@@ -91,10 +91,10 @@ Deno.serve(async (req) => {
 
     const cryptoKey = await deriveKey(encryptionKey)
 
-    // Fetch all profiles_private that have plaintext data but no encrypted data
+    // Fetch all profiles_private (only encrypted columns exist now)
     const { data: profiles, error: fetchError } = await supabaseAdmin
       .from('profiles_private')
-      .select('user_id, cpf, crm, phone, address, bank_name, bank_agency, bank_account, pix_key, cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
+      .select('user_id, cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
 
     if (fetchError) {
       throw new Error(`Failed to fetch profiles: ${fetchError.message}`)
@@ -102,57 +102,24 @@ Deno.serve(async (req) => {
 
     if (!profiles || profiles.length === 0) {
       return new Response(
-        JSON.stringify({ success: true, migrated: 0, message: 'No profiles to migrate' }),
+        JSON.stringify({ success: true, migrated: 0, message: 'No profiles found' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
       )
     }
 
-    const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
-    let migratedCount = 0
-    const errors: string[] = []
-
-    for (const profile of profiles) {
-      const updatePayload: Record<string, unknown> = {}
-      let needsUpdate = false
-
-      for (const field of fields) {
-        const plainValue = profile[field]
-        const encValue = profile[`${field}_enc` as keyof typeof profile]
-
-        // Only migrate if there's plaintext but no encrypted value
-        if (plainValue && !encValue) {
-          try {
-            const encrypted = await encryptValue(plainValue, cryptoKey)
-            updatePayload[`${field}_enc`] = encrypted
-            updatePayload[field] = null // Clear plaintext
-            needsUpdate = true
-          } catch (err) {
-            errors.push(`Failed to encrypt ${field} for user ${profile.user_id}: ${err}`)
-          }
-        }
-      }
-
-      if (needsUpdate) {
-        const { error: updateError } = await supabaseAdmin
-          .from('profiles_private')
-          .update(updatePayload)
-          .eq('user_id', profile.user_id)
-
-        if (updateError) {
-          errors.push(`Failed to update user ${profile.user_id}: ${updateError.message}`)
-        } else {
-          migratedCount++
-          console.log(`Migrated PII for user ${profile.user_id}`)
-        }
-      }
-    }
+    // Since plaintext columns have been removed, this migration is complete
+    // Just return a success message indicating all data is now encrypted
+    const encryptedCount = profiles.filter(p => 
+      p.cpf_enc || p.crm_enc || p.phone_enc || p.address_enc || 
+      p.bank_name_enc || p.bank_agency_enc || p.bank_account_enc || p.pix_key_enc
+    ).length
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        migrated: migratedCount, 
-        total: profiles.length,
-        errors: errors.length > 0 ? errors : undefined
+        message: 'Migration complete. All PII data is now encrypted.',
+        totalProfiles: profiles.length,
+        profilesWithEncryptedData: encryptedCount
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 }
     )

@@ -162,7 +162,7 @@ Deno.serve(async (req) => {
       // Don't throw, the user is created, profile can be updated later
     }
 
-    // Save private profile data with encryption
+    // Save private profile data with encryption (only encrypted columns exist)
     const encryptionKey = Deno.env.get('PII_ENCRYPTION_KEY')
     const privatePayload: Record<string, unknown> = {
       user_id: newUser.user.id,
@@ -186,31 +186,16 @@ Deno.serve(async (req) => {
         for (const { key, value } of fieldsToEncrypt) {
           if (value) {
             privatePayload[`${key}_enc`] = await encryptValue(value, cryptoKey)
+          } else {
+            privatePayload[`${key}_enc`] = null
           }
-          privatePayload[key] = null // Clear plaintext
         }
       } catch (err) {
         console.error('Encryption error:', err)
-        // Fallback to plaintext if encryption fails
-        privatePayload.phone = phone || null
-        privatePayload.cpf = cpf || null
-        privatePayload.crm = crm || null
-        privatePayload.address = address || null
-        privatePayload.bank_name = bankName || null
-        privatePayload.bank_agency = bankAgency || null
-        privatePayload.bank_account = bankAccount || null
-        privatePayload.pix_key = pixKey || null
+        throw new Error('Failed to encrypt PII data. PII_ENCRYPTION_KEY is required.')
       }
     } else {
-      // No encryption key, use plaintext (legacy mode)
-      privatePayload.phone = phone || null
-      privatePayload.cpf = cpf || null
-      privatePayload.crm = crm || null
-      privatePayload.address = address || null
-      privatePayload.bank_name = bankName || null
-      privatePayload.bank_agency = bankAgency || null
-      privatePayload.bank_account = bankAccount || null
-      privatePayload.pix_key = pixKey || null
+      throw new Error('PII_ENCRYPTION_KEY is not configured. Cannot create user without encryption.')
     }
 
     const { error: privateProfileError } = await supabaseAdmin
