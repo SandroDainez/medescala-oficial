@@ -464,24 +464,34 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             formData.assigned_user_id !== 'disponivel') {
           // User selected a plantonista
           if (currentAssignment) {
-            // Update existing assignment
-            if (currentAssignment.user_id !== formData.assigned_user_id) {
-              // Determine value: use form value if specified, otherwise use sector default (if enabled)
-              const formValue = parseMoneyValue(formData.base_value);
-              let assignedValue: number | null = formValue > 0 ? formValue : null;
-              if (assignedValue === null && formData.use_sector_default) {
+            // Update existing assignment - always update value, even if user is the same
+            // Determine value: use form value if specified, otherwise use sector default (if enabled) or null
+            const formValueRaw = formData.base_value?.toString().trim();
+            const formValue = parseMoneyValue(formData.base_value);
+            let assignedValue: number | null = null;
+            
+            if (formValueRaw && formValue > 0) {
+              // User explicitly set a value
+              assignedValue = formValue;
+            } else if (formValueRaw === '' || formValueRaw === '0') {
+              // User explicitly cleared the value - check if we should use sector default
+              if (formData.use_sector_default) {
                 assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+              } else {
+                assignedValue = null; // Keep it blank
               }
-              
-              await supabase
-                .from('shift_assignments')
-                .update({ 
-                  user_id: formData.assigned_user_id,
-                  assigned_value: assignedValue,
-                  updated_by: user?.id,
-                })
-                .eq('id', currentAssignment.id);
+            } else if (formData.use_sector_default) {
+              assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
             }
+            
+            await supabase
+              .from('shift_assignments')
+              .update({ 
+                user_id: formData.assigned_user_id,
+                assigned_value: assignedValue,
+                updated_by: user?.id,
+              })
+              .eq('id', currentAssignment.id);
           } else {
             // Create new assignment
             // Determine value: use form value if specified, otherwise use sector default (if enabled)
