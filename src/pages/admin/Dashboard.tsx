@@ -321,10 +321,15 @@ export default function AdminDashboard() {
           <h2 className="text-2xl font-bold text-foreground">Dashboard Administrativo</h2>
           <p className="text-muted-foreground">Visão completa do hospital</p>
         </div>
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           {/* Month/Year Selector */}
-          <div className="flex items-center gap-1">
-            <Button variant="outline" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+          <div className="flex w-full items-center gap-1 sm:w-auto">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Mês anterior"
+              onClick={() => setCurrentDate(subMonths(currentDate, 1))}
+            >
               <ChevronLeft className="h-4 w-4" />
             </Button>
             <Select
@@ -334,8 +339,8 @@ export default function AdminDashboard() {
                 setCurrentDate(new Date(year, month - 1, 1));
               }}
             >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue />
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Selecione o mês" />
               </SelectTrigger>
               <SelectContent className="max-h-[300px]">
                 {monthOptions.map((opt) => (
@@ -345,23 +350,30 @@ export default function AdminDashboard() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Próximo mês"
+              onClick={() => setCurrentDate(addMonths(currentDate, 1))}
+            >
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          
-          <Button variant="outline" onClick={() => navigate('/admin/sectors')}>
-            <Building2 className="mr-2 h-4 w-4" />
-            Setores
-          </Button>
-          <Button variant="outline" onClick={() => navigate('/admin/users')}>
-            <Users className="mr-2 h-4 w-4" />
-            Usuários
-          </Button>
-          <Button onClick={() => navigate('/admin/calendar')}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo Plantão
-          </Button>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            <Button variant="outline" onClick={() => navigate('/admin/sectors')}>
+              <Building2 className="mr-2 h-4 w-4" />
+              Setores
+            </Button>
+            <Button variant="outline" onClick={() => navigate('/admin/users')}>
+              <Users className="mr-2 h-4 w-4" />
+              Usuários
+            </Button>
+            <Button onClick={() => navigate('/admin/calendar')}>
+              <Plus className="mr-2 h-4 w-4" />
+              Novo Plantão
+            </Button>
+          </div>
         </div>
       </div>
 
