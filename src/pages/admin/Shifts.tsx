@@ -105,7 +105,7 @@ export default function AdminShifts() {
       const isInSector = selectedSectorId === 'all' || shift.sector_id === selectedSectorId;
       return isInMonth && isInSector;
     });
-  }, [shifts, selectedMonth, selectedSectorId]);
+  }, [shifts, selectedMonth, selectedYear, selectedSectorId]);
 
   const [assignData, setAssignData] = useState({
     user_id: '',
