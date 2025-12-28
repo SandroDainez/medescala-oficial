@@ -358,20 +358,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return num.toFixed(2);
   }
 
-  // Returns null when the input is empty OR represents zero ("0", "0.00", "0,00").
-  // This is important to allow "valor em branco" for finance calculations.
+  // Returns null only when the input is empty.
+  // IMPORTANT: "0" is a valid value and must be saved/propagated as 0.
   function parseMoneyNullable(value: unknown): number | null {
     const raw = (value ?? '').toString().trim();
     if (!raw) return null;
 
     const parsed = parseMoneyValue(raw);
-    if (!Number.isFinite(parsed) || parsed === 0) return null;
+    if (!Number.isFinite(parsed)) return null;
     return parsed;
   }
 
   // Resolve value using the same rules everywhere:
-  // - If user typed a value (non-zero) => use it
-  // - Else if useSectorDefault => sector default
+  // - If user typed a value (including 0) => use it
+  // - Else if useSectorDefault => sector default (can be null or 0)
   // - Else => null (blank)
   function resolveValue(params: {
     raw: unknown;
@@ -379,8 +379,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     start_time: string;
     useSectorDefault: boolean;
   }): number | null {
-    const direct = parseMoneyNullable(params.raw);
-    if (direct !== null) return direct;
+    const rawStr = (params.raw ?? '').toString().trim();
+    if (rawStr) return parseMoneyNullable(rawStr);
     if (!params.useSectorDefault) return null;
     return getSectorDefaultValue(params.sector_id, params.start_time);
   }
@@ -1400,8 +1400,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const valueToApply = (() => {
           const raw = bulkApplyData.base_value.trim();
           if (!raw) return undefined; // keep existing
-          const parsed = parseMoneyValue(raw);
-          return parsed === 0 ? null : parsed; // "0" means clear (blank)
+          return parseMoneyValue(raw); // includes 0
         })();
 
         if (bulkApplyData.assigned_user_id === '__clear__') {
