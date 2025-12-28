@@ -43,7 +43,8 @@ export default function SectorValuesDialog({
     if (sector) {
       setDayValue(sector.default_day_value?.toString() || '');
       setNightValue(sector.default_night_value?.toString() || '');
-      setApplyToExisting(false);
+      // Default to applying to existing so Sector -> Escalas -> Financeiro stays consistent.
+      setApplyToExisting(true);
     }
   }, [sector]);
 
@@ -97,14 +98,37 @@ export default function SectorValuesDialog({
 
       if (sectorError) throw sectorError;
 
-      // If apply to existing shifts is checked, update shift_assignments
-      if (applyToExisting && (dayVal !== null || nightVal !== null)) {
-        // Get all shift assignments for this sector that don't have individual values
+      // If apply to existing shifts is checked, update shifts.base_value and shift_assignments.assigned_value
+      // so the same values flow Escalas -> Financeiro.
+      if (applyToExisting) {
+        // 1) Update shifts base_value (by day/night)
+        const { data: shifts, error: shiftsError } = await supabase
+          .from('shifts')
+          .select('id, start_time')
+          .eq('tenant_id', tenantId)
+          .eq('sector_id', sector.id);
+
+        if (shiftsError) throw shiftsError;
+
+        if (shifts && shifts.length > 0) {
+          const shiftUpdates = shifts.map((s) => {
+            const isNight = isNightShift(s.start_time);
+            const newValue = isNight ? nightVal : dayVal; // can be null or 0
+            return supabase
+              .from('shifts')
+              .update({ base_value: newValue, updated_by: userId })
+              .eq('id', s.id);
+          });
+          const results = await Promise.all(shiftUpdates);
+          const errors = results.filter((r) => r.error);
+          if (errors.length > 0) console.error('Some shift updates failed:', errors);
+        }
+
+        // 2) Update assignments assigned_value for this sector (by shift time)
         const { data: assignments, error: fetchError } = await supabase
           .from('shift_assignments')
           .select(`
             id,
-            assigned_value,
             shift:shifts!inner(
               id,
               sector_id,
@@ -117,34 +141,28 @@ export default function SectorValuesDialog({
         if (fetchError) throw fetchError;
 
         if (assignments && assignments.length > 0) {
-          // Update each assignment based on shift time
           const updates = assignments.map(async (assignment) => {
             const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string };
             const isNight = isNightShift(shift.start_time);
-            const newValue = isNight ? nightVal : dayVal;
+            const newValue = isNight ? nightVal : dayVal; // can be null or 0
 
-            if (newValue !== null) {
-              return supabase
-                .from('shift_assignments')
-                .update({
-                  assigned_value: newValue,
-                  updated_by: userId,
-                })
-                .eq('id', assignment.id);
-            }
-            return Promise.resolve({ error: null });
+            return supabase
+              .from('shift_assignments')
+              .update({
+                assigned_value: newValue,
+                updated_by: userId,
+              })
+              .eq('id', assignment.id);
           });
 
           const results = await Promise.all(updates);
-          const errors = results.filter(r => r.error);
-          if (errors.length > 0) {
-            console.error('Some updates failed:', errors);
-          }
+          const errors = results.filter((r) => r.error);
+          if (errors.length > 0) console.error('Some assignment updates failed:', errors);
         }
 
         toast({
           title: 'Valores atualizados!',
-          description: `Valores padrão salvos e aplicados a ${assignments?.length || 0} plantões existentes.`,
+          description: `Valores padrão salvos e aplicados a ${shifts?.length || 0} plantões existentes.`,
         });
       } else {
         toast({

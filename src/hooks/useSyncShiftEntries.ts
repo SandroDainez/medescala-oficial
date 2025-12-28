@@ -80,9 +80,13 @@ export function useSyncShiftEntries() {
         const shift = shifts.find(s => s.id === assignment.shift_id);
         if (!shift || !shift.sector_id) return null;
 
-        const assignedVal = Number(assignment.assigned_value) || 0;
-        const baseVal = Number(shift.base_value) || 0;
-        const finalValue = assignedVal > 0 ? assignedVal : (baseVal > 0 ? baseVal : null);
+        const assignedVal = assignment.assigned_value === null || assignment.assigned_value === undefined
+          ? null
+          : Number(assignment.assigned_value);
+        const baseVal = shift.base_value === null || shift.base_value === undefined
+          ? null
+          : Number(shift.base_value);
+        const finalValue = assignedVal ?? baseVal ?? null;
 
         return {
           tenant_id: tenantId,
