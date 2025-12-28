@@ -149,6 +149,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     duration_hours: '',
     repeat_weeks: 0,
     quantity: 1,
+    use_sector_default: true, // If true, use sector default when value is empty
   });
 
   // Individual shift data when creating multiple shifts
@@ -465,10 +466,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (currentAssignment) {
             // Update existing assignment
             if (currentAssignment.user_id !== formData.assigned_user_id) {
-              // Determine value: use form value if specified, otherwise use sector default
+              // Determine value: use form value if specified, otherwise use sector default (if enabled)
               const formValue = parseMoneyValue(formData.base_value);
-              const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-              const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+              let assignedValue: number | null = formValue > 0 ? formValue : null;
+              if (assignedValue === null && formData.use_sector_default) {
+                assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+              }
               
               await supabase
                 .from('shift_assignments')
@@ -481,10 +484,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             }
           } else {
             // Create new assignment
-            // Determine value: use form value if specified, otherwise use sector default
+            // Determine value: use form value if specified, otherwise use sector default (if enabled)
             const formValue = parseMoneyValue(formData.base_value);
-            const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-            const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+            let assignedValue: number | null = formValue > 0 ? formValue : null;
+            if (assignedValue === null && formData.use_sector_default) {
+              assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+            }
             
             await supabase.from('shift_assignments').insert({
               tenant_id: currentTenantId,
@@ -532,10 +537,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 formData.assigned_user_id !== 'vago' && 
                 formData.assigned_user_id !== 'disponivel' && 
                 duplicatedShift) {
-              // Determine value: use form value if specified, otherwise use sector default
+              // Determine value: use form value if specified, otherwise use sector default (if enabled)
               const formValue = parseMoneyValue(formData.base_value);
-              const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-              const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+              let assignedValue: number | null = formValue > 0 ? formValue : null;
+              if (assignedValue === null && formData.use_sector_default) {
+                assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+              }
               
               await supabase.from('shift_assignments').insert({
                 tenant_id: currentTenantId,
@@ -593,10 +600,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         // Create assignment if a real user was selected
         if (userIdForShift && userIdForShift !== 'vago' && userIdForShift !== 'disponivel') {
-          // Determine value: use form value if specified, otherwise use sector default
+          // Determine value: use form value if specified, otherwise use sector default (if enabled)
           const formValue = parseMoneyValue(formData.base_value);
-          const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, startTime);
-          const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+          let assignedValue: number | null = formValue > 0 ? formValue : null;
+          if (assignedValue === null && formData.use_sector_default) {
+            assignedValue = getSectorDefaultValue(formData.sector_id, startTime);
+          }
           
           await supabase.from('shift_assignments').insert({
             tenant_id: currentTenantId,
@@ -1157,6 +1166,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       duration_hours: '',
       repeat_weeks: 0,
       quantity: 1,
+      use_sector_default: true,
     });
     setShiftDialogOpen(true);
   }
@@ -1186,6 +1196,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       duration_hours: '',
       repeat_weeks: 0,
       quantity: 1,
+      use_sector_default: false, // When editing, don't override existing value
     });
     setShiftDialogOpen(true);
   }
@@ -1230,6 +1241,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       duration_hours: '',
       repeat_weeks: 0,
       quantity: 1,
+      use_sector_default: true,
     });
   }
 
@@ -2344,6 +2356,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                           duration_hours: '',
                           repeat_weeks: 0,
                           quantity: 1,
+                          use_sector_default: true,
                         });
                         setBulkCreateDialogOpen(true);
                       }}>
@@ -3065,8 +3078,37 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     if (!formData.base_value) return;
                     setFormData(prev => ({ ...prev, base_value: formatMoneyInput(prev.base_value) }));
                   }}
-                  placeholder="0.00"
+                  placeholder={
+                    formData.use_sector_default && formData.sector_id 
+                      ? (() => {
+                          const sectorValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+                          return sectorValue ? `Padrão: R$ ${sectorValue.toFixed(2)}` : '0.00';
+                        })()
+                      : '0.00'
+                  }
                 />
+                {/* Checkbox for using sector default value */}
+                {formData.sector_id && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Checkbox
+                      id="use_sector_default"
+                      checked={formData.use_sector_default}
+                      onCheckedChange={(checked) => setFormData({ ...formData, use_sector_default: checked === true })}
+                    />
+                    <Label htmlFor="use_sector_default" className="text-xs text-muted-foreground cursor-pointer">
+                      Usar valor padrão do setor se vazio
+                      {formData.use_sector_default && formData.start_time && (
+                        <span className="ml-1 text-primary">
+                          ({isNightShift(formData.start_time, '') ? 'Noturno' : 'Diurno'}: 
+                          {(() => {
+                            const v = getSectorDefaultValue(formData.sector_id, formData.start_time);
+                            return v ? ` R$ ${v.toFixed(2)}` : ' não definido';
+                          })()})
+                        </span>
+                      )}
+                    </Label>
+                  </div>
+                )}
               </div>
               
               {/* Plantonista selection - show individual selectors when quantity > 1 */}
