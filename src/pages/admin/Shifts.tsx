@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,9 +10,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, UserPlus } from 'lucide-react';
-import { format } from 'date-fns';
+import { Plus, Pencil, Trash2, UserPlus, Filter } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, addMonths, subMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+interface Sector {
+  id: string;
+  name: string;
+}
 
 interface Shift {
   id: string;
@@ -47,12 +52,17 @@ export default function AdminShifts() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const dialogCloseGuardRef = useRef(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
+
+  // Filtros
+  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+  const [selectedSectorId, setSelectedSectorId] = useState<string>('all');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -65,6 +75,32 @@ export default function AdminShifts() {
     notes: '',
   });
 
+  // Gerar lista de meses para seleção (6 meses antes e 6 meses depois)
+  const monthOptions = useMemo(() => {
+    const options: { value: string; label: string }[] = [];
+    for (let i = -6; i <= 6; i++) {
+      const date = addMonths(new Date(), i);
+      options.push({
+        value: format(date, 'yyyy-MM'),
+        label: format(date, "MMMM 'de' yyyy", { locale: ptBR }),
+      });
+    }
+    return options;
+  }, []);
+
+  // Filtrar shifts pelo mês e setor selecionados
+  const filteredShifts = useMemo(() => {
+    const monthStart = startOfMonth(selectedMonth);
+    const monthEnd = endOfMonth(selectedMonth);
+
+    return shifts.filter((shift) => {
+      const shiftDate = new Date(shift.shift_date);
+      const isInMonth = shiftDate >= monthStart && shiftDate <= monthEnd;
+      const isInSector = selectedSectorId === 'all' || shift.sector_id === selectedSectorId;
+      return isInMonth && isInSector;
+    });
+  }, [shifts, selectedMonth, selectedSectorId]);
+
   const [assignData, setAssignData] = useState({
     user_id: '',
     assigned_value: '',
@@ -74,8 +110,22 @@ export default function AdminShifts() {
     if (currentTenantId) {
       fetchShifts();
       fetchMembers();
+      fetchSectors();
     }
   }, [currentTenantId]);
+
+  async function fetchSectors() {
+    if (!currentTenantId) return;
+
+    const { data } = await supabase
+      .from('sectors')
+      .select('id, name')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true)
+      .order('name');
+
+    if (data) setSectors(data);
+  }
 
   async function fetchShifts() {
     if (!currentTenantId) return;
@@ -248,10 +298,49 @@ export default function AdminShifts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Plantões</h2>
           <p className="text-muted-foreground">Gerencie os plantões do hospital</p>
+        </div>
+        
+        {/* Filtros */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <Select
+              value={format(selectedMonth, 'yyyy-MM')}
+              onValueChange={(value) => {
+                const [year, month] = value.split('-');
+                setSelectedMonth(new Date(parseInt(year), parseInt(month) - 1, 1));
+              }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Selecione o mês" />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <Select value={selectedSectorId} onValueChange={setSelectedSectorId}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Todos os setores" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os setores</SelectItem>
+              {sectors.map((sector) => (
+                <SelectItem key={sector.id} value={sector.id}>
+                  {sector.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           if (!open) {
@@ -387,14 +476,16 @@ export default function AdminShifts() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shifts.length === 0 ? (
+              {filteredShifts.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
-                    Nenhum plantão cadastrado
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    {shifts.length === 0 
+                      ? 'Nenhum plantão cadastrado'
+                      : 'Nenhum plantão encontrado para os filtros selecionados'}
                   </TableCell>
                 </TableRow>
               ) : (
-                shifts.map((shift) => {
+                filteredShifts.map((shift) => {
                   const shiftAssignments = getAssignmentsForShift(shift.id);
                   return (
                     <TableRow key={shift.id}>
@@ -416,28 +507,28 @@ export default function AdminShifts() {
                         {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                       </TableCell>
                       <TableCell>R$ {Number(shift.base_value).toFixed(2)}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setSelectedShift(shift);
-                            setAssignData({ ...assignData, assigned_value: shift.base_value.toString() });
-                            setAssignDialogOpen(true);
-                          }}
-                        >
-                          <UserPlus className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(shift)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(shift.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                      <TableCell className="text-right">
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => {
+                              setSelectedShift(shift);
+                              setAssignData({ ...assignData, assigned_value: shift.base_value.toString() });
+                              setAssignDialogOpen(true);
+                            }}
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(shift)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(shift.id)}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
                   );
                 })
               )}
