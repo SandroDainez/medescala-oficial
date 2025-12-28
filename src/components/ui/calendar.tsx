@@ -8,10 +8,9 @@ import { buttonVariants } from "@/components/ui/button";
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
 function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
-  // Dynamic year range: 10 years back to 5 years ahead
-  const currentYear = new Date().getFullYear();
-  const fromYear = currentYear - 10;
-  const toYear = currentYear + 5;
+  // Wide year range for practical use (1900-2100)
+  const fromYear = 1900;
+  const toYear = 2100;
 
   return (
     <DayPicker
