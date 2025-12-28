@@ -1023,6 +1023,10 @@ export type Database = {
     }
     Functions: {
       calculate_trial_end_date: { Args: never; Returns: string }
+      can_access_payment: {
+        Args: { _payment_tenant_id: string; _payment_user_id: string }
+        Returns: boolean
+      }
       can_add_user_to_tenant: { Args: { _tenant_id: string }; Returns: boolean }
       can_admin_access_profile: {
         Args: { _profile_id: string }
@@ -1170,6 +1174,10 @@ export type Database = {
           _tenant_id: string
           _trial_ends_at?: string
         }
+        Returns: boolean
+      }
+      user_has_active_membership: {
+        Args: { _user_id: string }
         Returns: boolean
       }
     }
