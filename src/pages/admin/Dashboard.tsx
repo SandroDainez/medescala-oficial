@@ -113,7 +113,11 @@ export default function AdminDashboard() {
   const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
-  
+
+  // Month selector options
+  const [usedMonthValues, setUsedMonthValues] = useState<string[]>([]);
+  const [loadingUsedMonths, setLoadingUsedMonths] = useState(false);
+
   // Data
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
@@ -135,6 +139,64 @@ export default function AdminDashboard() {
       fetchAllData();
     }
   }, [currentTenantId, currentDate]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchUsedMonths();
+    } else {
+      setUsedMonthValues([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTenantId]);
+
+  async function fetchUsedMonths() {
+    if (!currentTenantId) return;
+    setLoadingUsedMonths(true);
+    try {
+      const used = new Set<string>();
+      let from = 0;
+      const pageSize = 1000;
+
+      // Paginação para contornar o limite padrão de 1000 linhas
+      // (precisamos apenas das datas para montar o filtro de meses já utilizados)
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data, error } = await supabase
+          .from('shifts')
+          .select('shift_date')
+          .eq('tenant_id', currentTenantId)
+          .order('shift_date', { ascending: true })
+          .range(from, from + pageSize - 1);
+
+        if (error) throw error;
+
+        (data || []).forEach((row: any) => {
+          if (row?.shift_date) {
+            const d = parseISO(row.shift_date);
+            used.add(format(d, 'yyyy-MM'));
+          }
+        });
+
+        if (!data || data.length < pageSize) break;
+        from += pageSize;
+      }
+
+      // Sempre incluir o mês atual no seletor (mesmo se ainda não há plantões)
+      used.add(format(new Date(), 'yyyy-MM'));
+
+      const sorted = Array.from(used).sort();
+      setUsedMonthValues(sorted);
+    } catch (e: any) {
+      toast({
+        title: 'Erro ao carregar meses',
+        description: e?.message || 'Não foi possível carregar os meses disponíveis.',
+        variant: 'destructive',
+      });
+      setUsedMonthValues([format(new Date(), 'yyyy-MM')]);
+    } finally {
+      setLoadingUsedMonths(false);
+    }
+  }
 
   async function fetchAllData() {
     if (!currentTenantId) return;
@@ -321,21 +383,40 @@ export default function AdminDashboard() {
     }
   }
 
-  // Generate month options (current year ± 2 years)
+  // Month options:
+  // - Passados: apenas meses em que já existiram plantões (dinâmico)
+  // - Futuros: sempre disponíveis (janela crescente conforme você navega)
   const monthOptions = useMemo(() => {
-    const options: { value: string; label: string }[] = [];
     const now = new Date();
-    for (let yearOffset = -2; yearOffset <= 1; yearOffset++) {
-      for (let month = 0; month < 12; month++) {
-        const date = new Date(now.getFullYear() + yearOffset, month, 1);
-        options.push({
-          value: format(date, 'yyyy-MM'),
-          label: format(date, 'MMMM yyyy', { locale: ptBR }),
-        });
-      }
+    const currentYm = format(currentDate, 'yyyy-MM');
+
+    const used = new Set(usedMonthValues);
+    used.add(currentYm);
+
+    // Futuro: meses sempre disponíveis (bem amplo, “sem limite” na prática)
+    // Baseia no maior entre hoje e o mês selecionado, para sempre ter meses à frente.
+    const futureBase = startOfMonth(new Date(Math.max(now.getTime(), currentDate.getTime())));
+    const futureMonthsToShow = 600; // ~50 anos
+    for (let i = 1; i <= futureMonthsToShow; i++) {
+      used.add(format(addMonths(futureBase, i), 'yyyy-MM'));
     }
-    return options;
-  }, []);
+
+    // Se ainda não carregou meses usados, pelo menos permitir o mês atual + futuros
+    if (usedMonthValues.length === 0) {
+      used.add(format(now, 'yyyy-MM'));
+    }
+
+    return Array.from(used)
+      .sort()
+      .map((value) => {
+        const [year, month] = value.split('-').map(Number);
+        const date = new Date(year, month - 1, 1);
+        return {
+          value,
+          label: format(date, 'MMMM yyyy', { locale: ptBR }),
+        };
+      });
+  }, [usedMonthValues, currentDate]);
 
   if (loading) {
     return <div className="text-muted-foreground p-4">Carregando dashboard...</div>;
