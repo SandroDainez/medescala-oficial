@@ -180,8 +180,6 @@ Deno.serve(async (req) => {
         } else {
           updatePayload[`${field}_enc`] = null
         }
-        // Clear plaintext column
-        updatePayload[field] = null
       }
 
       const { error: updateError } = await supabaseAdmin
@@ -204,10 +202,10 @@ Deno.serve(async (req) => {
       )
 
     } else if (action === 'decrypt') {
-      // Fetch and decrypt data
+      // Fetch and decrypt data (only encrypted columns exist now)
       const { data: profile, error: fetchError } = await supabaseAdmin
         .from('profiles_private')
-        .select('cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc, cpf, crm, phone, address, bank_name, bank_agency, bank_account, pix_key')
+        .select('cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
         .eq('user_id', userId)
         .maybeSingle()
 
@@ -231,21 +229,15 @@ Deno.serve(async (req) => {
 
       for (const field of fields) {
         const encField = `${field}_enc` as keyof typeof profile
-        const plainField = field as keyof typeof profile
         
-        // Prefer encrypted version if available
         if (profile[encField]) {
           try {
             const decrypted = await decryptValue(profile[encField] as string, cryptoKey)
             decryptedData[field] = decrypted
           } catch (err) {
             console.error(`Error decrypting ${field}:`, err)
-            // Fallback to plaintext if available
-            decryptedData[field] = profile[plainField] as string | null
+            decryptedData[field] = null
           }
-        } else if (profile[plainField]) {
-          // Use plaintext if no encrypted version
-          decryptedData[field] = profile[plainField] as string | null
         }
       }
 
