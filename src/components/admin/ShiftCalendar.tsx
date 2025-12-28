@@ -3777,14 +3777,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="space-y-2">
               <Label>Plantonista (opcional)</Label>
               <Select
-                value={bulkApplyData.assigned_user_id}
-                onValueChange={(v) => setBulkApplyData((p) => ({ ...p, assigned_user_id: v }))}
+                value={bulkApplyData.assigned_user_id || '__keep__'}
+                onValueChange={(v) => setBulkApplyData((p) => ({ ...p, assigned_user_id: v === '__keep__' ? '' : v }))}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Manter como está" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Manter como está</SelectItem>
+                  <SelectItem value="__keep__">Manter como está</SelectItem>
                   <SelectItem value="__clear__">Remover plantonista (vago)</SelectItem>
                   {sortMembersAlphabetically(members).map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
