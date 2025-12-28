@@ -333,40 +333,64 @@ export type Database = {
       profiles_private: {
         Row: {
           address: string | null
+          address_enc: string | null
           bank_account: string | null
+          bank_account_enc: string | null
           bank_agency: string | null
+          bank_agency_enc: string | null
           bank_name: string | null
+          bank_name_enc: string | null
           cpf: string | null
+          cpf_enc: string | null
           created_at: string
           crm: string | null
+          crm_enc: string | null
           phone: string | null
+          phone_enc: string | null
           pix_key: string | null
+          pix_key_enc: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           address?: string | null
+          address_enc?: string | null
           bank_account?: string | null
+          bank_account_enc?: string | null
           bank_agency?: string | null
+          bank_agency_enc?: string | null
           bank_name?: string | null
+          bank_name_enc?: string | null
           cpf?: string | null
+          cpf_enc?: string | null
           created_at?: string
           crm?: string | null
+          crm_enc?: string | null
           phone?: string | null
+          phone_enc?: string | null
           pix_key?: string | null
+          pix_key_enc?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           address?: string | null
+          address_enc?: string | null
           bank_account?: string | null
+          bank_account_enc?: string | null
           bank_agency?: string | null
+          bank_agency_enc?: string | null
           bank_name?: string | null
+          bank_name_enc?: string | null
           cpf?: string | null
+          cpf_enc?: string | null
           created_at?: string
           crm?: string | null
+          crm_enc?: string | null
           phone?: string | null
+          phone_enc?: string | null
           pix_key?: string | null
+          pix_key_enc?: string | null
           updated_at?: string
           user_id?: string
         }
