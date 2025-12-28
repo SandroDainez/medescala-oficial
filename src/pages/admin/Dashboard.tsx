@@ -401,10 +401,8 @@ export default function AdminDashboard() {
       used.add(format(addMonths(futureBase, i), 'yyyy-MM'));
     }
 
-    // Se ainda não carregou meses usados, pelo menos permitir o mês atual + futuros
-    if (usedMonthValues.length === 0) {
-      used.add(format(now, 'yyyy-MM'));
-    }
+    // Sempre incluir mês vigente (hoje)
+    used.add(format(now, 'yyyy-MM'));
 
     return Array.from(used)
       .sort()
