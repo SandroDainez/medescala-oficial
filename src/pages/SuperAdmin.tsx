@@ -67,13 +67,23 @@ export default function SuperAdmin() {
   async function handleMigratePii() {
     setMigratingPii(true);
     try {
-      const { data, error } = await supabase.functions.invoke('migrate-pii');
+      // Obter sessão para garantir que o token seja enviado
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (!sessionData?.session?.access_token) {
+        throw new Error('Sessão não encontrada. Faça login novamente.');
+      }
+
+      const { data, error } = await supabase.functions.invoke('migrate-pii', {
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
+      });
       
       if (error) throw error;
       
       toast({
         title: 'Migração concluída!',
-        description: `${data.migrated} perfis migrados de ${data.total} total.`,
+        description: data.message || `${data.profilesWithEncryptedData || 0} perfis com dados criptografados.`,
       });
       
       if (data.errors && data.errors.length > 0) {
