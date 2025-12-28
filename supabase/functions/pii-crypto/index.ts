@@ -22,6 +22,64 @@ interface RequestBody {
   data?: PiiData;
 }
 
+// Derive a CryptoKey from the encryption key string
+async function deriveKey(keyString: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  
+  // Use SHA-256 to create a consistent 256-bit key
+  const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    hashBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Encrypt plaintext using AES-GCM
+async function encryptValue(plaintext: string, key: CryptoKey): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plaintext);
+  
+  // Generate a random IV (12 bytes for AES-GCM)
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  
+  // Combine IV + ciphertext and encode as base64
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
+// Decrypt ciphertext using AES-GCM
+async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string> {
+  // Decode from base64
+  const combined = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
+  
+  // Extract IV (first 12 bytes) and ciphertext
+  const iv = combined.slice(0, 12);
+  const data = combined.slice(12);
+  
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  
+  const decoder = new TextDecoder();
+  return decoder.decode(decrypted);
+}
+
 Deno.serve(async (req) => {
   console.log("pii-crypto function called");
 
@@ -66,6 +124,9 @@ Deno.serve(async (req) => {
       throw new Error('PII_ENCRYPTION_KEY not configured')
     }
 
+    // Derive the crypto key
+    const cryptoKey = await deriveKey(encryptionKey)
+
     // Check access: user can access their own data OR admin can access users in their tenant
     const isOwnData = requestingUser.id === userId
 
@@ -100,40 +161,27 @@ Deno.serve(async (req) => {
 
     if (action === 'encrypt' && data) {
       // Encrypt data and save to database
-      const encryptedData: Record<string, Uint8Array | null> = {}
-      
-      for (const [key, value] of Object.entries(data)) {
-        if (value) {
-          // Use pgp_sym_encrypt via SQL
-          const { data: result, error } = await supabaseAdmin.rpc('encrypt_pii_value', {
-            plaintext: value,
-            encryption_key: encryptionKey
-          })
-          
-          if (error) {
-            console.error(`Error encrypting ${key}:`, error)
-            throw new Error(`Failed to encrypt ${key}`)
-          }
-          
-          encryptedData[`${key}_enc`] = result
-        } else {
-          encryptedData[`${key}_enc`] = null
-        }
-      }
-
-      // Update profiles_private with encrypted data
       const updatePayload: Record<string, unknown> = {
         user_id: userId,
       }
 
-      // Add encrypted columns
-      for (const [key, value] of Object.entries(encryptedData)) {
-        updatePayload[key] = value
-      }
-
-      // Clear plaintext columns
-      for (const key of Object.keys(data)) {
-        updatePayload[key] = null
+      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+      
+      for (const field of fields) {
+        const value = data[field]
+        if (value) {
+          try {
+            const encrypted = await encryptValue(value, cryptoKey)
+            updatePayload[`${field}_enc`] = encrypted
+          } catch (err) {
+            console.error(`Error encrypting ${field}:`, err)
+            throw new Error(`Failed to encrypt ${field}`)
+          }
+        } else {
+          updatePayload[`${field}_enc`] = null
+        }
+        // Clear plaintext column
+        updatePayload[field] = null
       }
 
       const { error: updateError } = await supabaseAdmin
@@ -179,29 +227,25 @@ Deno.serve(async (req) => {
       }
 
       const decryptedData: PiiData = {}
-      const encryptedFields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key']
+      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
 
-      for (const field of encryptedFields) {
+      for (const field of fields) {
         const encField = `${field}_enc` as keyof typeof profile
         const plainField = field as keyof typeof profile
         
         // Prefer encrypted version if available
         if (profile[encField]) {
-          const { data: decrypted, error } = await supabaseAdmin.rpc('decrypt_pii_value', {
-            ciphertext: profile[encField],
-            encryption_key: encryptionKey
-          })
-          
-          if (error) {
-            console.error(`Error decrypting ${field}:`, error)
+          try {
+            const decrypted = await decryptValue(profile[encField] as string, cryptoKey)
+            decryptedData[field] = decrypted
+          } catch (err) {
+            console.error(`Error decrypting ${field}:`, err)
             // Fallback to plaintext if available
-            decryptedData[field as keyof PiiData] = profile[plainField] as string | null
-          } else {
-            decryptedData[field as keyof PiiData] = decrypted
+            decryptedData[field] = profile[plainField] as string | null
           }
         } else if (profile[plainField]) {
           // Use plaintext if no encrypted version
-          decryptedData[field as keyof PiiData] = profile[plainField] as string | null
+          decryptedData[field] = profile[plainField] as string | null
         }
       }
 

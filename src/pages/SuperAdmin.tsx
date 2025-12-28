@@ -28,7 +28,8 @@ import {
   LogOut,
   RefreshCw,
   Stethoscope,
-  Search
+  Search,
+  Database
 } from 'lucide-react';
 
 interface Tenant {
@@ -56,11 +57,38 @@ export default function SuperAdmin() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [saving, setSaving] = useState(false);
+  const [migratingPii, setMigratingPii] = useState(false);
 
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
   const [editIsUnlimited, setEditIsUnlimited] = useState(false);
   const [editTrialMonths, setEditTrialMonths] = useState(1);
+
+  async function handleMigratePii() {
+    setMigratingPii(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('migrate-pii');
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Migração concluída!',
+        description: `${data.migrated} perfis migrados de ${data.total} total.`,
+      });
+      
+      if (data.errors && data.errors.length > 0) {
+        console.error('Migration errors:', data.errors);
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Erro na migração',
+        description: err.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setMigratingPii(false);
+    }
+  }
 
   useEffect(() => {
     checkSuperAdminAndFetch();
@@ -332,6 +360,41 @@ export default function SuperAdmin() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Security Actions */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Database className="h-5 w-5" />
+              Segurança de Dados
+            </CardTitle>
+            <CardDescription>
+              Ferramentas de migração e proteção de dados sensíveis
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button 
+              onClick={handleMigratePii} 
+              disabled={migratingPii}
+              variant="outline"
+            >
+              {migratingPii ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Migrando...
+                </>
+              ) : (
+                <>
+                  <Shield className="h-4 w-4 mr-2" />
+                  Migrar dados PII para colunas criptografadas
+                </>
+              )}
+            </Button>
+            <p className="text-xs text-muted-foreground mt-2">
+              Converte CPF, CRM, telefone, endereço e dados bancários para armazenamento criptografado.
+            </p>
+          </CardContent>
+        </Card>
 
         {/* Tenants Table */}
         <Card>
