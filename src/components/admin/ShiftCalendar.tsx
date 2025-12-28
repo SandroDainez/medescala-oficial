@@ -358,6 +358,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return num.toFixed(2);
   }
 
+  // Returns null when the input is empty OR represents zero ("0", "0.00", "0,00").
+  // This is important to allow "valor em branco" for finance calculations.
+  function parseMoneyNullable(value: unknown): number | null {
+    const raw = (value ?? '').toString().trim();
+    if (!raw) return null;
+
+    const parsed = parseMoneyValue(raw);
+    if (!Number.isFinite(parsed) || parsed === 0) return null;
+    return parsed;
+  }
+
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
@@ -465,22 +476,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           // User selected a plantonista
           if (currentAssignment) {
             // Update existing assignment - always update value, even if user is the same
-            // Determine value: use form value if specified, otherwise use sector default (if enabled) or null
-            const formValueRaw = formData.base_value?.toString().trim();
-            const formValue = parseMoneyValue(formData.base_value);
-            let assignedValue: number | null = null;
-            
-            if (formValueRaw && formValue > 0) {
-              // User explicitly set a value
-              assignedValue = formValue;
-            } else if (formValueRaw === '' || formValueRaw === '0') {
-              // User explicitly cleared the value - check if we should use sector default
-              if (formData.use_sector_default) {
-                assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-              } else {
-                assignedValue = null; // Keep it blank
-              }
-            } else if (formData.use_sector_default) {
+            // Determine value: explicit value, otherwise (optionally) sector default, otherwise null (blank)
+            let assignedValue: number | null = parseMoneyNullable(formData.base_value);
+            if (assignedValue === null && formData.use_sector_default) {
               assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
             }
             
@@ -815,11 +813,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           formData.assigned_user_id !== 'vago' && 
           formData.assigned_user_id !== 'disponivel' && 
           newShift) {
+        const assignedValue = (() => {
+          const direct = parseMoneyNullable(formData.base_value);
+          if (direct !== null) return direct;
+          return formData.use_sector_default ? getSectorDefaultValue(formData.sector_id || null, formData.start_time) : null;
+        })();
+
         await supabase.from('shift_assignments').insert({
           tenant_id: currentTenantId,
           shift_id: newShift.id,
           user_id: formData.assigned_user_id,
-          assigned_value: parseMoneyValue(formData.base_value),
+          assigned_value: assignedValue,
           created_by: user?.id,
         });
       }
@@ -1040,11 +1044,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     e.preventDefault();
     if (!selectedShift || !currentTenantId) return;
 
-    const hasCustomValue = (assignData.assigned_value ?? '').toString().trim() !== '';
-    const assignedValue = hasCustomValue
-      ? parseMoneyValue(assignData.assigned_value)
-      : Number(selectedShift.base_value);
-
+    const assignedValue = parseMoneyNullable(assignData.assigned_value);
     const { error } = await supabase.from('shift_assignments').insert({
       tenant_id: currentTenantId,
       shift_id: selectedShift.id,
@@ -1365,7 +1365,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       // Assignment (plantonista) update
       if (bulkApplyData.assigned_user_id) {
-        const valueToApply = bulkApplyData.base_value.trim() ? parseMoneyValue(bulkApplyData.base_value) : null;
+        const valueToApply = (() => {
+          const raw = bulkApplyData.base_value.trim();
+          if (!raw) return undefined; // keep existing
+          const parsed = parseMoneyValue(raw);
+          return parsed === 0 ? null : parsed; // "0" means clear (blank)
+        })();
 
         if (bulkApplyData.assigned_user_id === '__clear__') {
           const { error } = await supabase.from('shift_assignments').delete().in('shift_id', shiftIds);
@@ -1379,7 +1384,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   user_id: bulkApplyData.assigned_user_id,
                   updated_by: user.id,
                 };
-                if (valueToApply !== null) updatePayload.assigned_value = valueToApply;
+                if (valueToApply !== undefined) updatePayload.assigned_value = valueToApply; // can be null to clear
 
                 const { error } = await supabase.from('shift_assignments').update(updatePayload).eq('id', existing.id);
                 if (error) throw error;
@@ -1388,7 +1393,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   tenant_id: currentTenantId,
                   shift_id: shiftId,
                   user_id: bulkApplyData.assigned_user_id,
-                  assigned_value: valueToApply ?? 0,
+                  assigned_value: valueToApply ?? null,
                   created_by: user.id,
                 };
 
@@ -1450,17 +1455,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
           // Assign to user
           if (currentAssignment) {
-            if (currentAssignment.user_id !== editData.assigned_user_id) {
-              // Update existing assignment
-              await supabase
-                .from('shift_assignments')
-                .update({
-                  user_id: editData.assigned_user_id,
-                  assigned_value: parseMoneyValue(editData.base_value),
-                  updated_by: user.id,
-                })
-                .eq('id', currentAssignment.id);
-            }
+            // Update existing assignment (always update value, even if user is the same)
+            await supabase
+              .from('shift_assignments')
+              .update({
+                user_id: editData.assigned_user_id,
+                assigned_value: parseMoneyNullable(editData.base_value),
+                updated_by: user.id,
+              })
+              .eq('id', currentAssignment.id);
           } else {
             // Create new assignment
             await supabase
@@ -1468,7 +1471,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               .insert({
                 shift_id: editData.id,
                 user_id: editData.assigned_user_id,
-                assigned_value: parseMoneyValue(editData.base_value),
+                assigned_value: parseMoneyNullable(editData.base_value),
                 tenant_id: currentTenantId,
                 created_by: user.id,
               });
