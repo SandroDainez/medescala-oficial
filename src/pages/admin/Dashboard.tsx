@@ -297,15 +297,59 @@ export default function AdminDashboard() {
     return <div className="text-muted-foreground p-4">Carregando dashboard...</div>;
   }
 
+  // Generate month options (current year ± 2 years)
+  const monthOptions = (() => {
+    const options: { value: string; label: string }[] = [];
+    const now = new Date();
+    for (let yearOffset = -2; yearOffset <= 1; yearOffset++) {
+      for (let month = 0; month < 12; month++) {
+        const date = new Date(now.getFullYear() + yearOffset, month, 1);
+        options.push({
+          value: format(date, 'yyyy-MM'),
+          label: format(date, 'MMMM yyyy', { locale: ptBR }),
+        });
+      }
+    }
+    return options;
+  })();
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Dashboard Administrativo</h2>
-          <p className="text-muted-foreground">Visão completa do hospital - {format(currentDate, 'MMMM yyyy', { locale: ptBR })}</p>
+          <p className="text-muted-foreground">Visão completa do hospital</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          {/* Month/Year Selector */}
+          <div className="flex items-center gap-1">
+            <Button variant="outline" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Select
+              value={format(currentDate, 'yyyy-MM')}
+              onValueChange={(v) => {
+                const [year, month] = v.split('-').map(Number);
+                setCurrentDate(new Date(year, month - 1, 1));
+              }}
+            >
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
+                {monthOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="outline" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+          
           <Button variant="outline" onClick={() => navigate('/admin/sectors')}>
             <Building2 className="mr-2 h-4 w-4" />
             Setores
