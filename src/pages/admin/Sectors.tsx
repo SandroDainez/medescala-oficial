@@ -12,7 +12,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign } from 'lucide-react';
+import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 
 interface Sector {
   id: string;
@@ -20,6 +21,8 @@ interface Sector {
   description: string | null;
   color: string;
   active: boolean;
+  default_day_value?: number | null;
+  default_night_value?: number | null;
 }
 
 interface Member {
@@ -48,8 +51,10 @@ export default function AdminSectors() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
+  const [selectedSectorForValues, setSelectedSectorForValues] = useState<Sector | null>(null);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
@@ -263,6 +268,16 @@ export default function AdminSectors() {
     return sectorMemberships.filter(sm => sm.sector_id === sectorId).length;
   }
 
+  function openValuesDialog(sector: Sector) {
+    setSelectedSectorForValues(sector);
+    setValuesDialogOpen(true);
+  }
+
+  const formatCurrency = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '-';
+    return `R$ ${value.toFixed(2).replace('.', ',')}`;
+  };
+
   if (loading) {
     return <div className="text-muted-foreground">Carregando...</div>;
   }
@@ -366,6 +381,7 @@ export default function AdminSectors() {
                 <TableHead>Cor</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead>Descrição</TableHead>
+                <TableHead>Valores</TableHead>
                 <TableHead>Membros</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -374,7 +390,7 @@ export default function AdminSectors() {
             <TableBody>
               {sectors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="text-center text-muted-foreground">
                     Nenhum setor cadastrado. Crie o primeiro setor para começar.
                   </TableCell>
                 </TableRow>
@@ -392,6 +408,18 @@ export default function AdminSectors() {
                       {sector.description || '-'}
                     </TableCell>
                     <TableCell>
+                      <div className="text-xs space-y-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-amber-500">D:</span>
+                          <span>{formatCurrency(sector.default_day_value)}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-blue-500">N:</span>
+                          <span>{formatCurrency(sector.default_night_value)}</span>
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
                       <Badge variant="secondary">
                         <Users className="mr-1 h-3 w-3" />
                         {getMemberCount(sector.id)}
@@ -404,6 +432,15 @@ export default function AdminSectors() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openValuesDialog(sector)}
+                          title="Configurar valores"
+                        >
+                          <DollarSign className="mr-1 h-4 w-4" />
+                          Valores
+                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -524,6 +561,16 @@ export default function AdminSectors() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Sector Values Dialog */}
+      <SectorValuesDialog
+        open={valuesDialogOpen}
+        onOpenChange={setValuesDialogOpen}
+        sector={selectedSectorForValues}
+        tenantId={currentTenantId || ''}
+        userId={user?.id}
+        onSuccess={fetchData}
+      />
     </div>
   );
 }
