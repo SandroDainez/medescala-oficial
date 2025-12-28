@@ -321,10 +321,6 @@ export default function AdminDashboard() {
     }
   }
 
-  if (loading) {
-    return <div className="text-muted-foreground p-4">Carregando dashboard...</div>;
-  }
-
   // Generate month options (current year ± 2 years)
   const monthOptions = useMemo(() => {
     const options: { value: string; label: string }[] = [];
@@ -341,13 +337,19 @@ export default function AdminDashboard() {
     return options;
   }, []);
 
+  if (loading) {
+    return <div className="text-muted-foreground p-4">Carregando dashboard...</div>;
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Dashboard Administrativo</h2>
-          <p className="text-muted-foreground">Visão completa do hospital</p>
+          <p className="text-muted-foreground">
+            Visão completa do hospital - {format(currentDate, 'MMMM yyyy', { locale: ptBR })}
+          </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
           {/* Month/Year Selector */}
