@@ -140,17 +140,29 @@ export default function UserManagement() {
     if (!error && data) {
       const typed = data as unknown as MemberWithProfile[];
       
-      // Fetch private profile data for all users
+      // Fetch decrypted private profile data for all users via edge function
       const userIds = typed.map(m => m.user_id);
-      const { data: privateData } = await supabase
-        .from('profiles_private')
-        .select('user_id, phone, cpf, crm, address, bank_name, bank_agency, bank_account, pix_key')
-        .in('user_id', userIds);
+      const privateDataMap: Record<string, MemberWithProfile['privateProfile']> = {};
+      
+      // Decrypt data for each user
+      for (const userId of userIds) {
+        try {
+          const { data: decryptResult, error: decryptError } = await supabase.functions.invoke('pii-crypto', {
+            body: { action: 'decrypt', userId }
+          });
+          
+          if (!decryptError && decryptResult?.data) {
+            privateDataMap[userId] = decryptResult.data;
+          }
+        } catch (err) {
+          console.warn(`Failed to decrypt PII for user ${userId}:`, err);
+        }
+      }
 
       // Merge private data
       const withPrivate = typed.map(m => ({
         ...m,
-        privateProfile: privateData?.find(p => p.user_id === m.user_id) || null,
+        privateProfile: privateDataMap[m.user_id] || null,
       }));
 
       const sorted = [...withPrivate].sort((a, b) => {
@@ -385,22 +397,23 @@ export default function UserManagement() {
 
       if (profileError) throw profileError;
 
-      // Update private profile data
-      const { error: privateError } = await supabase
-        .from('profiles_private')
-        .upsert({
-          user_id: editingMember.user_id,
-          phone: editPhone || null,
-          cpf: editCpf || null,
-          crm: editCrm || null,
-          address: editAddress || null,
-          bank_name: editBankName || null,
-          bank_agency: editBankAgency || null,
-          bank_account: editBankAccount || null,
-          pix_key: editPixKey || null,
-        });
+      // Update private profile data using encrypted storage
+      const piiData = {
+        phone: editPhone || null,
+        cpf: editCpf || null,
+        crm: editCrm || null,
+        address: editAddress || null,
+        bank_name: editBankName || null,
+        bank_agency: editBankAgency || null,
+        bank_account: editBankAccount || null,
+        pix_key: editPixKey || null,
+      };
 
-      if (privateError) throw privateError;
+      const { error: encryptError } = await supabase.functions.invoke('pii-crypto', {
+        body: { action: 'encrypt', userId: editingMember.user_id, data: piiData }
+      });
+
+      if (encryptError) throw encryptError;
 
       // Update sector memberships - fetch fresh data from database to avoid stale state
       const { data: currentDbMemberships } = await supabase

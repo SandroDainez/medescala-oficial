@@ -18,6 +18,42 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => htmlEscapes[char] || char);
 }
 
+// Derive a CryptoKey from the encryption key string
+async function deriveKey(keyString: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    hashBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Encrypt plaintext using AES-GCM
+async function encryptValue(plaintext: string, key: CryptoKey): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plaintext);
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -126,20 +162,60 @@ Deno.serve(async (req) => {
       // Don't throw, the user is created, profile can be updated later
     }
 
-    // Save private profile data to profiles_private table
+    // Save private profile data with encryption
+    const encryptionKey = Deno.env.get('PII_ENCRYPTION_KEY')
+    const privatePayload: Record<string, unknown> = {
+      user_id: newUser.user.id,
+    }
+
+    if (encryptionKey) {
+      try {
+        const cryptoKey = await deriveKey(encryptionKey)
+        
+        const fieldsToEncrypt = [
+          { key: 'phone', value: phone },
+          { key: 'cpf', value: cpf },
+          { key: 'crm', value: crm },
+          { key: 'address', value: address },
+          { key: 'bank_name', value: bankName },
+          { key: 'bank_agency', value: bankAgency },
+          { key: 'bank_account', value: bankAccount },
+          { key: 'pix_key', value: pixKey },
+        ]
+
+        for (const { key, value } of fieldsToEncrypt) {
+          if (value) {
+            privatePayload[`${key}_enc`] = await encryptValue(value, cryptoKey)
+          }
+          privatePayload[key] = null // Clear plaintext
+        }
+      } catch (err) {
+        console.error('Encryption error:', err)
+        // Fallback to plaintext if encryption fails
+        privatePayload.phone = phone || null
+        privatePayload.cpf = cpf || null
+        privatePayload.crm = crm || null
+        privatePayload.address = address || null
+        privatePayload.bank_name = bankName || null
+        privatePayload.bank_agency = bankAgency || null
+        privatePayload.bank_account = bankAccount || null
+        privatePayload.pix_key = pixKey || null
+      }
+    } else {
+      // No encryption key, use plaintext (legacy mode)
+      privatePayload.phone = phone || null
+      privatePayload.cpf = cpf || null
+      privatePayload.crm = crm || null
+      privatePayload.address = address || null
+      privatePayload.bank_name = bankName || null
+      privatePayload.bank_agency = bankAgency || null
+      privatePayload.bank_account = bankAccount || null
+      privatePayload.pix_key = pixKey || null
+    }
+
     const { error: privateProfileError } = await supabaseAdmin
       .from('profiles_private')
-      .upsert({
-        user_id: newUser.user.id,
-        phone: phone || null,
-        cpf: cpf || null,
-        crm: crm || null,
-        address: address || null,
-        bank_name: bankName || null,
-        bank_agency: bankAgency || null,
-        bank_account: bankAccount || null,
-        pix_key: pixKey || null,
-      })
+      .upsert(privatePayload)
 
     if (privateProfileError) {
       console.error('Private profile error:', privateProfileError)
