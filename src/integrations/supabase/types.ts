@@ -557,7 +557,7 @@ export type Database = {
           notes: string | null
           shift_id: string
           status: string
-          tenant_id: string | null
+          tenant_id: string
           updated_at: string
           updated_by: string | null
           user_id: string
@@ -572,7 +572,7 @@ export type Database = {
           notes?: string | null
           shift_id: string
           status?: string
-          tenant_id?: string | null
+          tenant_id: string
           updated_at?: string
           updated_by?: string | null
           user_id: string
@@ -587,7 +587,7 @@ export type Database = {
           notes?: string | null
           shift_id?: string
           status?: string
-          tenant_id?: string | null
+          tenant_id?: string
           updated_at?: string
           updated_by?: string | null
           user_id?: string
@@ -774,7 +774,7 @@ export type Database = {
           sector_id: string | null
           shift_date: string
           start_time: string
-          tenant_id: string | null
+          tenant_id: string
           title: string
           updated_at: string
           updated_by: string | null
@@ -791,7 +791,7 @@ export type Database = {
           sector_id?: string | null
           shift_date: string
           start_time: string
-          tenant_id?: string | null
+          tenant_id: string
           title: string
           updated_at?: string
           updated_by?: string | null
@@ -808,7 +808,7 @@ export type Database = {
           sector_id?: string | null
           shift_date?: string
           start_time?: string
-          tenant_id?: string | null
+          tenant_id?: string
           title?: string
           updated_at?: string
           updated_by?: string | null
