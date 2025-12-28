@@ -1229,14 +1229,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       shift_date: shift.shift_date,
       start_time: shift.start_time.slice(0, 5), // Remove seconds
       end_time: shift.end_time.slice(0, 5), // Remove seconds
-      base_value: formatMoneyInput(shift.base_value),
+      base_value: formatMoneyInput(shift.base_value ?? ''),
       notes: shift.notes || '',
       sector_id: shift.sector_id || '',
       assigned_user_id: currentAssignment?.user_id || '',
       duration_hours: '',
       repeat_weeks: 0,
       quantity: 1,
-      use_sector_default: false, // When editing, don't override existing value
+      // IMPORTANT: if the admin clears/zeros the value, apply sector default by default.
+      // They can still uncheck if they want to keep it blank (null).
+      use_sector_default: true,
     });
     setShiftDialogOpen(true);
   }
