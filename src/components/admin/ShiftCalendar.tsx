@@ -21,6 +21,8 @@ interface Sector {
   name: string;
   color: string | null;
   active: boolean;
+  default_day_value?: number | null;
+  default_night_value?: number | null;
 }
 
 interface Shift {
@@ -281,12 +283,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return members.filter(m => sectorUserIds.includes(m.user_id));
   }
 
-  // Check if shift is nocturnal (starts at 18:00 or later, or ends at 07:00 or before)
+  // Check if shift is nocturnal (7h-19h = diurno, 19h-7h = noturno)
   function isNightShift(startTime: string, endTime: string): boolean {
     const startHour = parseInt(startTime.split(':')[0], 10);
-    const endHour = parseInt(endTime.split(':')[0], 10);
-    // Night shift if starts at 18:00+ or ends at 07:00 or before
-    return startHour >= 18 || endHour <= 7 || endHour < startHour;
+    // 19h-7h = noturno (horário de início >= 19 ou < 7)
+    return startHour >= 19 || startHour < 7;
+  }
+
+  // Get sector default value based on shift time
+  function getSectorDefaultValue(sectorId: string | null, startTime: string): number | null {
+    if (!sectorId) return null;
+    const sector = sectors.find(s => s.id === sectorId);
+    if (!sector) return null;
+    
+    const isNight = isNightShift(startTime, '');
+    return isNight ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
   }
 
   // Generate automatic title based on time
@@ -454,22 +465,32 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (currentAssignment) {
             // Update existing assignment
             if (currentAssignment.user_id !== formData.assigned_user_id) {
+              // Determine value: use form value if specified, otherwise use sector default
+              const formValue = parseMoneyValue(formData.base_value);
+              const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+              const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+              
               await supabase
                 .from('shift_assignments')
                 .update({ 
                   user_id: formData.assigned_user_id,
-                  assigned_value: parseMoneyValue(formData.base_value),
+                  assigned_value: assignedValue,
                   updated_by: user?.id,
                 })
                 .eq('id', currentAssignment.id);
             }
           } else {
             // Create new assignment
+            // Determine value: use form value if specified, otherwise use sector default
+            const formValue = parseMoneyValue(formData.base_value);
+            const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+            const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+            
             await supabase.from('shift_assignments').insert({
               tenant_id: currentTenantId,
               shift_id: editingShift.id,
               user_id: formData.assigned_user_id,
-              assigned_value: parseMoneyValue(formData.base_value),
+              assigned_value: assignedValue,
               created_by: user?.id,
             });
           }
@@ -511,11 +532,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 formData.assigned_user_id !== 'vago' && 
                 formData.assigned_user_id !== 'disponivel' && 
                 duplicatedShift) {
+              // Determine value: use form value if specified, otherwise use sector default
+              const formValue = parseMoneyValue(formData.base_value);
+              const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+              const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+              
               await supabase.from('shift_assignments').insert({
                 tenant_id: currentTenantId,
                 shift_id: duplicatedShift.id,
                 user_id: formData.assigned_user_id,
-                assigned_value: parseMoneyValue(formData.base_value),
+                assigned_value: assignedValue,
                 created_by: user?.id,
               });
             }
@@ -567,11 +593,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         // Create assignment if a real user was selected
         if (userIdForShift && userIdForShift !== 'vago' && userIdForShift !== 'disponivel') {
+          // Determine value: use form value if specified, otherwise use sector default
+          const formValue = parseMoneyValue(formData.base_value);
+          const sectorDefaultValue = getSectorDefaultValue(formData.sector_id, startTime);
+          const assignedValue = formValue > 0 ? formValue : (sectorDefaultValue ?? 0);
+          
           await supabase.from('shift_assignments').insert({
             tenant_id: currentTenantId,
             shift_id: createdShift.id,
             user_id: userIdForShift,
-            assigned_value: parseMoneyValue(formData.base_value),
+            assigned_value: assignedValue,
             created_by: user?.id,
           });
         }
