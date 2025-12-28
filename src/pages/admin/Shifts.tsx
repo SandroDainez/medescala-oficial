@@ -15,21 +15,26 @@ interface Sector {
   color: string | null;
 }
 
-interface ShiftEntry {
-  id: string;
-  data: string;
-  valor: number | null;
-  status_valor: 'COM_VALOR' | 'SEM_VALOR';
+interface ShiftWithAssignment {
+  assignment_id: string;
+  shift_id: string;
+  shift_date: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  base_value: number | null;
+  assigned_value: number | null;
+  sector_id: string | null;
+  sector_name: string | null;
+  sector_color: string | null;
   plantonista_id: string;
-  setor_id: string;
-  plantonista?: { name: string | null } | null;
-  setor?: { name: string; color: string | null } | null;
-  source_shift?: { title: string; start_time: string; end_time: string } | null;
+  plantonista_name: string | null;
+  status: string;
 }
 
 export default function AdminShifts() {
   const { currentTenantId } = useTenant();
-  const [entries, setEntries] = useState<ShiftEntry[]>([]);
+  const [assignments, setAssignments] = useState<ShiftWithAssignment[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,40 +60,48 @@ export default function AdminShifts() {
     });
   }, []);
 
-  // Filtrar entries pelo mês e setor selecionados
-  const filteredEntries = useMemo(() => {
+  // Filtrar pelo mês e setor selecionados
+  const filteredAssignments = useMemo(() => {
     const filterDate = new Date(selectedYear, selectedMonth, 1);
     const monthStart = startOfMonth(filterDate);
     const monthEnd = endOfMonth(filterDate);
 
-    return entries.filter((entry) => {
-      const entryDate = new Date(entry.data + 'T00:00:00');
-      const isInMonth = entryDate >= monthStart && entryDate <= monthEnd;
-      const isInSector = selectedSectorId === 'all' || entry.setor_id === selectedSectorId;
+    return assignments.filter((item) => {
+      const shiftDate = new Date(item.shift_date + 'T00:00:00');
+      const isInMonth = shiftDate >= monthStart && shiftDate <= monthEnd;
+      const isInSector = selectedSectorId === 'all' || item.sector_id === selectedSectorId;
       return isInMonth && isInSector;
     });
-  }, [entries, selectedMonth, selectedYear, selectedSectorId]);
+  }, [assignments, selectedMonth, selectedYear, selectedSectorId]);
 
   // Agrupar por setor
-  const entriesBySector = useMemo(() => {
-    const grouped: Record<string, { sector: Sector; entries: ShiftEntry[] }> = {};
+  const assignmentsBySector = useMemo(() => {
+    const grouped: Record<string, { sector: Sector; items: ShiftWithAssignment[] }> = {};
     
-    filteredEntries.forEach((entry) => {
-      const sectorId = entry.setor_id;
+    filteredAssignments.forEach((item) => {
+      const sectorId = item.sector_id || 'sem-setor';
       if (!grouped[sectorId]) {
-        const sector = sectors.find(s => s.id === sectorId) || { id: sectorId, name: 'Sem Setor', color: null };
-        grouped[sectorId] = { sector, entries: [] };
+        const sector = sectors.find(s => s.id === sectorId) || { 
+          id: sectorId, 
+          name: item.sector_name || 'Sem Setor', 
+          color: item.sector_color || '#6b7280' 
+        };
+        grouped[sectorId] = { sector, items: [] };
       }
-      grouped[sectorId].entries.push(entry);
+      grouped[sectorId].items.push(item);
     });
 
-    // Ordenar entries dentro de cada setor por data
+    // Ordenar items dentro de cada setor por data e horário
     Object.values(grouped).forEach(group => {
-      group.entries.sort((a, b) => new Date(a.data).getTime() - new Date(b.data).getTime());
+      group.items.sort((a, b) => {
+        const dateCompare = new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime();
+        if (dateCompare !== 0) return dateCompare;
+        return a.start_time.localeCompare(b.start_time);
+      });
     });
 
     return grouped;
-  }, [filteredEntries, sectors]);
+  }, [filteredAssignments, sectors]);
 
   useEffect(() => {
     if (currentTenantId) {
@@ -110,25 +123,51 @@ export default function AdminShifts() {
 
     if (sectorsData) setSectors(sectorsData);
 
-    // Fetch shift entries with related data
-    const { data: entriesData, error } = await supabase
-      .from('shift_entries')
+    // Fetch shift assignments with shift and profile data
+    const { data, error } = await supabase
+      .from('shift_assignments')
       .select(`
         id,
-        data,
-        valor,
-        status_valor,
-        plantonista_id,
-        setor_id,
-        plantonista:profiles!shift_entries_plantonista_id_fkey(name),
-        setor:sectors!shift_entries_setor_id_fkey(name, color),
-        source_shift:shifts!shift_entries_source_shift_id_fkey(title, start_time, end_time)
+        shift_id,
+        user_id,
+        assigned_value,
+        status,
+        shift:shifts!shift_assignments_shift_id_fkey(
+          id,
+          title,
+          shift_date,
+          start_time,
+          end_time,
+          base_value,
+          sector_id,
+          sector:sectors!shifts_sector_id_fkey(id, name, color)
+        ),
+        profile:profiles!shift_assignments_user_id_profiles_fkey(name)
       `)
       .eq('tenant_id', currentTenantId)
-      .order('data', { ascending: true });
+      .order('created_at', { ascending: false });
 
-    if (!error && entriesData) {
-      setEntries(entriesData as unknown as ShiftEntry[]);
+    if (!error && data) {
+      const mapped: ShiftWithAssignment[] = data
+        .filter(item => item.shift) // Filtrar assignments sem shift
+        .map(item => ({
+          assignment_id: item.id,
+          shift_id: item.shift_id,
+          shift_date: (item.shift as any).shift_date,
+          title: (item.shift as any).title,
+          start_time: (item.shift as any).start_time,
+          end_time: (item.shift as any).end_time,
+          base_value: (item.shift as any).base_value,
+          assigned_value: item.assigned_value,
+          sector_id: (item.shift as any).sector_id,
+          sector_name: (item.shift as any).sector?.name || null,
+          sector_color: (item.shift as any).sector?.color || null,
+          plantonista_id: item.user_id,
+          plantonista_name: (item.profile as any)?.name || null,
+          status: item.status,
+        }));
+      
+      setAssignments(mapped);
     }
 
     setLoading(false);
@@ -139,9 +178,24 @@ export default function AdminShifts() {
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   }
 
+  function formatTime(timeStr: string) {
+    return timeStr.slice(0, 5);
+  }
+
   function formatCurrency(value: number | null) {
-    if (value === null) return '-';
+    if (value === null || value === undefined) return '-';
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  }
+
+  function getStatusBadge(status: string) {
+    const statusMap: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+      'assigned': { label: 'Atribuído', variant: 'secondary' },
+      'confirmed': { label: 'Confirmado', variant: 'default' },
+      'completed': { label: 'Concluído', variant: 'default' },
+      'cancelled': { label: 'Cancelado', variant: 'destructive' },
+    };
+    const config = statusMap[status] || { label: status, variant: 'outline' as const };
+    return <Badge variant={config.variant}>{config.label}</Badge>;
   }
 
   if (loading) {
@@ -209,14 +263,14 @@ export default function AdminShifts() {
         </div>
       </div>
 
-      {Object.keys(entriesBySector).length === 0 ? (
+      {Object.keys(assignmentsBySector).length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             Nenhum plantão encontrado para o período selecionado.
           </CardContent>
         </Card>
       ) : (
-        Object.entries(entriesBySector).map(([sectorId, { sector, entries: sectorEntries }]) => (
+        Object.entries(assignmentsBySector).map(([sectorId, { sector, items }]) => (
           <Card key={sectorId}>
             <CardContent className="p-0">
               <div 
@@ -224,40 +278,37 @@ export default function AdminShifts() {
                 style={{ borderLeftWidth: 4, borderLeftColor: sector.color || '#22c55e' }}
               >
                 <h3 className="font-semibold text-lg">{sector.name}</h3>
-                <Badge variant="secondary">{sectorEntries.length} plantões</Badge>
+                <Badge variant="secondary">{items.length} plantões</Badge>
               </div>
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Data</TableHead>
+                    <TableHead>Título</TableHead>
                     <TableHead>Plantonista</TableHead>
-                    <TableHead>Turno</TableHead>
+                    <TableHead>Horário</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
                     <TableHead className="text-center">Status</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {sectorEntries.map((entry) => (
-                    <TableRow key={entry.id}>
+                  {items.map((item) => (
+                    <TableRow key={item.assignment_id}>
                       <TableCell className="font-medium">
-                        {formatDate(entry.data)}
+                        {formatDate(item.shift_date)}
+                      </TableCell>
+                      <TableCell>{item.title}</TableCell>
+                      <TableCell>
+                        {item.plantonista_name || 'Não atribuído'}
                       </TableCell>
                       <TableCell>
-                        {entry.plantonista?.name || 'Não atribuído'}
-                      </TableCell>
-                      <TableCell>
-                        {entry.source_shift 
-                          ? `${entry.source_shift.title} (${entry.source_shift.start_time.slice(0, 5)} - ${entry.source_shift.end_time.slice(0, 5)})`
-                          : '-'
-                        }
+                        {formatTime(item.start_time)} - {formatTime(item.end_time)}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {formatCurrency(entry.valor)}
+                        {formatCurrency(item.assigned_value ?? item.base_value)}
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant={entry.status_valor === 'COM_VALOR' ? 'default' : 'secondary'}>
-                          {entry.status_valor === 'COM_VALOR' ? 'Com Valor' : 'Sem Valor'}
-                        </Badge>
+                        {getStatusBadge(item.status)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -269,30 +320,32 @@ export default function AdminShifts() {
       )}
 
       {/* Resumo */}
-      {filteredEntries.length > 0 && (
+      {filteredAssignments.length > 0 && (
         <Card>
           <CardContent className="py-4">
             <div className="flex flex-wrap gap-6 text-sm">
               <div>
                 <span className="text-muted-foreground">Total de Plantões:</span>{' '}
-                <span className="font-semibold">{filteredEntries.length}</span>
+                <span className="font-semibold">{filteredAssignments.length}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">Valor Total:</span>{' '}
                 <span className="font-semibold">
-                  {formatCurrency(filteredEntries.reduce((sum, e) => sum + (e.valor || 0), 0))}
+                  {formatCurrency(filteredAssignments.reduce((sum, item) => 
+                    sum + (item.assigned_value ?? item.base_value ?? 0), 0
+                  ))}
                 </span>
               </div>
               <div>
-                <span className="text-muted-foreground">Com Valor:</span>{' '}
+                <span className="text-muted-foreground">Confirmados:</span>{' '}
                 <span className="font-semibold">
-                  {filteredEntries.filter(e => e.status_valor === 'COM_VALOR').length}
+                  {filteredAssignments.filter(i => i.status === 'confirmed' || i.status === 'completed').length}
                 </span>
               </div>
               <div>
-                <span className="text-muted-foreground">Sem Valor:</span>{' '}
+                <span className="text-muted-foreground">Pendentes:</span>{' '}
                 <span className="font-semibold">
-                  {filteredEntries.filter(e => e.status_valor === 'SEM_VALOR').length}
+                  {filteredAssignments.filter(i => i.status === 'assigned').length}
                 </span>
               </div>
             </div>
