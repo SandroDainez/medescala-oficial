@@ -278,7 +278,7 @@ export default function AdminDashboard() {
       .select(`
         user_id, assigned_value,
         profile:profiles!shift_assignments_user_id_profiles_fkey(name),
-        shift:shifts!inner(shift_date, sector_id, sector:sectors(name))
+        shift:shifts!inner(shift_date, base_value, sector_id, sector:sectors(name))
       `)
       .eq('tenant_id', currentTenantId)
       .gte('shift.shift_date', format(monthStart, 'yyyy-MM-dd'))
@@ -297,7 +297,11 @@ export default function AdminDashboard() {
         };
         
         existing.total_shifts++;
-        existing.total_value += Number(a.assigned_value || 0);
+        // Usar assigned_value se disponível, senão usar base_value do shift
+        const value = a.assigned_value != null 
+          ? Number(a.assigned_value) 
+          : Number(a.shift?.base_value || 0);
+        existing.total_value += value;
         
         const sectorName = a.shift?.sector?.name;
         if (sectorName && !existing.sectors.includes(sectorName)) {
