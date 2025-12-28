@@ -61,7 +61,8 @@ export default function AdminShifts() {
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
 
   // Filtros
-  const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
+  const [selectedMonth, setSelectedMonth] = useState<number>(new Date().getMonth());
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [selectedSectorId, setSelectedSectorId] = useState<string>('all');
 
   const [formData, setFormData] = useState({
@@ -75,23 +76,28 @@ export default function AdminShifts() {
     notes: '',
   });
 
-  // Gerar lista de meses para seleção (6 meses antes e 6 meses depois)
+  // Meses do ano
   const monthOptions = useMemo(() => {
-    const options: { value: string; label: string }[] = [];
-    for (let i = -6; i <= 6; i++) {
-      const date = addMonths(new Date(), i);
-      options.push({
-        value: format(date, 'yyyy-MM'),
-        label: format(date, "MMMM 'de' yyyy", { locale: ptBR }),
-      });
-    }
-    return options;
+    return Array.from({ length: 12 }, (_, i) => ({
+      value: i.toString(),
+      label: format(new Date(2024, i, 1), 'MMMM', { locale: ptBR }),
+    }));
+  }, []);
+
+  // Anos disponíveis (5 anos antes até 5 anos depois)
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    return Array.from({ length: 11 }, (_, i) => {
+      const year = currentYear - 5 + i;
+      return { value: year.toString(), label: year.toString() };
+    });
   }, []);
 
   // Filtrar shifts pelo mês e setor selecionados
   const filteredShifts = useMemo(() => {
-    const monthStart = startOfMonth(selectedMonth);
-    const monthEnd = endOfMonth(selectedMonth);
+    const filterDate = new Date(selectedYear, selectedMonth, 1);
+    const monthStart = startOfMonth(filterDate);
+    const monthEnd = endOfMonth(filterDate);
 
     return shifts.filter((shift) => {
       const shiftDate = new Date(shift.shift_date);
@@ -309,17 +315,30 @@ export default function AdminShifts() {
           <div className="flex items-center gap-2">
             <Filter className="h-4 w-4 text-muted-foreground" />
             <Select
-              value={format(selectedMonth, 'yyyy-MM')}
-              onValueChange={(value) => {
-                const [year, month] = value.split('-');
-                setSelectedMonth(new Date(parseInt(year), parseInt(month) - 1, 1));
-              }}
+              value={selectedMonth.toString()}
+              onValueChange={(value) => setSelectedMonth(parseInt(value))}
             >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Selecione o mês" />
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Mês" />
               </SelectTrigger>
               <SelectContent>
                 {monthOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <Select
+              value={selectedYear.toString()}
+              onValueChange={(value) => setSelectedYear(parseInt(value))}
+            >
+              <SelectTrigger className="w-[100px]">
+                <SelectValue placeholder="Ano" />
+              </SelectTrigger>
+              <SelectContent>
+                {yearOptions.map((option) => (
                   <SelectItem key={option.value} value={option.value}>
                     {option.label}
                   </SelectItem>
