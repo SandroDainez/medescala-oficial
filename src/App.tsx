@@ -8,6 +8,7 @@ import { TenantProvider, useTenant } from "@/hooks/useTenant";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { UserLayout } from "@/components/layouts/UserLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 import Auth from "./pages/Auth";
 import Landing from "./pages/Landing";
@@ -146,7 +147,9 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <TenantProvider>
-            <AppRoutes />
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
           </TenantProvider>
         </AuthProvider>
       </BrowserRouter>
