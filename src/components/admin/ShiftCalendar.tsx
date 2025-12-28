@@ -33,7 +33,7 @@ interface Shift {
   shift_date: string;
   start_time: string;
   end_time: string;
-  base_value: number;
+  base_value: number | null;
   notes: string | null;
   sector_id: string | null;
 }
@@ -42,7 +42,7 @@ interface ShiftAssignment {
   id: string;
   shift_id: string;
   user_id: string;
-  assigned_value: number;
+  assigned_value: number | null;
   status: string;
   profile: { name: string | null } | null;
 }
@@ -369,6 +369,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return parsed;
   }
 
+  // Resolve value using the same rules everywhere:
+  // - If user typed a value (non-zero) => use it
+  // - Else if useSectorDefault => sector default
+  // - Else => null (blank)
+  function resolveValue(params: {
+    raw: unknown;
+    sector_id: string | null;
+    start_time: string;
+    useSectorDefault: boolean;
+  }): number | null {
+    const direct = parseMoneyNullable(params.raw);
+    if (direct !== null) return direct;
+    if (!params.useSectorDefault) return null;
+    return getSectorDefaultValue(params.sector_id, params.start_time);
+  }
+
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
@@ -451,7 +467,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       shift_date: formData.shift_date,
       start_time: formData.start_time,
       end_time: formData.end_time,
-      base_value: parseMoneyValue(formData.base_value),
+      // IMPORTANT: allow "em branco" (null) and apply sector default only when enabled.
+      base_value: resolveValue({
+        raw: formData.base_value,
+        sector_id: formData.sector_id || null,
+        start_time: formData.start_time,
+        useSectorDefault: formData.use_sector_default,
+      }),
       notes: shiftNotes || null,
       sector_id: formData.sector_id || null,
       created_by: user?.id,
@@ -476,11 +498,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           // User selected a plantonista
           if (currentAssignment) {
             // Update existing assignment - always update value, even if user is the same
-            // Determine value: explicit value, otherwise (optionally) sector default, otherwise null (blank)
-            let assignedValue: number | null = parseMoneyNullable(formData.base_value);
-            if (assignedValue === null && formData.use_sector_default) {
-              assignedValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-            }
+            // Determine value using the same rules (typed value > sector default (optional) > blank)
+            const assignedValue = resolveValue({
+              raw: formData.base_value,
+              sector_id: formData.sector_id || null,
+              start_time: formData.start_time,
+              useSectorDefault: formData.use_sector_default,
+            });
             
             await supabase
               .from('shift_assignments')
