@@ -8,7 +8,7 @@ const corsHeaders = {
 
 
 Deno.serve(async (req) => {
-  console.log('delete-users function called')
+  console.log('delete-users function called', { method: req.method, origin: req.headers.get('origin') })
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
