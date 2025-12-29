@@ -133,27 +133,39 @@ Deno.serve(async (req) => {
     let newPassword = ''
 
     // Update email if provided and different
-    if (email) {
+    const nextEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
+
+    if (nextEmail) {
+      if (nextEmail.length > 255) {
+        throw new Error('Email muito longo')
+      }
+
       // Get current user email
       const { data: { user: targetUser } } = await supabaseAdmin.auth.admin.getUserById(userId)
-      
-      if (targetUser && targetUser.email !== email) {
-        console.log(`Updating email from ${targetUser.email} to ${email}`);
-        
+
+      console.log(`Email received for update: ${nextEmail}`)
+      console.log(`Current auth email: ${targetUser?.email ?? '(none)'}`)
+
+      if (targetUser && targetUser.email !== nextEmail) {
+        console.log(`Updating email from ${targetUser.email} to ${nextEmail}`)
+
         const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-          email: email,
-          email_confirm: true
+          email: nextEmail,
+          email_confirm: true,
         })
 
         if (updateError) {
-          console.error('Error updating email:', updateError);
+          console.error('Error updating email:', updateError)
           throw new Error(`Erro ao atualizar email: ${updateError.message}`)
         }
-        
-        emailUpdated = true
-      }
-    }
 
+        emailUpdated = true
+      } else {
+        console.log('Email not changed (same as current)')
+      }
+    } else {
+      console.log('No email provided for update')
+    }
     // Reset password if requested
     if (resetPassword) {
       // Generate new password
@@ -306,11 +318,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(
+      // Return the current auth email as source-of-truth
+      let currentAuthEmail: string | null = null
+      try {
+        const { data: { user: refreshedUser } } = await supabaseAdmin.auth.admin.getUserById(userId)
+        currentAuthEmail = refreshedUser?.email ?? null
+      } catch (e) {
+        console.warn('Could not refresh user email after update')
+      }
+
+      return new Response(
       JSON.stringify({
         success: true,
         profileUpdated,
         emailUpdated,
+        currentAuthEmail,
         passwordReset,
         emailSent,
         newPassword: passwordReset ? newPassword : undefined,
