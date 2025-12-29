@@ -3,15 +3,18 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
+
 
 Deno.serve(async (req) => {
   console.log('delete-users function called')
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
+    return new Response(null, { headers: corsHeaders, status: 204 })
   }
+
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
@@ -67,7 +70,7 @@ Deno.serve(async (req) => {
     let body: any
     try {
       body = await req.json()
-    } catch (e) {
+    } catch (_e) {
       console.error('Failed to parse JSON body')
       return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -76,12 +79,10 @@ Deno.serve(async (req) => {
     }
 
     const userIds = Array.isArray(body?.userIds) ? body.userIds : []
-    const excludeEmail = body?.excludeEmail
     const tenantId = body?.tenantId
 
-    console.log(
-      `Request params - userIds: ${JSON.stringify(userIds)}, excludeEmail: ${excludeEmail}, tenantId: ${tenantId}`,
-    )
+    console.log(`Request params - userIds: ${JSON.stringify(userIds)}, tenantId: ${tenantId}`)
+
 
     if (!tenantId) {
       return new Response(JSON.stringify({ error: 'Tenant ID is required' }), {
@@ -156,13 +157,8 @@ Deno.serve(async (req) => {
     const errors: string[] = []
 
     for (const userId of validUserIds) {
-      // Never delete the requesting user
-      if (userId === requestingUser.id) {
-        console.log(`Skipping requesting user: ${userId}`)
-        continue
-      }
-
       try {
+
         const { data: userResp, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId)
         if (getUserError) {
           console.error(`Failed to fetch user ${userId}:`, getUserError.message)
@@ -171,11 +167,6 @@ Deno.serve(async (req) => {
         }
 
         const userToDelete = userResp.user
-
-        if (excludeEmail && userToDelete?.email === excludeEmail) {
-          console.log(`Skipping excluded email: ${excludeEmail}`)
-          continue
-        }
 
         console.log(`Deleting user: ${userToDelete?.email} (${userId})`)
 
