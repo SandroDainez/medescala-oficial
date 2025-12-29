@@ -276,7 +276,7 @@ export default function UserAvailableShifts() {
         </TabsList>
 
         {/* Available Shifts */}
-        <TabsContent value="available" className="space-y-3">
+        <TabsContent value="available" className="space-y-4">
           {availableShifts.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center">
@@ -286,79 +286,164 @@ export default function UserAvailableShifts() {
               </CardContent>
             </Card>
           ) : (
-            availableShifts.map(shift => {
-              const isPending = hasPendingOffer(shift.id);
-              
-              return (
-                <Card key={shift.id} className="overflow-hidden">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        {/* Sector Badge */}
-                        {shift.sector && (
-                          <Badge 
-                            variant="outline" 
-                            className="mb-2"
-                            style={{ 
-                              borderColor: shift.sector.color,
-                              backgroundColor: `${shift.sector.color}10`,
-                            }}
-                          >
-                            <Building className="h-3 w-3 mr-1" />
-                            {shift.sector.name}
-                          </Badge>
-                        )}
-                        
-                        {/* Title */}
-                        <h3 className="font-semibold">{shift.title}</h3>
-                        
-                        {/* Details */}
-                        <div className="mt-2 space-y-1 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4" />
-                            {format(parseISO(shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Clock className="h-4 w-4" />
-                            {shift.start_time.slice(0, 5)} às {shift.end_time.slice(0, 5)}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="h-4 w-4" />
-                            {shift.hospital}
-                            {shift.location && ` - ${shift.location}`}
-                          </div>
-                        </div>
-                      </div>
+            (() => {
+              // Group shifts by sector
+              const shiftsBySector = availableShifts.reduce((acc, shift) => {
+                const sectorId = shift.sector?.id || 'no-sector';
+                if (!acc[sectorId]) {
+                  acc[sectorId] = {
+                    sector: shift.sector,
+                    shifts: [],
+                  };
+                }
+                acc[sectorId].shifts.push(shift);
+                return acc;
+              }, {} as Record<string, { sector: AvailableShift['sector']; shifts: AvailableShift[] }>);
 
-                      {/* Value and Action */}
-                      <div className="text-right shrink-0">
-                        {shift.base_value && (
-                          <p className="text-lg font-bold text-green-600 flex items-center justify-end gap-1">
-                            <DollarSign className="h-4 w-4" />
-                            {shift.base_value.toFixed(2)}
-                          </p>
-                        )}
-                        
-                        {isPending ? (
-                          <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
-                            Candidatura enviada
-                          </Badge>
-                        ) : (
-                          <Button 
-                            size="sm" 
-                            className="mt-2"
-                            onClick={() => setSelectedShift(shift)}
-                          >
-                            <Hand className="h-4 w-4 mr-2" />
-                            Candidatar
-                          </Button>
-                        )}
-                      </div>
+              // Sort shifts within each sector: day shifts first, then night shifts
+              const isNightShift = (startTime: string) => {
+                const hour = parseInt(startTime.slice(0, 2), 10);
+                return hour >= 18 || hour < 6;
+              };
+
+              return Object.entries(shiftsBySector).map(([sectorId, { sector, shifts }]) => {
+                const dayShifts = shifts.filter(s => !isNightShift(s.start_time));
+                const nightShifts = shifts.filter(s => isNightShift(s.start_time));
+
+                return (
+                  <div key={sectorId} className="space-y-3">
+                    {/* Sector Header */}
+                    <div 
+                      className="flex items-center gap-2 py-2 px-3 rounded-lg"
+                      style={{ 
+                        backgroundColor: sector?.color ? `${sector.color}15` : 'hsl(var(--muted))',
+                        borderLeft: `4px solid ${sector?.color || 'hsl(var(--muted-foreground))'}`,
+                      }}
+                    >
+                      <Building className="h-4 w-4" style={{ color: sector?.color }} />
+                      <span className="font-semibold">{sector?.name || 'Sem Setor'}</span>
+                      <Badge variant="secondary" className="ml-auto">
+                        {shifts.length} {shifts.length === 1 ? 'plantão' : 'plantões'}
+                      </Badge>
                     </div>
-                  </CardContent>
-                </Card>
-              );
-            })
+
+                    {/* Day Shifts */}
+                    {dayShifts.length > 0 && (
+                      <div className="space-y-2 pl-4">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="inline-block w-3 h-3 rounded-full bg-yellow-400" />
+                          Diurnos ({dayShifts.length})
+                        </div>
+                        {dayShifts.map(shift => {
+                          const isPending = hasPendingOffer(shift.id);
+                          return (
+                            <Card key={shift.id} className="overflow-hidden">
+                              <CardContent className="p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold">{shift.title}</h3>
+                                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4" />
+                                        {format(parseISO(shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Clock className="h-4 w-4" />
+                                        {shift.start_time.slice(0, 5)} às {shift.end_time.slice(0, 5)}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4" />
+                                        {shift.hospital}
+                                        {shift.location && ` - ${shift.location}`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    {shift.base_value && (
+                                      <p className="text-lg font-bold text-green-600 flex items-center justify-end gap-1">
+                                        <DollarSign className="h-4 w-4" />
+                                        {shift.base_value.toFixed(2)}
+                                      </p>
+                                    )}
+                                    {isPending ? (
+                                      <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
+                                        Candidatura enviada
+                                      </Badge>
+                                    ) : (
+                                      <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
+                                        <Hand className="h-4 w-4 mr-2" />
+                                        Candidatar
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Night Shifts */}
+                    {nightShifts.length > 0 && (
+                      <div className="space-y-2 pl-4">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span className="inline-block w-3 h-3 rounded-full bg-indigo-600" />
+                          Noturnos ({nightShifts.length})
+                        </div>
+                        {nightShifts.map(shift => {
+                          const isPending = hasPendingOffer(shift.id);
+                          return (
+                            <Card key={shift.id} className="overflow-hidden">
+                              <CardContent className="p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <h3 className="font-semibold">{shift.title}</h3>
+                                    <div className="mt-2 space-y-1 text-sm text-muted-foreground">
+                                      <div className="flex items-center gap-2">
+                                        <Calendar className="h-4 w-4" />
+                                        {format(parseISO(shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <Clock className="h-4 w-4" />
+                                        {shift.start_time.slice(0, 5)} às {shift.end_time.slice(0, 5)}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <MapPin className="h-4 w-4" />
+                                        {shift.hospital}
+                                        {shift.location && ` - ${shift.location}`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    {shift.base_value && (
+                                      <p className="text-lg font-bold text-green-600 flex items-center justify-end gap-1">
+                                        <DollarSign className="h-4 w-4" />
+                                        {shift.base_value.toFixed(2)}
+                                      </p>
+                                    )}
+                                    {isPending ? (
+                                      <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
+                                        Candidatura enviada
+                                      </Badge>
+                                    ) : (
+                                      <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
+                                        <Hand className="h-4 w-4 mr-2" />
+                                        Candidatar
+                                      </Button>
+                                    )}
+                                  </div>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()
           )}
         </TabsContent>
 
