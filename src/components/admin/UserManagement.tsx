@@ -346,9 +346,9 @@ export default function UserManagement() {
 
   // Select/deselect all users in the current tab
   function toggleSelectAll(membersList: MemberWithProfile[]) {
-    const selectableMembers = membersList.filter(m => m.user_id !== user?.id);
-    const allSelected = selectableMembers.every(m => selectedUserIds.has(m.user_id));
-    
+    const selectableMembers = membersList;
+    const allSelected = selectableMembers.length > 0 && selectableMembers.every(m => selectedUserIds.has(m.user_id));
+
     if (allSelected) {
       // Deselect all
       setSelectedUserIds(prev => {
@@ -366,6 +366,7 @@ export default function UserManagement() {
     }
   }
 
+
   // Delete selected users
   async function deleteSelectedUsers() {
     if (selectedUserIds.size === 0) {
@@ -381,16 +382,15 @@ export default function UserManagement() {
     setIsDeletingSelected(true);
 
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userEmail = sessionData.session?.user?.email;
+      const deletingSelf = !!user?.id && selectedUserIds.has(user.id);
 
       const { data, error } = await supabase.functions.invoke('delete-users', {
         body: {
           userIds: Array.from(selectedUserIds),
-          excludeEmail: userEmail,
           tenantId: currentTenantId,
         },
       });
+
 
       if (error) {
         // Supabase Functions errors often contain extra context with the response body.
@@ -417,9 +417,17 @@ export default function UserManagement() {
         description: `${data?.deletedCount || 0} usuário(s) removido(s) com sucesso.`,
       });
 
+      // If the current user deleted themselves, their session is no longer valid.
+      if (deletingSelf) {
+        await supabase.auth.signOut();
+        window.location.href = '/auth';
+        return;
+      }
+
       setSelectedUserIds(new Set());
       fetchMembers();
       fetchTenantInfo();
+
     } catch (err) {
       console.error('Error deleting users:', err);
       toast({
@@ -1120,26 +1128,35 @@ export default function UserManagement() {
 
       {/* Selection Actions */}
       {selectedUserIds.size > 0 && (
-        <div className="flex items-center gap-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
-          <span className="text-sm font-medium">
-            {selectedUserIds.size} usuário(s) selecionado(s)
-          </span>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={deleteSelectedUsers}
-            disabled={isDeletingSelected}
-          >
-            <Trash2 className="mr-2 h-4 w-4" />
-            {isDeletingSelected ? 'Deletando...' : 'Deletar Selecionados'}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setSelectedUserIds(new Set())}
-          >
-            Limpar Seleção
-          </Button>
+        <div className="flex flex-col gap-2 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <div className="flex items-center justify-between gap-4">
+            <span className="text-sm font-medium">
+              {selectedUserIds.size} usuário(s) selecionado(s)
+            </span>
+            {selectedUserIds.has(user?.id ?? '') && (
+              <span className="text-xs text-muted-foreground">
+                Você selecionou seu próprio usuário — após deletar, você será desconectado.
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={deleteSelectedUsers}
+              disabled={isDeletingSelected}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              {isDeletingSelected ? 'Deletando...' : 'Deletar Selecionados'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedUserIds(new Set())}
+            >
+              Limpar Seleção
+            </Button>
+          </div>
         </div>
       )}
 
@@ -1162,10 +1179,10 @@ export default function UserManagement() {
                   <TableRow>
                     <TableHead className="w-12">
                       <Checkbox
-                        checked={activeMembers.filter(m => m.user_id !== user?.id).length > 0 && 
-                          activeMembers.filter(m => m.user_id !== user?.id).every(m => selectedUserIds.has(m.user_id))}
+                        checked={activeMembers.length > 0 && activeMembers.every(m => selectedUserIds.has(m.user_id))}
                         onCheckedChange={() => toggleSelectAll(activeMembers)}
                       />
+
                     </TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Perfil / Setores</TableHead>
@@ -1190,13 +1207,12 @@ export default function UserManagement() {
                       return (
                         <TableRow key={member.id}>
                           <TableCell>
-                            {!isCurrentUser && (
-                              <Checkbox
-                                checked={selectedUserIds.has(member.user_id)}
-                                onCheckedChange={() => toggleUserSelection(member.user_id)}
-                              />
-                            )}
+                            <Checkbox
+                              checked={selectedUserIds.has(member.user_id)}
+                              onCheckedChange={() => toggleUserSelection(member.user_id)}
+                            />
                           </TableCell>
+
                           <TableCell className="font-medium">
                             {member.profile?.name || 'Sem nome'}
                             {isCurrentUser && (
