@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  console.log("delete-users function called");
+  console.log('delete-users function called')
 
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -14,56 +14,97 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Create admin client with service role key
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+    const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+
+    if (!supabaseUrl) throw new Error('SUPABASE_URL not configured')
+    if (!serviceRoleKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY not configured')
+    if (!anonKey) throw new Error('SUPABASE_ANON_KEY not configured')
+
+    // Service role client (admin operations)
+    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
 
     // Verify the requesting user is authenticated
-    const authHeader = req.headers.get('Authorization')
+    const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization')
     if (!authHeader) {
       console.error('No authorization header provided')
-      throw new Error('No authorization header')
+      return new Response(JSON.stringify({ error: 'Unauthorized: missing token' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      })
     }
 
-    // Get the requesting user
-    const { data: { user: requestingUser }, error: authError } = await supabaseAdmin.auth.getUser(
-      authHeader.replace('Bearer ', '')
-    )
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice('Bearer '.length) : authHeader
+
+    // User-scoped client (token validation)
+    const supabaseUser = createClient(supabaseUrl, anonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+      auth: { autoRefreshToken: false, persistSession: false },
+    })
+
+    const {
+      data: { user: requestingUser },
+      error: authError,
+    } = await supabaseUser.auth.getUser()
 
     if (authError || !requestingUser) {
-      console.error('Auth error:', authError)
-      throw new Error('Unauthorized')
+      console.error('Auth error:', authError?.message)
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401,
+      })
     }
 
     console.log(`Request from user: ${requestingUser.email} (${requestingUser.id})`)
 
-    const { userIds, excludeEmail, tenantId } = await req.json()
-
-    console.log(`Request params - userIds: ${JSON.stringify(userIds)}, excludeEmail: ${excludeEmail}, tenantId: ${tenantId}`)
-
-    if (!userIds || userIds.length === 0) {
-      throw new Error('No user IDs provided')
+    let body: any
+    try {
+      body = await req.json()
+    } catch (e) {
+      console.error('Failed to parse JSON body')
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
     }
+
+    const userIds = Array.isArray(body?.userIds) ? body.userIds : []
+    const excludeEmail = body?.excludeEmail
+    const tenantId = body?.tenantId
+
+    console.log(
+      `Request params - userIds: ${JSON.stringify(userIds)}, excludeEmail: ${excludeEmail}, tenantId: ${tenantId}`,
+    )
 
     if (!tenantId) {
-      throw new Error('Tenant ID is required')
+      return new Response(JSON.stringify({ error: 'Tenant ID is required' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
     }
 
-    // Verify the requesting user is a super admin or tenant admin
-    const { data: isSuperAdmin, error: superAdminError } = await supabaseAdmin.rpc('is_super_admin', { _user_id: requestingUser.id })
-    
+    if (userIds.length === 0) {
+      return new Response(JSON.stringify({ error: 'No user IDs provided' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400,
+      })
+    }
+
+    // Verify permissions: super admin OR tenant admin
+    const { data: isSuperAdmin, error: superAdminError } = await supabaseAdmin.rpc('is_super_admin', {
+      _user_id: requestingUser.id,
+    })
+
     console.log(`Is super admin: ${isSuperAdmin}, error: ${superAdminError?.message}`)
-    
+
     if (!isSuperAdmin) {
-      // Check if tenant admin
       const { data: membership, error: membershipError } = await supabaseAdmin
         .from('memberships')
         .select('role')
@@ -75,22 +116,25 @@ Deno.serve(async (req) => {
       console.log(`Membership check - data: ${JSON.stringify(membership)}, error: ${membershipError?.message}`)
 
       if (membershipError) {
-        console.error('Membership query error:', membershipError)
-        throw new Error(`Failed to verify permissions: ${membershipError.message}`)
+        console.error('Membership query error:', membershipError.message)
+        return new Response(JSON.stringify({ error: `Failed to verify permissions: ${membershipError.message}` }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 500,
+        })
       }
 
       if (!membership || membership.role !== 'admin') {
         console.error('User is not an admin of this tenant')
-        throw new Error('Only super admins or tenant admins can delete users')
+        return new Response(JSON.stringify({ error: 'Only super admins or tenant admins can delete users' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 403,
+        })
       }
     }
 
     console.log('Permission verified, proceeding with deletion')
 
-    const deletedUsers: string[] = []
-    const errors: string[] = []
-
-    // Verify selected users belong to the same tenant
+    // Verify selected users belong to the tenant
     const { data: memberships, error: membershipsError } = await supabaseAdmin
       .from('memberships')
       .select('user_id')
@@ -98,36 +142,47 @@ Deno.serve(async (req) => {
       .in('user_id', userIds)
 
     if (membershipsError) {
-      console.error('Failed to fetch memberships:', membershipsError)
-      throw new Error(`Failed to verify users: ${membershipsError.message}`)
+      console.error('Failed to fetch memberships:', membershipsError.message)
+      return new Response(JSON.stringify({ error: `Failed to verify users: ${membershipsError.message}` }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      })
     }
 
-    const validUserIds = memberships?.map(m => m.user_id) || []
+    const validUserIds = memberships?.map((m: any) => m.user_id) || []
     console.log(`Valid user IDs in tenant: ${JSON.stringify(validUserIds)}`)
 
+    const deletedUsers: string[] = []
+    const errors: string[] = []
+
     for (const userId of validUserIds) {
-      // Skip the requesting user
+      // Never delete the requesting user
       if (userId === requestingUser.id) {
         console.log(`Skipping requesting user: ${userId}`)
         continue
       }
 
       try {
-        // Get user email for logging
-        const { data: { user: userToDelete } } = await supabaseAdmin.auth.admin.getUserById(userId)
-        
-        if (userToDelete?.email === excludeEmail) {
+        const { data: userResp, error: getUserError } = await supabaseAdmin.auth.admin.getUserById(userId)
+        if (getUserError) {
+          console.error(`Failed to fetch user ${userId}:`, getUserError.message)
+          errors.push(`${userId}: ${getUserError.message}`)
+          continue
+        }
+
+        const userToDelete = userResp.user
+
+        if (excludeEmail && userToDelete?.email === excludeEmail) {
           console.log(`Skipping excluded email: ${excludeEmail}`)
           continue
         }
 
         console.log(`Deleting user: ${userToDelete?.email} (${userId})`)
 
-        // Delete from auth.users (this will cascade to profiles due to FK)
         const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
 
         if (deleteError) {
-          console.error(`Failed to delete user ${userId}:`, deleteError)
+          console.error(`Failed to delete user ${userId}:`, deleteError.message)
           errors.push(`${userToDelete?.email || userId}: ${deleteError.message}`)
         } else {
           deletedUsers.push(userToDelete?.email || userId)
@@ -148,24 +203,18 @@ Deno.serve(async (req) => {
         deletedUsers,
         errors: errors.length > 0 ? errors : undefined,
       }),
-      { 
+      {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
+        status: 200,
+      },
     )
-
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to delete users'
     console.error('Error deleting users:', errorMessage)
 
-    return new Response(
-      JSON.stringify({
-        error: errorMessage,
-      }),
-      {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400,
-      }
-    )
+    return new Response(JSON.stringify({ error: errorMessage }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500,
+    })
   }
 })
