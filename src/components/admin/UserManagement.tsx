@@ -361,20 +361,10 @@ export default function UserManagement() {
       .map(sm => sm.sector_id);
     setEditSectorIds(userSectors);
     
-    // Fetch current email from auth via edge function
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        // We'll use a simple approach - store email from memberships if available
-        // For now, just set empty and let admin type new email if needed
-        setEditEmail('');
-        setEditCurrentEmail(member.email || '');
-      }
-    } catch (error) {
-      console.error('Error fetching user email:', error);
-      setEditEmail('');
-      setEditCurrentEmail('');
-    }
+    // Set email from member data - pre-fill the field so user can see/edit it
+    const currentEmail = member.email || '';
+    setEditEmail(currentEmail);
+    setEditCurrentEmail(currentEmail);
     
     setEditDialogOpen(true);
   }
@@ -1291,11 +1281,13 @@ export default function UserManagement() {
                     type="email"
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
-                    placeholder="Novo email (deixe vazio para manter atual)"
+                    placeholder="Digite o email de login"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Informe apenas se quiser alterar o email de login
-                  </p>
+                  {editCurrentEmail && editCurrentEmail !== editEmail && (
+                    <p className="text-xs text-muted-foreground">
+                      Email atual: {editCurrentEmail}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
