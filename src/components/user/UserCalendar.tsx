@@ -195,28 +195,38 @@ export default function UserCalendar() {
     ? selectedDateShifts.filter(s => isMyShift(s.id))
     : selectedDateShifts;
 
-  // Split by period (day first, then night) and sort by start time inside each period
-  const dayShifts = filteredShifts
-    .filter(s => !isNightShift(s.start_time))
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
+  // Group shifts by sector first, then by period within each sector
+  const groupBySector = (list: Shift[]) => {
+    const groups: Record<string, { sector: Sector | null; dayShifts: Shift[]; nightShifts: Shift[] }> = {};
+    
+    list.forEach(shift => {
+      const sectorId = shift.sector?.id || 'no-sector';
+      if (!groups[sectorId]) {
+        groups[sectorId] = {
+          sector: shift.sector || null,
+          dayShifts: [],
+          nightShifts: [],
+        };
+      }
+      
+      if (isNightShift(shift.start_time)) {
+        groups[sectorId].nightShifts.push(shift);
+      } else {
+        groups[sectorId].dayShifts.push(shift);
+      }
+    });
+    
+    // Sort shifts within each group by start time
+    Object.values(groups).forEach(group => {
+      group.dayShifts.sort((a, b) => a.start_time.localeCompare(b.start_time));
+      group.nightShifts.sort((a, b) => a.start_time.localeCompare(b.start_time));
+    });
+    
+    return groups;
+  };
 
-  const nightShifts = filteredShifts
-    .filter(s => isNightShift(s.start_time))
-    .sort((a, b) => a.start_time.localeCompare(b.start_time));
-
-  // Group shifts by sector/hospital within each period
-  const groupBySectorOrHospital = (list: Shift[]) =>
-    list.reduce((acc, shift) => {
-      const key = shift.sector?.name || shift.hospital;
-      if (!acc[key]) acc[key] = [];
-      acc[key].push(shift);
-      return acc;
-    }, {} as Record<string, Shift[]>);
-
-  const groupedDayShifts = groupBySectorOrHospital(dayShifts);
-  const groupedNightShifts = groupBySectorOrHospital(nightShifts);
-
-  const hasAnyShiftsForSelectedDate = dayShifts.length + nightShifts.length > 0;
+  const groupedBySector = groupBySector(filteredShifts);
+  const hasAnyShiftsForSelectedDate = filteredShifts.length > 0;
 
 
   const weekDays = ['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
@@ -354,23 +364,34 @@ export default function UserCalendar() {
               </div>
             ) : (
               <div>
-                {/* Day shifts first */}
-                {dayShifts.length > 0 && (
-                  <div className="border-b">
-                    <div className="px-4 py-2 bg-warning/10 border-b">
-                      <div className="flex items-center gap-2">
-                        <Sun className="h-4 w-4 text-warning" />
-                        <span className="text-xs font-semibold text-foreground">Diurnos</span>
-                      </div>
+                {/* Group by sector first, then by period */}
+                {Object.entries(groupedBySector).map(([sectorId, { sector, dayShifts, nightShifts }]) => (
+                  <div key={sectorId} className="border-b last:border-b-0">
+                    {/* Sector Header */}
+                    <div 
+                      className="px-4 py-2 border-b"
+                      style={{ 
+                        backgroundColor: sector?.color ? `${sector.color}15` : 'hsl(var(--muted))',
+                        borderLeftWidth: '4px',
+                        borderLeftColor: sector?.color || 'hsl(var(--muted-foreground))',
+                      }}
+                    >
+                      <span className="text-xs font-bold text-foreground uppercase tracking-wide">
+                        {sector?.name || 'Sem Setor'}
+                      </span>
                     </div>
 
-                    {Object.entries(groupedDayShifts).map(([group, groupShifts]) => (
-                      <div key={`day-${group}`}>
-                        <div className="px-4 py-2 bg-muted/50 border-b">
-                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
+                    {/* Day shifts for this sector */}
+                    {dayShifts.length > 0 && (
+                      <div>
+                        <div className="px-4 py-1.5 bg-warning/10 border-b">
+                          <div className="flex items-center gap-2">
+                            <Sun className="h-3.5 w-3.5 text-warning" />
+                            <span className="text-xs font-medium text-warning">Diurnos ({dayShifts.length})</span>
+                          </div>
                         </div>
 
-                        {groupShifts.map((shift) => {
+                        {dayShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
 
@@ -429,27 +450,19 @@ export default function UserCalendar() {
                           );
                         })}
                       </div>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {/* Night shifts after */}
-                {nightShifts.length > 0 && (
-                  <div>
-                    <div className="px-4 py-2 bg-info/10 border-b">
-                      <div className="flex items-center gap-2">
-                        <Moon className="h-4 w-4 text-info" />
-                        <span className="text-xs font-semibold text-foreground">Noturnos</span>
-                      </div>
-                    </div>
-
-                    {Object.entries(groupedNightShifts).map(([group, groupShifts]) => (
-                      <div key={`night-${group}`}>
-                        <div className="px-4 py-2 bg-muted/50 border-b">
-                          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group}</span>
+                    {/* Night shifts for this sector */}
+                    {nightShifts.length > 0 && (
+                      <div>
+                        <div className="px-4 py-1.5 bg-info/10 border-b">
+                          <div className="flex items-center gap-2">
+                            <Moon className="h-3.5 w-3.5 text-info" />
+                            <span className="text-xs font-medium text-info">Noturnos ({nightShifts.length})</span>
+                          </div>
                         </div>
 
-                        {groupShifts.map((shift) => {
+                        {nightShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
 
@@ -508,9 +521,9 @@ export default function UserCalendar() {
                           );
                         })}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>
