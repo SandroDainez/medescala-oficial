@@ -635,9 +635,20 @@ export default function UserManagement() {
       });
     } catch (error: any) {
       console.error('Error creating user:', error);
+      
+      // Check for email already exists error
+      let errorMessage = error.message || 'Não foi possível criar o usuário';
+      if (
+        errorMessage.includes('email address has already been registered') ||
+        errorMessage.includes('email_exists') ||
+        errorMessage.includes('already been registered')
+      ) {
+        errorMessage = 'Este email já está cadastrado no sistema. Use outro email ou edite o usuário existente.';
+      }
+      
       toast({ 
         title: 'Erro ao criar usuário', 
-        description: error.message || 'Não foi possível criar o usuário',
+        description: errorMessage,
         variant: 'destructive' 
       });
     } finally {
