@@ -15,7 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square, Search } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
@@ -87,6 +87,9 @@ export default function UserManagement() {
   // Selection state for bulk delete
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
   const [isDeletingSelected, setIsDeletingSelected] = useState(false);
+  
+  // Search filter
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Edit form fields
   const [editName, setEditName] = useState('');
@@ -755,8 +758,17 @@ export default function UserManagement() {
     }
   }
 
-  const activeMembers = members.filter(m => m.active);
-  const inactiveMembers = members.filter(m => !m.active);
+  // Filter members by search query
+  const filterBySearch = (membersList: MemberWithProfile[]) => {
+    if (!searchQuery.trim()) return membersList;
+    const query = searchQuery.toLowerCase().trim();
+    return membersList.filter(m => 
+      (m.profile?.name || '').toLowerCase().includes(query)
+    );
+  };
+
+  const activeMembers = filterBySearch(members.filter(m => m.active));
+  const inactiveMembers = filterBySearch(members.filter(m => !m.active));
   const admins = members.filter(m => m.role === 'admin' && m.active);
 
   if (loading) {
@@ -819,7 +831,17 @@ export default function UserManagement() {
           <h2 className="text-2xl font-bold text-foreground">Gestão de Usuários</h2>
           <p className="text-muted-foreground">Adicione, remova e gerencie permissões dos membros</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 w-48"
+            />
+          </div>
           <Button variant="outline" onClick={copyInviteCode}>
             <Copy className="mr-2 h-4 w-4" />
             Copiar Código
