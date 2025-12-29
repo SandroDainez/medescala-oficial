@@ -15,7 +15,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
   id: string;
@@ -82,6 +83,10 @@ export default function UserManagement() {
   } | null>(null);
   const [showCreatedPassword, setShowCreatedPassword] = useState(false);
   const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+  
+  // Selection state for bulk delete
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false);
   
   // Edit form fields
   const [editName, setEditName] = useState('');
@@ -320,6 +325,93 @@ export default function UserManagement() {
       toast({ title: 'Membro removido!' });
       fetchMembers();
       fetchTenantInfo();
+    }
+  }
+
+  // Toggle selection of a single user
+  function toggleUserSelection(userId: string) {
+    setSelectedUserIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(userId)) {
+        newSet.delete(userId);
+      } else {
+        newSet.add(userId);
+      }
+      return newSet;
+    });
+  }
+
+  // Select/deselect all users in the current tab
+  function toggleSelectAll(membersList: MemberWithProfile[]) {
+    const selectableMembers = membersList.filter(m => m.user_id !== user?.id);
+    const allSelected = selectableMembers.every(m => selectedUserIds.has(m.user_id));
+    
+    if (allSelected) {
+      // Deselect all
+      setSelectedUserIds(prev => {
+        const newSet = new Set(prev);
+        selectableMembers.forEach(m => newSet.delete(m.user_id));
+        return newSet;
+      });
+    } else {
+      // Select all
+      setSelectedUserIds(prev => {
+        const newSet = new Set(prev);
+        selectableMembers.forEach(m => newSet.add(m.user_id));
+        return newSet;
+      });
+    }
+  }
+
+  // Delete selected users
+  async function deleteSelectedUsers() {
+    if (selectedUserIds.size === 0) {
+      toast({ title: 'Nenhum usuário selecionado', variant: 'destructive' });
+      return;
+    }
+
+    const userCount = selectedUserIds.size;
+    if (!confirm(`Deseja deletar ${userCount} usuário(s) permanentemente? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    setIsDeletingSelected(true);
+
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userEmail = sessionData.session?.user?.email;
+
+      const { data, error } = await supabase.functions.invoke('delete-users', {
+        body: {
+          userIds: Array.from(selectedUserIds),
+          excludeEmail: userEmail,
+          tenantId: currentTenantId,
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      toast({
+        title: 'Usuários deletados!',
+        description: `${data?.deletedCount || 0} usuário(s) removido(s) com sucesso.`,
+      });
+
+      setSelectedUserIds(new Set());
+      fetchMembers();
+      fetchTenantInfo();
+    } catch (err) {
+      console.error('Error deleting users:', err);
+      toast({
+        title: 'Erro ao deletar usuários',
+        description: err instanceof Error ? err.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingSelected(false);
     }
   }
 
@@ -990,6 +1082,31 @@ export default function UserManagement() {
         </div>
       </div>
 
+      {/* Selection Actions */}
+      {selectedUserIds.size > 0 && (
+        <div className="flex items-center gap-4 p-4 bg-destructive/10 border border-destructive/20 rounded-lg">
+          <span className="text-sm font-medium">
+            {selectedUserIds.size} usuário(s) selecionado(s)
+          </span>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={deleteSelectedUsers}
+            disabled={isDeletingSelected}
+          >
+            <Trash2 className="mr-2 h-4 w-4" />
+            {isDeletingSelected ? 'Deletando...' : 'Deletar Selecionados'}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSelectedUserIds(new Set())}
+          >
+            Limpar Seleção
+          </Button>
+        </div>
+      )}
+
       {/* Users Table */}
       <Tabs defaultValue="active">
         <TabsList>
@@ -1007,6 +1124,13 @@ export default function UserManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={activeMembers.filter(m => m.user_id !== user?.id).length > 0 && 
+                          activeMembers.filter(m => m.user_id !== user?.id).every(m => selectedUserIds.has(m.user_id))}
+                        onCheckedChange={() => toggleSelectAll(activeMembers)}
+                      />
+                    </TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Perfil / Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -1015,7 +1139,7 @@ export default function UserManagement() {
                 <TableBody>
                   {activeMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         Nenhum membro ativo
                       </TableCell>
                     </TableRow>
@@ -1025,12 +1149,21 @@ export default function UserManagement() {
                       const userSectorsNames = sectors
                         .filter(s => userSectorIds.includes(s.id))
                         .map(s => s.name);
+                      const isCurrentUser = member.user_id === user?.id;
                       
                       return (
                         <TableRow key={member.id}>
+                          <TableCell>
+                            {!isCurrentUser && (
+                              <Checkbox
+                                checked={selectedUserIds.has(member.user_id)}
+                                onCheckedChange={() => toggleUserSelection(member.user_id)}
+                              />
+                            )}
+                          </TableCell>
                           <TableCell className="font-medium">
                             {member.profile?.name || 'Sem nome'}
-                            {member.user_id === user?.id && (
+                            {isCurrentUser && (
                               <Badge variant="outline" className="ml-2">Você</Badge>
                             )}
                           </TableCell>
@@ -1170,6 +1303,13 @@ export default function UserManagement() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={inactiveMembers.filter(m => m.user_id !== user?.id).length > 0 && 
+                          inactiveMembers.filter(m => m.user_id !== user?.id).every(m => selectedUserIds.has(m.user_id))}
+                        onCheckedChange={() => toggleSelectAll(inactiveMembers)}
+                      />
+                    </TableHead>
                     <TableHead>Nome</TableHead>
                     <TableHead>Perfil / Setores</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
@@ -1178,7 +1318,7 @@ export default function UserManagement() {
                 <TableBody>
                   {inactiveMembers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
                         Nenhum membro inativo
                       </TableCell>
                     </TableRow>
@@ -1188,9 +1328,18 @@ export default function UserManagement() {
                       const userSectorsNames = sectors
                         .filter(s => userSectorIds.includes(s.id))
                         .map(s => s.name);
+                      const isCurrentUser = member.user_id === user?.id;
                       
                       return (
                         <TableRow key={member.id}>
+                          <TableCell>
+                            {!isCurrentUser && (
+                              <Checkbox
+                                checked={selectedUserIds.has(member.user_id)}
+                                onCheckedChange={() => toggleUserSelection(member.user_id)}
+                              />
+                            )}
+                          </TableCell>
                           <TableCell className="font-medium text-muted-foreground">
                             {member.profile?.name || 'Sem nome'}
                           </TableCell>
