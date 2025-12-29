@@ -341,6 +341,7 @@ export type Database = {
           crm_enc: string | null
           phone_enc: string | null
           pix_key_enc: string | null
+          tenant_id: string | null
           updated_at: string
           user_id: string
         }
@@ -354,6 +355,7 @@ export type Database = {
           crm_enc?: string | null
           phone_enc?: string | null
           pix_key_enc?: string | null
+          tenant_id?: string | null
           updated_at?: string
           user_id: string
         }
@@ -367,6 +369,7 @@ export type Database = {
           crm_enc?: string | null
           phone_enc?: string | null
           pix_key_enc?: string | null
+          tenant_id?: string | null
           updated_at?: string
           user_id?: string
         }
