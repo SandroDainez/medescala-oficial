@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.login-cpf]
 verify_jwt = false
+
+[functions.delete-users]
+verify_jwt = false
