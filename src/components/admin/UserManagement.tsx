@@ -386,18 +386,8 @@ export default function UserManagement() {
     setIsUpdatingUser(true);
 
     try {
-      // Update basic profile data (use update, not upsert, to respect RLS)
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .update({
-          name: editName,
-          profile_type: editProfileType,
-        })
-        .eq('id', editingMember.user_id);
-
-      if (profileError) throw profileError;
-
       // Update private profile data using encrypted storage
+      // (Profile basic fields are updated via backend function later to avoid RLS issues)
       const piiData = {
         phone: editPhone || null,
         cpf: editCpf || null,
@@ -462,54 +452,48 @@ export default function UserManagement() {
         }
       }
 
-      // If email change, password reset, or send email is requested, call backend function
-      if (editEmail.trim() || resetPasswordOnSave || sendEmailOnSave) {
-        const nextEmail = editEmail.trim();
+      // Always call backend function to update profile fields + optional email/password actions.
+      const nextEmail = editEmail.trim();
 
-        if (nextEmail) {
-          // basic client-side validation
-          const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
-          if (!emailLooksValid) {
-            throw new Error('Email inválido');
-          }
+      if (nextEmail) {
+        const emailLooksValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nextEmail);
+        if (!emailLooksValid) {
+          throw new Error('Email inválido');
         }
+      }
 
-        const { data, error } = await supabase.functions.invoke('update-user', {
-          body: {
-            userId: editingMember.user_id,
-            tenantId: currentTenantId,
-            email: nextEmail || undefined,
-            resetPassword: resetPasswordOnSave,
-            sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
-          },
+      const { data, error } = await supabase.functions.invoke('update-user', {
+        body: {
+          userId: editingMember.user_id,
+          tenantId: currentTenantId,
+          name: editName,
+          profileType: editProfileType,
+          email: nextEmail || undefined,
+          resetPassword: resetPasswordOnSave,
+          sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao atualizar usuário');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      // Show new password if reset
+      if (data?.passwordReset && data?.newPassword) {
+        setNewPasswordFromReset(data.newPassword);
+        toast({
+          title: 'Senha resetada!',
+          description: data.emailSent ? 'Nova senha enviada por email.' : 'Copie a nova senha para o usuário.',
         });
-
-        // supabase.functions.invoke returns an error object on non-2xx responses
-        if (error) {
-          throw new Error(error.message || 'Erro ao atualizar usuário');
-        }
-
-        if (data?.error) {
-          throw new Error(data.error);
-        }
-
-        // Show new password if reset
-        if (data?.passwordReset && data?.newPassword) {
-          setNewPasswordFromReset(data.newPassword);
-          toast({
-            title: 'Senha resetada!',
-            description: data.emailSent ? 'Nova senha enviada por email.' : 'Copie a nova senha para o usuário.',
-          });
-        } else {
-          toast({
-            title: 'Usuário atualizado!',
-            description: data?.emailSent ? 'Email de notificação enviado.' : undefined,
-          });
-          setEditDialogOpen(false);
-          setEditingMember(null);
-        }
       } else {
-        toast({ title: 'Usuário atualizado!' });
+        toast({
+          title: 'Usuário atualizado!',
+          description: data?.emailSent ? 'Email de notificação enviado.' : undefined,
+        });
         setEditDialogOpen(false);
         setEditingMember(null);
       }

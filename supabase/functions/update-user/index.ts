@@ -54,12 +54,16 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    const { 
+    const {
       userId,
       tenantId,
+      // Profile fields
+      name,
+      profileType,
+      // Auth fields
       email,
       sendInviteEmail,
-      resetPassword
+      resetPassword,
     } = await req.json()
 
     console.log(`Updating user ${userId} in tenant ${tenantId}`);
@@ -89,6 +93,26 @@ Deno.serve(async (req) => {
       throw new Error('User not found in this tenant')
     }
 
+    // Update profile fields (server-side) to avoid client RLS issues
+    let profileUpdated = false
+    if (typeof name === 'string' || typeof profileType === 'string') {
+      const payload: Record<string, unknown> = {}
+      if (typeof name === 'string') payload.name = name
+      if (typeof profileType === 'string') payload.profile_type = profileType
+
+      const { error: updateProfileError } = await supabaseAdmin
+        .from('profiles')
+        .update(payload)
+        .eq('id', userId)
+
+      if (updateProfileError) {
+        console.error('Error updating profile:', updateProfileError)
+        throw new Error(`Erro ao atualizar perfil: ${updateProfileError.message}`)
+      }
+
+      profileUpdated = true
+    }
+
     // Get tenant info for email
     const { data: tenant } = await supabaseAdmin
       .from('tenants')
@@ -96,7 +120,7 @@ Deno.serve(async (req) => {
       .eq('id', tenantId)
       .single()
 
-    // Get user profile for name
+    // Get user profile for name (after potential update)
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('name')
@@ -283,12 +307,13 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: true,
+        profileUpdated,
         emailUpdated,
         passwordReset,
         emailSent,
-        newPassword: passwordReset ? newPassword : undefined
+        newPassword: passwordReset ? newPassword : undefined,
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
