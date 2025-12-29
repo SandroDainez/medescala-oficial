@@ -361,10 +361,22 @@ export default function UserManagement() {
       .map(sm => sm.sector_id);
     setEditSectorIds(userSectors);
     
-    // Set email from member data - pre-fill the field so user can see/edit it
-    const currentEmail = member.email || '';
-    setEditEmail(currentEmail);
-    setEditCurrentEmail(currentEmail);
+    // Fetch user's current login email from backend (source of truth)
+    setEditEmail('');
+    setEditCurrentEmail('');
+    try {
+      const { data, error } = await supabase.functions.invoke('get-user-email', {
+        body: { userId: member.user_id, tenantId: currentTenantId },
+      });
+      if (error) throw error;
+      const currentEmail = (data?.email as string | null) ?? '';
+      setEditEmail(currentEmail);
+      setEditCurrentEmail(currentEmail);
+    } catch (err) {
+      console.warn('Falha ao carregar email do usuário; você pode digitar manualmente.', err);
+      setEditEmail('');
+      setEditCurrentEmail('');
+    }
     
     setEditDialogOpen(true);
   }
