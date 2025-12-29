@@ -78,21 +78,38 @@ export default function SuperAdmin() {
           Authorization: `Bearer ${sessionData.session.access_token}`,
         },
       });
-      
+
       if (error) throw error;
-      
+
       toast({
         title: 'Migração concluída!',
-        description: data.message || `${data.profilesWithEncryptedData || 0} perfis com dados criptografados.`,
+        description:
+          data?.message || `${data?.profilesWithEncryptedData || 0} perfis com dados criptografados.`,
       });
-      
-      if (data.errors && data.errors.length > 0) {
+
+      if (data?.errors && data.errors.length > 0) {
         console.error('Migration errors:', data.errors);
       }
     } catch (err: any) {
+      // O supabase-js costuma retornar uma mensagem genérica em erros 4xx/5xx.
+      // Aqui extraímos o body real para mostrar o motivo (ex.: missing secret, não autorizado, etc.).
+      let description = err?.message || 'Falha ao executar migração.';
+
+      const body = err?.context?.body;
+      if (typeof body === 'string') {
+        try {
+          const parsed = JSON.parse(body);
+          if (parsed?.error) description = parsed.error;
+        } catch {
+          // ignore JSON parse errors
+        }
+      }
+
+      console.error('migrate-pii invoke error:', err);
+
       toast({
         title: 'Erro na migração',
-        description: err.message,
+        description,
         variant: 'destructive',
       });
     } finally {
