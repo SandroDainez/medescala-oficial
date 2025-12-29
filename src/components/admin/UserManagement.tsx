@@ -392,7 +392,21 @@ export default function UserManagement() {
         },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Supabase Functions errors often contain extra context with the response body.
+        const anyErr = error as any;
+        const contextBody =
+          anyErr?.context?.body ?? anyErr?.context?.response?.body ?? anyErr?.context ?? null;
+
+        let details = anyErr?.message || 'Erro ao chamar função de deleção';
+        if (typeof contextBody === 'string' && contextBody.trim().length > 0) {
+          details = `${details} | ${contextBody}`;
+        } else if (contextBody && typeof contextBody === 'object') {
+          details = `${details} | ${JSON.stringify(contextBody)}`;
+        }
+
+        throw new Error(details);
+      }
 
       if (data?.error) {
         throw new Error(data.error);
