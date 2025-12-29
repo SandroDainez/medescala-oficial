@@ -160,72 +160,36 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'encrypt' && data) {
-      // Encrypt data and save to database
-      // Use raw SQL to properly handle bytea columns
+      // Encrypt data and save to database using standard upsert
       const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
       
-      const encryptedValues: Record<string, string | null> = {}
+      const updatePayload: Record<string, unknown> = { user_id: userId }
       
       for (const field of fields) {
         const value = data[field]
         if (value) {
           try {
             const encrypted = await encryptValue(value, cryptoKey)
-            encryptedValues[field] = encrypted
+            // Store as base64 string - Supabase will handle bytea conversion
+            updatePayload[`${field}_enc`] = encrypted
           } catch (err) {
             console.error(`Error encrypting ${field}:`, err)
             throw new Error(`Failed to encrypt ${field}`)
           }
         } else {
-          encryptedValues[field] = null
+          updatePayload[`${field}_enc`] = null
         }
       }
 
-      // Build SQL with proper bytea encoding using decode() function
-      const setClauses = fields.map(field => {
-        const val = encryptedValues[field]
-        if (val === null) {
-          return `${field}_enc = NULL`
-        }
-        // Use decode() to convert base64 string to bytea
-        return `${field}_enc = decode('${val}', 'base64')`
-      }).join(', ')
+      console.log('Saving encrypted PII data for user:', userId)
 
-      const { error: updateError } = await supabaseAdmin.rpc('exec_sql', {
-        sql: `
-          INSERT INTO profiles_private (user_id, ${fields.map(f => `${f}_enc`).join(', ')}, created_at, updated_at)
-          VALUES (
-            '${userId}'::uuid,
-            ${fields.map(f => encryptedValues[f] === null ? 'NULL' : `decode('${encryptedValues[f]}', 'base64')`).join(', ')},
-            now(),
-            now()
-          )
-          ON CONFLICT (user_id) DO UPDATE SET
-            ${setClauses},
-            updated_at = now()
-        `
-      })
+      const { error: upsertError } = await supabaseAdmin
+        .from('profiles_private')
+        .upsert(updatePayload, { onConflict: 'user_id' })
 
-      // Fallback: if exec_sql RPC doesn't exist, use the standard upsert with text columns
-      if (updateError && updateError.message.includes('function') && updateError.message.includes('does not exist')) {
-        console.log('exec_sql not available, using standard upsert with base64 text storage')
-        
-        const updatePayload: Record<string, unknown> = { user_id: userId }
-        for (const field of fields) {
-          updatePayload[`${field}_enc`] = encryptedValues[field]
-        }
-        
-        const { error: fallbackError } = await supabaseAdmin
-          .from('profiles_private')
-          .upsert(updatePayload)
-        
-        if (fallbackError) {
-          console.error('Error saving encrypted data:', fallbackError)
-          throw new Error('Failed to save encrypted data')
-        }
-      } else if (updateError) {
-        console.error('Error saving encrypted data:', updateError)
-        throw new Error('Failed to save encrypted data')
+      if (upsertError) {
+        console.error('Error saving encrypted data:', upsertError)
+        throw new Error(`Failed to save encrypted data: ${upsertError.message}`)
       }
 
       console.log('PII data encrypted and saved successfully')
