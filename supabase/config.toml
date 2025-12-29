@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.send-password-reset]
 verify_jwt = false
+
+[functions.update-user]
+verify_jwt = false
+
+[functions.migrate-pii]
+verify_jwt = false
+
+[functions.pii-crypto]
+verify_jwt = false
