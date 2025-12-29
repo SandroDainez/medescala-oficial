@@ -43,39 +43,61 @@ async function deriveKey(keyString: string): Promise<CryptoKey> {
 async function encryptValue(plaintext: string, key: CryptoKey): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(plaintext);
-  
+
   // Generate a random IV (12 bytes for AES-GCM)
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  
+
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv },
     key,
     data
   );
-  
+
   // Combine IV + ciphertext and encode as base64
   const combined = new Uint8Array(iv.length + encrypted.byteLength);
   combined.set(iv);
   combined.set(new Uint8Array(encrypted), iv.length);
-  
+
   return btoa(String.fromCharCode(...combined));
 }
 
+function base64ToBytes(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes));
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.startsWith('\\x') ? hex.slice(2) : hex;
+  const bytes = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < clean.length; i += 2) {
+    bytes[i / 2] = parseInt(clean.substring(i, i + 2), 16);
+  }
+  return bytes;
+}
+
 // Decrypt ciphertext using AES-GCM
-async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string> {
-  // Decode from base64
-  const combined = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
-  
+async function decryptValue(ciphertextBase64: string, key: CryptoKey): Promise<string> {
+  const combined = base64ToBytes(ciphertextBase64);
+
   // Extract IV (first 12 bytes) and ciphertext
   const iv = combined.slice(0, 12);
   const data = combined.slice(12);
-  
+
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv },
     key,
     data
   );
-  
+
   const decoder = new TextDecoder();
   return decoder.decode(decrypted);
 }
@@ -160,18 +182,21 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'encrypt' && data) {
-      // Encrypt data and save to database using standard upsert
+      // Encrypt data and save to database (bytea columns)
+      // IMPORTANT: profiles_private.*_enc are bytea. We must store raw bytes, not the base64 text.
+      // We store as Postgres bytea hex format: "\\x...".
       const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
-      
+
       const updatePayload: Record<string, unknown> = { user_id: userId }
-      
+
       for (const field of fields) {
         const value = data[field]
         if (value) {
           try {
-            const encrypted = await encryptValue(value, cryptoKey)
-            // Store as base64 string - Supabase will handle bytea conversion
-            updatePayload[`${field}_enc`] = encrypted
+            const encryptedB64 = await encryptValue(value, cryptoKey)
+            const encryptedBytes = base64ToBytes(encryptedB64)
+            const hex = bytesToHex(encryptedBytes)
+            updatePayload[`${field}_enc`] = `\\x${hex}`
           } catch (err) {
             console.error(`Error encrypting ${field}:`, err)
             throw new Error(`Failed to encrypt ${field}`)
