@@ -143,6 +143,15 @@ export default function UserAvailableShifts() {
     
     setSubmitting(true);
 
+    // Get user's name for the notification
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('name')
+      .eq('id', user.id)
+      .single();
+    
+    const userName = profileData?.name || 'Um plantonista';
+
     const { error } = await supabase
       .from('shift_offers')
       .insert({
@@ -154,24 +163,52 @@ export default function UserAvailableShifts() {
         created_by: user.id,
       });
 
-    setSubmitting(false);
-
     if (error) {
       console.error('Error submitting offer:', error);
+      setSubmitting(false);
       toast({
         title: 'Erro ao enviar candidatura',
         description: error.message,
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'Candidatura enviada!',
-        description: 'Aguarde a aprovação do administrador.',
-      });
-      setSelectedShift(null);
-      setOfferMessage('');
-      fetchData();
+      return;
     }
+
+    // Notify all admins of this tenant about the new offer
+    const { data: admins } = await supabase
+      .from('memberships')
+      .select('user_id')
+      .eq('tenant_id', currentTenantId)
+      .eq('role', 'admin')
+      .eq('active', true);
+
+    if (admins && admins.length > 0) {
+      const shiftDate = format(parseISO(selectedShift.shift_date), 'dd/MM/yyyy', { locale: ptBR });
+      const shiftTime = `${selectedShift.start_time.slice(0, 5)} - ${selectedShift.end_time.slice(0, 5)}`;
+      
+      const messageText = offerMessage.trim() 
+        ? `${userName} se candidatou ao plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).\n\nMensagem: "${offerMessage.trim()}"`
+        : `${userName} se candidatou ao plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).`;
+
+      const notifications = admins.map(admin => ({
+        tenant_id: currentTenantId,
+        user_id: admin.user_id,
+        type: 'offer',
+        title: 'Nova Candidatura a Plantão',
+        message: messageText,
+      }));
+
+      await supabase.from('notifications').insert(notifications);
+    }
+
+    setSubmitting(false);
+    toast({
+      title: 'Candidatura enviada!',
+      description: 'O administrador foi notificado e irá avaliar sua solicitação.',
+    });
+    setSelectedShift(null);
+    setOfferMessage('');
+    fetchData();
   }
 
   async function cancelOffer(offerId: string) {
