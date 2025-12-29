@@ -395,10 +395,18 @@ export default function UserManagement() {
         deletingSelf,
       });
 
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        throw new Error('Sessão inválida. Faça login novamente e tente deletar de novo.');
+      }
+
       const { data, error } = await supabase.functions.invoke('delete-users', {
         body: {
           userIds: Array.from(selectedUserIds),
           tenantId: currentTenantId,
+        },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
         },
       });
 
