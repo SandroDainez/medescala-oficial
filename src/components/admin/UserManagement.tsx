@@ -386,14 +386,14 @@ export default function UserManagement() {
     setIsUpdatingUser(true);
 
     try {
-      // Update basic profile data
+      // Update basic profile data (use update, not upsert, to respect RLS)
       const { error: profileError } = await supabase
         .from('profiles')
-        .upsert({
-          id: editingMember.user_id,
+        .update({
           name: editName,
           profile_type: editProfileType,
-        });
+        })
+        .eq('id', editingMember.user_id);
 
       if (profileError) throw profileError;
 
