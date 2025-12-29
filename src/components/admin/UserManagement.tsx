@@ -548,7 +548,14 @@ export default function UserManagement() {
 
   async function handleInviteUser(e: React.FormEvent) {
     e.preventDefault();
-    if (!currentTenantId || !inviteName) return;
+    if (!currentTenantId || !inviteEmail.trim()) {
+      toast({
+        title: 'Email obrigatório',
+        description: 'Por favor, informe o email do usuário.',
+        variant: 'destructive'
+      });
+      return;
+    }
 
     setIsCreatingUser(true);
 
