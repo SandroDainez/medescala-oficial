@@ -8,11 +8,22 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Mail, CreditCard } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const emailSchema = z.string().email('Email inválido');
 const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres');
 const nameSchema = z.string().min(2, 'Nome deve ter no mínimo 2 caracteres');
+const cpfSchema = z.string().min(11, 'CPF deve ter 11 dígitos').max(14, 'CPF inválido');
+
+// Format CPF as user types
+function formatCpfInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}.${digits.slice(3)}`;
+  if (digits.length <= 9) return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6)}`;
+  return `${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}`;
+}
 
 export default function Auth() {
   const { user, loading, signIn, signUp } = useAuth();
@@ -22,6 +33,8 @@ export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [cpf, setCpf] = useState('');
+  const [loginMethod, setLoginMethod] = useState<'email' | 'cpf'>('email');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -29,6 +42,62 @@ export default function Auth() {
       navigate('/home');
     }
   }, [user, loading, navigate]);
+
+  const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setCpf(formatCpfInput(e.target.value));
+  };
+
+  const handleSignInWithCpf = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      cpfSchema.parse(cpf.replace(/\D/g, ''));
+      passwordSchema.parse(password);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        toast({
+          title: 'Erro de validação',
+          description: err.errors[0].message,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('login-cpf', {
+        body: { cpf: cpf.replace(/\D/g, ''), password }
+      });
+
+      if (error || data?.error) {
+        throw new Error(data?.error || error?.message || 'Erro ao fazer login');
+      }
+
+      if (data?.session) {
+        // Set the session manually
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        });
+        
+        toast({
+          title: 'Bem-vindo!',
+          description: 'Login realizado com sucesso.',
+        });
+      }
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao fazer login';
+      toast({
+        title: 'Erro',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,40 +252,100 @@ export default function Auth() {
                 </TabsList>
                 
                 <TabsContent value="signin">
-                  <form onSubmit={handleSignIn} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="signin-email">Email</Label>
-                      <Input
-                        id="signin-email"
-                        type="email"
-                        placeholder="seu@email.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        required
-                        className="h-11"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="signin-password">Senha</Label>
-                      <Input
-                        id="signin-password"
-                        type="password"
-                        placeholder="••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        className="h-11"
-                      />
-                    </div>
-                    <Button type="submit" className="w-full h-11 btn-glow" disabled={isSubmitting}>
-                      {isSubmitting ? 'Entrando...' : 'Entrar'}
+                  {/* Login method toggle */}
+                  <div className="flex gap-2 mb-6">
+                    <Button
+                      type="button"
+                      variant={loginMethod === 'email' ? 'default' : 'outline'}
+                      className="flex-1 gap-2"
+                      onClick={() => setLoginMethod('email')}
+                    >
+                      <Mail className="h-4 w-4" />
+                      Email
                     </Button>
-                    <div className="text-center mt-4">
-                      <Link to="/forgot-password" className="text-sm text-primary hover:underline">
-                        Esqueceu sua senha?
-                      </Link>
-                    </div>
-                  </form>
+                    <Button
+                      type="button"
+                      variant={loginMethod === 'cpf' ? 'default' : 'outline'}
+                      className="flex-1 gap-2"
+                      onClick={() => setLoginMethod('cpf')}
+                    >
+                      <CreditCard className="h-4 w-4" />
+                      CPF
+                    </Button>
+                  </div>
+
+                  {loginMethod === 'email' ? (
+                    <form onSubmit={handleSignIn} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-email">Email</Label>
+                        <Input
+                          id="signin-email"
+                          type="email"
+                          placeholder="seu@email.com"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          required
+                          className="h-11"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-password">Senha</Label>
+                        <Input
+                          id="signin-password"
+                          type="password"
+                          placeholder="••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          className="h-11"
+                        />
+                      </div>
+                      <Button type="submit" className="w-full h-11 btn-glow" disabled={isSubmitting}>
+                        {isSubmitting ? 'Entrando...' : 'Entrar'}
+                      </Button>
+                      <div className="text-center mt-4">
+                        <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                          Esqueceu sua senha?
+                        </Link>
+                      </div>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleSignInWithCpf} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-cpf">CPF</Label>
+                        <Input
+                          id="signin-cpf"
+                          type="text"
+                          placeholder="000.000.000-00"
+                          value={cpf}
+                          onChange={handleCpfChange}
+                          required
+                          className="h-11"
+                          maxLength={14}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="signin-cpf-password">Senha</Label>
+                        <Input
+                          id="signin-cpf-password"
+                          type="password"
+                          placeholder="••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          required
+                          className="h-11"
+                        />
+                      </div>
+                      <Button type="submit" className="w-full h-11 btn-glow" disabled={isSubmitting}>
+                        {isSubmitting ? 'Entrando...' : 'Entrar com CPF'}
+                      </Button>
+                      <div className="text-center mt-4">
+                        <Link to="/forgot-password" className="text-sm text-primary hover:underline">
+                          Esqueceu sua senha?
+                        </Link>
+                      </div>
+                    </form>
+                  )}
                 </TabsContent>
                 
                 <TabsContent value="signup">

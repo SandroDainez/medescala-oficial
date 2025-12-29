@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.pii-crypto]
 verify_jwt = false
+
+[functions.login-cpf]
+verify_jwt = false
