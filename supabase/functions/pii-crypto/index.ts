@@ -256,35 +256,45 @@ Deno.serve(async (req) => {
       for (const field of fields) {
         const encField = `${field}_enc` as keyof typeof profile
         const rawValue = profile[encField]
-        
-        if (rawValue) {
-          try {
-            let base64Value: string
-            
-            // Handle different formats:
-            // 1. bytea from Postgres comes as hex string starting with \x
-            // 2. Or it could be already base64 if stored as text
-            if (typeof rawValue === 'string') {
-              if (rawValue.startsWith('\\x')) {
-                // Convert hex to base64
-                const hex = rawValue.slice(2)
-                const bytes = new Uint8Array(hex.length / 2)
-                for (let i = 0; i < hex.length; i += 2) {
-                  bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
-                }
-                base64Value = btoa(String.fromCharCode(...bytes))
-              } else {
-                // Assume it's already base64
-                base64Value = rawValue
-              }
-              
-              const decrypted = await decryptValue(base64Value, cryptoKey)
-              decryptedData[field] = decrypted
+
+        if (!rawValue) continue
+
+        try {
+          // Supabase/PostgREST can return bytea in different representations depending on client/runtime.
+          // We support:
+          // - "\\x..." hex string (common)
+          // - base64 string
+          // - legacy corrupted rows where bytea contains ASCII(base64) (double-encoded)
+          let ciphertextB64: string | null = null
+
+          if (typeof rawValue === 'string') {
+            if (rawValue.startsWith('\\x')) {
+              const bytes = hexToBytes(rawValue)
+              ciphertextB64 = bytesToBase64(bytes)
+            } else {
+              // First assume it's already the ciphertext base64
+              ciphertextB64 = rawValue
             }
-          } catch (err) {
-            console.error(`Error decrypting ${field}:`, err)
-            decryptedData[field] = null
           }
+
+          if (!ciphertextB64) {
+            decryptedData[field] = null
+            continue
+          }
+
+          // Try normal decrypt
+          try {
+            decryptedData[field] = await decryptValue(ciphertextB64, cryptoKey)
+            continue
+          } catch {
+            // Try legacy: bytea stored ASCII(base64) so we need one extra decode pass
+            // Step1: base64 -> bytes; Step2: bytes -> string (should be base64); Step3: decrypt
+            const maybeAsciiB64 = new TextDecoder().decode(base64ToBytes(ciphertextB64))
+            decryptedData[field] = await decryptValue(maybeAsciiB64, cryptoKey)
+          }
+        } catch (err) {
+          console.error(`Error decrypting ${field}:`, err)
+          decryptedData[field] = null
         }
       }
 
