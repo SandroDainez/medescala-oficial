@@ -369,6 +369,11 @@ export default function UserManagement() {
 
   // Delete selected users
   async function deleteSelectedUsers() {
+    if (!currentTenantId) {
+      toast({ title: 'Erro', description: 'Selecione um hospital/tenant antes de deletar.', variant: 'destructive' });
+      return;
+    }
+
     if (selectedUserIds.size === 0) {
       toast({ title: 'Nenhum usuário selecionado', variant: 'destructive' });
       return;
@@ -384,6 +389,12 @@ export default function UserManagement() {
     try {
       const deletingSelf = !!user?.id && selectedUserIds.has(user.id);
 
+      console.log('deleteSelectedUsers invoke', {
+        tenantId: currentTenantId,
+        userIds: Array.from(selectedUserIds),
+        deletingSelf,
+      });
+
       const { data, error } = await supabase.functions.invoke('delete-users', {
         body: {
           userIds: Array.from(selectedUserIds),
@@ -391,18 +402,25 @@ export default function UserManagement() {
         },
       });
 
-
       if (error) {
-        // Supabase Functions errors often contain extra context with the response body.
         const anyErr = error as any;
-        const contextBody =
-          anyErr?.context?.body ?? anyErr?.context?.response?.body ?? anyErr?.context ?? null;
-
         let details = anyErr?.message || 'Erro ao chamar função de deleção';
-        if (typeof contextBody === 'string' && contextBody.trim().length > 0) {
-          details = `${details} | ${contextBody}`;
-        } else if (contextBody && typeof contextBody === 'object') {
-          details = `${details} | ${JSON.stringify(contextBody)}`;
+
+        const resp: Response | undefined = anyErr?.context?.response;
+        if (resp && typeof (resp as any).clone === 'function') {
+          try {
+            const txt = await resp.clone().text();
+            if (txt?.trim()) details = `${details} | ${txt}`;
+          } catch {
+            // ignore
+          }
+        } else {
+          const contextBody = anyErr?.context?.body ?? anyErr?.context ?? null;
+          if (typeof contextBody === 'string' && contextBody.trim().length > 0) {
+            details = `${details} | ${contextBody}`;
+          } else if (contextBody && typeof contextBody === 'object') {
+            details = `${details} | ${JSON.stringify(contextBody)}`;
+          }
         }
 
         throw new Error(details);
@@ -427,7 +445,6 @@ export default function UserManagement() {
       setSelectedUserIds(new Set());
       fetchMembers();
       fetchTenantInfo();
-
     } catch (err) {
       console.error('Error deleting users:', err);
       toast({
