@@ -161,32 +161,69 @@ Deno.serve(async (req) => {
 
     if (action === 'encrypt' && data) {
       // Encrypt data and save to database
-      const updatePayload: Record<string, unknown> = {
-        user_id: userId,
-      }
-
+      // Use raw SQL to properly handle bytea columns
       const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+      
+      const encryptedValues: Record<string, string | null> = {}
       
       for (const field of fields) {
         const value = data[field]
         if (value) {
           try {
             const encrypted = await encryptValue(value, cryptoKey)
-            updatePayload[`${field}_enc`] = encrypted
+            encryptedValues[field] = encrypted
           } catch (err) {
             console.error(`Error encrypting ${field}:`, err)
             throw new Error(`Failed to encrypt ${field}`)
           }
         } else {
-          updatePayload[`${field}_enc`] = null
+          encryptedValues[field] = null
         }
       }
 
-      const { error: updateError } = await supabaseAdmin
-        .from('profiles_private')
-        .upsert(updatePayload)
+      // Build SQL with proper bytea encoding using decode() function
+      const setClauses = fields.map(field => {
+        const val = encryptedValues[field]
+        if (val === null) {
+          return `${field}_enc = NULL`
+        }
+        // Use decode() to convert base64 string to bytea
+        return `${field}_enc = decode('${val}', 'base64')`
+      }).join(', ')
 
-      if (updateError) {
+      const { error: updateError } = await supabaseAdmin.rpc('exec_sql', {
+        sql: `
+          INSERT INTO profiles_private (user_id, ${fields.map(f => `${f}_enc`).join(', ')}, created_at, updated_at)
+          VALUES (
+            '${userId}'::uuid,
+            ${fields.map(f => encryptedValues[f] === null ? 'NULL' : `decode('${encryptedValues[f]}', 'base64')`).join(', ')},
+            now(),
+            now()
+          )
+          ON CONFLICT (user_id) DO UPDATE SET
+            ${setClauses},
+            updated_at = now()
+        `
+      })
+
+      // Fallback: if exec_sql RPC doesn't exist, use the standard upsert with text columns
+      if (updateError && updateError.message.includes('function') && updateError.message.includes('does not exist')) {
+        console.log('exec_sql not available, using standard upsert with base64 text storage')
+        
+        const updatePayload: Record<string, unknown> = { user_id: userId }
+        for (const field of fields) {
+          updatePayload[`${field}_enc`] = encryptedValues[field]
+        }
+        
+        const { error: fallbackError } = await supabaseAdmin
+          .from('profiles_private')
+          .upsert(updatePayload)
+        
+        if (fallbackError) {
+          console.error('Error saving encrypted data:', fallbackError)
+          throw new Error('Failed to save encrypted data')
+        }
+      } else if (updateError) {
         console.error('Error saving encrypted data:', updateError)
         throw new Error('Failed to save encrypted data')
       }
@@ -229,11 +266,32 @@ Deno.serve(async (req) => {
 
       for (const field of fields) {
         const encField = `${field}_enc` as keyof typeof profile
+        const rawValue = profile[encField]
         
-        if (profile[encField]) {
+        if (rawValue) {
           try {
-            const decrypted = await decryptValue(profile[encField] as string, cryptoKey)
-            decryptedData[field] = decrypted
+            let base64Value: string
+            
+            // Handle different formats:
+            // 1. bytea from Postgres comes as hex string starting with \x
+            // 2. Or it could be already base64 if stored as text
+            if (typeof rawValue === 'string') {
+              if (rawValue.startsWith('\\x')) {
+                // Convert hex to base64
+                const hex = rawValue.slice(2)
+                const bytes = new Uint8Array(hex.length / 2)
+                for (let i = 0; i < hex.length; i += 2) {
+                  bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16)
+                }
+                base64Value = btoa(String.fromCharCode(...bytes))
+              } else {
+                // Assume it's already base64
+                base64Value = rawValue
+              }
+              
+              const decrypted = await decryptValue(base64Value, cryptoKey)
+              decryptedData[field] = decrypted
+            }
           } catch (err) {
             console.error(`Error decrypting ${field}:`, err)
             decryptedData[field] = null
