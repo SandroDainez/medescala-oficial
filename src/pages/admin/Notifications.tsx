@@ -73,6 +73,11 @@ export default function AdminNotifications() {
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
   
+  // Multi-select state for history tab
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  
   // Form state
   const [notificationType, setNotificationType] = useState('general');
   const [title, setTitle] = useState('');
@@ -313,6 +318,55 @@ export default function AdminNotifications() {
       });
     } else {
       toast({ title: 'Notificação excluída!' });
+      fetchData();
+    }
+  }
+
+  function toggleNotificationSelection(id: string) {
+    setSelectedNotifications(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function selectAllNotifications() {
+    setSelectedNotifications(new Set(sentNotifications.map(n => n.id)));
+  }
+
+  function cancelSelection() {
+    setSelectionMode(false);
+    setSelectedNotifications(new Set());
+  }
+
+  async function deleteSelectedNotifications() {
+    if (selectedNotifications.size === 0) return;
+    if (!confirm(`Deseja excluir ${selectedNotifications.size} notificação(ões)?`)) return;
+
+    setDeleting(true);
+    const ids = Array.from(selectedNotifications);
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .in('id', ids);
+
+    setDeleting(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } else {
+      toast({ title: `${ids.length} notificação(ões) excluída(s)!` });
+      setSelectionMode(false);
+      setSelectedNotifications(new Set());
       fetchData();
     }
   }
@@ -634,9 +688,50 @@ export default function AdminNotifications() {
         {/* History Tab */}
         <TabsContent value="history">
           <Card>
-            <CardHeader>
-              <CardTitle>Histórico de Notificações</CardTitle>
-              <CardDescription>Últimas 50 notificações enviadas</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+              <div>
+                <CardTitle>Histórico de Notificações</CardTitle>
+                <CardDescription>Últimas 50 notificações enviadas</CardDescription>
+              </div>
+              {sentNotifications.length > 0 && (
+                <div className="flex items-center gap-2">
+                  {selectionMode ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={selectAllNotifications}
+                      >
+                        Selecionar tudo ({sentNotifications.length})
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={cancelSelection}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={deleteSelectedNotifications}
+                        disabled={selectedNotifications.size === 0 || deleting}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Excluir ({selectedNotifications.size})
+                      </Button>
+                    </>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectionMode(true)}
+                    >
+                      Selecionar
+                    </Button>
+                  )}
+                </div>
+              )}
             </CardHeader>
             <CardContent>
               {sentNotifications.length === 0 ? (
@@ -649,6 +744,7 @@ export default function AdminNotifications() {
                   <Table className="min-w-[720px]">
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
+                        {selectionMode && <TableHead className="w-10"></TableHead>}
                         <TableHead>Data</TableHead>
                         <TableHead>Tipo</TableHead>
                         <TableHead>Título</TableHead>
@@ -659,8 +755,22 @@ export default function AdminNotifications() {
                     <TableBody>
                       {sentNotifications.map(notif => {
                         const typeInfo = notificationTypes.find(t => t.value === notif.type);
+                        const isSelected = selectedNotifications.has(notif.id);
                         return (
-                          <TableRow key={notif.id}>
+                          <TableRow 
+                            key={notif.id}
+                            className={isSelected ? 'bg-primary/10' : ''}
+                            onClick={selectionMode ? () => toggleNotificationSelection(notif.id) : undefined}
+                            style={selectionMode ? { cursor: 'pointer' } : undefined}
+                          >
+                            {selectionMode && (
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onCheckedChange={() => toggleNotificationSelection(notif.id)}
+                                />
+                              </TableCell>
+                            )}
                             <TableCell className="text-sm">
                               {format(parseISO(notif.created_at), "dd/MM HH:mm")}
                             </TableCell>
@@ -673,6 +783,7 @@ export default function AdminNotifications() {
                             <TableCell className="font-medium">
                               <div className="flex items-center justify-between gap-2">
                                 <span className="truncate">{notif.title}</span>
+                                {!selectionMode && (
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <Button
@@ -698,21 +809,26 @@ export default function AdminNotifications() {
                                     </DropdownMenuItem>
                                   </DropdownMenuContent>
                                 </DropdownMenu>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell className="text-muted-foreground">{notif.user_name}</TableCell>
                             <TableCell className="text-right whitespace-nowrap">
-                              <Button variant="ghost" size="sm" onClick={() => openEditDialog(notif)}>
-                                Editar
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => deleteNotification(notif.id)}
-                                className="text-destructive"
-                              >
-                                Excluir
-                              </Button>
+                              {!selectionMode && (
+                                <>
+                                  <Button variant="ghost" size="sm" onClick={() => openEditDialog(notif)}>
+                                    Editar
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => deleteNotification(notif.id)}
+                                    className="text-destructive"
+                                  >
+                                    Excluir
+                                  </Button>
+                                </>
+                              )}
                             </TableCell>
                           </TableRow>
                         );
