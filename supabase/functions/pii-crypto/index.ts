@@ -17,8 +17,9 @@ interface PiiData {
 }
 
 interface RequestBody {
-  action: 'encrypt' | 'decrypt';
-  userId: string;
+  action: 'encrypt' | 'decrypt' | 'decrypt_batch';
+  userId?: string;
+  userIds?: string[];
   data?: PiiData;
 }
 
@@ -136,9 +137,9 @@ Deno.serve(async (req) => {
       throw new Error('Unauthorized')
     }
 
-    const { action, userId, data }: RequestBody = await req.json()
+    const { action, userId, userIds, data }: RequestBody = await req.json()
 
-    console.log(`PII crypto: ${action} for user ${userId} by ${requestingUser.id}`);
+    console.log(`PII crypto: ${action} for user(s) ${userId || userIds?.join(',')} by ${requestingUser.id}`);
 
     // Get encryption key
     const encryptionKey = Deno.env.get('PII_ENCRYPTION_KEY')
@@ -148,6 +149,103 @@ Deno.serve(async (req) => {
 
     // Derive the crypto key
     const cryptoKey = await deriveKey(encryptionKey)
+
+    // Handle batch decrypt - skip per-user access check for performance (admin verified once)
+    if (action === 'decrypt_batch' && userIds && userIds.length > 0) {
+      // Verify admin has access to at least one tenant
+      const { data: adminMemberships } = await supabaseAdmin
+        .from('memberships')
+        .select('tenant_id')
+        .eq('user_id', requestingUser.id)
+        .eq('role', 'admin')
+        .eq('active', true)
+
+      if (!adminMemberships || adminMemberships.length === 0) {
+        throw new Error('Access denied: not authorized')
+      }
+
+      const adminTenantIds = adminMemberships.map(m => m.tenant_id)
+
+      // Fetch all target users in admin's tenants
+      const { data: targetMemberships } = await supabaseAdmin
+        .from('memberships')
+        .select('user_id')
+        .in('user_id', userIds)
+        .in('tenant_id', adminTenantIds)
+        .eq('active', true)
+
+      const allowedUserIds = new Set(targetMemberships?.map(m => m.user_id) || [])
+
+      // Fetch all profiles_private for allowed users in one query
+      const { data: profiles, error: fetchError } = await supabaseAdmin
+        .from('profiles_private')
+        .select('user_id, cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
+        .in('user_id', Array.from(allowedUserIds))
+
+      if (fetchError) {
+        console.error('Error fetching profiles:', fetchError)
+        throw new Error('Failed to fetch profiles')
+      }
+
+      const result: Record<string, PiiData> = {}
+      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+
+      for (const profile of (profiles || [])) {
+        const decryptedData: PiiData = {}
+
+        for (const field of fields) {
+          const encField = `${field}_enc` as keyof typeof profile
+          const rawValue = profile[encField]
+
+          if (!rawValue) continue
+
+          try {
+            let ciphertextB64: string | null = null
+
+            if (typeof rawValue === 'string') {
+              if (rawValue.startsWith('\\x')) {
+                const bytes = hexToBytes(rawValue)
+                ciphertextB64 = bytesToBase64(bytes)
+              } else {
+                ciphertextB64 = rawValue
+              }
+            }
+
+            if (!ciphertextB64) {
+              decryptedData[field] = null
+              continue
+            }
+
+            try {
+              decryptedData[field] = await decryptValue(ciphertextB64, cryptoKey)
+            } catch {
+              const maybeAsciiB64 = new TextDecoder().decode(base64ToBytes(ciphertextB64))
+              decryptedData[field] = await decryptValue(maybeAsciiB64, cryptoKey)
+            }
+          } catch (err) {
+            console.error(`Error decrypting ${field} for ${profile.user_id}:`, err)
+            decryptedData[field] = null
+          }
+        }
+
+        result[profile.user_id] = decryptedData
+      }
+
+      console.log(`PII batch decrypt: ${Object.keys(result).length} users decrypted`)
+
+      return new Response(
+        JSON.stringify({ success: true, data: result }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 200 
+        }
+      )
+    }
+
+    // Single user operations require userId
+    if (!userId) {
+      throw new Error('userId is required for encrypt/decrypt')
+    }
 
     // Check access: user can access their own data OR admin can access users in their tenant
     const isOwnData = requestingUser.id === userId
