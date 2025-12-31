@@ -148,22 +148,21 @@ export default function UserManagement() {
     if (!error && data) {
       const typed = data as unknown as MemberWithProfile[];
       
-      // Fetch decrypted private profile data for all users via edge function
+      // Fetch decrypted private profile data for ALL users in ONE batch call
       const userIds = typed.map(m => m.user_id);
-      const privateDataMap: Record<string, MemberWithProfile['privateProfile']> = {};
+      let privateDataMap: Record<string, MemberWithProfile['privateProfile']> = {};
       
-      // Decrypt data for each user
-      for (const userId of userIds) {
+      if (userIds.length > 0) {
         try {
           const { data: decryptResult, error: decryptError } = await supabase.functions.invoke('pii-crypto', {
-            body: { action: 'decrypt', userId }
+            body: { action: 'decrypt_batch', userIds }
           });
           
           if (!decryptError && decryptResult?.data) {
-            privateDataMap[userId] = decryptResult.data;
+            privateDataMap = decryptResult.data;
           }
         } catch (err) {
-          console.warn(`Failed to decrypt PII for user ${userId}:`, err);
+          console.warn('Failed to batch decrypt PII:', err);
         }
       }
 
