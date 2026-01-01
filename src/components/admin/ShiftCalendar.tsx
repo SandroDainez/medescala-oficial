@@ -523,13 +523,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               useSectorDefault: formData.use_sector_default,
             });
             
-            await supabase.from('shift_assignments').insert({
+            await supabase.from('shift_assignments').upsert({
               tenant_id: currentTenantId,
               shift_id: editingShift.id,
               user_id: formData.assigned_user_id,
               assigned_value: assignedValue,
               created_by: user?.id,
-            });
+              updated_by: user?.id,
+            }, { onConflict: 'shift_id,user_id' });
           }
         } else {
           // User selected 'vago' or 'disponivel' - remove assignment if exists
@@ -576,13 +577,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 useSectorDefault: formData.use_sector_default,
               });
               
-              await supabase.from('shift_assignments').insert({
-                tenant_id: currentTenantId,
-                shift_id: duplicatedShift.id,
-                user_id: formData.assigned_user_id,
-                assigned_value: assignedValue,
-                created_by: user?.id,
-              });
+          await supabase.from('shift_assignments').upsert({
+            tenant_id: currentTenantId,
+            shift_id: duplicatedShift.id,
+            user_id: formData.assigned_user_id,
+            assigned_value: assignedValue,
+            created_by: user?.id,
+            updated_by: user?.id,
+          }, { onConflict: 'shift_id,user_id' });
             }
           }
           
@@ -639,13 +641,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             useSectorDefault: formData.use_sector_default,
           });
           
-          await supabase.from('shift_assignments').insert({
+          await supabase.from('shift_assignments').upsert({
             tenant_id: currentTenantId,
             shift_id: createdShift.id,
             user_id: userIdForShift,
             assigned_value: assignedValue,
             created_by: user?.id,
-          });
+            updated_by: user?.id,
+          }, { onConflict: 'shift_id,user_id' });
         }
 
         return { ok: true as const };
@@ -849,13 +852,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           useSectorDefault: formData.use_sector_default,
         });
 
-        await supabase.from('shift_assignments').insert({
+        await supabase.from('shift_assignments').upsert({
           tenant_id: currentTenantId,
           shift_id: newShift.id,
           user_id: formData.assigned_user_id,
           assigned_value: assignedValue,
           created_by: user?.id,
-        });
+          updated_by: user?.id,
+        }, { onConflict: 'shift_id,user_id' });
       }
     }
 
@@ -1040,14 +1044,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
             const shiftAssignments = assignmentsByShiftId.get(shift.id) || [];
             for (const assignment of shiftAssignments) {
-              await supabase.from('shift_assignments').insert({
+              await supabase.from('shift_assignments').upsert({
                 tenant_id: currentTenantId,
                 shift_id: newShift.id,
                 user_id: assignment.user_id,
                 assigned_value: assignment.assigned_value,
                 status: 'assigned',
                 created_by: user?.id,
-              });
+                updated_by: user?.id,
+              }, { onConflict: 'shift_id,user_id' });
             }
           }
         }
@@ -1075,13 +1080,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!selectedShift || !currentTenantId) return;
 
     const assignedValue = parseMoneyNullable(assignData.assigned_value);
-    const { error } = await supabase.from('shift_assignments').insert({
+    const { error } = await supabase.from('shift_assignments').upsert({
       tenant_id: currentTenantId,
       shift_id: selectedShift.id,
       user_id: assignData.user_id,
       assigned_value: assignedValue,
       created_by: user?.id,
-    });
+      updated_by: user?.id,
+    }, { onConflict: 'shift_id,user_id' });
 
     if (error) {
       if (error.code === '23505') {
@@ -1115,13 +1121,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     try {
       // Create assignment for the offered plantonista
-      const { error: assignError } = await supabase.from('shift_assignments').insert({
+      const { error: assignError } = await supabase.from('shift_assignments').upsert({
         tenant_id: currentTenantId,
         shift_id: offer.shift_id,
         user_id: offer.user_id,
         assigned_value: shift.base_value,
         created_by: user.id,
-      });
+        updated_by: user.id,
+      }, { onConflict: 'shift_id,user_id' });
 
       if (assignError) {
         toast({ title: 'Erro ao aceitar oferta', description: assignError.message, variant: 'destructive' });
@@ -1420,15 +1427,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 const { error } = await supabase.from('shift_assignments').update(updatePayload).eq('id', existing.id);
                 if (error) throw error;
               } else {
-                const insertPayload: any = {
+                const upsertPayload: any = {
                   tenant_id: currentTenantId,
                   shift_id: shiftId,
                   user_id: bulkApplyData.assigned_user_id,
                   assigned_value: valueToApply ?? null,
                   created_by: user.id,
+                  updated_by: user.id,
                 };
 
-                const { error } = await supabase.from('shift_assignments').insert(insertPayload);
+                const { error } = await supabase.from('shift_assignments').upsert(upsertPayload, { onConflict: 'shift_id,user_id' });
                 if (error) throw error;
               }
             })
