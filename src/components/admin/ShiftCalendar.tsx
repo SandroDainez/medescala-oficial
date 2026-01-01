@@ -385,6 +385,59 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return getSectorDefaultValue(params.sector_id, params.start_time);
   }
 
+  // --- Reliable writes helpers (professional-grade) ---
+  // PostgREST may return 204 even when the write succeeds (no representation returned).
+  // We confirm the write via a follow-up SELECT to avoid "false failure" toasts.
+  async function confirmShiftExists(shiftId: string): Promise<boolean> {
+    const { data, error } = await supabase.from('shifts').select('id').eq('id', shiftId).maybeSingle();
+    if (error) return false;
+    return !!data?.id;
+  }
+
+  async function insertShiftAndGetId(payload: {
+    tenant_id: string;
+    title: string;
+    hospital: string;
+    location: string | null;
+    shift_date: string;
+    start_time: string;
+    end_time: string;
+    base_value: number | null;
+    notes: string | null;
+    sector_id: string | null;
+    created_by?: string | null;
+    updated_by?: string | null;
+  }): Promise<string> {
+    const { data, error } = await supabase
+      .from('shifts')
+      .insert(payload)
+      .select('id')
+      .maybeSingle();
+
+    if (error) throw error;
+    if (data?.id) return data.id;
+
+    // Fallback: fetch the most recent matching shift
+    const { data: found, error: findErr } = await supabase
+      .from('shifts')
+      .select('id')
+      .eq('tenant_id', payload.tenant_id)
+      .eq('shift_date', payload.shift_date)
+      .eq('start_time', payload.start_time)
+      .eq('end_time', payload.end_time)
+      .eq('hospital', payload.hospital)
+      .eq('sector_id', payload.sector_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (findErr || !found?.id) {
+      throw new Error('Plantão criado, mas não foi possível confirmar o ID.');
+    }
+
+    return found.id;
+  }
+
   // Filter shifts by sector
   const filteredShifts = filterSector === 'all' 
     ? shifts 
@@ -481,8 +534,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     };
 
     if (editingShift) {
-      // IMPORTANT: PostgREST may return success even when 0 rows are affected (e.g. blocked by RLS).
-      // So we always request the updated row back and verify that something actually changed.
+      // UPDATE
+      // PostgREST can return 204 (no body) even when update succeeded.
+      // So we treat "no returned row" as "unknown" and confirm with a follow-up SELECT.
       const { data: updatedShift, error } = await supabase
         .from('shifts')
         .update(shiftData)
@@ -495,7 +549,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return;
       }
 
-      if (!updatedShift) {
+      const confirmed = updatedShift?.id ? true : await confirmShiftExists(editingShift.id);
+      if (!confirmed) {
         toast({
           title: 'Não foi possível salvar',
           description: 'Atualização bloqueada (permissão/tenant).',
@@ -617,13 +672,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             shift_date: format(newDate, 'yyyy-MM-dd'),
           };
 
-          const { data: duplicatedShift, error: dupError } = await supabase
-            .from('shifts')
-            .insert(duplicatedShiftData)
-            .select()
-            .single();
-
-          if (dupError) {
+          let duplicatedShiftId: string | null = null;
+          try {
+            duplicatedShiftId = await insertShiftAndGetId(duplicatedShiftData as any);
+          } catch (dupError) {
             console.error(`Error duplicating shift for week ${week}:`, dupError);
             continue;
           }
@@ -633,7 +685,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             formData.assigned_user_id &&
             formData.assigned_user_id !== 'vago' &&
             formData.assigned_user_id !== 'disponivel' &&
-            duplicatedShift
+            duplicatedShiftId
           ) {
             const assignedValue = resolveValue({
               raw: formData.base_value,
@@ -647,7 +699,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               .upsert(
                 {
                   tenant_id: currentTenantId,
-                  shift_id: duplicatedShift.id,
+                  shift_id: duplicatedShiftId,
                   user_id: formData.assigned_user_id,
                   assigned_value: assignedValue,
                   created_by: user?.id,
@@ -717,20 +769,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (!rowAssigned || rowAssigned === 'vago') notes = `[VAGO] ${notes}`.trim();
           if (rowAssigned === 'disponivel') notes = `[DISPONÍVEL] ${notes}`.trim();
 
-          const { data: createdShift, error: createErr } = await supabase
-            .from('shifts')
-            .insert({
+          let createdShiftId: string;
+          try {
+            createdShiftId = await insertShiftAndGetId({
               ...shiftData,
               shift_date: weekDate,
               start_time: row.start_time,
               end_time: row.end_time,
               title: generateShiftTitle(row.start_time, row.end_time),
               notes: notes || null,
-            })
-            .select('id')
-            .single();
-
-          if (createErr || !createdShift) {
+            });
+          } catch (e) {
             errorsCount++;
             continue;
           }
@@ -744,7 +793,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               .upsert(
                 {
                   tenant_id: currentTenantId,
-                  shift_id: createdShift.id,
+                  shift_id: createdShiftId,
                   user_id: rowAssigned,
                   assigned_value: assignedValue,
                   created_by: user?.id,
