@@ -497,23 +497,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             formData.assigned_user_id !== 'disponivel') {
           // User selected a plantonista
           if (currentAssignment) {
-            // Update existing assignment - always update value, even if user is the same
-            // Determine value using the same rules (typed value > sector default (optional) > blank)
+            // If the assignee changed, don't UPDATE user_id (can violate the unique constraint).
+            // Instead: UPSERT the target (shift_id,user_id) and delete the old row to keep a single assignee.
             const assignedValue = resolveValue({
               raw: formData.base_value,
               sector_id: formData.sector_id || null,
               start_time: formData.start_time,
               useSectorDefault: formData.use_sector_default,
             });
-            
-            await supabase
-              .from('shift_assignments')
-              .update({ 
-                user_id: formData.assigned_user_id,
-                assigned_value: assignedValue,
-                updated_by: user?.id,
-              })
-              .eq('id', currentAssignment.id);
+
+            if (currentAssignment.user_id === formData.assigned_user_id) {
+              await supabase
+                .from('shift_assignments')
+                .update({
+                  assigned_value: assignedValue,
+                  updated_by: user?.id,
+                })
+                .eq('id', currentAssignment.id);
+            } else {
+              // Create/update the new assignee row
+              await supabase.from('shift_assignments').upsert(
+                {
+                  tenant_id: currentTenantId,
+                  shift_id: editingShift.id,
+                  user_id: formData.assigned_user_id,
+                  assigned_value: assignedValue,
+                  created_by: user?.id,
+                  updated_by: user?.id,
+                },
+                { onConflict: 'shift_id,user_id' }
+              );
+
+              // Remove the previous assignee row (single-assignee behavior)
+              await supabase.from('shift_assignments').delete().eq('id', currentAssignment.id);
+            }
           } else {
             // Create new assignment
             const assignedValue = resolveValue({
