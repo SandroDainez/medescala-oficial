@@ -658,8 +658,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           }
         }
 
+        console.info('[ShiftCalendar] shift updated', {
+          shiftId: editingShift.id,
+          tenantId: currentTenantId,
+          repeatWeeks,
+        });
         toast({ title: `Plantão atualizado e ${repeatWeeks} cópias criadas!` });
       } else {
+        console.info('[ShiftCalendar] shift updated', {
+          shiftId: editingShift.id,
+          tenantId: currentTenantId,
+        });
         toast({ title: 'Plantão atualizado!' });
       }
 
