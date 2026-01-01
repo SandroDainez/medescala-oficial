@@ -512,7 +512,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       shiftNotes = `[VAGO] ${shiftNotes}`.trim();
     }
 
-    const shiftData = {
+    const shiftInsertData = {
       tenant_id: currentTenantId,
       title: autoTitle,
       hospital: formData.hospital,
@@ -533,13 +533,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       updated_by: user?.id,
     };
 
+    // For UPDATEs, avoid touching immutable/ownership fields like tenant_id and created_by.
+    const shiftUpdateData = {
+      title: shiftInsertData.title,
+      hospital: shiftInsertData.hospital,
+      location: shiftInsertData.location,
+      shift_date: shiftInsertData.shift_date,
+      start_time: shiftInsertData.start_time,
+      end_time: shiftInsertData.end_time,
+      base_value: shiftInsertData.base_value,
+      notes: shiftInsertData.notes,
+      sector_id: shiftInsertData.sector_id,
+      updated_by: user?.id,
+    };
+
     if (editingShift) {
       // UPDATE
       // PostgREST can return 204 (no body) even when update succeeded.
       // So we treat "no returned row" as "unknown" and confirm with a follow-up SELECT.
       const { data: updatedShift, error } = await supabase
         .from('shifts')
-        .update(shiftData)
+        .update(shiftUpdateData)
         .eq('id', editingShift.id)
         .select('id')
         .maybeSingle();
@@ -668,7 +682,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         for (let week = 1; week <= repeatWeeks; week++) {
           const newDate = addWeeks(baseDate, week);
           const duplicatedShiftData = {
-            ...shiftData,
+            ...shiftInsertData,
             shift_date: format(newDate, 'yyyy-MM-dd'),
           };
 
@@ -770,19 +784,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (rowAssigned === 'disponivel') notes = `[DISPONÍVEL] ${notes}`.trim();
 
           let createdShiftId: string;
-          try {
-            createdShiftId = await insertShiftAndGetId({
-              ...shiftData,
-              shift_date: weekDate,
-              start_time: row.start_time,
-              end_time: row.end_time,
-              title: generateShiftTitle(row.start_time, row.end_time),
-              notes: notes || null,
-            });
-          } catch (e) {
-            errorsCount++;
-            continue;
-          }
+            try {
+              createdShiftId = await insertShiftAndGetId({
+                ...shiftInsertData,
+                shift_date: weekDate,
+                start_time: row.start_time,
+                end_time: row.end_time,
+                title: generateShiftTitle(row.start_time, row.end_time),
+                notes: notes || null,
+              });
+            } catch (e: any) {
+              console.error('[ShiftCalendar] create shift failed:', {
+                message: e?.message,
+                details: e,
+                payload: { ...shiftInsertData, shift_date: weekDate, start_time: row.start_time, end_time: row.end_time },
+              });
+              errorsCount++;
+              continue;
+            }
 
           createdCount++;
 
