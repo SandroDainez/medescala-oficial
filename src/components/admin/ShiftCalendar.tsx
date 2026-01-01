@@ -490,15 +490,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         toast({ title: 'Erro ao atualizar', description: error.message, variant: 'destructive' });
       } else {
         // Handle assignment update when editing
-        const currentAssignment = assignments.find(a => a.shift_id === editingShift.id);
-        
-        if (formData.assigned_user_id && 
-            formData.assigned_user_id !== 'vago' && 
-            formData.assigned_user_id !== 'disponivel') {
-          // User selected a plantonista
-          if (currentAssignment) {
-            // If the assignee changed, don't UPDATE user_id (can violate the unique constraint).
-            // Instead: UPSERT the target (shift_id,user_id) and delete the old row to keep a single assignee.
+        try {
+          const currentAssignment = assignments.find(a => a.shift_id === editingShift.id);
+
+          if (
+            formData.assigned_user_id &&
+            formData.assigned_user_id !== 'vago' &&
+            formData.assigned_user_id !== 'disponivel'
+          ) {
             const assignedValue = resolveValue({
               raw: formData.base_value,
               sector_id: formData.sector_id || null,
@@ -506,17 +505,35 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               useSectorDefault: formData.use_sector_default,
             });
 
-            if (currentAssignment.user_id === formData.assigned_user_id) {
-              await supabase
-                .from('shift_assignments')
-                .update({
-                  assigned_value: assignedValue,
-                  updated_by: user?.id,
-                })
-                .eq('id', currentAssignment.id);
+            if (currentAssignment) {
+              if (currentAssignment.user_id === formData.assigned_user_id) {
+                const { error: updErr } = await supabase
+                  .from('shift_assignments')
+                  .update({ assigned_value: assignedValue, updated_by: user?.id })
+                  .eq('id', currentAssignment.id);
+                if (updErr) throw updErr;
+              } else {
+                const { error: upErr } = await supabase.from('shift_assignments').upsert(
+                  {
+                    tenant_id: currentTenantId,
+                    shift_id: editingShift.id,
+                    user_id: formData.assigned_user_id,
+                    assigned_value: assignedValue,
+                    created_by: user?.id,
+                    updated_by: user?.id,
+                  },
+                  { onConflict: 'shift_id,user_id' }
+                );
+                if (upErr) throw upErr;
+
+                const { error: delErr } = await supabase
+                  .from('shift_assignments')
+                  .delete()
+                  .eq('id', currentAssignment.id);
+                if (delErr) throw delErr;
+              }
             } else {
-              // Create/update the new assignee row
-              await supabase.from('shift_assignments').upsert(
+              const { error: upErr } = await supabase.from('shift_assignments').upsert(
                 {
                   tenant_id: currentTenantId,
                   shift_id: editingShift.id,
@@ -527,36 +544,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 },
                 { onConflict: 'shift_id,user_id' }
               );
-
-              // Remove the previous assignee row (single-assignee behavior)
-              await supabase.from('shift_assignments').delete().eq('id', currentAssignment.id);
+              if (upErr) throw upErr;
             }
           } else {
-            // Create new assignment
-            const assignedValue = resolveValue({
-              raw: formData.base_value,
-              sector_id: formData.sector_id || null,
-              start_time: formData.start_time,
-              useSectorDefault: formData.use_sector_default,
-            });
-            
-            await supabase.from('shift_assignments').upsert({
-              tenant_id: currentTenantId,
-              shift_id: editingShift.id,
-              user_id: formData.assigned_user_id,
-              assigned_value: assignedValue,
-              created_by: user?.id,
-              updated_by: user?.id,
-            }, { onConflict: 'shift_id,user_id' });
+            if (currentAssignment) {
+              const { error: delErr } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('id', currentAssignment.id);
+              if (delErr) throw delErr;
+            }
           }
-        } else {
-          // User selected 'vago' or 'disponivel' - remove assignment if exists
-          if (currentAssignment) {
-            await supabase
-              .from('shift_assignments')
-              .delete()
-              .eq('id', currentAssignment.id);
-          }
+        } catch (assignmentError: any) {
+          console.error('[ShiftCalendar] assignment update failed:', assignmentError);
+          toast({
+            title: 'Erro ao salvar plantão',
+            description: assignmentError?.message || 'Falha ao atualizar o plantonista.',
+            variant: 'destructive',
+          });
+          return;
         }
         
         // Duplicate for additional weeks if specified when editing
@@ -1433,29 +1439,30 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         } else {
           await Promise.all(
             shiftIds.map(async (shiftId) => {
-              const existing = assignments.find((a) => a.shift_id === shiftId);
-              if (existing) {
-                const updatePayload: any = {
-                  user_id: bulkApplyData.assigned_user_id,
-                  updated_by: user.id,
-                };
-                if (valueToApply !== undefined) updatePayload.assigned_value = valueToApply; // can be null to clear
+              // To avoid unique constraint issues (shift_id,user_id), treat bulk-apply assignee as a replace:
+              // 1) remove existing assignees for the shift
+              // 2) upsert the chosen assignee
+              const valueToApplyFinal = valueToApply; // can be undefined (keep) or number
 
-                const { error } = await supabase.from('shift_assignments').update(updatePayload).eq('id', existing.id);
-                if (error) throw error;
-              } else {
-                const upsertPayload: any = {
-                  tenant_id: currentTenantId,
-                  shift_id: shiftId,
-                  user_id: bulkApplyData.assigned_user_id,
-                  assigned_value: valueToApply ?? null,
-                  created_by: user.id,
-                  updated_by: user.id,
-                };
+              const { error: delErr } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('shift_id', shiftId);
+              if (delErr) throw delErr;
 
-                const { error } = await supabase.from('shift_assignments').upsert(upsertPayload, { onConflict: 'shift_id,user_id' });
-                if (error) throw error;
-              }
+              const upsertPayload: any = {
+                tenant_id: currentTenantId,
+                shift_id: shiftId,
+                user_id: bulkApplyData.assigned_user_id,
+                assigned_value: valueToApplyFinal ?? null,
+                created_by: user.id,
+                updated_by: user.id,
+              };
+
+              const { error: upErr } = await supabase
+                .from('shift_assignments')
+                .upsert(upsertPayload, { onConflict: 'shift_id,user_id' });
+              if (upErr) throw upErr;
             })
           );
         }
