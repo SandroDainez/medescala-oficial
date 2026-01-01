@@ -1072,6 +1072,17 @@ export type Database = {
           trial_ends_at: string
         }[]
       }
+      get_shift_assignments_range: {
+        Args: { _end: string; _start: string; _tenant_id: string }
+        Returns: {
+          assigned_value: number
+          id: string
+          name: string
+          shift_id: string
+          status: string
+          user_id: string
+        }[]
+      }
       get_shift_assignments_without_gps: {
         Args: { _tenant_id: string }
         Returns: {
@@ -1087,6 +1098,17 @@ export type Database = {
           tenant_id: string
           updated_at: string
           updated_by: string
+          user_id: string
+        }[]
+      }
+      get_shift_offers_pending_range: {
+        Args: { _end: string; _start: string; _tenant_id: string }
+        Returns: {
+          id: string
+          message: string
+          name: string
+          shift_id: string
+          status: string
           user_id: string
         }[]
       }
