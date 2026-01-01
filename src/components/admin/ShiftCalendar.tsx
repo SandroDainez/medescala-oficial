@@ -1513,74 +1513,117 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
 
         // Handle assignment changes
-        const currentAssignment = assignments.find(a => a.shift_id === editData.id);
-        
-        if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
-          // Assign to user
-          if (currentAssignment) {
-            // Update existing assignment (always update value, even if user is the same)
-            await supabase
-              .from('shift_assignments')
-              .update({
-                user_id: editData.assigned_user_id,
-                assigned_value: parseMoneyNullable(editData.base_value),
-                updated_by: user.id,
-              })
-              .eq('id', currentAssignment.id);
+        try {
+          const currentAssignment = assignments.find(a => a.shift_id === editData.id);
+
+          if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
+            const assignedValue = parseMoneyNullable(editData.base_value);
+
+            if (currentAssignment) {
+              if (currentAssignment.user_id === editData.assigned_user_id) {
+                const { error: updErr } = await supabase
+                  .from('shift_assignments')
+                  .update({ assigned_value: assignedValue, updated_by: user.id })
+                  .eq('id', currentAssignment.id);
+                if (updErr) throw updErr;
+              } else {
+                // Replace assignee safely (avoid updating user_id into a unique pair)
+                const { error: upErr } = await supabase
+                  .from('shift_assignments')
+                  .upsert(
+                    {
+                      tenant_id: currentTenantId,
+                      shift_id: editData.id,
+                      user_id: editData.assigned_user_id,
+                      assigned_value: assignedValue,
+                      created_by: user.id,
+                      updated_by: user.id,
+                    },
+                    { onConflict: 'shift_id,user_id' }
+                  );
+                if (upErr) throw upErr;
+
+                const { error: delErr } = await supabase
+                  .from('shift_assignments')
+                  .delete()
+                  .eq('id', currentAssignment.id);
+                if (delErr) throw delErr;
+              }
+            } else {
+              const { error: upErr } = await supabase
+                .from('shift_assignments')
+                .upsert(
+                  {
+                    tenant_id: currentTenantId,
+                    shift_id: editData.id,
+                    user_id: editData.assigned_user_id,
+                    assigned_value: assignedValue,
+                    created_by: user.id,
+                    updated_by: user.id,
+                  },
+                  { onConflict: 'shift_id,user_id' }
+                );
+              if (upErr) throw upErr;
+            }
+
+            // Remove [DISPONÍVEL] if present
+            if (originalShift.notes?.includes('[DISPONÍVEL]')) {
+              const { error: noteErr } = await supabase
+                .from('shifts')
+                .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
+                .eq('id', editData.id);
+              if (noteErr) throw noteErr;
+            }
+          } else if (editData.assigned_user_id === 'disponivel') {
+            // Make available - remove assignment if exists
+            if (currentAssignment) {
+              const { error: delErr } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('id', currentAssignment.id);
+              if (delErr) throw delErr;
+            }
+
+            // Add [DISPONÍVEL] tag
+            const newNotes = editData.notes?.includes('[DISPONÍVEL]')
+              ? editData.notes
+              : `[DISPONÍVEL] ${editData.notes || ''}`.trim();
+
+            const { error: noteErr } = await supabase
+              .from('shifts')
+              .update({ notes: newNotes })
+              .eq('id', editData.id);
+            if (noteErr) throw noteErr;
           } else {
-            // Create new assignment
-            await supabase
-              .from('shift_assignments')
-              .insert({
-                shift_id: editData.id,
-                user_id: editData.assigned_user_id,
-                assigned_value: parseMoneyNullable(editData.base_value),
-                tenant_id: currentTenantId,
-                created_by: user.id,
-              });
+            // Vago - remove assignment if exists
+            if (currentAssignment) {
+              const { error: delErr } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('id', currentAssignment.id);
+              if (delErr) throw delErr;
+            }
+
+            // Remove [DISPONÍVEL] if present
+            if (originalShift.notes?.includes('[DISPONÍVEL]')) {
+              const { error: noteErr } = await supabase
+                .from('shifts')
+                .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
+                .eq('id', editData.id);
+              if (noteErr) throw noteErr;
+            }
           }
-          // Remove [DISPONÍVEL] if present
-          if (originalShift.notes?.includes('[DISPONÍVEL]')) {
-            await supabase
-              .from('shifts')
-              .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
-              .eq('id', editData.id);
-          }
-        } else if (editData.assigned_user_id === 'disponivel') {
-          // Make available - remove assignment if exists
-          if (currentAssignment) {
-            await supabase
-              .from('shift_assignments')
-              .delete()
-              .eq('id', currentAssignment.id);
-          }
-          // Add [DISPONÍVEL] tag
-          const newNotes = editData.notes?.includes('[DISPONÍVEL]') 
-            ? editData.notes 
-            : `[DISPONÍVEL] ${editData.notes || ''}`.trim();
-          await supabase
-            .from('shifts')
-            .update({ notes: newNotes })
-            .eq('id', editData.id);
-        } else {
-          // Vago - remove assignment if exists
-          if (currentAssignment) {
-            await supabase
-              .from('shift_assignments')
-              .delete()
-              .eq('id', currentAssignment.id);
-          }
-          // Remove [DISPONÍVEL] if present
-          if (originalShift.notes?.includes('[DISPONÍVEL]')) {
-            await supabase
-              .from('shifts')
-              .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
-              .eq('id', editData.id);
-          }
+        } catch (assignmentError: any) {
+          console.error('[ShiftCalendar] bulk edit assignment failed:', assignmentError);
+          toast({
+            title: 'Erro ao salvar plantão',
+            description: assignmentError?.message || 'Falha ao atualizar o plantonista.',
+            variant: 'destructive',
+          });
         }
       }
 
-      toast({ title: 'Plantões atualizados!', description: `${bulkEditData.length} plantão(ões) foram salvos.` });
+      toast({ title: 'Plantões atualizados!', description: 'Alterações aplicadas. Se algum plantão não salvar, você verá uma mensagem de erro.' });
       closeBulkEditDialog();
       // After saving "Editar Todos", also close the day dialog to avoid the impression
       // that the edit flow reopened automatically.
