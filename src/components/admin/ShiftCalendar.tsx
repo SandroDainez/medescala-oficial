@@ -481,39 +481,60 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     };
 
     if (editingShift) {
-      const { error } = await supabase
+      // IMPORTANT: PostgREST may return success even when 0 rows are affected (e.g. blocked by RLS).
+      // So we always request the updated row back and verify that something actually changed.
+      const { data: updatedShift, error } = await supabase
         .from('shifts')
         .update(shiftData)
-        .eq('id', editingShift.id);
+        .eq('id', editingShift.id)
+        .select('id')
+        .maybeSingle();
 
       if (error) {
         toast({ title: 'Erro ao atualizar', description: error.message, variant: 'destructive' });
-      } else {
-        // Handle assignment update when editing
-        try {
-          const currentAssignment = assignments.find(a => a.shift_id === editingShift.id);
+        return;
+      }
 
-          if (
-            formData.assigned_user_id &&
-            formData.assigned_user_id !== 'vago' &&
-            formData.assigned_user_id !== 'disponivel'
-          ) {
-            const assignedValue = resolveValue({
-              raw: formData.base_value,
-              sector_id: formData.sector_id || null,
-              start_time: formData.start_time,
-              useSectorDefault: formData.use_sector_default,
-            });
+      if (!updatedShift) {
+        toast({
+          title: 'Não foi possível salvar',
+          description: 'Atualização bloqueada (permissão/tenant).',
+          variant: 'destructive',
+        });
+        return;
+      }
 
-            if (currentAssignment) {
-              if (currentAssignment.user_id === formData.assigned_user_id) {
-                const { error: updErr } = await supabase
-                  .from('shift_assignments')
-                  .update({ assigned_value: assignedValue, updated_by: user?.id })
-                  .eq('id', currentAssignment.id);
-                if (updErr) throw updErr;
-              } else {
-                const { error: upErr } = await supabase.from('shift_assignments').upsert(
+      // Handle assignment update when editing
+      try {
+        const currentAssignment = assignments.find(a => a.shift_id === editingShift.id);
+
+        const isRealUser =
+          formData.assigned_user_id &&
+          formData.assigned_user_id !== 'vago' &&
+          formData.assigned_user_id !== 'disponivel';
+
+        const assignedValue = resolveValue({
+          raw: formData.base_value,
+          sector_id: formData.sector_id || null,
+          start_time: formData.start_time,
+          useSectorDefault: formData.use_sector_default,
+        });
+
+        if (isRealUser) {
+          if (currentAssignment) {
+            if (currentAssignment.user_id === formData.assigned_user_id) {
+              const { data: updData, error: updErr } = await supabase
+                .from('shift_assignments')
+                .update({ assigned_value: assignedValue, updated_by: user?.id })
+                .eq('id', currentAssignment.id)
+                .select('id')
+                .maybeSingle();
+              if (updErr) throw updErr;
+              if (!updData) throw new Error('Atualização do plantonista bloqueada (permissão/tenant).');
+            } else {
+              const { data: upData, error: upErr } = await supabase
+                .from('shift_assignments')
+                .upsert(
                   {
                     tenant_id: currentTenantId,
                     shift_id: editingShift.id,
@@ -523,17 +544,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     updated_by: user?.id,
                   },
                   { onConflict: 'shift_id,user_id' }
-                );
-                if (upErr) throw upErr;
-
-                const { error: delErr } = await supabase
-                  .from('shift_assignments')
-                  .delete()
-                  .eq('id', currentAssignment.id);
-                if (delErr) throw delErr;
+                )
+                .select('id');
+              if (upErr) throw upErr;
+              if (!upData || upData.length === 0) {
+                throw new Error('Não foi possível salvar o plantonista (permissão/tenant).');
               }
-            } else {
-              const { error: upErr } = await supabase.from('shift_assignments').upsert(
+
+              const { data: delData, error: delErr } = await supabase
+                .from('shift_assignments')
+                .delete()
+                .eq('id', currentAssignment.id)
+                .select('id');
+              if (delErr) throw delErr;
+              if (!delData || delData.length === 0) {
+                throw new Error('Não foi possível remover o plantonista anterior (permissão/tenant).');
+              }
+            }
+          } else {
+            const { data: upData, error: upErr } = await supabase
+              .from('shift_assignments')
+              .upsert(
                 {
                   tenant_id: currentTenantId,
                   shift_id: editingShift.id,
@@ -543,184 +574,197 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   updated_by: user?.id,
                 },
                 { onConflict: 'shift_id,user_id' }
-              );
-              if (upErr) throw upErr;
-            }
-          } else {
-            if (currentAssignment) {
-              const { error: delErr } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('id', currentAssignment.id);
-              if (delErr) throw delErr;
+              )
+              .select('id');
+            if (upErr) throw upErr;
+            if (!upData || upData.length === 0) {
+              throw new Error('Não foi possível salvar o plantonista (permissão/tenant).');
             }
           }
-        } catch (assignmentError: any) {
-          console.error('[ShiftCalendar] assignment update failed:', assignmentError);
-          toast({
-            title: 'Erro ao salvar plantão',
-            description: assignmentError?.message || 'Falha ao atualizar o plantonista.',
-            variant: 'destructive',
-          });
-          return;
-        }
-        
-        // Duplicate for additional weeks if specified when editing
-        const repeatWeeks = formData.repeat_weeks || 0;
-        if (repeatWeeks > 0) {
-          const baseDate = parseISO(formData.shift_date);
-          
-          for (let week = 1; week <= repeatWeeks; week++) {
-            const newDate = addWeeks(baseDate, week);
-            const duplicatedShiftData = {
-              ...shiftData,
-              shift_date: format(newDate, 'yyyy-MM-dd'),
-            };
-
-            const { data: duplicatedShift, error: dupError } = await supabase
-              .from('shifts')
-              .insert(duplicatedShiftData)
-              .select()
-              .single();
-
-            if (dupError) {
-              console.error(`Error duplicating shift for week ${week}:`, dupError);
-              continue;
-            }
-
-            // Create assignment for duplicated shift if a plantonista was selected
-            if (formData.assigned_user_id && 
-                formData.assigned_user_id !== 'vago' && 
-                formData.assigned_user_id !== 'disponivel' && 
-                duplicatedShift) {
-              const assignedValue = resolveValue({
-                raw: formData.base_value,
-                sector_id: formData.sector_id || null,
-                start_time: formData.start_time,
-                useSectorDefault: formData.use_sector_default,
-              });
-              
-          await supabase.from('shift_assignments').upsert({
-            tenant_id: currentTenantId,
-            shift_id: duplicatedShift.id,
-            user_id: formData.assigned_user_id,
-            assigned_value: assignedValue,
-            created_by: user?.id,
-            updated_by: user?.id,
-          }, { onConflict: 'shift_id,user_id' });
-            }
-          }
-          
-          toast({ title: `Plantão atualizado e ${repeatWeeks} cópias criadas!` });
         } else {
-        toast({ title: 'Plantão atualizado!' });
+          // vago / disponível: garantir que não exista assignment
+          if (currentAssignment) {
+            const { data: delData, error: delErr } = await supabase
+              .from('shift_assignments')
+              .delete()
+              .eq('id', currentAssignment.id)
+              .select('id');
+            if (delErr) throw delErr;
+            if (!delData || delData.length === 0) {
+              throw new Error('Não foi possível remover o plantonista (permissão/tenant).');
+            }
+          }
         }
-        
-        fetchData();
-        closeShiftDialog();
-        setDayDialogOpen(false);
-      }
-    } else {
-      const quantity = Math.max(1, Math.min(20, Number(formData.quantity) || 1));
-
-      async function createOneShift(
-        shiftDate: string, 
-        userIdForShift: string | null,
-        startTime: string,
-        endTime: string
-      ) {
-        // Determine notes based on assignment type
-        let shiftNotesForThis = formData.notes || '';
-        if (!userIdForShift || userIdForShift === 'vago') {
-          shiftNotesForThis = `[VAGO] ${shiftNotesForThis}`.trim();
-        } else if (userIdForShift === 'disponivel') {
-          shiftNotesForThis = `[DISPONÍVEL] ${shiftNotesForThis}`.trim();
-        }
-
-        // Generate title based on this shift's time
-        const autoTitle = generateShiftTitle(startTime, endTime);
-
-        const { data: createdShift, error } = await supabase
-          .from('shifts')
-          .insert({
-            ...shiftData,
-            title: autoTitle,
-            shift_date: shiftDate,
-            start_time: startTime,
-            end_time: endTime,
-            notes: shiftNotesForThis || null,
-          })
-          .select()
-          .single();
-
-        if (error || !createdShift) return { ok: false as const };
-
-        // Create assignment if a real user was selected
-        if (userIdForShift && userIdForShift !== 'vago' && userIdForShift !== 'disponivel') {
-          const assignedValue = resolveValue({
-            raw: formData.base_value,
-            sector_id: formData.sector_id || null,
-            start_time: startTime,
-            useSectorDefault: formData.use_sector_default,
-          });
-          
-          await supabase.from('shift_assignments').upsert({
-            tenant_id: currentTenantId,
-            shift_id: createdShift.id,
-            user_id: userIdForShift,
-            assigned_value: assignedValue,
-            created_by: user?.id,
-            updated_by: user?.id,
-          }, { onConflict: 'shift_id,user_id' });
-        }
-
-        return { ok: true as const };
+      } catch (assignmentError: any) {
+        console.error('[ShiftCalendar] assignment update failed:', assignmentError);
+        toast({
+          title: 'Erro ao salvar plantão',
+          description: assignmentError?.message || 'Falha ao atualizar o plantonista.',
+          variant: 'destructive',
+        });
+        return;
       }
 
+      // Duplicate for additional weeks if specified when editing
       const repeatWeeks = formData.repeat_weeks || 0;
-      const baseDate = parseISO(formData.shift_date);
-
-      let successCount = 0;
-      let errorCount = 0;
-
-      // Create N shifts for the selected day with individual assignments and times
-      for (let i = 0; i < quantity; i++) {
-        // Use individual data if available, otherwise use the default
-        const shiftInfo = quantity > 1 && multiShifts[i] ? multiShifts[i] : null;
-        const userIdForShift = shiftInfo?.user_id || formData.assigned_user_id || null;
-        const startTime = shiftInfo?.start_time || formData.start_time;
-        const endTime = shiftInfo?.end_time || formData.end_time;
-        
-        const res = await createOneShift(formData.shift_date, userIdForShift, startTime, endTime);
-        if (res.ok) successCount++; else errorCount++;
-      }
-
-      // Repeat N shifts in subsequent weeks (if any)
       if (repeatWeeks > 0) {
+        const baseDate = parseISO(formData.shift_date);
+
         for (let week = 1; week <= repeatWeeks; week++) {
           const newDate = addWeeks(baseDate, week);
-          const dateStr = format(newDate, 'yyyy-MM-dd');
-          for (let i = 0; i < quantity; i++) {
-            const shiftInfo = quantity > 1 && multiShifts[i] ? multiShifts[i] : null;
-            const userIdForShift = shiftInfo?.user_id || formData.assigned_user_id || null;
-            const startTime = shiftInfo?.start_time || formData.start_time;
-            const endTime = shiftInfo?.end_time || formData.end_time;
-            
-            const res = await createOneShift(dateStr, userIdForShift, startTime, endTime);
-            if (res.ok) successCount++; else errorCount++;
+          const duplicatedShiftData = {
+            ...shiftData,
+            shift_date: format(newDate, 'yyyy-MM-dd'),
+          };
+
+          const { data: duplicatedShift, error: dupError } = await supabase
+            .from('shifts')
+            .insert(duplicatedShiftData)
+            .select()
+            .single();
+
+          if (dupError) {
+            console.error(`Error duplicating shift for week ${week}:`, dupError);
+            continue;
+          }
+
+          // Create assignment for duplicated shift if a plantonista was selected
+          if (
+            formData.assigned_user_id &&
+            formData.assigned_user_id !== 'vago' &&
+            formData.assigned_user_id !== 'disponivel' &&
+            duplicatedShift
+          ) {
+            const assignedValue = resolveValue({
+              raw: formData.base_value,
+              sector_id: formData.sector_id || null,
+              start_time: formData.start_time,
+              useSectorDefault: formData.use_sector_default,
+            });
+
+            await supabase
+              .from('shift_assignments')
+              .upsert(
+                {
+                  tenant_id: currentTenantId,
+                  shift_id: duplicatedShift.id,
+                  user_id: formData.assigned_user_id,
+                  assigned_value: assignedValue,
+                  created_by: user?.id,
+                  updated_by: user?.id,
+                },
+                { onConflict: 'shift_id,user_id' }
+              );
+          }
+        }
+
+        toast({ title: `Plantão atualizado e ${repeatWeeks} cópias criadas!` });
+      } else {
+        toast({ title: 'Plantão atualizado!' });
+      }
+
+      await fetchData();
+      closeShiftDialog();
+      setDayDialogOpen(false);
+      return;
+    } else {
+      // CREATE
+      const quantity = Math.max(1, Math.min(20, Number(formData.quantity) || 1));
+      const repeatWeeks = formData.repeat_weeks || 0;
+
+      const isRealUser =
+        formData.assigned_user_id &&
+        formData.assigned_user_id !== 'vago' &&
+        formData.assigned_user_id !== 'disponivel';
+
+      const assignedValue = resolveValue({
+        raw: formData.base_value,
+        sector_id: formData.sector_id || null,
+        start_time: formData.start_time,
+        useSectorDefault: formData.use_sector_default,
+      });
+
+      let createdCount = 0;
+      let errorsCount = 0;
+
+      const baseDate = parseISO(formData.shift_date);
+
+      // If multiShifts is filled, use it (one entry per shift) otherwise replicate form values
+      const rows = (multiShifts.length > 0 ? multiShifts : Array.from({ length: quantity }).map(() => ({
+        user_id: formData.assigned_user_id,
+        start_time: formData.start_time,
+        end_time: formData.end_time,
+      })))
+        .slice(0, quantity);
+
+      for (let week = 0; week <= repeatWeeks; week++) {
+        const weekDate = format(addWeeks(baseDate, week), 'yyyy-MM-dd');
+
+        for (const row of rows) {
+          const rowAssigned = row.user_id;
+
+          // Notes markers
+          let notes = (formData.notes || '').trim();
+          if (!rowAssigned || rowAssigned === 'vago') notes = `[VAGO] ${notes}`.trim();
+          if (rowAssigned === 'disponivel') notes = `[DISPONÍVEL] ${notes}`.trim();
+
+          const { data: createdShift, error: createErr } = await supabase
+            .from('shifts')
+            .insert({
+              ...shiftData,
+              shift_date: weekDate,
+              start_time: row.start_time,
+              end_time: row.end_time,
+              title: generateShiftTitle(row.start_time, row.end_time),
+              notes: notes || null,
+            })
+            .select('id')
+            .single();
+
+          if (createErr || !createdShift) {
+            errorsCount++;
+            continue;
+          }
+
+          createdCount++;
+
+          // Create assignment if a real user was selected
+          if (isRealUser && rowAssigned && rowAssigned !== 'vago' && rowAssigned !== 'disponivel') {
+            const { error: assignErr } = await supabase
+              .from('shift_assignments')
+              .upsert(
+                {
+                  tenant_id: currentTenantId,
+                  shift_id: createdShift.id,
+                  user_id: rowAssigned,
+                  assigned_value: assignedValue,
+                  created_by: user?.id,
+                  updated_by: user?.id,
+                },
+                { onConflict: 'shift_id,user_id' }
+              );
+
+            if (assignErr) {
+              errorsCount++;
+            }
           }
         }
       }
 
-      if (errorCount > 0) {
-        toast({ title: `${successCount} criados, ${errorCount} erros`, variant: 'destructive' });
+      if (errorsCount > 0) {
+        toast({
+          title: `Criados: ${createdCount} • Erros: ${errorsCount}`,
+          description: 'Alguns plantões não puderam ser salvos. Veja o console para detalhes.',
+          variant: 'destructive',
+        });
       } else {
-        toast({ title: `${successCount} plantões criados!` });
+        toast({ title: `${createdCount} plantão(ões) criado(s)!` });
       }
 
-      fetchData();
+      await fetchData();
       closeShiftDialog();
       setDayDialogOpen(false);
+      return;
     }
   }
 
