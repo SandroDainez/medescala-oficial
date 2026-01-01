@@ -102,34 +102,23 @@ export default function AdminFinancial() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    // FONTE REAL DA ESCALA: shifts + shift_assignments (+ sectors + profiles)
-    const { data: shifts, error: shiftsError } = await supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, sector_id, base_value')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', startDate)
-      .lte('shift_date', endDate)
-      .order('shift_date', { ascending: true })
-      .order('start_time', { ascending: true });
-
-    if (shiftsError) {
-      console.error('[AdminFinancial] Fetch shifts error:', shiftsError);
-      setRawEntries([]);
-      setLoading(false);
-      return;
-    }
-
-    const shiftIds = (shifts ?? []).map((s) => s.id);
-
-    const [{ data: assignments, error: assignmentsError }, { data: sectors, error: sectorsError }] =
-      await Promise.all([
-        shiftIds.length
-          ? supabase
-              .from('shift_assignments')
-              .select('id, shift_id, user_id, assigned_value, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-              .eq('tenant_id', currentTenantId)
-              .in('shift_id', shiftIds)
-          : Promise.resolve({ data: [], error: null } as any),
+    try {
+      // Fetch shifts, assignments via RPC, and sectors in parallel
+      const [shiftsRes, assignmentsRes, sectorsRes] = await Promise.all([
+        supabase
+          .from('shifts')
+          .select('id, shift_date, start_time, end_time, sector_id, base_value')
+          .eq('tenant_id', currentTenantId)
+          .gte('shift_date', startDate)
+          .lte('shift_date', endDate)
+          .order('shift_date', { ascending: true })
+          .order('start_time', { ascending: true }),
+        // Use RPC to avoid URL length limit with .in(...ids...)
+        supabase.rpc('get_shift_assignments_range', {
+          _tenant_id: currentTenantId,
+          _start: startDate,
+          _end: endDate,
+        }),
         supabase
           .from('sectors')
           .select('id, name')
@@ -137,34 +126,57 @@ export default function AdminFinancial() {
           .eq('active', true),
       ]);
 
-    if (assignmentsError) {
-      console.error('[AdminFinancial] Fetch assignments error:', assignmentsError);
+      if (shiftsRes.error) {
+        console.error('[AdminFinancial] Fetch shifts error:', shiftsRes.error);
+        setRawEntries([]);
+        setLoading(false);
+        return;
+      }
+
+      if (assignmentsRes.error) {
+        console.error('[AdminFinancial] Fetch assignments error:', assignmentsRes.error);
+        setRawEntries([]);
+        setLoading(false);
+        return;
+      }
+
+      if (sectorsRes.error) {
+        console.error('[AdminFinancial] Fetch sectors error:', sectorsRes.error);
+        // proceed without sector names
+      }
+
+      const shifts = shiftsRes.data ?? [];
+      const assignmentsRaw = (assignmentsRes.data ?? []) as Array<{
+        id: string;
+        shift_id: string;
+        user_id: string;
+        assigned_value: number | null;
+        status: string;
+        name: string | null;
+      }>;
+      const sectors = sectorsRes.data ?? [];
+
+      const mapped = mapScheduleToFinancialEntries({
+        shifts: shifts as unknown as ScheduleShift[],
+        assignments: assignmentsRaw.map(
+          (a): ScheduleAssignment => ({
+            id: a.id,
+            shift_id: a.shift_id,
+            user_id: a.user_id,
+            assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+            profile_name: a.name ?? null,
+          })
+        ),
+        sectors: sectors as unknown as SectorLookup[],
+      });
+
+      setRawEntries(mapped);
+    } catch (err) {
+      console.error('[AdminFinancial] Unexpected error:', err);
       setRawEntries([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    if (sectorsError) {
-      console.error('[AdminFinancial] Fetch sectors error:', sectorsError);
-      // still proceed without sector names
-    }
-
-    const mapped = mapScheduleToFinancialEntries({
-      shifts: (shifts ?? []) as unknown as ScheduleShift[],
-      assignments: ((assignments ?? []) as any[]).map(
-        (a): ScheduleAssignment => ({
-          id: a.id,
-          shift_id: a.shift_id,
-          user_id: a.user_id,
-          assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
-          profile_name: a.profile?.name ?? null,
-        })
-      ),
-      sectors: (sectors ?? []) as unknown as SectorLookup[],
-    });
-
-    setRawEntries(mapped);
-    setLoading(false);
   }
 
   // Filtered entries
