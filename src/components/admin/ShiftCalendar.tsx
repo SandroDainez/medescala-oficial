@@ -205,13 +205,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       end = endOfWeek(currentDate, { weekStartsOn: 0 });
     }
 
+    const startStr = format(start, 'yyyy-MM-dd');
+    const endStr = format(end, 'yyyy-MM-dd');
+
     const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*')
         .eq('tenant_id', currentTenantId)
-        .gte('shift_date', format(start, 'yyyy-MM-dd'))
-        .lte('shift_date', format(end, 'yyyy-MM-dd'))
+        .gte('shift_date', startStr)
+        .lte('shift_date', endStr)
         .order('shift_date', { ascending: true })
         .order('start_time', { ascending: true }),
       supabase
@@ -241,30 +244,46 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     if (shiftsRes.data) {
       setShifts(shiftsRes.data);
-      
-      // Fetch assignments and offers for these shifts
-      if (shiftsRes.data.length > 0) {
-        const shiftIds = shiftsRes.data.map(s => s.id);
-        const [assignmentsData, offersData] = await Promise.all([
-          supabase
-            .from('shift_assignments')
-            .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-            .in('shift_id', shiftIds),
-          supabase
-            .from('shift_offers')
-            .select('id, shift_id, user_id, status, message, profile:profiles!shift_offers_user_id_fkey(name)')
-            .in('shift_id', shiftIds)
-            .eq('status', 'pending')
-        ]);
-        
-        if (assignmentsData.data) {
-          setAssignments(assignmentsData.data as unknown as ShiftAssignment[]);
-        }
-        if (offersData.data) {
-          setShiftOffers(offersData.data as unknown as ShiftOffer[]);
-        }
+
+      // Fetch assignments/offers by date range (avoids huge URL `in.(...ids...)` -> 400)
+      const [assignmentsRes, offersRes] = await Promise.all([
+        supabase.rpc('get_shift_assignments_range', {
+          _tenant_id: currentTenantId,
+          _start: startStr,
+          _end: endStr,
+        }),
+        supabase.rpc('get_shift_offers_pending_range', {
+          _tenant_id: currentTenantId,
+          _start: startStr,
+          _end: endStr,
+        }),
+      ]);
+
+      if (assignmentsRes.data) {
+        const mapped = (assignmentsRes.data as any[]).map((row) => ({
+          id: row.id,
+          shift_id: row.shift_id,
+          user_id: row.user_id,
+          assigned_value: row.assigned_value,
+          status: row.status,
+          profile: { name: row.name ?? null },
+        }));
+        setAssignments(mapped as unknown as ShiftAssignment[]);
       } else {
         setAssignments([]);
+      }
+
+      if (offersRes.data) {
+        const mapped = (offersRes.data as any[]).map((row) => ({
+          id: row.id,
+          shift_id: row.shift_id,
+          user_id: row.user_id,
+          status: row.status,
+          message: row.message,
+          profile: { name: row.name ?? null },
+        }));
+        setShiftOffers(mapped as unknown as ShiftOffer[]);
+      } else {
         setShiftOffers([]);
       }
     }
