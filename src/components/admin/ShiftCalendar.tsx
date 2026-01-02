@@ -187,13 +187,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }, [initialSectorId]);
 
   useEffect(() => {
-    if (currentTenantId) {
+    // IMPORTANT: wait for authenticated user before calling RPCs that depend on auth.uid().
+    // If we fetch too early, the backend returns empty rows and names "disappear" until a manual refresh.
+    if (currentTenantId && user?.id) {
       fetchData();
     }
-  }, [currentTenantId, currentDate, viewMode]);
+  }, [currentTenantId, user?.id, currentDate, viewMode]);
 
   async function fetchData() {
-    if (!currentTenantId) return;
+    if (!currentTenantId || !user?.id) return;
     setLoading(true);
 
     let start: Date, end: Date;
@@ -208,44 +210,47 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
 
-    const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
-      supabase
-        .from('shifts')
-        .select('*')
-        .eq('tenant_id', currentTenantId)
-        .gte('shift_date', startStr)
-        .lte('shift_date', endStr)
-        .order('shift_date', { ascending: true })
-        .order('start_time', { ascending: true }),
-      supabase
-        .from('memberships')
-        .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
-        .eq('tenant_id', currentTenantId)
-        .eq('active', true),
-      supabase
-        .from('sectors')
-        .select('*')
-        .eq('tenant_id', currentTenantId)
-        .eq('active', true)
-        .order('name'),
-      supabase
-        .from('sector_memberships')
-        .select('id, sector_id, user_id')
-        .eq('tenant_id', currentTenantId),
-    ]);
+    try {
+      const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
+        supabase
+          .from('shifts')
+          .select('*')
+          .eq('tenant_id', currentTenantId)
+          .gte('shift_date', startStr)
+          .lte('shift_date', endStr)
+          .order('shift_date', { ascending: true })
+          .order('start_time', { ascending: true }),
+        supabase
+          .from('memberships')
+          .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
+          .eq('tenant_id', currentTenantId)
+          .eq('active', true),
+        supabase
+          .from('sectors')
+          .select('*')
+          .eq('tenant_id', currentTenantId)
+          .eq('active', true)
+          .order('name'),
+        supabase
+          .from('sector_memberships')
+          .select('id, sector_id, user_id')
+          .eq('tenant_id', currentTenantId),
+      ]);
 
-    if (sectorsRes.data) {
-      setSectors(sectorsRes.data as Sector[]);
-    }
+      if (sectorsRes.error) throw sectorsRes.error;
+      if (sectorMembershipsRes.error) throw sectorMembershipsRes.error;
+      if (membersRes.error) throw membersRes.error;
+      if (shiftsRes.error) throw shiftsRes.error;
 
-    if (sectorMembershipsRes.data) {
-      setSectorMemberships(sectorMembershipsRes.data);
-    }
+      setSectors((sectorsRes.data ?? []) as Sector[]);
+      setSectorMemberships(sectorMembershipsRes.data ?? []);
+      setMembers((membersRes.data ?? []) as unknown as Member[]);
 
-    if (shiftsRes.data) {
-      setShifts(shiftsRes.data);
+      const nextShifts = (shiftsRes.data ?? []) as Shift[];
+      setShifts(nextShifts);
 
       // Fetch assignments/offers by date range (avoids huge URL `in.(...ids...)` -> 400)
+      // If RPC fails transiently, DO NOT wipe existing names; keep last good state and notify.
       const [assignmentsRes, offersRes] = await Promise.all([
         supabase.rpc('get_shift_assignments_range', {
           _tenant_id: currentTenantId,
@@ -259,8 +264,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }),
       ]);
 
-      if (assignmentsRes.data) {
-        const mapped = (assignmentsRes.data as any[]).map((row) => ({
+      if (assignmentsRes.error) {
+        console.error('[ShiftCalendar] get_shift_assignments_range error', assignmentsRes.error);
+        toast({
+          title: 'Erro ao carregar nomes',
+          description: 'Não foi possível carregar os plantonistas agora. Tentaremos novamente automaticamente.',
+          variant: 'destructive',
+        });
+        // Retry once after a short delay
+        setTimeout(() => {
+          if (currentTenantId && user?.id) fetchData();
+        }, 1200);
+      } else {
+        const mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => ({
           id: row.id,
           shift_id: row.shift_id,
           user_id: row.user_id,
@@ -269,12 +285,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           profile: { name: row.name ?? null },
         }));
         setAssignments(mapped as unknown as ShiftAssignment[]);
-      } else {
-        setAssignments([]);
       }
 
-      if (offersRes.data) {
-        const mapped = (offersRes.data as any[]).map((row) => ({
+      if (offersRes.error) {
+        console.error('[ShiftCalendar] get_shift_offers_pending_range error', offersRes.error);
+        // Offers are secondary; keep previous state silently.
+      } else {
+        const mapped = ((offersRes.data ?? []) as any[]).map((row) => ({
           id: row.id,
           shift_id: row.shift_id,
           user_id: row.user_id,
@@ -283,16 +300,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           profile: { name: row.name ?? null },
         }));
         setShiftOffers(mapped as unknown as ShiftOffer[]);
-      } else {
-        setShiftOffers([]);
       }
+    } catch (error: any) {
+      console.error('[ShiftCalendar] fetchData error', error);
+      toast({
+        title: 'Erro ao carregar calendário',
+        description: error?.message || 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
-
-    if (membersRes.data) {
-      setMembers(membersRes.data as unknown as Member[]);
-    }
-
-    setLoading(false);
   }
 
   // Get members that belong to a specific sector
