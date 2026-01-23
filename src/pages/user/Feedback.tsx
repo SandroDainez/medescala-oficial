@@ -171,8 +171,8 @@ export default function UserFeedback() {
           <p>
             Se você está enfrentando algum problema técnico ou precisa de suporte, 
             entre em contato conosco pelo email{' '}
-            <a href="mailto:suporte@medescala.com.br" className="text-primary hover:underline">
-              suporte@medescala.com.br
+            <a href="mailto:sandrodainez1@gmail.com" className="text-primary hover:underline">
+              sandrodainez1@gmail.com
             </a>
           </p>
         </CardContent>
