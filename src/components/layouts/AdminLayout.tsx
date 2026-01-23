@@ -2,9 +2,11 @@ import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useSuperAdmin } from '@/hooks/useSuperAdmin';
+import { useAdminPendingCounts } from '@/hooks/useAdminPendingCounts';
 import { TenantSelector } from '@/components/TenantSelector';
 import { TrialBanner } from '@/components/TrialBanner';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { 
   LayoutDashboard, 
@@ -52,6 +54,7 @@ export function AdminLayout() {
   const { user, signOut } = useAuth();
   const { currentTenantId, currentTenantName } = useTenant();
   const { isSuperAdmin } = useSuperAdmin();
+  const { counts: pendingCounts } = useAdminPendingCounts();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -224,23 +227,37 @@ export function AdminLayout() {
             </Collapsible>
 
             {/* Other nav items */}
-            {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) =>
-                  cn(
-                    'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
-                    isActive
-                      ? 'bg-primary text-primary-foreground shadow-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                  )
-                }
-              >
-                <item.icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-                <span>{item.label}</span>
-              </NavLink>
-            ))}
+            {navItems.map((item) => {
+              const showBadge = 
+                (item.to === '/admin/offers' && pendingCounts.offers > 0) ||
+                (item.to === '/admin/swaps' && pendingCounts.swaps > 0);
+              const badgeCount = 
+                item.to === '/admin/offers' ? pendingCounts.offers : 
+                item.to === '/admin/swaps' ? pendingCounts.swaps : 0;
+
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  className={({ isActive }) =>
+                    cn(
+                      'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                      isActive
+                        ? 'bg-primary text-primary-foreground shadow-primary'
+                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    )
+                  }
+                >
+                  <item.icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
+                  <span className="flex-1">{item.label}</span>
+                  {showBadge && (
+                    <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
+                      {badgeCount > 9 ? '9+' : badgeCount}
+                    </Badge>
+                  )}
+                </NavLink>
+              );
+            })}
             
             {/* Super Admin Link */}
             {isSuperAdmin && (
@@ -352,25 +369,39 @@ export function AdminLayout() {
               </Collapsible>
 
               {/* Other nav items - Mobile */}
-              {navItems.map((item, index) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={({ isActive }) =>
-                    cn(
-                      'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
-                      isActive
-                        ? 'bg-primary text-primary-foreground shadow-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
-                    )
-                  }
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.label}
-                </NavLink>
-              ))}
+              {navItems.map((item, index) => {
+                const showBadge = 
+                  (item.to === '/admin/offers' && pendingCounts.offers > 0) ||
+                  (item.to === '/admin/swaps' && pendingCounts.swaps > 0);
+                const badgeCount = 
+                  item.to === '/admin/offers' ? pendingCounts.offers : 
+                  item.to === '/admin/swaps' ? pendingCounts.swaps : 0;
+
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
+                        isActive
+                          ? 'bg-primary text-primary-foreground shadow-primary'
+                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      )
+                    }
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <item.icon className="h-5 w-5" />
+                    <span className="flex-1">{item.label}</span>
+                    {showBadge && (
+                      <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
+                        {badgeCount > 9 ? '9+' : badgeCount}
+                      </Badge>
+                    )}
+                  </NavLink>
+                );
+              })}
               
               {/* Super Admin Link - Mobile */}
               {isSuperAdmin && (
