@@ -417,7 +417,11 @@ export default function UserFinancial() {
                         <Badge variant="outline">{shift.duration_hours.toFixed(1)}h</Badge>
                       </TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
-                        R$ {shift.assigned_value.toFixed(2)}
+                        {shift.final_value === null ? (
+                          <span className="text-muted-foreground font-medium">Sem valor</span>
+                        ) : (
+                          <>R$ {shift.final_value.toFixed(2)}</>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
