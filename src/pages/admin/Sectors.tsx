@@ -12,8 +12,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog } from 'lucide-react';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
+import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 
 interface Sector {
   id: string;
@@ -52,9 +53,11 @@ export default function AdminSectors() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
   const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
+  const [userValuesDialogOpen, setUserValuesDialogOpen] = useState(false);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
   const [selectedSectorForValues, setSelectedSectorForValues] = useState<Sector | null>(null);
+  const [selectedSectorForUserValues, setSelectedSectorForUserValues] = useState<Sector | null>(null);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
   const [formData, setFormData] = useState({
@@ -273,6 +276,11 @@ export default function AdminSectors() {
     setValuesDialogOpen(true);
   }
 
+  function openUserValuesDialog(sector: Sector) {
+    setSelectedSectorForUserValues(sector);
+    setUserValuesDialogOpen(true);
+  }
+
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '-';
     return `R$ ${value.toFixed(2).replace('.', ',')}`;
@@ -444,6 +452,15 @@ export default function AdminSectors() {
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => openUserValuesDialog(sector)}
+                          title="Valores individuais por plantonista"
+                        >
+                          <UserCog className="mr-1 h-4 w-4" />
+                          Individual
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => navigate(`/admin/calendar?sector=${sector.id}`)}
                         >
                           <Calendar className="mr-1 h-4 w-4" />
@@ -567,6 +584,16 @@ export default function AdminSectors() {
         open={valuesDialogOpen}
         onOpenChange={setValuesDialogOpen}
         sector={selectedSectorForValues}
+        tenantId={currentTenantId || ''}
+        userId={user?.id}
+        onSuccess={fetchData}
+      />
+
+      {/* Individual User Sector Values Dialog */}
+      <UserSectorValuesDialog
+        open={userValuesDialogOpen}
+        onOpenChange={setUserValuesDialogOpen}
+        sector={selectedSectorForUserValues}
         tenantId={currentTenantId || ''}
         userId={user?.id}
         onSuccess={fetchData}

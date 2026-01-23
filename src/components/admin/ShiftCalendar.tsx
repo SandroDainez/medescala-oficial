@@ -87,6 +87,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
+  const [userSectorValues, setUserSectorValues] = useState<Map<string, { day_value: number | null; night_value: number | null }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -246,6 +247,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setSectorMemberships(sectorMembershipsRes.data ?? []);
       setMembers((membersRes.data ?? []) as unknown as Member[]);
 
+      // Fetch user sector values for individual pricing
+      const { data: userValuesData } = await supabase
+        .from('user_sector_values')
+        .select('*')
+        .eq('tenant_id', currentTenantId);
+      
+      const valuesMap = new Map<string, { day_value: number | null; night_value: number | null }>();
+      (userValuesData ?? []).forEach((uv: any) => {
+        const key = `${uv.sector_id}:${uv.user_id}`;
+        valuesMap.set(key, { day_value: uv.day_value, night_value: uv.night_value });
+      });
+      setUserSectorValues(valuesMap);
+
       const nextShifts = (shiftsRes.data ?? []) as Shift[];
       setShifts(nextShifts);
 
@@ -338,6 +352,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return isNight ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
   }
 
+  // Get individual plantonista value for a sector (if set)
+  function getUserSectorValue(sectorId: string | null, userId: string | null, startTime: string): number | null {
+    if (!sectorId || !userId) return null;
+    const key = `${sectorId}:${userId}`;
+    const userValue = userSectorValues.get(key);
+    if (!userValue) return null;
+    
+    const isNight = isNightShift(startTime, '');
+    return isNight ? (userValue.night_value ?? null) : (userValue.day_value ?? null);
+  }
+
+  // Calculate duration in hours between start and end time
+  function calculateDurationHours(startTime: string, endTime: string): number {
+    if (!startTime || !endTime) return 12; // Default to 12h
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    
+    let hours = endH - startH;
+    let minutes = endM - startM;
+    if (hours < 0 || (hours === 0 && minutes < 0)) {
+      hours += 24;
+    }
+    return hours + minutes / 60;
+  }
+
+  // Calculate pro-rata value based on shift duration
+  // Standard shift is 12 hours, so a 6-hour shift pays half
+  function calculateProRataValue(baseValue: number | null, durationHours: number): number | null {
+    if (baseValue === null || baseValue === 0) return baseValue;
+    const STANDARD_HOURS = 12;
+    if (durationHours === STANDARD_HOURS) return baseValue;
+    return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
+  }
+
   // Generate automatic title based on time
   function generateShiftTitle(startTime: string, endTime: string): string {
     const isNight = isNightShift(startTime, endTime);
@@ -407,19 +455,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   // Resolve value using the same rules everywhere:
-  // - If user typed a value (including 0) => use it
-  // - Else if useSectorDefault => sector default (can be null or 0)
-  // - Else => null (blank)
+  // 1. If user typed a value (including 0) => use it directly (no pro-rata)
+  // 2. If individual plantonista value exists => use it (with pro-rata if applicable)
+  // 3. If useSectorDefault => sector default (with pro-rata if applicable)
+  // 4. Else => null (blank)
   function resolveValue(params: {
     raw: unknown;
     sector_id: string | null;
     start_time: string;
+    end_time?: string;
+    user_id?: string | null;
     useSectorDefault: boolean;
+    applyProRata?: boolean; // If true, calculate value based on duration
   }): number | null {
     const rawStr = (params.raw ?? '').toString().trim();
+    
+    // If user typed a value explicitly, use it as-is
     if (rawStr) return parseMoneyNullable(rawStr);
+    
     if (!params.useSectorDefault) return null;
-    return getSectorDefaultValue(params.sector_id, params.start_time);
+    
+    const endTime = params.end_time || (isNightShift(params.start_time, '') ? '07:00' : '19:00');
+    const duration = calculateDurationHours(params.start_time, endTime);
+    const shouldApplyProRata = params.applyProRata !== false && duration !== 12;
+    
+    // Check for individual plantonista value first
+    if (params.user_id && params.user_id !== 'vago' && params.user_id !== 'disponivel') {
+      const userValue = getUserSectorValue(params.sector_id, params.user_id, params.start_time);
+      if (userValue !== null) {
+        return shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
+      }
+    }
+    
+    // Fall back to sector default
+    const sectorValue = getSectorDefaultValue(params.sector_id, params.start_time);
+    return shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
   }
 
   // --- Reliable writes helpers (professional-grade) ---
@@ -562,7 +632,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         raw: formData.base_value,
         sector_id: formData.sector_id || null,
         start_time: formData.start_time,
+        end_time: formData.end_time,
         useSectorDefault: formData.use_sector_default,
+        applyProRata: true,
       }),
       notes: shiftNotes || null,
       sector_id: formData.sector_id || null,
@@ -623,7 +695,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           raw: formData.base_value,
           sector_id: formData.sector_id || null,
           start_time: formData.start_time,
+          end_time: formData.end_time,
+          user_id: formData.assigned_user_id,
           useSectorDefault: formData.use_sector_default,
+          applyProRata: true,
         });
 
         if (isRealUser) {
@@ -742,7 +817,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               raw: formData.base_value,
               sector_id: formData.sector_id || null,
               start_time: formData.start_time,
+              end_time: formData.end_time,
+              user_id: formData.assigned_user_id,
               useSectorDefault: formData.use_sector_default,
+              applyProRata: true,
             });
 
             await supabase
@@ -837,12 +915,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           // Create assignment if a real user was selected for THIS row
           if (isRealUserId(rowAssigned)) {
-            // Calculate assigned_value per row (using row's start_time)
+            // Calculate assigned_value per row (using row's start_time, end_time, and user_id for individual pricing)
             const rowAssignedValue = resolveValue({
               raw: formData.base_value,
               sector_id: formData.sector_id || null,
               start_time: row.start_time,
+              end_time: row.end_time,
+              user_id: rowAssigned,
               useSectorDefault: formData.use_sector_default,
+              applyProRata: true,
             });
 
             const { error: assignErr } = await supabase
@@ -1003,7 +1084,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           raw: formData.base_value,
           sector_id: formData.sector_id || null,
           start_time: formData.start_time,
+          end_time: formData.end_time,
           useSectorDefault: formData.use_sector_default,
+          applyProRata: true,
         }),
         notes: shiftNotes || null,
         sector_id: formData.sector_id || null,
@@ -1032,7 +1115,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           raw: formData.base_value,
           sector_id: formData.sector_id || null,
           start_time: formData.start_time,
+          end_time: formData.end_time,
+          user_id: formData.assigned_user_id,
           useSectorDefault: formData.use_sector_default,
+          applyProRata: true,
         });
 
         await supabase.from('shift_assignments').upsert({
