@@ -22,7 +22,13 @@ import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator } from 'lucide-react';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import SectorProfitability from '@/components/admin/SectorProfitability';
@@ -248,7 +254,8 @@ export default function AdminFinancial() {
   }
 
   // Export CSV
-  function exportCSV() {
+  // Export CSV - Dia a Dia (detailed)
+  function exportCSVDiario() {
     const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
     const rows = filteredEntries
       .slice()
@@ -279,13 +286,43 @@ export default function AdminFinancial() {
       ? sectors.find(s => s.id === filterSetor)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
       : 'todos';
     
-    a.download = `financeiro-${startDate}-a-${endDate}-${plantonistaName}-${setorName}.csv`;
+    a.download = `financeiro-diario-${startDate}-a-${endDate}-${plantonistaName}-${setorName}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  // Print - uses same data as CSV for consistency
-  function handlePrint() {
+  // Export CSV - Totais por Plantonista (summary view)
+  function exportCSVPlantonistas() {
+    const headers = ['Plantonista', 'Plantões', 'Horas', 'Sem Valor', 'Total'];
+    const rows = plantonistaReports
+      .slice()
+      .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name))
+      .map(p => [
+        p.assignee_name,
+        p.total_shifts.toString(),
+        p.total_hours.toFixed(1),
+        p.unpriced_shifts.toString(),
+        p.total_to_receive > 0 ? p.total_to_receive.toFixed(2) : '0.00',
+      ]);
+    rows.push(['TOTAL', grandTotals.totalShifts.toString(), grandTotals.totalHours.toFixed(1), grandTotals.unpricedShifts.toString(), grandTotals.totalValue.toFixed(2)]);
+
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    
+    const setorName = filterSetor !== 'all'
+      ? sectors.find(s => s.id === filterSetor)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
+      : 'todos';
+    
+    a.download = `financeiro-plantonistas-${startDate}-a-${endDate}-${setorName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Print Dia a Dia - detailed view
+  function handlePrintDiario() {
     const plantonistaName = filterPlantonista !== 'all' 
       ? plantonistas.find(p => p.id === filterPlantonista)?.name ?? 'Filtrado'
       : 'Todos os plantonistas';
@@ -316,7 +353,7 @@ export default function AdminFinancial() {
       <html>
       <head>
         <meta charset="UTF-8">
-        <title>Relatório Financeiro - ${startDate} a ${endDate}</title>
+        <title>Relatório Financeiro - Dia a Dia - ${startDate} a ${endDate}</title>
         <style>
           * { box-sizing: border-box; margin: 0; padding: 0; }
           body { 
@@ -422,7 +459,7 @@ export default function AdminFinancial() {
       </head>
       <body>
         <div class="header">
-          <h1>Relatório Financeiro</h1>
+          <h1>Relatório Financeiro — Dia a Dia</h1>
           <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
         </div>
 
@@ -492,6 +529,208 @@ export default function AdminFinancial() {
     }
   }
 
+  // Print Plantonistas - summary view matching the table on screen
+  function handlePrintPlantonistas() {
+    const setorName = filterSetor !== 'all'
+      ? sectors.find(s => s.id === filterSetor)?.name ?? 'Filtrado'
+      : 'Todos os setores';
+
+    const sortedReports = plantonistaReports
+      .slice()
+      .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
+
+    const tableRows = sortedReports.map(p => `
+      <tr>
+        <td>${p.assignee_name}</td>
+        <td class="center">${p.total_shifts}</td>
+        <td class="center">${p.total_hours.toFixed(1)}h</td>
+        <td class="center">${p.unpriced_shifts > 0 ? `<span class="no-value">${p.unpriced_shifts}</span>` : '0'}</td>
+        <td class="right">${p.total_to_receive > 0 ? formatCurrency(p.total_to_receive) : '<span class="no-value">—</span>'}</td>
+      </tr>
+    `).join('');
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Relatório Financeiro - Plantonistas - ${startDate} a ${endDate}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            padding: 20px; 
+            color: #333;
+            background: #fff;
+            font-size: 12px;
+          }
+          .header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #22c55e;
+          }
+          h1 { 
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+          }
+          .subtitle {
+            font-size: 14px;
+            color: #666;
+          }
+          .filters {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 11px;
+          }
+          .filters span {
+            margin-right: 20px;
+          }
+          .stats { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+          }
+          .stat-card { 
+            padding: 12px 18px; 
+            background: #f5f5f5; 
+            border-radius: 8px; 
+            text-align: center;
+            flex: 1;
+          }
+          .stat-number { font-size: 18px; font-weight: bold; color: #1a1a1a; }
+          .stat-label { font-size: 10px; color: #666; text-transform: uppercase; margin-top: 2px; }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+          }
+          th {
+            background: #f8f9fa;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            border-bottom: 2px solid #e5e7eb;
+            text-transform: uppercase;
+            color: #555;
+          }
+          td {
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          tr:nth-child(even) {
+            background: #fafafa;
+          }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .total-row {
+            font-weight: bold;
+            background: #f0fdf4 !important;
+          }
+          .total-row td {
+            border-top: 2px solid #22c55e;
+            padding-top: 12px;
+          }
+          .total-value {
+            font-size: 16px;
+            color: #16a34a;
+          }
+          .no-value {
+            color: #f59e0b;
+            font-size: 10px;
+          }
+          .footer { 
+            margin-top: 20px; 
+            padding-top: 10px; 
+            border-top: 1px solid #ddd; 
+            font-size: 10px; 
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+          }
+          @media print {
+            body { padding: 10px; }
+            .stat-card { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Relatório Financeiro — Plantonistas</h1>
+          <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
+        </div>
+
+        <div class="filters">
+          <span><strong>Setor:</strong> ${setorName}</span>
+        </div>
+
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalPlantonistas}</div>
+            <div class="stat-label">Plantonistas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalShifts}</div>
+            <div class="stat-label">Plantões</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalHours.toFixed(1)}h</div>
+            <div class="stat-label">Horas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.unpricedShifts}</div>
+            <div class="stat-label">Sem Valor</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" style="color: #16a34a;">${formatCurrency(grandTotals.totalValue)}</div>
+            <div class="stat-label">Total</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Plantonista</th>
+              <th class="center">Plantões</th>
+              <th class="center">Horas</th>
+              <th class="center">Sem Valor</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+            <tr class="total-row">
+              <td class="right"><strong>TOTAL GERAL</strong></td>
+              <td class="center"><strong>${grandTotals.totalShifts}</strong></td>
+              <td class="center"><strong>${grandTotals.totalHours.toFixed(1)}h</strong></td>
+              <td class="center"><strong>${grandTotals.unpricedShifts}</strong></td>
+              <td class="right total-value">${formatCurrency(grandTotals.totalValue)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <span>Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")}</span>
+          <span>${plantonistaReports.length} plantonistas</span>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  }
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -522,14 +761,44 @@ export default function AdminFinancial() {
               Auditoria
             </Label>
           </div>
-          <Button variant="outline" size="sm" onClick={exportCSV}>
-            <Download className="h-4 w-4 mr-2" />
-            Exportar CSV
-          </Button>
-          <Button variant="outline" size="sm" onClick={handlePrint}>
-            <Printer className="h-4 w-4 mr-2" />
-            Imprimir
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Exportar CSV
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportCSVPlantonistas}>
+                <Users className="h-4 w-4 mr-2" />
+                Totais por Plantonista
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportCSVDiario}>
+                <Table2 className="h-4 w-4 mr-2" />
+                Dia a Dia (Detalhado)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Printer className="h-4 w-4 mr-2" />
+                Imprimir
+                <ChevronDown className="h-4 w-4 ml-1" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handlePrintPlantonistas}>
+                <Users className="h-4 w-4 mr-2" />
+                Totais por Plantonista
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handlePrintDiario}>
+                <Table2 className="h-4 w-4 mr-2" />
+                Dia a Dia (Detalhado)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
