@@ -14,7 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2 } from 'lucide-react';
+import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -59,6 +59,54 @@ interface CheckinRecord {
   checkout_longitude: number | null;
 }
 
+interface ShiftReport {
+  id: string;
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  sector_name: string;
+  title: string;
+  hospital: string;
+  assignee_count: number;
+  assignees: string[];
+  base_value: number | null;
+}
+
+interface MovementRecord {
+  id: string;
+  movement_type: string;
+  user_name: string;
+  source_sector_name: string | null;
+  source_shift_date: string | null;
+  source_shift_time: string | null;
+  destination_sector_name: string | null;
+  destination_shift_date: string | null;
+  destination_shift_time: string | null;
+  performed_at: string;
+  reason: string | null;
+}
+
+interface ConflictRecord {
+  id: string;
+  conflict_date: string;
+  plantonista_name: string;
+  resolution_type: string;
+  removed_sector_name: string | null;
+  removed_shift_time: string | null;
+  kept_sector_name: string | null;
+  kept_shift_time: string | null;
+  justification: string | null;
+  resolved_at: string;
+}
+
+interface FinancialSummaryRecord {
+  user_id: string;
+  user_name: string;
+  total_shifts: number;
+  total_hours: number;
+  total_value: number;
+}
+
 const absenceTypeLabels: Record<string, string> = {
   falta: 'Falta',
   atestado: 'Atestado Médico',
@@ -71,6 +119,14 @@ const absenceStatusLabels: Record<string, string> = {
   pending: 'Pendente',
   approved: 'Aprovado',
   rejected: 'Rejeitado',
+};
+
+const movementTypeLabels: Record<string, string> = {
+  added: 'Adicionado',
+  removed: 'Removido',
+  swap: 'Troca',
+  transferred: 'Transferência',
+  conflict_resolution: 'Resolução de Conflito',
 };
 
 export default function AdminReports() {
@@ -86,9 +142,10 @@ export default function AdminReports() {
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [checkins, setCheckins] = useState<CheckinRecord[]>([]);
-  const [shifts, setShifts] = useState<any[]>([]);
-  const [financialData, setFinancialData] = useState<any[]>([]);
-  const [movements, setMovements] = useState<any[]>([]);
+  const [shifts, setShifts] = useState<ShiftReport[]>([]);
+  const [financialData, setFinancialData] = useState<FinancialSummaryRecord[]>([]);
+  const [movements, setMovements] = useState<MovementRecord[]>([]);
+  const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
   const [loading, setLoading] = useState(false);
   
   // Dialog states
@@ -160,9 +217,239 @@ export default function AdminReports() {
       await fetchAbsences();
     } else if (reportType === 'checkins') {
       await fetchCheckins();
+    } else if (reportType === 'plantoes') {
+      await fetchShiftsReport();
+    } else if (reportType === 'financeiro') {
+      await fetchFinancialReport();
+    } else if (reportType === 'movimentacoes') {
+      await fetchMovements();
+    } else if (reportType === 'conflitos') {
+      await fetchConflicts();
     }
     
     setLoading(false);
+  }
+
+  async function fetchShiftsReport() {
+    let query = supabase
+      .from('shifts')
+      .select('id, shift_date, start_time, end_time, sector_id, title, hospital, base_value')
+      .eq('tenant_id', currentTenantId)
+      .gte('shift_date', startDate)
+      .lte('shift_date', endDate)
+      .order('shift_date', { ascending: false });
+    
+    if (selectedSector !== 'all') {
+      query = query.eq('sector_id', selectedSector);
+    }
+    
+    const { data: shiftsData, error: shiftsError } = await query;
+    
+    if (shiftsError || !shiftsData) {
+      console.error('Error fetching shifts:', shiftsError);
+      setShifts([]);
+      return;
+    }
+    
+    const shiftIds = shiftsData.map(s => s.id);
+    if (shiftIds.length === 0) {
+      setShifts([]);
+      return;
+    }
+    
+    const { data: assignments } = await supabase
+      .from('shift_assignments')
+      .select('shift_id, user_id')
+      .in('shift_id', shiftIds);
+    
+    const userIds = [...new Set(assignments?.map(a => a.user_id) || [])];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', userIds.length > 0 ? userIds : ['no-users']);
+    
+    const profileMap = new Map(profiles?.map(p => [p.id, p.name || 'Sem nome']) || []);
+    const sectorMap = new Map(sectors.map(s => [s.id, s.name]));
+    
+    const assignmentsByShift = new Map<string, string[]>();
+    assignments?.forEach(a => {
+      if (!assignmentsByShift.has(a.shift_id)) {
+        assignmentsByShift.set(a.shift_id, []);
+      }
+      assignmentsByShift.get(a.shift_id)!.push(profileMap.get(a.user_id) || 'Sem nome');
+    });
+    
+    const shiftReports: ShiftReport[] = shiftsData.map(s => ({
+      id: s.id,
+      shift_date: s.shift_date,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      sector_name: s.sector_id ? sectorMap.get(s.sector_id) || 'Sem setor' : 'Sem setor',
+      title: s.title,
+      hospital: s.hospital,
+      base_value: s.base_value,
+      assignee_count: assignmentsByShift.get(s.id)?.length || 0,
+      assignees: assignmentsByShift.get(s.id) || [],
+    }));
+    
+    setShifts(shiftReports);
+  }
+
+  async function fetchFinancialReport() {
+    let query = supabase
+      .from('shifts')
+      .select('id, shift_date, start_time, end_time, sector_id, base_value')
+      .eq('tenant_id', currentTenantId)
+      .gte('shift_date', startDate)
+      .lte('shift_date', endDate);
+    
+    if (selectedSector !== 'all') {
+      query = query.eq('sector_id', selectedSector);
+    }
+    
+    const { data: shiftsData } = await query;
+    
+    if (!shiftsData || shiftsData.length === 0) {
+      setFinancialData([]);
+      return;
+    }
+    
+    const shiftIds = shiftsData.map(s => s.id);
+    
+    const { data: assignments } = await supabase
+      .from('shift_assignments')
+      .select('shift_id, user_id, assigned_value')
+      .in('shift_id', shiftIds);
+    
+    if (!assignments) {
+      setFinancialData([]);
+      return;
+    }
+    
+    const userIds = [...new Set(assignments.map(a => a.user_id))];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, name')
+      .in('id', userIds);
+    
+    const profileMap = new Map(profiles?.map(p => [p.id, p.name || 'Sem nome']) || []);
+    const shiftMap = new Map(shiftsData.map(s => [s.id, s]));
+    
+    const userSummary = new Map<string, FinancialSummaryRecord>();
+    
+    for (const a of assignments) {
+      const shift = shiftMap.get(a.shift_id);
+      if (!shift) continue;
+      
+      if (!userSummary.has(a.user_id)) {
+        userSummary.set(a.user_id, {
+          user_id: a.user_id,
+          user_name: profileMap.get(a.user_id) || 'Sem nome',
+          total_shifts: 0,
+          total_hours: 0,
+          total_value: 0,
+        });
+      }
+      
+      const summary = userSummary.get(a.user_id)!;
+      summary.total_shifts++;
+      
+      const [startH, startM] = shift.start_time.split(':').map(Number);
+      const [endH, endM] = shift.end_time.split(':').map(Number);
+      let hours = endH - startH;
+      if (hours < 0) hours += 24;
+      summary.total_hours += hours + (endM - startM) / 60;
+      
+      const value = a.assigned_value ?? shift.base_value ?? 0;
+      if (typeof value === 'number' && value > 0) {
+        summary.total_value += value;
+      }
+    }
+    
+    const financialRecords = Array.from(userSummary.values())
+      .sort((a, b) => b.total_value - a.total_value);
+    
+    setFinancialData(financialRecords);
+  }
+
+  async function fetchMovements() {
+    const { data, error } = await supabase
+      .from('schedule_movements')
+      .select('*')
+      .eq('tenant_id', currentTenantId)
+      .order('performed_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching movements:', error);
+      setMovements([]);
+      return;
+    }
+
+    // Filter by date range client-side for proper handling
+    const filteredByDate = data?.filter(m => {
+      const sourceInRange = m.source_shift_date && 
+        m.source_shift_date >= startDate && 
+        m.source_shift_date <= endDate;
+      const destInRange = m.destination_shift_date && 
+        m.destination_shift_date >= startDate && 
+        m.destination_shift_date <= endDate;
+      const performedInRange = m.performed_at.substring(0, 10) >= startDate && 
+        m.performed_at.substring(0, 10) <= endDate;
+      
+      return sourceInRange || destInRange || performedInRange;
+    }) || [];
+    
+    // Filter by sector if selected
+    const filtered = selectedSector === 'all' 
+      ? filteredByDate 
+      : filteredByDate.filter(m => m.source_sector_id === selectedSector || m.destination_sector_id === selectedSector);
+    
+    const movementRecords: MovementRecord[] = filtered.map(m => ({
+      id: m.id,
+      movement_type: m.movement_type,
+      user_name: m.user_name,
+      source_sector_name: m.source_sector_name,
+      source_shift_date: m.source_shift_date,
+      source_shift_time: m.source_shift_time,
+      destination_sector_name: m.destination_sector_name,
+      destination_shift_date: m.destination_shift_date,
+      destination_shift_time: m.destination_shift_time,
+      performed_at: m.performed_at,
+      reason: m.reason,
+    }));
+    
+    setMovements(movementRecords);
+  }
+
+  async function fetchConflicts() {
+    const { data, error } = await supabase
+      .from('conflict_resolutions')
+      .select('*')
+      .eq('tenant_id', currentTenantId)
+      .gte('conflict_date', startDate)
+      .lte('conflict_date', endDate)
+      .order('resolved_at', { ascending: false });
+    
+    if (error) {
+      console.error('Error fetching conflicts:', error);
+      setConflicts([]);
+      return;
+    }
+    
+    const conflictRecords: ConflictRecord[] = (data || []).map(c => ({
+      id: c.id,
+      conflict_date: c.conflict_date,
+      plantonista_name: c.plantonista_name,
+      resolution_type: c.resolution_type,
+      removed_sector_name: c.removed_sector_name,
+      removed_shift_time: c.removed_shift_time,
+      kept_sector_name: c.kept_sector_name,
+      kept_shift_time: c.kept_shift_time,
+      justification: c.justification,
+      resolved_at: c.resolved_at,
+    }));
+    
+    setConflicts(conflictRecords);
   }
 
   async function fetchAbsences() {
@@ -527,27 +814,28 @@ export default function AdminReports() {
                   <SelectItem value="plantoes">Plantões por Período</SelectItem>
                   <SelectItem value="financeiro">Resumo Financeiro</SelectItem>
                   <SelectItem value="movimentacoes">Movimentações de Escala</SelectItem>
+                  <SelectItem value="conflitos">Histórico de Conflitos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             
-            {reportType === 'checkins' && (
+            {['checkins', 'plantoes', 'financeiro', 'movimentacoes'].includes(reportType) && (
               <div className="space-y-2">
-                <Label>Setor (com check-in ativo)</Label>
+                <Label>Setor</Label>
                 <Select value={selectedSector} onValueChange={setSelectedSector}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todos com check-in ativo</SelectItem>
-                    {sectors.filter(s => s.checkin_enabled).map(s => (
+                    <SelectItem value="all">Todos os setores</SelectItem>
+                    {(reportType === 'checkins' ? sectors.filter(s => s.checkin_enabled) : sectors).map(s => (
                       <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                {sectors.filter(s => s.checkin_enabled).length === 0 && (
+                {reportType === 'checkins' && sectors.filter(s => s.checkin_enabled).length === 0 && (
                   <p className="text-xs text-destructive">
-                    Nenhum setor com check-in ativo. Ative na aba "Configurar Check-in".
+                    Nenhum setor com check-in ativo. Ative na aba "Configurar GPS".
                   </p>
                 )}
               </div>
@@ -591,6 +879,10 @@ export default function AdminReports() {
             <FileSpreadsheet className="mr-2 h-4 w-4" />
             Relatório
           </TabsTrigger>
+          <TabsTrigger value="conflicts">
+            <AlertTriangle className="mr-2 h-4 w-4" />
+            Conflitos
+          </TabsTrigger>
           <TabsTrigger value="pending">
             <Clock className="mr-2 h-4 w-4" />
             Pendentes
@@ -609,10 +901,20 @@ export default function AdminReports() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle>
-                {reportType === 'afastamentos' ? 'Relatório de Afastamentos' : 'Relatório de Check-ins'}
+                {reportType === 'afastamentos' && 'Relatório de Afastamentos'}
+                {reportType === 'checkins' && 'Relatório de Check-ins'}
+                {reportType === 'plantoes' && 'Plantões por Período'}
+                {reportType === 'financeiro' && 'Resumo Financeiro'}
+                {reportType === 'movimentacoes' && 'Movimentações de Escala'}
+                {reportType === 'conflitos' && 'Histórico de Conflitos'}
               </CardTitle>
               <Badge variant="secondary">
-                {reportType === 'afastamentos' ? absences.length : checkins.length} registros
+                {reportType === 'afastamentos' && `${absences.length} registros`}
+                {reportType === 'checkins' && `${checkins.length} registros`}
+                {reportType === 'plantoes' && `${shifts.length} plantões`}
+                {reportType === 'financeiro' && `${financialData.length} plantonistas`}
+                {reportType === 'movimentacoes' && `${movements.length} movimentos`}
+                {reportType === 'conflitos' && `${conflicts.length} resoluções`}
               </Badge>
             </CardHeader>
             <CardContent>
@@ -671,7 +973,7 @@ export default function AdminReports() {
                     </TableBody>
                   </Table>
                 </ScrollArea>
-              ) : (
+              ) : reportType === 'checkins' ? (
                 <ScrollArea className="h-[500px]">
                   <Table>
                     <TableHeader>
@@ -776,7 +1078,309 @@ export default function AdminReports() {
                     </TableBody>
                   </Table>
                 </ScrollArea>
-              )}
+              ) : reportType === 'plantoes' ? (
+                <ScrollArea className="h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Horário</TableHead>
+                        <TableHead>Setor</TableHead>
+                        <TableHead>Título</TableHead>
+                        <TableHead>Hospital</TableHead>
+                        <TableHead>Valor Base</TableHead>
+                        <TableHead>Plantonistas</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {shifts.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            Nenhum plantão encontrado no período
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        shifts.map(shift => (
+                          <TableRow key={shift.id}>
+                            <TableCell>{format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</TableCell>
+                            <TableCell>{shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}</TableCell>
+                            <TableCell>{shift.sector_name}</TableCell>
+                            <TableCell className="font-medium">{shift.title}</TableCell>
+                            <TableCell>{shift.hospital}</TableCell>
+                            <TableCell>
+                              {shift.base_value ? (
+                                <Badge variant="default">R$ {Number(shift.base_value).toFixed(2)}</Badge>
+                              ) : (
+                                <Badge variant="secondary">-</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="outline">{shift.assignee_count}</Badge>
+                                {shift.assignees.length > 0 && (
+                                  <span className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                    {shift.assignees.join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : reportType === 'financeiro' ? (
+                <ScrollArea className="h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead className="text-center">Plantões</TableHead>
+                        <TableHead className="text-center">Horas</TableHead>
+                        <TableHead className="text-right">Total a Receber</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {financialData.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                            Nenhum dado financeiro no período
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        <>
+                          {financialData.map(record => (
+                            <TableRow key={record.user_id}>
+                              <TableCell className="font-medium">{record.user_name}</TableCell>
+                              <TableCell className="text-center">{record.total_shifts}</TableCell>
+                              <TableCell className="text-center">{record.total_hours.toFixed(1)}h</TableCell>
+                              <TableCell className="text-right">
+                                <Badge variant="default" className="gap-1">
+                                  <DollarSign className="h-3 w-3" />
+                                  R$ {record.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          <TableRow className="bg-muted/50 font-bold">
+                            <TableCell>TOTAL</TableCell>
+                            <TableCell className="text-center">{financialData.reduce((sum, r) => sum + r.total_shifts, 0)}</TableCell>
+                            <TableCell className="text-center">{financialData.reduce((sum, r) => sum + r.total_hours, 0).toFixed(1)}h</TableCell>
+                            <TableCell className="text-right">
+                              R$ {financialData.reduce((sum, r) => sum + r.total_value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                            </TableCell>
+                          </TableRow>
+                        </>
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : reportType === 'movimentacoes' ? (
+                <ScrollArea className="h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data/Hora</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead>Origem</TableHead>
+                        <TableHead>Destino</TableHead>
+                        <TableHead>Motivo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {movements.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                            Nenhuma movimentação encontrada no período
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        movements.map(movement => (
+                          <TableRow key={movement.id}>
+                            <TableCell>{format(parseISO(movement.performed_at), 'dd/MM/yyyy HH:mm')}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="gap-1">
+                                <ArrowRightLeft className="h-3 w-3" />
+                                {movementTypeLabels[movement.movement_type] || movement.movement_type}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="font-medium">{movement.user_name}</TableCell>
+                            <TableCell>
+                              {movement.source_sector_name ? (
+                                <div className="text-sm">
+                                  <div>{movement.source_sector_name}</div>
+                                  {movement.source_shift_date && (
+                                    <div className="text-muted-foreground text-xs">
+                                      {format(parseISO(movement.source_shift_date), 'dd/MM')} {movement.source_shift_time || ''}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {movement.destination_sector_name ? (
+                                <div className="text-sm">
+                                  <div>{movement.destination_sector_name}</div>
+                                  {movement.destination_shift_date && (
+                                    <div className="text-muted-foreground text-xs">
+                                      {format(parseISO(movement.destination_shift_date), 'dd/MM')} {movement.destination_shift_time || ''}
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">{movement.reason || '-'}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : reportType === 'conflitos' ? (
+                <ScrollArea className="h-[500px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data Conflito</TableHead>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead>Resolução</TableHead>
+                        <TableHead>Removido de</TableHead>
+                        <TableHead>Mantido em</TableHead>
+                        <TableHead>Justificativa</TableHead>
+                        <TableHead>Resolvido em</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {conflicts.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            Nenhum conflito resolvido no período
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        conflicts.map(conflict => (
+                          <TableRow key={conflict.id}>
+                            <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
+                            <TableCell className="font-medium">{conflict.plantonista_name}</TableCell>
+                            <TableCell>
+                              <Badge variant={conflict.resolution_type === 'removed' ? 'destructive' : 'secondary'}>
+                                {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {conflict.removed_sector_name ? (
+                                <div className="text-sm">
+                                  <div>{conflict.removed_sector_name}</div>
+                                  {conflict.removed_shift_time && (
+                                    <div className="text-muted-foreground text-xs">{conflict.removed_shift_time}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {conflict.kept_sector_name ? (
+                                <div className="text-sm">
+                                  <div>{conflict.kept_sector_name}</div>
+                                  {conflict.kept_shift_time && (
+                                    <div className="text-muted-foreground text-xs">{conflict.kept_shift_time}</div>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">-</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
+                            <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : null}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="conflicts">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5" />
+                Histórico de Conflitos Resolvidos
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[500px]">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Data Conflito</TableHead>
+                      <TableHead>Plantonista</TableHead>
+                      <TableHead>Resolução</TableHead>
+                      <TableHead>Removido de</TableHead>
+                      <TableHead>Mantido em</TableHead>
+                      <TableHead>Justificativa</TableHead>
+                      <TableHead>Resolvido em</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {conflicts.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          Nenhum conflito resolvido no período. Selecione um período e clique em "Gerar" para ver conflitos.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      conflicts.map(conflict => (
+                        <TableRow key={conflict.id}>
+                          <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
+                          <TableCell className="font-medium">{conflict.plantonista_name}</TableCell>
+                          <TableCell>
+                            <Badge variant={conflict.resolution_type === 'removed' ? 'destructive' : 'secondary'}>
+                              {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {conflict.removed_sector_name ? (
+                              <div className="text-sm">
+                                <div>{conflict.removed_sector_name}</div>
+                                {conflict.removed_shift_time && (
+                                  <div className="text-muted-foreground text-xs">{conflict.removed_shift_time}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {conflict.kept_sector_name ? (
+                              <div className="text-sm">
+                                <div>{conflict.kept_sector_name}</div>
+                                {conflict.kept_shift_time && (
+                                  <div className="text-muted-foreground text-xs">{conflict.kept_shift_time}</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
+                          <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
             </CardContent>
           </Card>
         </TabsContent>

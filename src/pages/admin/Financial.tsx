@@ -73,6 +73,148 @@ export default function AdminFinancial() {
 
   // Modal de detalhamento (tabela por plantonista)
   const [selectedPlantonista, setSelectedPlantonista] = useState<PlantonistaReport | null>(null);
+
+  // Export plantonista detail to CSV
+  function exportPlantonistaCSV(p: PlantonistaReport) {
+    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Valor'];
+    const sortedEntries = (p.entries ?? [])
+      .slice()
+      .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
+    
+    const rows = sortedEntries.map(e => {
+      const val = e.value_source === 'invalid' ? null : e.final_value;
+      return [
+        format(parseISO(e.shift_date), 'dd/MM/yyyy'),
+        `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
+        e.duration_hours.toFixed(1),
+        e.sector_name,
+        val !== null ? val.toFixed(2) : 'Sem valor',
+      ];
+    });
+    rows.push(['', '', '', 'TOTAL', p.total_to_receive.toFixed(2)]);
+
+    const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `plantoes-${p.assignee_name.replace(/\s+/g, '_')}-${startDate}-a-${endDate}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Print plantonista detail
+  function printPlantonistaDetail(p: PlantonistaReport) {
+    const sortedEntries = (p.entries ?? [])
+      .slice()
+      .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
+
+    const tableRows = sortedEntries.map(e => {
+      const val = e.value_source === 'invalid' ? null : e.final_value;
+      return `
+        <tr>
+          <td>${format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</td>
+          <td>${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}</td>
+          <td class="center">${e.duration_hours.toFixed(1)}h</td>
+          <td>${e.sector_name}</td>
+          <td class="right">${val !== null ? formatCurrency(val) : '<span class="no-value">Sem valor</span>'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Plantões - ${p.assignee_name}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            padding: 20px; 
+            color: #333;
+            font-size: 12px;
+          }
+          .header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #22c55e;
+          }
+          h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
+          .subtitle { font-size: 14px; color: #666; }
+          .summary {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+          }
+          .summary-item { font-size: 12px; }
+          .summary-item strong { color: #1a1a1a; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { background: #f8f9fa; padding: 10px 8px; text-align: left; font-weight: 600; font-size: 11px; border-bottom: 2px solid #e5e7eb; text-transform: uppercase; color: #555; }
+          td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #fafafa; }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .total-row { font-weight: bold; background: #f0fdf4 !important; }
+          .total-row td { border-top: 2px solid #22c55e; padding-top: 12px; }
+          .total-value { font-size: 16px; color: #16a34a; }
+          .no-value { color: #f59e0b; font-size: 10px; }
+          .footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 10px; color: #999; }
+          @media print { body { padding: 10px; } }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${p.assignee_name}</h1>
+          <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
+        </div>
+
+        <div class="summary">
+          <div class="summary-item"><strong>${p.total_shifts}</strong> plantões</div>
+          <div class="summary-item"><strong>${p.total_hours.toFixed(1)}h</strong> horas</div>
+          ${p.unpriced_shifts > 0 ? `<div class="summary-item"><strong>${p.unpriced_shifts}</strong> sem valor</div>` : ''}
+          <div class="summary-item"><strong>${formatCurrency(p.total_to_receive)}</strong> total</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Horário</th>
+              <th class="center">Duração</th>
+              <th>Setor</th>
+              <th class="right">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+            <tr class="total-row">
+              <td colspan="4" class="right"><strong>TOTAL</strong></td>
+              <td class="right total-value">${formatCurrency(p.total_to_receive)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer">
+          Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")}
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  }
   // Unique sectors and plantonistas for filters
   const sectors = useMemo(() => {
     const map = new Map<string, string>();
@@ -1068,9 +1210,21 @@ export default function AdminFinancial() {
           <Dialog open={!!selectedPlantonista} onOpenChange={(open) => !open && setSelectedPlantonista(null)}>
             <DialogContent className="max-w-4xl">
               <DialogHeader>
-                <DialogTitle>
-                  {selectedPlantonista?.assignee_name}
-                </DialogTitle>
+                <div className="flex items-center justify-between">
+                  <DialogTitle>
+                    {selectedPlantonista?.assignee_name}
+                  </DialogTitle>
+                  <div className="flex gap-2 mr-8">
+                    <Button variant="outline" size="sm" onClick={() => selectedPlantonista && exportPlantonistaCSV(selectedPlantonista)}>
+                      <Download className="h-4 w-4 mr-1" />
+                      CSV
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => selectedPlantonista && printPlantonistaDetail(selectedPlantonista)}>
+                      <Printer className="h-4 w-4 mr-1" />
+                      Imprimir
+                    </Button>
+                  </div>
+                </div>
                 <DialogDescription>
                   Total: {selectedPlantonista?.total_shifts ?? 0} plantões · Lista: {(selectedPlantonista?.entries ?? []).length} linhas.
                   {' '}"Sem valor definido" quando não há valor atribuído.
