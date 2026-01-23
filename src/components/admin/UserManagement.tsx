@@ -15,7 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square, Search } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square, Search, KeyRound, Send } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
@@ -84,6 +84,17 @@ export default function UserManagement() {
   } | null>(null);
   const [showCreatedPassword, setShowCreatedPassword] = useState(false);
   const [copiedField, setCopiedField] = useState<'email' | 'password' | null>(null);
+  
+  // Send Access dialog state
+  const [sendAccessDialogOpen, setSendAccessDialogOpen] = useState(false);
+  const [sendAccessMember, setSendAccessMember] = useState<MemberWithProfile | null>(null);
+  const [sendAccessCredentials, setSendAccessCredentials] = useState<{
+    email: string;
+    password: string;
+  } | null>(null);
+  const [isSendingAccess, setIsSendingAccess] = useState(false);
+  const [showSendAccessPassword, setShowSendAccessPassword] = useState(false);
+  const [sendAccessCopiedField, setSendAccessCopiedField] = useState<'email' | 'password' | 'both' | null>(null);
   
   // Selection state for bulk delete
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
@@ -668,6 +679,90 @@ export default function UserManagement() {
         description: `Compartilhe o código "${tenantInfo.slug}" para novos usuários se cadastrarem no onboarding.` 
       });
     }
+  }
+
+  // Send access to existing user - generates new password and shows modal
+  async function handleSendAccess(member: MemberWithProfile) {
+    if (!currentTenantId) return;
+    
+    setSendAccessMember(member);
+    setIsSendingAccess(true);
+    setSendAccessCredentials(null);
+    setShowSendAccessPassword(false);
+    setSendAccessCopiedField(null);
+    setSendAccessDialogOpen(true);
+
+    try {
+      // Get user's current email
+      const { data: emailData, error: emailError } = await supabase.functions.invoke('get-user-email', {
+        body: { userId: member.user_id, tenantId: currentTenantId },
+      });
+      
+      if (emailError) throw emailError;
+      
+      const userEmail = emailData?.email as string || '';
+      
+      if (!userEmail) {
+        throw new Error('Usuário não possui email cadastrado');
+      }
+
+      // Reset password using update-user function
+      const { data, error } = await supabase.functions.invoke('update-user', {
+        body: {
+          userId: member.user_id,
+          tenantId: currentTenantId,
+          resetPassword: true,
+          sendInviteEmail: false, // We'll show credentials manually
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Erro ao gerar credenciais');
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      if (!data?.newPassword) {
+        throw new Error('Senha não foi gerada corretamente');
+      }
+
+      // Log the action for audit
+      console.log(`[AUDIT] Admin ${user?.id} generated access for user ${member.user_id} at ${new Date().toISOString()}`);
+
+      setSendAccessCredentials({
+        email: userEmail,
+        password: data.newPassword,
+      });
+
+      toast({
+        title: 'Credenciais geradas!',
+        description: 'Compartilhe as credenciais abaixo com o usuário.',
+      });
+
+    } catch (error: any) {
+      console.error('Error sending access:', error);
+      toast({
+        title: 'Erro ao gerar acesso',
+        description: error.message || 'Não foi possível gerar as credenciais',
+        variant: 'destructive',
+      });
+      setSendAccessDialogOpen(false);
+    } finally {
+      setIsSendingAccess(false);
+    }
+  }
+
+  // Copy all credentials to clipboard
+  async function copyAllCredentials() {
+    if (!sendAccessCredentials) return;
+    
+    const text = `Email: ${sendAccessCredentials.email}\nSenha: ${sendAccessCredentials.password}`;
+    await navigator.clipboard.writeText(text);
+    setSendAccessCopiedField('both');
+    setTimeout(() => setSendAccessCopiedField(null), 2000);
+    toast({ title: 'Credenciais copiadas!' });
   }
 
   // Generate internal email from name
@@ -1361,6 +1456,17 @@ export default function UserManagement() {
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
                               <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleSendAccess(member)}
+                                disabled={member.user_id === user?.id}
+                                title="Enviar credenciais de acesso"
+                                className="gap-1"
+                              >
+                                <KeyRound className="h-3 w-3" />
+                                <span className="hidden sm:inline">Enviar Acesso</span>
+                              </Button>
+                              <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={() => openEditDialog(member)}
@@ -2014,6 +2120,157 @@ export default function UserManagement() {
               >
                 Fechar
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Access Dialog - For existing users */}
+      <Dialog open={sendAccessDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSendAccessDialogOpen(false);
+          setSendAccessMember(null);
+          setSendAccessCredentials(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              Enviar Acesso
+            </DialogTitle>
+          </DialogHeader>
+          
+          {isSendingAccess ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+              <p className="text-sm text-muted-foreground">Gerando credenciais...</p>
+            </div>
+          ) : sendAccessCredentials ? (
+            <div className="space-y-4">
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                <p className="text-sm text-green-700">
+                  <strong>✓ Credenciais geradas para {sendAccessMember?.profile?.name || 'usuário'}</strong>
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  A senha foi resetada e o usuário deverá alterá-la no primeiro login.
+                </p>
+              </div>
+              
+              {/* Email */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Email de acesso</Label>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    value={sendAccessCredentials.email} 
+                    readOnly 
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(sendAccessCredentials.email);
+                      setSendAccessCopiedField('email');
+                      setTimeout(() => setSendAccessCopiedField(null), 2000);
+                    }}
+                  >
+                    {sendAccessCopiedField === 'email' ? (
+                      <Check className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+              
+              {/* Password */}
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Senha temporária</Label>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input 
+                      type={showSendAccessPassword ? 'text' : 'password'}
+                      value={sendAccessCredentials.password} 
+                      readOnly 
+                      className="font-mono text-sm pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full"
+                      onClick={() => setShowSendAccessPassword(!showSendAccessPassword)}
+                    >
+                      {showSendAccessPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(sendAccessCredentials.password);
+                      setSendAccessCopiedField('password');
+                      setTimeout(() => setSendAccessCopiedField(null), 2000);
+                    }}
+                  >
+                    {sendAccessCopiedField === 'password' ? (
+                      <Check className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* Copy All Button */}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={copyAllCredentials}
+              >
+                {sendAccessCopiedField === 'both' ? (
+                  <>
+                    <Check className="h-4 w-4 mr-2 text-green-600" />
+                    Copiado!
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copiar Tudo
+                  </>
+                )}
+              </Button>
+              
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-700">
+                  <strong>⚠️ Importante:</strong> Compartilhe essas credenciais com o usuário de forma segura 
+                  (WhatsApp, SMS, etc.). A senha será exibida apenas uma vez.
+                </p>
+              </div>
+              
+              <Button 
+                className="w-full" 
+                onClick={() => {
+                  setSendAccessDialogOpen(false);
+                  setSendAccessMember(null);
+                  setSendAccessCredentials(null);
+                }}
+              >
+                <Send className="h-4 w-4 mr-2" />
+                Fechar e Compartilhar Manualmente
+              </Button>
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">
+              Ocorreu um erro ao gerar as credenciais.
             </div>
           )}
         </DialogContent>
