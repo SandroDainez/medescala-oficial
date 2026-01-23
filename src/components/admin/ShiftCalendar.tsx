@@ -11,7 +11,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -124,6 +125,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [copyInProgress, setCopyInProgress] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
+  
+  // Conflict resolution states
+  const [justificationDialogOpen, setJustificationDialogOpen] = useState(false);
+  const [pendingAcknowledgeConflict, setPendingAcknowledgeConflict] = useState<ShiftConflict | null>(null);
+  const [justificationText, setJustificationText] = useState('');
+  const [conflictHistoryDialogOpen, setConflictHistoryDialogOpen] = useState(false);
+  const [conflictHistory, setConflictHistory] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [removeConfirmDialogOpen, setRemoveConfirmDialogOpen] = useState(false);
+  const [pendingRemoval, setPendingRemoval] = useState<{ conflict: ShiftConflict; assignmentToRemove: ShiftConflict['shifts'][0]; assignmentToKeep: ShiftConflict['shifts'][0] } | null>(null);
 
   // Bulk edit (apply same changes to selected shifts)
   const [bulkApplyDialogOpen, setBulkApplyDialogOpen] = useState(false);
@@ -2538,12 +2549,125 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const conflicts = detectConflicts();
   const unresolvedConflicts = conflicts.filter(c => !acknowledgedConflicts.has(c.id));
 
-  function handleAcknowledgeConflict(conflictId: string) {
-    setAcknowledgedConflicts(prev => new Set([...prev, conflictId]));
+  // Open justification dialog instead of immediate acknowledge
+  function handleAcknowledgeConflict(conflict: ShiftConflict) {
+    setPendingAcknowledgeConflict(conflict);
+    setJustificationText('');
+    setJustificationDialogOpen(true);
+  }
+
+  // Confirm acknowledge with justification
+  async function confirmAcknowledgeConflict() {
+    if (!pendingAcknowledgeConflict || !justificationText.trim() || !currentTenantId || !user?.id) {
+      toast({ title: 'Informe a justificativa', variant: 'destructive' });
+      return;
+    }
+
+    // Save to conflict_resolutions table
+    const { error } = await supabase.from('conflict_resolutions').insert({
+      tenant_id: currentTenantId,
+      conflict_date: pendingAcknowledgeConflict.date,
+      plantonista_id: pendingAcknowledgeConflict.userId,
+      plantonista_name: pendingAcknowledgeConflict.userName,
+      resolution_type: 'acknowledged',
+      justification: justificationText.trim(),
+      conflict_details: pendingAcknowledgeConflict.shifts,
+      resolved_by: user.id,
+    });
+
+    if (error) {
+      toast({ title: 'Erro ao salvar resolução', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    setAcknowledgedConflicts(prev => new Set([...prev, pendingAcknowledgeConflict.id]));
+    setJustificationDialogOpen(false);
+    setPendingAcknowledgeConflict(null);
+    setJustificationText('');
     toast({
       title: 'Conflito reconhecido',
-      description: 'O conflito foi marcado como reconhecido e não será mais exibido.'
+      description: 'O conflito foi registrado com a justificativa informada.'
     });
+  }
+
+  // Prepare removal - show confirmation with context
+  function prepareRemoveConflictAssignment(conflict: ShiftConflict, assignmentToRemove: ShiftConflict['shifts'][0]) {
+    // Find the other assignment(s) that will be kept
+    const assignmentToKeep = conflict.shifts.find(s => s.assignmentId !== assignmentToRemove.assignmentId);
+    if (!assignmentToKeep) return;
+    
+    setPendingRemoval({ conflict, assignmentToRemove, assignmentToKeep });
+    setRemoveConfirmDialogOpen(true);
+  }
+
+  // Confirm removal and save to history
+  async function confirmRemoveConflictAssignment() {
+    if (!pendingRemoval || !currentTenantId || !user?.id) return;
+    
+    const { conflict, assignmentToRemove, assignmentToKeep } = pendingRemoval;
+
+    // Delete the assignment
+    const { error: deleteError } = await supabase
+      .from('shift_assignments')
+      .delete()
+      .eq('id', assignmentToRemove.assignmentId);
+
+    if (deleteError) {
+      toast({ title: 'Erro ao remover atribuição', description: deleteError.message, variant: 'destructive' });
+      return;
+    }
+
+    // Save to conflict_resolutions table
+    const { error: insertError } = await supabase.from('conflict_resolutions').insert({
+      tenant_id: currentTenantId,
+      conflict_date: conflict.date,
+      plantonista_id: conflict.userId,
+      plantonista_name: conflict.userName,
+      resolution_type: 'removed',
+      removed_sector_name: assignmentToRemove.sectorName,
+      removed_shift_time: `${assignmentToRemove.startTime.slice(0,5)} - ${assignmentToRemove.endTime.slice(0,5)}`,
+      removed_assignment_id: assignmentToRemove.assignmentId,
+      kept_sector_name: assignmentToKeep.sectorName,
+      kept_shift_time: `${assignmentToKeep.startTime.slice(0,5)} - ${assignmentToKeep.endTime.slice(0,5)}`,
+      kept_assignment_id: assignmentToKeep.assignmentId,
+      conflict_details: conflict.shifts,
+      resolved_by: user.id,
+    });
+
+    if (insertError) {
+      console.error('Erro ao registrar resolução:', insertError);
+      // Continue mesmo com erro no histórico
+    }
+
+    setRemoveConfirmDialogOpen(false);
+    setPendingRemoval(null);
+    toast({ title: 'Atribuição removida!', description: 'O conflito foi resolvido e registrado no histórico.' });
+    fetchData();
+  }
+
+  // Fetch conflict resolution history
+  async function fetchConflictHistory() {
+    if (!currentTenantId) return;
+    setLoadingHistory(true);
+    
+    const { data, error } = await supabase
+      .from('conflict_resolutions')
+      .select('*, resolved_by_profile:profiles!conflict_resolutions_resolved_by_fkey(name)')
+      .eq('tenant_id', currentTenantId)
+      .order('resolved_at', { ascending: false })
+      .limit(100);
+    
+    if (error) {
+      toast({ title: 'Erro ao carregar histórico', description: error.message, variant: 'destructive' });
+    } else {
+      setConflictHistory(data || []);
+    }
+    setLoadingHistory(false);
+  }
+
+  function openConflictHistory() {
+    fetchConflictHistory();
+    setConflictHistoryDialogOpen(true);
   }
 
   async function handleRemoveConflictAssignment(assignmentId: string) {
@@ -3881,7 +4005,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             <Button
                               variant="destructive"
                               size="sm"
-                              onClick={() => handleRemoveConflictAssignment(shiftInfo.assignmentId)}
+                              onClick={() => prepareRemoveConflictAssignment(conflict, shiftInfo)}
                             >
                               <Trash2 className="h-4 w-4 mr-1" />
                               Remover
@@ -3896,7 +4020,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleAcknowledgeConflict(conflict.id)}
+                            onClick={() => handleAcknowledgeConflict(conflict)}
                             className="border-yellow-500 text-yellow-700 hover:bg-yellow-100"
                           >
                             <Check className="h-4 w-4 mr-1" />
@@ -3911,8 +4035,187 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             )}
           </div>
 
-          <div className="flex justify-end pt-4 border-t">
+          <div className="flex justify-between pt-4 border-t">
+            <Button variant="outline" onClick={openConflictHistory}>
+              <History className="h-4 w-4 mr-1" />
+              Histórico
+            </Button>
             <Button onClick={() => setConflictDialogOpen(false)}>
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Justification Dialog for Acknowledging Conflict */}
+      <Dialog open={justificationDialogOpen} onOpenChange={setJustificationDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-yellow-600">
+              <FileText className="h-5 w-5" />
+              Justificar Conflito
+            </DialogTitle>
+          </DialogHeader>
+          
+          {pendingAcknowledgeConflict && (
+            <div className="space-y-4">
+              <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200">
+                <p className="font-medium">{pendingAcknowledgeConflict.userName}</p>
+                <p className="text-sm text-muted-foreground">
+                  {format(parseISO(pendingAcknowledgeConflict.date), "dd/MM/yyyy", { locale: ptBR })}
+                </p>
+                <div className="mt-2 space-y-1">
+                  {pendingAcknowledgeConflict.shifts.map((s, i) => (
+                    <p key={i} className="text-sm">
+                      • {s.sectorName} ({s.startTime.slice(0,5)} - {s.endTime.slice(0,5)})
+                    </p>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="justification">Justificativa *</Label>
+                <Textarea
+                  id="justification"
+                  placeholder="Informe o motivo pelo qual este conflito é intencional..."
+                  value={justificationText}
+                  onChange={(e) => setJustificationText(e.target.value)}
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setJustificationDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={confirmAcknowledgeConflict}
+                  disabled={!justificationText.trim()}
+                  className="bg-yellow-600 hover:bg-yellow-700"
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Confirmar
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Remove Confirmation Dialog */}
+      <Dialog open={removeConfirmDialogOpen} onOpenChange={setRemoveConfirmDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Confirmar Remoção
+            </DialogTitle>
+          </DialogHeader>
+          
+          {pendingRemoval && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                Confirme a remoção do plantonista <strong>{pendingRemoval.conflict.userName}</strong> do local abaixo:
+              </p>
+              
+              <div className="space-y-3">
+                <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200">
+                  <p className="text-sm font-medium text-red-700 dark:text-red-400">Será REMOVIDO de:</p>
+                  <p className="font-medium">{pendingRemoval.assignmentToRemove.sectorName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {pendingRemoval.assignmentToRemove.startTime.slice(0,5)} - {pendingRemoval.assignmentToRemove.endTime.slice(0,5)}
+                  </p>
+                </div>
+                
+                <div className="p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200">
+                  <p className="text-sm font-medium text-green-700 dark:text-green-400">Permanecerá em:</p>
+                  <p className="font-medium">{pendingRemoval.assignmentToKeep.sectorName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {pendingRemoval.assignmentToKeep.startTime.slice(0,5)} - {pendingRemoval.assignmentToKeep.endTime.slice(0,5)}
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setRemoveConfirmDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button variant="destructive" onClick={confirmRemoveConflictAssignment}>
+                  <Trash2 className="h-4 w-4 mr-1" />
+                  Confirmar Remoção
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Conflict History Dialog */}
+      <Dialog open={conflictHistoryDialogOpen} onOpenChange={setConflictHistoryDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Histórico de Resoluções de Conflitos
+            </DialogTitle>
+          </DialogHeader>
+          
+          {loadingHistory ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Carregando histórico...
+            </div>
+          ) : conflictHistory.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Nenhuma resolução de conflito registrada.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {conflictHistory.map((resolution) => (
+                <Card key={resolution.id} className={`border ${resolution.resolution_type === 'acknowledged' ? 'border-yellow-300' : 'border-blue-300'}`}>
+                  <CardContent className="p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                      <div>
+                        <p className="font-medium">{resolution.plantonista_name}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {format(parseISO(resolution.conflict_date), "dd/MM/yyyy", { locale: ptBR })}
+                        </p>
+                      </div>
+                      <Badge variant={resolution.resolution_type === 'acknowledged' ? 'secondary' : 'outline'}>
+                        {resolution.resolution_type === 'acknowledged' ? '✅ Conflito Mantido' : '🔄 Remoção'}
+                      </Badge>
+                    </div>
+                    
+                    {resolution.resolution_type === 'acknowledged' ? (
+                      <div className="mt-2 p-2 rounded bg-yellow-50 dark:bg-yellow-950/20">
+                        <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Justificativa:</p>
+                        <p className="text-sm">{resolution.justification}</p>
+                      </div>
+                    ) : (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
+                          <p className="text-xs font-medium text-red-600">Removido de:</p>
+                          <p className="text-sm font-medium">{resolution.removed_sector_name}</p>
+                          <p className="text-xs text-muted-foreground">{resolution.removed_shift_time}</p>
+                        </div>
+                        <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                          <p className="text-xs font-medium text-green-600">Mantido em:</p>
+                          <p className="text-sm font-medium">{resolution.kept_sector_name}</p>
+                          <p className="text-xs text-muted-foreground">{resolution.kept_shift_time}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Resolvido por {resolution.resolved_by_profile?.name || 'Admin'} em {format(parseISO(resolution.resolved_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex justify-end pt-4 border-t">
+            <Button onClick={() => setConflictHistoryDialogOpen(false)}>
               Fechar
             </Button>
           </div>

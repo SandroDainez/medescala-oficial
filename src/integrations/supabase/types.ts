@@ -93,6 +93,88 @@ export type Database = {
           },
         ]
       }
+      conflict_resolutions: {
+        Row: {
+          conflict_date: string
+          conflict_details: Json | null
+          created_at: string
+          id: string
+          justification: string | null
+          kept_assignment_id: string | null
+          kept_sector_name: string | null
+          kept_shift_time: string | null
+          plantonista_id: string
+          plantonista_name: string
+          removed_assignment_id: string | null
+          removed_sector_name: string | null
+          removed_shift_time: string | null
+          resolution_type: string
+          resolved_at: string
+          resolved_by: string | null
+          tenant_id: string
+        }
+        Insert: {
+          conflict_date: string
+          conflict_details?: Json | null
+          created_at?: string
+          id?: string
+          justification?: string | null
+          kept_assignment_id?: string | null
+          kept_sector_name?: string | null
+          kept_shift_time?: string | null
+          plantonista_id: string
+          plantonista_name: string
+          removed_assignment_id?: string | null
+          removed_sector_name?: string | null
+          removed_shift_time?: string | null
+          resolution_type: string
+          resolved_at?: string
+          resolved_by?: string | null
+          tenant_id: string
+        }
+        Update: {
+          conflict_date?: string
+          conflict_details?: Json | null
+          created_at?: string
+          id?: string
+          justification?: string | null
+          kept_assignment_id?: string | null
+          kept_sector_name?: string | null
+          kept_shift_time?: string | null
+          plantonista_id?: string
+          plantonista_name?: string
+          removed_assignment_id?: string | null
+          removed_sector_name?: string | null
+          removed_shift_time?: string | null
+          resolution_type?: string
+          resolved_at?: string
+          resolved_by?: string | null
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conflict_resolutions_plantonista_id_fkey"
+            columns: ["plantonista_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflict_resolutions_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conflict_resolutions_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           active: boolean
