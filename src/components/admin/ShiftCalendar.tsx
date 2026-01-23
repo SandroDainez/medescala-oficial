@@ -151,6 +151,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return [];
   }
 
+  function getNonEmptyString(...values: any[]): string | null {
+    for (const v of values) {
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return null;
+  }
+
   function getResolutionLocation(
     resolution: any,
     kind: 'removed' | 'kept'
@@ -169,12 +176,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Fallback for older records: derive from conflict_details using assignment IDs
     const details = safeParseConflictDetails(resolution?.conflict_details);
     const assignmentId = kind === 'removed' ? resolution?.removed_assignment_id : resolution?.kept_assignment_id;
-    const match = assignmentId ? details.find((d: any) => d?.assignmentId === assignmentId) : null;
+    const match = assignmentId
+      ? details.find((d: any) => {
+          const a = d?.assignmentId ?? d?.assignment_id;
+          return a && String(a) === String(assignmentId);
+        })
+      : null;
 
     if (match) {
-      const sectorName = match?.sectorName || 'Não informado';
-      const start = typeof match?.startTime === 'string' ? match.startTime.slice(0, 5) : null;
-      const end = typeof match?.endTime === 'string' ? match.endTime.slice(0, 5) : null;
+      const sectorNameFromDetails = getNonEmptyString(
+        match?.sectorName,
+        match?.sector_name,
+        match?.sector,
+        match?.hospital,
+        match?.location
+      );
+
+      // If older JSON doesn't include sectorName, try to derive from shiftId using currently loaded shifts.
+      const shiftId = match?.shiftId ?? match?.shift_id;
+      const shiftFromState = shiftId ? shifts.find(s => String(s.id) === String(shiftId)) : null;
+      const sectorNameFromState = shiftFromState ? getSectorName(shiftFromState.sector_id, shiftFromState.hospital) : null;
+
+      const sectorName = sectorNameFromDetails || sectorNameFromState || 'Não informado';
+
+      const rawStart = getNonEmptyString(match?.startTime, match?.start_time);
+      const rawEnd = getNonEmptyString(match?.endTime, match?.end_time);
+      const start = rawStart ? rawStart.slice(0, 5) : null;
+      const end = rawEnd ? rawEnd.slice(0, 5) : null;
       const shiftTime = start && end ? `${start} - ${end}` : '—';
       return { sectorName, shiftTime };
     }
@@ -509,7 +537,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const sector = sectors.find(s => s.id === sectorId);
       if (sector) return sector.name;
     }
-    return hospital;
+    return hospital?.trim() ? hospital : 'Não informado';
   }
 
   // Helper to parse monetary values with precision (avoids floating point errors)
