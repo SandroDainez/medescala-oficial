@@ -482,6 +482,81 @@ export async function recordScheduleMovement(params: {
       return { success: true }; // Not an error, just don't record
     }
 
+    // Auto-detect transfers: if this is a "removed" action, check if there's a recent "added" 
+    // for the same user on the same day (within last 5 minutes) and update it to "transferred"
+    if (params.movement_type === 'removed' && params.source_shift_date) {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      const { data: recentAdd } = await supabase
+        .from('schedule_movements')
+        .select('*')
+        .eq('tenant_id', params.tenant_id)
+        .eq('user_id', params.user_id)
+        .eq('movement_type', 'added')
+        .eq('destination_shift_date', params.source_shift_date) // Same day
+        .gte('performed_at', fiveMinutesAgo)
+        .order('performed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentAdd) {
+        // Update the "added" record to be a "transferred" with source info
+        const { error: updateError } = await supabase
+          .from('schedule_movements')
+          .update({
+            movement_type: 'transferred',
+            source_sector_id: params.source_sector_id,
+            source_sector_name: params.source_sector_name,
+            source_shift_date: params.source_shift_date,
+            source_shift_time: params.source_shift_time,
+            source_assignment_id: params.source_assignment_id,
+            reason: `Transferido de ${params.source_sector_name} para ${recentAdd.destination_sector_name}`,
+          })
+          .eq('id', recentAdd.id);
+
+        if (updateError) throw updateError;
+        return { success: true };
+      }
+    }
+
+    // Auto-detect transfers: if this is an "added" action, check if there's a recent "removed"
+    // for the same user on the same day (within last 5 minutes) and update it to "transferred"
+    if (params.movement_type === 'added' && params.destination_shift_date) {
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      
+      const { data: recentRemove } = await supabase
+        .from('schedule_movements')
+        .select('*')
+        .eq('tenant_id', params.tenant_id)
+        .eq('user_id', params.user_id)
+        .eq('movement_type', 'removed')
+        .eq('source_shift_date', params.destination_shift_date) // Same day
+        .gte('performed_at', fiveMinutesAgo)
+        .order('performed_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (recentRemove) {
+        // Update the "removed" record to be a "transferred" with destination info
+        const { error: updateError } = await supabase
+          .from('schedule_movements')
+          .update({
+            movement_type: 'transferred',
+            destination_sector_id: params.destination_sector_id,
+            destination_sector_name: params.destination_sector_name,
+            destination_shift_date: params.destination_shift_date,
+            destination_shift_time: params.destination_shift_time,
+            destination_assignment_id: params.destination_assignment_id,
+            reason: `Transferido de ${recentRemove.source_sector_name} para ${params.destination_sector_name}`,
+          })
+          .eq('id', recentRemove.id);
+
+        if (updateError) throw updateError;
+        return { success: true };
+      }
+    }
+
+    // No matching pair found, insert as new movement
     const { error } = await supabase
       .from('schedule_movements')
       .insert({
