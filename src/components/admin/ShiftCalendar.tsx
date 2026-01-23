@@ -12,6 +12,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText } from 'lucide-react';
+import ScheduleMovements, { recordScheduleMovement } from './ScheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
@@ -768,6 +769,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         if (isRealUser) {
           if (currentAssignment) {
             if (currentAssignment.user_id === formData.assigned_user_id) {
+              // Same user - just update value
               const { data: updData, error: updErr } = await supabase
                 .from('shift_assignments')
                 .update({ assigned_value: assignedValue, updated_by: user?.id })
@@ -777,6 +779,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               if (updErr) throw updErr;
               if (!updData) throw new Error('Atualização do plantonista bloqueada (permissão/tenant).');
             } else {
+              // Different user - this is a TRANSFER
+              const oldUserName = currentAssignment.profile?.name || 'Desconhecido';
+              const newUserMember = members.find(m => m.user_id === formData.assigned_user_id);
+              const newUserName = newUserMember?.profile?.name || 'Desconhecido';
+              
               const { data: upData, error: upErr } = await supabase
                 .from('shift_assignments')
                 .upsert(
@@ -805,8 +812,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               if (!delData || delData.length === 0) {
                 throw new Error('Não foi possível remover o plantonista anterior (permissão/tenant).');
               }
+
+              // Record the movement: old user removed, new user added (transfer)
+              const shiftDate = parseISO(editingShift.shift_date);
+              await recordScheduleMovement({
+                tenant_id: currentTenantId,
+                month: shiftDate.getMonth() + 1,
+                year: shiftDate.getFullYear(),
+                user_id: currentAssignment.user_id,
+                user_name: oldUserName,
+                movement_type: 'transferred',
+                source_sector_id: editingShift.sector_id || null,
+                source_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
+                source_shift_date: editingShift.shift_date,
+                source_shift_time: `${editingShift.start_time.slice(0, 5)}-${editingShift.end_time.slice(0, 5)}`,
+                source_assignment_id: currentAssignment.id,
+                reason: `Substituído por ${newUserName}`,
+                performed_by: user?.id ?? '',
+              });
             }
           } else {
+            // No previous assignment - this is an ADD
             const { data: upData, error: upErr } = await supabase
               .from('shift_assignments')
               .upsert(
@@ -825,10 +851,44 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             if (!upData || upData.length === 0) {
               throw new Error('Não foi possível salvar o plantonista (permissão/tenant).');
             }
+
+            // Record the movement: new user added
+            const newUserMember = members.find(m => m.user_id === formData.assigned_user_id);
+            const shiftDate = parseISO(editingShift.shift_date);
+            await recordScheduleMovement({
+              tenant_id: currentTenantId,
+              month: shiftDate.getMonth() + 1,
+              year: shiftDate.getFullYear(),
+              user_id: formData.assigned_user_id,
+              user_name: newUserMember?.profile?.name || 'Desconhecido',
+              movement_type: 'added',
+              destination_sector_id: editingShift.sector_id || null,
+              destination_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
+              destination_shift_date: editingShift.shift_date,
+              destination_shift_time: `${editingShift.start_time.slice(0, 5)}-${editingShift.end_time.slice(0, 5)}`,
+              performed_by: user?.id ?? '',
+            });
           }
         } else {
           // vago / disponível: garantir que não exista assignment
           if (currentAssignment) {
+            // Record the removal before deleting
+            const shiftDate = parseISO(editingShift.shift_date);
+            await recordScheduleMovement({
+              tenant_id: currentTenantId,
+              month: shiftDate.getMonth() + 1,
+              year: shiftDate.getFullYear(),
+              user_id: currentAssignment.user_id,
+              user_name: currentAssignment.profile?.name || 'Desconhecido',
+              movement_type: 'removed',
+              source_sector_id: editingShift.sector_id || null,
+              source_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
+              source_shift_date: editingShift.shift_date,
+              source_shift_time: `${editingShift.start_time.slice(0, 5)}-${editingShift.end_time.slice(0, 5)}`,
+              source_assignment_id: currentAssignment.id,
+              performed_by: user?.id ?? '',
+            });
+
             const { data: delData, error: delErr } = await supabase
               .from('shift_assignments')
               .delete()
@@ -1413,6 +1473,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!selectedShift || !currentTenantId) return;
 
     const assignedValue = parseMoneyNullable(assignData.assigned_value);
+    
+    // Check if there's already an assignment (to determine if this is an add or update)
+    const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
+    
     const { error } = await supabase.from('shift_assignments').upsert({
       tenant_id: currentTenantId,
       shift_id: selectedShift.id,
@@ -1429,6 +1493,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         toast({ title: 'Erro ao atribuir', description: error.message, variant: 'destructive' });
       }
     } else {
+      // Record the movement if this is a new assignment (not an update) and schedule is finalized
+      if (!existingAssignment && user?.id) {
+        const assignedMember = members.find(m => m.user_id === assignData.user_id);
+        const shiftDate = parseISO(selectedShift.shift_date);
+        await recordScheduleMovement({
+          tenant_id: currentTenantId,
+          month: shiftDate.getMonth() + 1,
+          year: shiftDate.getFullYear(),
+          user_id: assignData.user_id,
+          user_name: assignedMember?.profile?.name || 'Desconhecido',
+          movement_type: 'added',
+          destination_sector_id: selectedShift.sector_id || null,
+          destination_sector_name: getSectorName(selectedShift.sector_id, selectedShift.hospital),
+          destination_shift_date: selectedShift.shift_date,
+          destination_shift_time: `${selectedShift.start_time.slice(0, 5)}-${selectedShift.end_time.slice(0, 5)}`,
+          performed_by: user.id,
+        });
+      }
       toast({ title: 'Usuário atribuído!' });
       fetchData();
       setAssignDialogOpen(false);
@@ -1436,13 +1518,36 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
-  async function handleRemoveAssignment(assignmentId: string) {
+  async function handleRemoveAssignment(assignmentId: string, shiftId?: string) {
     if (!confirm('Deseja remover este usuário do plantão?')) return;
 
+    // Get assignment details before deleting for movement tracking
+    const assignmentToRemove = assignments.find(a => a.id === assignmentId);
+    const relatedShift = shiftId ? shifts.find(s => s.id === shiftId) : 
+      (assignmentToRemove ? shifts.find(s => s.id === assignmentToRemove.shift_id) : null);
+    
     const { error } = await supabase.from('shift_assignments').delete().eq('id', assignmentId);
     if (error) {
       toast({ title: 'Erro ao remover', description: error.message, variant: 'destructive' });
     } else {
+      // Record the movement if schedule is finalized
+      if (assignmentToRemove && relatedShift && currentTenantId && user?.id) {
+        const shiftDate = parseISO(relatedShift.shift_date);
+        await recordScheduleMovement({
+          tenant_id: currentTenantId,
+          month: shiftDate.getMonth() + 1,
+          year: shiftDate.getFullYear(),
+          user_id: assignmentToRemove.user_id,
+          user_name: assignmentToRemove.profile?.name || 'Desconhecido',
+          movement_type: 'removed',
+          source_sector_id: relatedShift.sector_id || null,
+          source_sector_name: getSectorName(relatedShift.sector_id, relatedShift.hospital),
+          source_shift_date: relatedShift.shift_date,
+          source_shift_time: `${relatedShift.start_time.slice(0, 5)}-${relatedShift.end_time.slice(0, 5)}`,
+          source_assignment_id: assignmentId,
+          performed_by: user.id,
+        });
+      }
       toast({ title: 'Usuário removido do plantão!' });
       fetchData();
     }
@@ -1834,13 +1939,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
             if (currentAssignment) {
               if (currentAssignment.user_id === editData.assigned_user_id) {
+                // Same user - just update value
                 const { error: updErr } = await supabase
                   .from('shift_assignments')
                   .update({ assigned_value: assignedValue, updated_by: user.id })
                   .eq('id', currentAssignment.id);
                 if (updErr) throw updErr;
               } else {
-                // Replace assignee safely (avoid updating user_id into a unique pair)
+                // Different user - this is a TRANSFER
+                const oldUserName = currentAssignment.profile?.name || 'Desconhecido';
+                const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
+                const newUserName = newUserMember?.profile?.name || 'Desconhecido';
+                
                 const { error: upErr } = await supabase
                   .from('shift_assignments')
                   .upsert(
@@ -1861,8 +1971,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   .delete()
                   .eq('id', currentAssignment.id);
                 if (delErr) throw delErr;
+
+                // Record the transfer
+                const shiftDate = parseISO(originalShift.shift_date);
+                await recordScheduleMovement({
+                  tenant_id: currentTenantId,
+                  month: shiftDate.getMonth() + 1,
+                  year: shiftDate.getFullYear(),
+                  user_id: currentAssignment.user_id,
+                  user_name: oldUserName,
+                  movement_type: 'transferred',
+                  source_sector_id: originalShift.sector_id || null,
+                  source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
+                  source_shift_date: originalShift.shift_date,
+                  source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
+                  source_assignment_id: currentAssignment.id,
+                  reason: `Substituído por ${newUserName}`,
+                  performed_by: user.id,
+                });
               }
             } else {
+              // No previous assignment - this is an ADD
               const { error: upErr } = await supabase
                 .from('shift_assignments')
                 .upsert(
@@ -1877,6 +2006,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   { onConflict: 'shift_id,user_id' }
                 );
               if (upErr) throw upErr;
+
+              // Record the addition
+              const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
+              const shiftDate = parseISO(originalShift.shift_date);
+              await recordScheduleMovement({
+                tenant_id: currentTenantId,
+                month: shiftDate.getMonth() + 1,
+                year: shiftDate.getFullYear(),
+                user_id: editData.assigned_user_id,
+                user_name: newUserMember?.profile?.name || 'Desconhecido',
+                movement_type: 'added',
+                destination_sector_id: originalShift.sector_id || null,
+                destination_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
+                destination_shift_date: originalShift.shift_date,
+                destination_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
+                performed_by: user.id,
+              });
             }
 
             // Remove [DISPONÍVEL] if present
@@ -1890,6 +2036,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           } else if (editData.assigned_user_id === 'disponivel') {
             // Make available - remove assignment if exists
             if (currentAssignment) {
+              // Record the removal before deleting
+              const shiftDate = parseISO(originalShift.shift_date);
+              await recordScheduleMovement({
+                tenant_id: currentTenantId,
+                month: shiftDate.getMonth() + 1,
+                year: shiftDate.getFullYear(),
+                user_id: currentAssignment.user_id,
+                user_name: currentAssignment.profile?.name || 'Desconhecido',
+                movement_type: 'removed',
+                source_sector_id: originalShift.sector_id || null,
+                source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
+                source_shift_date: originalShift.shift_date,
+                source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
+                source_assignment_id: currentAssignment.id,
+                performed_by: user.id,
+              });
+
               const { error: delErr } = await supabase
                 .from('shift_assignments')
                 .delete()
@@ -1910,6 +2073,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           } else {
             // Vago - remove assignment if exists
             if (currentAssignment) {
+              // Record the removal before deleting
+              const shiftDate = parseISO(originalShift.shift_date);
+              await recordScheduleMovement({
+                tenant_id: currentTenantId,
+                month: shiftDate.getMonth() + 1,
+                year: shiftDate.getFullYear(),
+                user_id: currentAssignment.user_id,
+                user_name: currentAssignment.profile?.name || 'Desconhecido',
+                movement_type: 'removed',
+                source_sector_id: originalShift.sector_id || null,
+                source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
+                source_shift_date: originalShift.shift_date,
+                source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
+                source_assignment_id: currentAssignment.id,
+                performed_by: user.id,
+              });
+
               const { error: delErr } = await supabase
                 .from('shift_assignments')
                 .delete()
@@ -2797,6 +2977,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Schedule Finalization Status */}
+      <ScheduleMovements 
+        currentMonth={currentDate.getMonth() + 1} 
+        currentYear={currentDate.getFullYear()} 
+      />
 
       {/* Conflict Alert */}
       {unresolvedConflicts.length > 0 && (
