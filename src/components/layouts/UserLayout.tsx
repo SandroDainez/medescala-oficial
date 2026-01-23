@@ -4,6 +4,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { TenantSelector } from '@/components/TenantSelector';
 import { NotificationBell } from '@/components/NotificationBell';
 import { TrialBanner } from '@/components/TrialBanner';
+import { ThemeToggleSimple } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -162,8 +163,9 @@ export function UserLayout() {
             <span className="font-semibold text-foreground">MedEscala</span>
           </div>
 
-          {/* Right: Today button and notifications */}
+          {/* Right: Theme toggle, Today button and notifications */}
           <div className="flex items-center gap-1">
+            <ThemeToggleSimple />
             <Button 
               variant="ghost" 
               size="sm" 
