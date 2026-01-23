@@ -32,19 +32,34 @@ function normalizeMoney(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+/**
+ * Determines if a shift is a night shift based on start time.
+ * Night shifts typically start at 19:00 or later, or before 07:00.
+ */
+function isNightShift(startTime: string): boolean {
+  if (!startTime) return false;
+  const [hour] = startTime.split(':').map(Number);
+  return hour >= 19 || hour < 7;
+}
+
 export function getFinalValue(
   assigned_value: unknown,
-  base_value: unknown
-): { final_value: number | null; source: 'assigned' | 'base' | 'none' | 'invalid'; invalidReason?: string } {
+  base_value: unknown,
+  sector_default_value: number | null = null
+): { final_value: number | null; source: 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid'; invalidReason?: string } {
   const assigned = normalizeMoney(assigned_value);
   const base = normalizeMoney(base_value);
+  const sectorDefault = sector_default_value !== null && sector_default_value > 0 ? sector_default_value : null;
 
   // Negative or NaN should be excluded and audited.
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
+  // Priority: assigned_value > 0, then base_value > 0, then sector default
   if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
   if (base !== null && base > 0) return { final_value: base, source: 'base' };
+  if (sectorDefault !== null) return { final_value: sectorDefault, source: 'sector_default' };
+  
   return { final_value: null, source: 'none' };
 }
 
@@ -68,8 +83,16 @@ export function mapScheduleToFinancialEntries(params: {
 }): FinancialEntry[] {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
 
+  // Build sector lookup maps
   const sectorNameById = new Map<string, string>();
-  (params.sectors ?? []).forEach((s) => sectorNameById.set(s.id, s.name));
+  const sectorDefaultDayById = new Map<string, number | null>();
+  const sectorDefaultNightById = new Map<string, number | null>();
+  
+  (params.sectors ?? []).forEach((s) => {
+    sectorNameById.set(s.id, s.name);
+    sectorDefaultDayById.set(s.id, s.default_day_value ?? null);
+    sectorDefaultNightById.set(s.id, s.default_night_value ?? null);
+  });
 
   const assignmentsByShift = new Map<string, ScheduleAssignment[]>();
   for (const a of params.assignments) {
@@ -85,6 +108,15 @@ export function mapScheduleToFinancialEntries(params: {
   for (const shift of params.shifts) {
     const duration_hours = calculateDurationHours(shift.start_time, shift.end_time);
     const sector_name = shift.sector_id ? sectorNameById.get(shift.sector_id) ?? 'Sem Setor' : 'Sem Setor';
+
+    // Get sector default values for fallback
+    const isNight = isNightShift(shift.start_time);
+    const sectorDefaultValue = shift.sector_id 
+      ? (isNight 
+          ? sectorDefaultNightById.get(shift.sector_id) 
+          : sectorDefaultDayById.get(shift.sector_id)
+        ) ?? null
+      : null;
 
     // Check if this is a training sector in GABS (no remuneration)
     const noRemuneration = isGabs && isTrainingSector(sector_name);
@@ -117,9 +149,10 @@ export function mapScheduleToFinancialEntries(params: {
 
     for (const a of shiftAssignments) {
       // For GABS training sectors, always return no value
+      // Otherwise use priority: assigned_value > base_value > sector_default
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
-        : getFinalValue(a.assigned_value, shift.base_value);
+        : getFinalValue(a.assigned_value, shift.base_value, sectorDefaultValue);
 
       entries.push({
         id: a.id,
