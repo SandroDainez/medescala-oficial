@@ -5,10 +5,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun, CalendarPlus } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, getDay, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
+import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
 
 interface Sector {
   id: string;
@@ -276,6 +277,39 @@ export default function UserCalendar() {
   const groupedBySectorWithDates = groupBySectorWithDates(myMonthShifts);
   const hasAnyShiftsForSelectedDate = activeTab === 'meus' ? myMonthShifts.length > 0 : selectedDateShifts.length > 0;
 
+  // Export to calendar function
+  async function handleExportToCalendar() {
+    if (myMonthShifts.length === 0) {
+      toast({
+        title: 'Sem plantões para exportar',
+        description: 'Você não tem plantões neste mês.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const eventsToExport = myMonthShifts.map(shift => ({
+      id: shift.id,
+      title: shift.title,
+      hospital: shift.hospital,
+      location: shift.location,
+      shift_date: shift.shift_date,
+      start_time: shift.start_time,
+      end_time: shift.end_time,
+      sector_name: shift.sector?.name,
+    }));
+
+    const monthName = format(currentDate, 'MMMM-yyyy', { locale: ptBR });
+    const icsContent = generateICSFile(eventsToExport, `Plantões ${monthName}`);
+    const filename = `plantoes-${monthName}.ics`;
+    
+    await shareICSFile(icsContent, filename);
+    
+    toast({
+      title: 'Plantões exportados!',
+      description: 'O arquivo foi gerado. Abra-o para adicionar ao seu calendário.',
+    });
+  }
 
   const weekDays = ['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
 
@@ -291,8 +325,14 @@ export default function UserCalendar() {
     <div className="flex-1 flex flex-col bg-background">
       {/* Calendar Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setCurrentDate(subMonths(currentDate, 1))}>
-          <Filter className="h-4 w-4" />
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          className="h-8 w-8" 
+          onClick={handleExportToCalendar}
+          title="Exportar para Calendário"
+        >
+          <CalendarPlus className="h-4 w-4" />
         </Button>
         <h2 className="text-lg font-medium text-foreground">
           {format(currentDate, 'MMMM', { locale: ptBR })}
