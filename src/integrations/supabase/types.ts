@@ -473,6 +473,7 @@ export type Database = {
           id: string
           month: number
           notes: string | null
+          sector_id: string | null
           tenant_id: string
           year: number
         }
@@ -483,6 +484,7 @@ export type Database = {
           id?: string
           month: number
           notes?: string | null
+          sector_id?: string | null
           tenant_id: string
           year: number
         }
@@ -493,10 +495,19 @@ export type Database = {
           id?: string
           month?: number
           notes?: string | null
+          sector_id?: string | null
           tenant_id?: string
           year?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "schedule_finalizations_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       schedule_movements: {
         Row: {

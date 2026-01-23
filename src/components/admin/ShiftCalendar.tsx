@@ -813,21 +813,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 throw new Error('Não foi possível remover o plantonista anterior (permissão/tenant).');
               }
 
-              // Record the movement: old user removed, new user added (transfer)
+              // Record two separate movements:
+              // 1. Old user is REMOVED from this sector (destination unknown = sem destino)
+              // 2. New user is ADDED to this sector (may be converted to transfer if they were recently removed from another sector)
               const shiftDate = parseISO(editingShift.shift_date);
+              
+              // Record old user as REMOVED (they leave without a known destination)
               await recordScheduleMovement({
                 tenant_id: currentTenantId,
                 month: shiftDate.getMonth() + 1,
                 year: shiftDate.getFullYear(),
                 user_id: currentAssignment.user_id,
                 user_name: oldUserName,
-                movement_type: 'transferred',
+                movement_type: 'removed',
                 source_sector_id: editingShift.sector_id || null,
                 source_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
                 source_shift_date: editingShift.shift_date,
                 source_shift_time: `${editingShift.start_time.slice(0, 5)}-${editingShift.end_time.slice(0, 5)}`,
                 source_assignment_id: currentAssignment.id,
                 reason: `Substituído por ${newUserName}`,
+                performed_by: user?.id ?? '',
+              });
+              
+              // Record new user as ADDED (they enter this sector)
+              await recordScheduleMovement({
+                tenant_id: currentTenantId,
+                month: shiftDate.getMonth() + 1,
+                year: shiftDate.getFullYear(),
+                user_id: formData.assigned_user_id,
+                user_name: newUserName,
+                movement_type: 'added',
+                destination_sector_id: editingShift.sector_id || null,
+                destination_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
+                destination_shift_date: editingShift.shift_date,
+                destination_shift_time: `${editingShift.start_time.slice(0, 5)}-${editingShift.end_time.slice(0, 5)}`,
+                reason: `Substituiu ${oldUserName}`,
                 performed_by: user?.id ?? '',
               });
             }
@@ -2978,11 +2998,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         </Card>
       </div>
 
-      {/* Schedule Finalization Status */}
-      <ScheduleMovements 
-        currentMonth={currentDate.getMonth() + 1} 
-        currentYear={currentDate.getFullYear()} 
-      />
+      {/* Schedule Finalization Status - Per Sector */}
+      {filterSector !== 'all' && (
+        <ScheduleMovements 
+          currentMonth={currentDate.getMonth() + 1} 
+          currentYear={currentDate.getFullYear()}
+          sectorId={filterSector}
+          sectorName={sectors.find(s => s.id === filterSector)?.name || null}
+        />
+      )}
+      
+      {filterSector === 'all' && (
+        <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              <div>
+                <span className="font-bold text-amber-700 dark:text-amber-400">
+                  ℹ️ Selecione um setor para finalizar a escala
+                </span>
+                <p className="text-sm text-muted-foreground">
+                  A finalização de escalas é individual por setor. Selecione um setor específico no filtro acima.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Conflict Alert */}
       {unresolvedConflicts.length > 0 && (
