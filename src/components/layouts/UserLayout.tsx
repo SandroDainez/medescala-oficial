@@ -57,7 +57,7 @@ export function UserLayout() {
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       {/* Trial Banner */}
       <TrialBanner />
       
@@ -177,9 +177,11 @@ export function UserLayout() {
         </div>
       </header>
 
-      {/* Main Content - Full height */}
-      <main className="flex-1 flex flex-col">
-        <Outlet />
+      {/* Main Content - Full height with proper scrolling */}
+      <main className="flex-1 flex flex-col overflow-y-auto">
+        <div className="w-full max-w-7xl mx-auto px-4 py-4 sm:px-6 lg:px-8">
+          <Outlet />
+        </div>
       </main>
     </div>
   );
