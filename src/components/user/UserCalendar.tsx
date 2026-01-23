@@ -191,11 +191,58 @@ export default function UserCalendar() {
 
   // Get shifts for selected date
   const selectedDateShifts = getShiftsForDate(selectedDate);
+  
+  // For "Meus Plantões" tab, show ALL user's shifts for the month
+  const myMonthShifts = shifts.filter(s => isMyShift(s.id));
+  
   const filteredShifts = activeTab === 'meus'
-    ? selectedDateShifts.filter(s => isMyShift(s.id))
-    : selectedDateShifts;
+    ? myMonthShifts // Show all month's shifts when in "Meus Plantões"
+    : selectedDateShifts; // Show only selected date when in "Todos"
 
-  // Group shifts by sector first, then by period within each sector
+  // Group shifts by sector first, then by date, then by period within each sector
+  const groupBySectorWithDates = (list: Shift[]) => {
+    const groups: Record<string, { 
+      sector: Sector | null; 
+      shiftsByDate: Record<string, { dayShifts: Shift[]; nightShifts: Shift[] }>;
+    }> = {};
+    
+    list.forEach(shift => {
+      const sectorId = shift.sector?.id || 'no-sector';
+      const dateKey = shift.shift_date;
+      
+      if (!groups[sectorId]) {
+        groups[sectorId] = {
+          sector: shift.sector || null,
+          shiftsByDate: {},
+        };
+      }
+      
+      if (!groups[sectorId].shiftsByDate[dateKey]) {
+        groups[sectorId].shiftsByDate[dateKey] = {
+          dayShifts: [],
+          nightShifts: [],
+        };
+      }
+      
+      if (isNightShift(shift.start_time)) {
+        groups[sectorId].shiftsByDate[dateKey].nightShifts.push(shift);
+      } else {
+        groups[sectorId].shiftsByDate[dateKey].dayShifts.push(shift);
+      }
+    });
+    
+    // Sort shifts within each group by start time
+    Object.values(groups).forEach(group => {
+      Object.values(group.shiftsByDate).forEach(dateGroup => {
+        dateGroup.dayShifts.sort((a, b) => a.start_time.localeCompare(b.start_time));
+        dateGroup.nightShifts.sort((a, b) => a.start_time.localeCompare(b.start_time));
+      });
+    });
+    
+    return groups;
+  };
+
+  // Legacy grouping for "Todos" tab (single date)
   const groupBySector = (list: Shift[]) => {
     const groups: Record<string, { sector: Sector | null; dayShifts: Shift[]; nightShifts: Shift[] }> = {};
     
@@ -225,8 +272,9 @@ export default function UserCalendar() {
     return groups;
   };
 
-  const groupedBySector = groupBySector(filteredShifts);
-  const hasAnyShiftsForSelectedDate = filteredShifts.length > 0;
+  const groupedBySector = groupBySector(selectedDateShifts.filter(s => activeTab === 'todos' || isMyShift(s.id)));
+  const groupedBySectorWithDates = groupBySectorWithDates(myMonthShifts);
+  const hasAnyShiftsForSelectedDate = activeTab === 'meus' ? myMonthShifts.length > 0 : selectedDateShifts.length > 0;
 
 
   const weekDays = ['seg.', 'ter.', 'qua.', 'qui.', 'sex.', 'sáb.', 'dom.'];
@@ -360,11 +408,148 @@ export default function UserCalendar() {
           <div className="flex-1 overflow-auto">
             {!hasAnyShiftsForSelectedDate ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
-                Nenhum plantão para {format(selectedDate, "d 'de' MMMM", { locale: ptBR })}
+                {activeTab === 'meus' 
+                  ? `Nenhum plantão seu em ${format(currentDate, 'MMMM', { locale: ptBR })}`
+                  : `Nenhum plantão para ${format(selectedDate, "d 'de' MMMM", { locale: ptBR })}`
+                }
+              </div>
+            ) : activeTab === 'meus' ? (
+              /* View for "Meus Plantões" - All month shifts grouped by sector and date */
+              <div>
+                {Object.entries(groupedBySectorWithDates).map(([sectorId, { sector, shiftsByDate }]) => (
+                  <div key={sectorId} className="border-b last:border-b-0">
+                    {/* Sector Header */}
+                    <div 
+                      className="px-4 py-3 border-b sticky top-0 z-10"
+                      style={{ 
+                        backgroundColor: sector?.color ? `${sector.color}20` : 'hsl(var(--muted))',
+                        borderLeftWidth: '4px',
+                        borderLeftColor: sector?.color || 'hsl(var(--muted-foreground))',
+                      }}
+                    >
+                      <span className="text-sm font-bold text-foreground uppercase tracking-wide">
+                        {sector?.name || 'Sem Setor'}
+                      </span>
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({Object.values(shiftsByDate).reduce((acc, d) => acc + d.dayShifts.length + d.nightShifts.length, 0)} plantões)
+                      </span>
+                    </div>
+
+                    {/* Shifts grouped by date */}
+                    {Object.entries(shiftsByDate)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([dateKey, { dayShifts, nightShifts }]) => (
+                        <div key={dateKey} className="border-b last:border-b-0">
+                          {/* Date Header */}
+                          <div className="px-4 py-2 bg-muted/30 border-b">
+                            <span className="text-xs font-semibold text-foreground">
+                              {format(parseDateOnly(dateKey), "EEEE, d 'de' MMMM", { locale: ptBR })}
+                            </span>
+                          </div>
+
+                          {/* Day shifts */}
+                          {dayShifts.map((shift) => {
+                            const shiftAssignments = getAssignmentsForShift(shift.id);
+                            return (
+                              <div
+                                key={shift.id}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 border-l-warning"
+                              >
+                                <div className="flex -space-x-2">
+                                  {shiftAssignments.slice(0, 2).map((assignment) => (
+                                    <Avatar
+                                      key={assignment.id}
+                                      className={cn(
+                                        "h-8 w-8 border-2",
+                                        assignment.user_id === user?.id ? "border-primary" : "border-card"
+                                      )}
+                                    >
+                                      <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+                                        {assignment.profile?.name?.slice(0, 2).toUpperCase() || 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                  ))}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <Sun className="h-3.5 w-3.5 text-warning" />
+                                    <span className="text-sm font-medium text-foreground">
+                                      {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
+                                      Diurno
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {shift.hospital} {shift.location && `• ${shift.location}`}
+                                  </div>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {calculateHours(shift.start_time, shift.end_time)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {/* Night shifts */}
+                          {nightShifts.map((shift) => {
+                            const shiftAssignments = getAssignmentsForShift(shift.id);
+                            return (
+                              <div
+                                key={shift.id}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 border-l-info"
+                              >
+                                <div className="flex -space-x-2">
+                                  {shiftAssignments.slice(0, 2).map((assignment) => (
+                                    <Avatar
+                                      key={assignment.id}
+                                      className={cn(
+                                        "h-8 w-8 border-2",
+                                        assignment.user_id === user?.id ? "border-primary" : "border-card"
+                                      )}
+                                    >
+                                      <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+                                        {assignment.profile?.name?.slice(0, 2).toUpperCase() || 'U'}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                  ))}
+                                </div>
+
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <Moon className="h-3.5 w-3.5 text-info" />
+                                    <span className="text-sm font-medium text-foreground">
+                                      {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
+                                    </span>
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-info/15 text-info">
+                                      Noturno
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {shift.hospital} {shift.location && `• ${shift.location}`}
+                                  </div>
+                                </div>
+
+                                <div className="text-right">
+                                  <span className="text-xs font-medium text-muted-foreground">
+                                    {calculateHours(shift.start_time, shift.end_time)}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ))}
+                  </div>
+                ))}
               </div>
             ) : (
+              /* View for "Todos" - Single date shifts */
               <div>
-                {/* Group by sector first, then by period */}
                 {Object.entries(groupedBySector).map(([sectorId, { sector, dayShifts, nightShifts }]) => (
                   <div key={sectorId} className="border-b last:border-b-0">
                     {/* Sector Header */}
