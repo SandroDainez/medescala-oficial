@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -19,7 +18,7 @@ interface Sector {
 
 interface Member {
   user_id: string;
-  profile: { name: string | null } | null;
+  user_name: string;
 }
 
 interface UserSectorValue {
@@ -64,17 +63,49 @@ export default function UserSectorValuesDialog({
     setLoading(true);
 
     try {
-      // Get members of this sector
-      const { data: memberships, error: membersError } = await supabase
+      // 1) Sector memberships (source of truth)
+      const { data: sectorMemberships, error: sectorMembersError } = await supabase
         .from('sector_memberships')
-        .select(`
-          user_id,
-          profile:profiles!sector_memberships_user_id_fkey(name)
-        `)
+        .select('user_id')
         .eq('tenant_id', tenantId)
         .eq('sector_id', sector.id);
 
-      if (membersError) throw membersError;
+      if (sectorMembersError) throw sectorMembersError;
+
+      const sectorUserIds = (sectorMemberships || []).map((m) => m.user_id);
+      if (sectorUserIds.length === 0) {
+        setUserValues([]);
+        return;
+      }
+
+      // 2) Only users that are active in this tenant
+      const { data: activeMemberships, error: activeMembershipsError } = await supabase
+        .from('memberships')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('active', true)
+        .in('user_id', sectorUserIds);
+
+      if (activeMembershipsError) throw activeMembershipsError;
+
+      const activeUserIds = new Set((activeMemberships || []).map((m) => m.user_id));
+
+      // 3) Profile data (filter to plantonista)
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, name, profile_type')
+        .in('id', sectorUserIds);
+
+      if (profilesError) throw profilesError;
+
+      const members: Member[] = (profiles || [])
+        .filter((p) => activeUserIds.has(p.id))
+        .filter((p) => (p.profile_type || '') === 'plantonista')
+        .map((p) => ({
+          user_id: p.id,
+          user_name: p.name || 'Sem nome',
+        }))
+        .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
 
       // Get existing overrides
       const { data: overrides, error: overridesError } = await supabase
@@ -88,17 +119,17 @@ export default function UserSectorValuesDialog({
       // Map members with their overrides
       const overrideMap = new Map(overrides?.map(o => [o.user_id, o]) || []);
       
-      const values: UserSectorValue[] = (memberships || []).map((m: any) => {
+      const values: UserSectorValue[] = members.map((m) => {
         const override = overrideMap.get(m.user_id);
         return {
           id: override?.id,
           user_id: m.user_id,
-          user_name: m.profile?.name || 'Sem nome',
+          user_name: m.user_name,
           day_value: override?.day_value?.toString().replace('.', ',') || '',
           night_value: override?.night_value?.toString().replace('.', ',') || '',
           hasOverride: !!override,
         };
-      }).sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
+      });
 
       setUserValues(values);
     } catch (error: any) {
