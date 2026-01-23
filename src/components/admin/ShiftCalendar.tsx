@@ -784,17 +784,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const quantity = Math.max(1, Math.min(20, Number(formData.quantity) || 1));
       const repeatWeeks = formData.repeat_weeks || 0;
 
-      const isRealUser =
-        formData.assigned_user_id &&
-        formData.assigned_user_id !== 'vago' &&
-        formData.assigned_user_id !== 'disponivel';
-
-      const assignedValue = resolveValue({
-        raw: formData.base_value,
-        sector_id: formData.sector_id || null,
-        start_time: formData.start_time,
-        useSectorDefault: formData.use_sector_default,
-      });
+      // Helper to check if a user_id is a real user (not vago/disponivel)
+      const isRealUserId = (userId: string | undefined | null): boolean => {
+        return !!userId && userId !== 'vago' && userId !== 'disponivel';
+      };
 
       let createdCount = 0;
       let errorsCount = 0;
@@ -842,8 +835,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           createdCount++;
 
-          // Create assignment if a real user was selected
-          if (isRealUser && rowAssigned && rowAssigned !== 'vago' && rowAssigned !== 'disponivel') {
+          // Create assignment if a real user was selected for THIS row
+          if (isRealUserId(rowAssigned)) {
+            // Calculate assigned_value per row (using row's start_time)
+            const rowAssignedValue = resolveValue({
+              raw: formData.base_value,
+              sector_id: formData.sector_id || null,
+              start_time: row.start_time,
+              useSectorDefault: formData.use_sector_default,
+            });
+
             const { error: assignErr } = await supabase
               .from('shift_assignments')
               .upsert(
@@ -851,7 +852,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   tenant_id: currentTenantId,
                   shift_id: createdShiftId,
                   user_id: rowAssigned,
-                  assigned_value: assignedValue,
+                  assigned_value: rowAssignedValue,
                   created_by: user?.id,
                   updated_by: user?.id,
                 },
@@ -859,6 +860,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               );
 
             if (assignErr) {
+              console.error('[ShiftCalendar] assignment failed:', assignErr);
               errorsCount++;
             }
           }
