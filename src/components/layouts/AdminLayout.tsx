@@ -26,7 +26,8 @@ import {
   Bell,
   Hand,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  MapPin
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
@@ -44,6 +45,7 @@ const navItems = [
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/admin/offers', label: 'Candidaturas', icon: Hand },
+  { to: '/admin/checkins', label: 'Check-ins GPS', icon: MapPin },
   { to: '/admin/notifications', label: 'Notificações', icon: Bell },
   { to: '/admin/financial', label: 'Financeiro', icon: DollarSign },
   { to: '/admin/reports', label: 'Relatórios', icon: FileSpreadsheet },
