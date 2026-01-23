@@ -68,6 +68,8 @@ interface Sector {
   require_gps_checkin: boolean;
   allowed_checkin_radius_meters: number | null;
   checkin_tolerance_minutes: number;
+  reference_latitude: number | null;
+  reference_longitude: number | null;
 }
 
 export default function UserShifts() {
@@ -111,7 +113,7 @@ export default function UserShifts() {
         .order('created_at', { ascending: false }),
       supabase
         .from('sectors')
-        .select('id, name, color, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes')
+        .select('id, name, color, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes, reference_latitude, reference_longitude')
         .eq('tenant_id', currentTenantId)
         .eq('active', true),
     ]);
@@ -174,6 +176,26 @@ export default function UserShifts() {
     });
   }
 
+  // Calculate distance in meters between two GPS coordinates (Haversine formula)
+  function calculateDistance(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number
+  ): number {
+    const R = 6371000; // Earth's radius in meters
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLon = ((lon2 - lon1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) *
+        Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  }
+
   async function handleCheckin(assignment: Assignment) {
     if (!user || !currentTenantId) return;
     
@@ -200,6 +222,23 @@ export default function UserShifts() {
       }
       // If GPS is not required, continue without it
       console.log('GPS not available, continuing without location');
+    }
+
+    // Validate distance from reference location if GPS is required
+    if (requiresGps && latitude !== null && longitude !== null) {
+      const refLat = sector?.reference_latitude;
+      const refLon = sector?.reference_longitude;
+      const allowedRadius = sector?.allowed_checkin_radius_meters ?? 500;
+
+      if (refLat && refLon) {
+        const distance = calculateDistance(latitude, longitude, refLat, refLon);
+        if (distance > allowedRadius) {
+          setGpsError(`Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`);
+          setShowGpsErrorDialog(true);
+          setProcessingId(null);
+          return;
+        }
+      }
     }
 
     // Update check-in
@@ -266,6 +305,23 @@ export default function UserShifts() {
         setShowGpsErrorDialog(true);
         setProcessingId(null);
         return;
+      }
+    }
+
+    // Validate distance from reference location if GPS is required
+    if (requiresGps && latitude !== null && longitude !== null) {
+      const refLat = sector?.reference_latitude;
+      const refLon = sector?.reference_longitude;
+      const allowedRadius = sector?.allowed_checkin_radius_meters ?? 500;
+
+      if (refLat && refLon) {
+        const distance = calculateDistance(latitude, longitude, refLat, refLon);
+        if (distance > allowedRadius) {
+          setGpsError(`Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`);
+          setShowGpsErrorDialog(true);
+          setProcessingId(null);
+          return;
+        }
       }
     }
 
@@ -424,7 +480,9 @@ export default function UserShifts() {
         checkin_enabled: false,
         require_gps_checkin: false,
         allowed_checkin_radius_meters: null,
-        checkin_tolerance_minutes: 30
+        checkin_tolerance_minutes: 30,
+        reference_latitude: null,
+        reference_longitude: null
       };
     }
     const sector = sectors.find((s) => s.id === sectorId);
@@ -435,7 +493,9 @@ export default function UserShifts() {
       checkin_enabled: false,
       require_gps_checkin: false,
       allowed_checkin_radius_meters: null,
-      checkin_tolerance_minutes: 30
+      checkin_tolerance_minutes: 30,
+      reference_latitude: null,
+      reference_longitude: null
     };
   };
 

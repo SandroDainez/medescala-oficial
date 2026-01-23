@@ -29,6 +29,8 @@ interface Sector {
   require_gps_checkin?: boolean;
   allowed_checkin_radius_meters?: number | null;
   checkin_tolerance_minutes?: number;
+  reference_latitude?: number | null;
+  reference_longitude?: number | null;
 }
 
 interface Member {
@@ -71,6 +73,8 @@ export default function AdminSectors() {
     require_gps_checkin: false,
     allowed_checkin_radius_meters: 500,
     checkin_tolerance_minutes: 30,
+    reference_latitude: null as number | null,
+    reference_longitude: null as number | null,
   });
 
   const [formData, setFormData] = useState({
@@ -301,12 +305,26 @@ export default function AdminSectors() {
       require_gps_checkin: sector.require_gps_checkin || false,
       allowed_checkin_radius_meters: sector.allowed_checkin_radius_meters || 500,
       checkin_tolerance_minutes: sector.checkin_tolerance_minutes || 30,
+      reference_latitude: sector.reference_latitude ?? null,
+      reference_longitude: sector.reference_longitude ?? null,
     });
     setCheckinDialogOpen(true);
   }
 
   async function saveCheckinSettings() {
     if (!selectedSectorForCheckin) return;
+
+    // Validate coordinates if GPS is required
+    if (checkinSettings.require_gps_checkin) {
+      if (!checkinSettings.reference_latitude || !checkinSettings.reference_longitude) {
+        toast({ 
+          title: 'Erro', 
+          description: 'Informe as coordenadas de referência para validação GPS.', 
+          variant: 'destructive' 
+        });
+        return;
+      }
+    }
 
     const { error } = await supabase
       .from('sectors')
@@ -315,6 +333,8 @@ export default function AdminSectors() {
         require_gps_checkin: checkinSettings.require_gps_checkin,
         allowed_checkin_radius_meters: checkinSettings.allowed_checkin_radius_meters,
         checkin_tolerance_minutes: checkinSettings.checkin_tolerance_minutes,
+        reference_latitude: checkinSettings.reference_latitude,
+        reference_longitude: checkinSettings.reference_longitude,
         updated_by: user?.id,
       })
       .eq('id', selectedSectorForCheckin.id);
@@ -789,27 +809,74 @@ export default function AdminSectors() {
                 </div>
 
                 {checkinSettings.require_gps_checkin && (
-                  <div className="space-y-2">
-                    <Label>Raio permitido (metros)</Label>
-                    <p className="text-xs text-muted-foreground">
-                      Distância máxima do local de trabalho para aceitar o check-in
-                    </p>
-                    <Input
-                      type="number"
-                      min={50}
-                      max={5000}
-                      step={50}
-                      value={checkinSettings.allowed_checkin_radius_meters}
-                      onChange={(e) => 
-                        setCheckinSettings({ 
-                          ...checkinSettings, 
-                          allowed_checkin_radius_meters: parseInt(e.target.value) || 500 
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Recomendado: 500m para hospitais grandes, 200m para clínicas
-                    </p>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Raio permitido (metros)</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Distância máxima do local de trabalho para aceitar o check-in
+                      </p>
+                      <Input
+                        type="number"
+                        min={50}
+                        max={5000}
+                        step={50}
+                        value={checkinSettings.allowed_checkin_radius_meters}
+                        onChange={(e) => 
+                          setCheckinSettings({ 
+                            ...checkinSettings, 
+                            allowed_checkin_radius_meters: parseInt(e.target.value) || 500 
+                          })
+                        }
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Recomendado: 500m para hospitais grandes, 200m para clínicas
+                      </p>
+                    </div>
+
+                    <div className="space-y-2 p-3 bg-muted/50 rounded-lg border">
+                      <Label className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-primary" />
+                        Localização de Referência
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Coordenadas do local de trabalho (obrigatório para validação GPS)
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Latitude</Label>
+                          <Input
+                            type="number"
+                            step="0.000001"
+                            placeholder="-23.550520"
+                            value={checkinSettings.reference_latitude ?? ''}
+                            onChange={(e) => 
+                              setCheckinSettings({ 
+                                ...checkinSettings, 
+                                reference_latitude: e.target.value ? parseFloat(e.target.value) : null 
+                              })
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Longitude</Label>
+                          <Input
+                            type="number"
+                            step="0.000001"
+                            placeholder="-46.633308"
+                            value={checkinSettings.reference_longitude ?? ''}
+                            onChange={(e) => 
+                              setCheckinSettings({ 
+                                ...checkinSettings, 
+                                reference_longitude: e.target.value ? parseFloat(e.target.value) : null 
+                              })
+                            }
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Dica: Pesquise no Google Maps o endereço e copie as coordenadas da URL
+                      </p>
+                    </div>
                   </div>
                 )}
               </>
