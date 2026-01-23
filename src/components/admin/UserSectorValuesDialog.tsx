@@ -63,7 +63,7 @@ export default function UserSectorValuesDialog({
     setLoading(true);
 
     try {
-      // 1) Sector memberships (source of truth)
+      // 1) Get sector member user_ids
       const { data: sectorMemberships, error: sectorMembersError } = await supabase
         .from('sector_memberships')
         .select('user_id')
@@ -75,37 +75,38 @@ export default function UserSectorValuesDialog({
       const sectorUserIds = (sectorMemberships || []).map((m) => m.user_id);
       if (sectorUserIds.length === 0) {
         setUserValues([]);
+        setLoading(false);
         return;
       }
 
-      // 2) Only users that are active in this tenant
-      const { data: activeMemberships, error: activeMembershipsError } = await supabase
+      // 2) Get memberships with profile info (this uses the existing RLS-friendly join)
+      // The memberships->profiles join works because memberships has proper FK to profiles
+      const { data: membershipsWithProfiles, error: membershipsError } = await supabase
         .from('memberships')
-        .select('user_id')
+        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, name, profile_type)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
         .in('user_id', sectorUserIds);
 
-      if (activeMembershipsError) throw activeMembershipsError;
+      if (membershipsError) throw membershipsError;
 
-      const activeUserIds = new Set((activeMemberships || []).map((m) => m.user_id));
-
-      // 3) Profile data (filter to plantonista)
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('id, name, profile_type')
-        .in('id', sectorUserIds);
-
-      if (profilesError) throw profilesError;
-
-      const members: Member[] = (profiles || [])
-        .filter((p) => activeUserIds.has(p.id))
-        .filter((p) => (p.profile_type || '') === 'plantonista')
-        .map((p) => ({
-          user_id: p.id,
-          user_name: p.name || 'Sem nome',
+      // Filter to only plantonistas and map to Member format
+      const members: Member[] = (membershipsWithProfiles || [])
+        .filter((m: any) => {
+          const profile = m.profiles;
+          return profile && (profile.profile_type || '') === 'plantonista';
+        })
+        .map((m: any) => ({
+          user_id: m.user_id,
+          user_name: m.profiles?.name || 'Sem nome',
         }))
         .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
+      
+      if (members.length === 0) {
+        setUserValues([]);
+        setLoading(false);
+        return;
+      }
 
       // Get existing overrides
       const { data: overrides, error: overridesError } = await supabase
