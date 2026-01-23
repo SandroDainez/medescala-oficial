@@ -48,6 +48,7 @@ export default function AdminFinancial() {
   
   // Raw data from DB
   const [rawEntries, setRawEntries] = useState<RawShiftEntry[]>([]);
+  const [tenantSlug, setTenantSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selfTestResult, setSelfTestResult] = useState<{ ok: boolean; errors: string[] } | null>(null);
   
@@ -109,8 +110,8 @@ export default function AdminFinancial() {
     setLoading(true);
 
     try {
-      // Fetch shifts, assignments via RPC, and sectors in parallel
-      const [shiftsRes, assignmentsRes, sectorsRes] = await Promise.all([
+      // Fetch shifts, assignments via RPC, sectors, and tenant info in parallel
+      const [shiftsRes, assignmentsRes, sectorsRes, tenantRes] = await Promise.all([
         supabase
           .from('shifts')
           .select('id, shift_date, start_time, end_time, sector_id, base_value')
@@ -130,6 +131,11 @@ export default function AdminFinancial() {
           .select('id, name')
           .eq('tenant_id', currentTenantId)
           .eq('active', true),
+        supabase
+          .from('tenants')
+          .select('slug')
+          .eq('id', currentTenantId)
+          .single(),
       ]);
 
       if (shiftsRes.error) {
@@ -150,6 +156,10 @@ export default function AdminFinancial() {
         console.error('[AdminFinancial] Fetch sectors error:', sectorsRes.error);
         // proceed without sector names
       }
+
+      // Get tenant slug for GABS-specific rules
+      const slug = tenantRes.data?.slug ?? null;
+      setTenantSlug(slug);
 
       const shifts = shiftsRes.data ?? [];
       const assignmentsRaw = (assignmentsRes.data ?? []) as Array<{
@@ -174,6 +184,7 @@ export default function AdminFinancial() {
           })
         ),
         sectors: sectors as unknown as SectorLookup[],
+        tenantSlug: slug ?? undefined,
       });
 
       setRawEntries(mapped);
