@@ -21,6 +21,8 @@ import ChangePassword from "./pages/ChangePassword";
 import TrialExpired from "./pages/TrialExpired";
 import SuperAdmin from "./pages/SuperAdmin";
 import Install from "./pages/Install";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
 
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
@@ -91,6 +93,8 @@ const AppRoutes = forwardRef<HTMLDivElement>(function AppRoutes(_props, ref) {
         <Route path="/trial-expired" element={<TrialExpired />} />
         <Route path="/super-admin" element={<SuperAdmin />} />
         <Route path="/install" element={<Install />} />
+        <Route path="/terms" element={<Terms />} />
+        <Route path="/privacy" element={<Privacy />} />
 
         {/* Admin Routes */}
         <Route
