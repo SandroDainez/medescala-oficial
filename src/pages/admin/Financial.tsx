@@ -134,7 +134,7 @@ export default function AdminFinancial() {
         }),
         supabase
           .from('sectors')
-          .select('id, name')
+          .select('id, name, default_day_value, default_night_value')
           .eq('tenant_id', currentTenantId)
           .eq('active', true),
         supabase
