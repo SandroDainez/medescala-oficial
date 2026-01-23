@@ -226,7 +226,8 @@ export default function UserSectorValuesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      {/* Use fixed height (not only max-height) so ScrollArea can calculate a viewport and allow scrolling */}
+      <DialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCog className="h-5 w-5" />
@@ -264,8 +265,9 @@ export default function UserSectorValuesDialog({
             Nenhum plantonista associado a este setor.
           </div>
         ) : (
-          <ScrollArea className="flex-1 -mx-6 px-6">
-            <div className="space-y-3 py-2">
+          <div className="flex-1 min-h-0 -mx-6 px-6">
+            <ScrollArea className="h-full">
+              <div className="space-y-3 py-2">
               {/* Header */}
               <div className="grid grid-cols-[1fr,120px,120px] gap-3 px-3 text-xs font-medium text-muted-foreground uppercase">
                 <span>Plantonista</span>
@@ -306,8 +308,9 @@ export default function UserSectorValuesDialog({
                   </div>
                 </div>
               ))}
-            </div>
-          </ScrollArea>
+              </div>
+            </ScrollArea>
+          </div>
         )}
 
         <DialogFooter className="pt-4 border-t">
