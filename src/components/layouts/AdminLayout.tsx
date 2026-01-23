@@ -187,42 +187,52 @@ export function AdminLayout() {
                   )}
                 </button>
               </CollapsibleTrigger>
-              <CollapsibleContent className="pl-4 mt-1 space-y-1">
-                {/* All sectors */}
+              <CollapsibleContent className="mt-2 space-y-1.5 max-h-[400px] overflow-y-auto pr-1">
+                {/* All sectors - card style */}
                 <NavLink
                   to="/admin/calendar"
                   end
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                      'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
                       isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                        : 'bg-card hover:bg-accent border-border hover:border-primary/30'
                     )
                   }
                 >
-                  <div className="w-2 h-2 rounded-full bg-muted-foreground" />
-                  <span>Todos os Setores</span>
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted to-muted-foreground/20 flex items-center justify-center">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <span className="font-medium">Todos os Setores</span>
                 </NavLink>
-                {/* Individual sectors */}
+                {/* Individual sectors - card style */}
                 {sectors.map((sector) => (
                   <NavLink
                     key={sector.id}
                     to={`/admin/calendar/${sector.id}`}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                        'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
                         isActive
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-card hover:bg-accent border-border hover:border-primary/30'
                       )
                     }
                   >
                     <div 
-                      className="w-2 h-2 rounded-full" 
-                      style={{ backgroundColor: sector.color || '#6b7280' }}
-                    />
-                    <span className="truncate">{sector.name}</span>
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                      style={{ 
+                        backgroundColor: `${sector.color || '#6b7280'}20`,
+                        border: `2px solid ${sector.color || '#6b7280'}`
+                      }}
+                    >
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: sector.color || '#6b7280' }}
+                      />
+                    </div>
+                    <span className="truncate font-medium">{sector.name}</span>
                   </NavLink>
                 ))}
               </CollapsibleContent>
@@ -329,22 +339,24 @@ export function AdminLayout() {
                     )}
                   </button>
                 </CollapsibleTrigger>
-                <CollapsibleContent className="pl-4 mt-1 space-y-1">
+                <CollapsibleContent className="mt-2 space-y-1.5 max-h-[400px] overflow-y-auto pr-1">
                   <NavLink
                     to="/admin/calendar"
                     end
                     onClick={() => setMobileMenuOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                        'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
                         isActive
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-card hover:bg-accent border-border hover:border-primary/30'
                       )
                     }
                   >
-                    <div className="w-2 h-2 rounded-full bg-muted-foreground" />
-                    <span>Todos os Setores</span>
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted to-muted-foreground/20 flex items-center justify-center">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <span className="font-medium">Todos os Setores</span>
                   </NavLink>
                   {sectors.map((sector) => (
                     <NavLink
@@ -353,18 +365,26 @@ export function AdminLayout() {
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
                         cn(
-                          'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
+                          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
                           isActive
-                            ? 'bg-primary text-primary-foreground'
-                            : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                            : 'bg-card hover:bg-accent border-border hover:border-primary/30'
                         )
                       }
                     >
                       <div 
-                        className="w-2 h-2 rounded-full" 
-                        style={{ backgroundColor: sector.color || '#6b7280' }}
-                      />
-                      <span className="truncate">{sector.name}</span>
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                        style={{ 
+                          backgroundColor: `${sector.color || '#6b7280'}20`,
+                          border: `2px solid ${sector.color || '#6b7280'}`
+                        }}
+                      >
+                        <div 
+                          className="w-3 h-3 rounded-full" 
+                          style={{ backgroundColor: sector.color || '#6b7280' }}
+                        />
+                      </div>
+                      <span className="truncate font-medium">{sector.name}</span>
                     </NavLink>
                   ))}
                 </CollapsibleContent>
