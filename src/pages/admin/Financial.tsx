@@ -22,9 +22,10 @@ import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye } from 'lucide-react';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator } from 'lucide-react';
 import { format, parseISO, startOfMonth, endOfMonth, subMonths, eachDayOfInterval } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import SectorProfitability from '@/components/admin/SectorProfitability';
 
 // ============================================================
 // MODELO ÚNICO (mesma fonte da Escala)
@@ -702,14 +703,18 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Dia a Dia | Tabela de Plantonistas | Por Plantonista | Por Setor | Todos os Plantões */}
+      {/* TABS: Dia a Dia | Tabela de Plantonistas | Por Plantonista | Por Setor | Todos os Plantões | Rentabilidade */}
       <Tabs defaultValue="dia" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-6">
           <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
-          <TabsTrigger value="plantonistas_tabela">Plantonistas (tabela)</TabsTrigger>
+          <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
           <TabsTrigger value="plantonista">Por Plantonista</TabsTrigger>
           <TabsTrigger value="setor">Por Setor</TabsTrigger>
-          <TabsTrigger value="todos">Todos os Plantões</TabsTrigger>
+          <TabsTrigger value="todos">Todos</TabsTrigger>
+          <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
+            <Calculator className="h-3 w-3" />
+            Rentabilidade
+          </TabsTrigger>
         </TabsList>
 
         {/* TAB: Dia a Dia */}
@@ -1167,6 +1172,11 @@ export default function AdminFinancial() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        {/* TAB: Rentabilidade por Setor */}
+        <TabsContent value="rentabilidade" className="mt-4">
+          <SectorProfitability />
         </TabsContent>
       </Tabs>
 
