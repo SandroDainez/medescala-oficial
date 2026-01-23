@@ -12,7 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw } from 'lucide-react';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 
@@ -499,81 +499,127 @@ export default function AdminSectors() {
 
       {/* Members Assignment Dialog */}
       <Dialog open={membersDialogOpen} onOpenChange={setMembersDialogOpen}>
-        <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Membros do Setor: {selectedSector?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Selecione os plantonistas que fazem parte deste setor:
-            </p>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {members.map((member) => {
-                const isPlantonista = (member.profile?.profile_type || '') === 'plantonista';
-                const displayName = member.profile?.name || 'Sem nome';
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Selecione os plantonistas que fazem parte deste setor:
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!selectedSector || !currentTenantId) return;
+                  
+                  // Get all plantonistas from the tenant
+                  const plantonistasInTenant = members
+                    .filter(m => (m.profile?.profile_type || '') === 'plantonista')
+                    .map(m => m.user_id);
+                  
+                  // Current sector members
+                  const currentSectorMembers = sectorMemberships
+                    .filter(sm => sm.sector_id === selectedSector.id)
+                    .map(sm => sm.user_id);
+                  
+                  // Keep only those who are still plantonistas
+                  const validMembers = currentSectorMembers.filter(id => 
+                    plantonistasInTenant.includes(id)
+                  );
+                  
+                  // Remove invalid members (those who are no longer plantonistas)
+                  const toRemove = currentSectorMembers.filter(id => 
+                    !plantonistasInTenant.includes(id)
+                  );
+                  
+                  if (toRemove.length > 0) {
+                    const { error } = await supabase
+                      .from('sector_memberships')
+                      .delete()
+                      .eq('sector_id', selectedSector.id)
+                      .eq('tenant_id', currentTenantId)
+                      .in('user_id', toRemove);
+                    
+                    if (error) {
+                      toast({ 
+                        title: 'Erro ao sincronizar', 
+                        description: error.message, 
+                        variant: 'destructive' 
+                      });
+                      return;
+                    }
+                    
+                    toast({ 
+                      title: 'Sincronização concluída', 
+                      description: `${toRemove.length} membro(s) removido(s) por não serem plantonistas.` 
+                    });
+                    
+                    fetchData();
+                    setSelectedMembers(validMembers);
+                  } else {
+                    toast({ 
+                      title: 'Já sincronizado', 
+                      description: 'Todos os membros do setor são plantonistas válidos.' 
+                    });
+                  }
+                }}
+                title="Remover membros que não são plantonistas"
+              >
+                <RefreshCw className="mr-1 h-4 w-4" />
+                Sincronizar
+              </Button>
+            </div>
+            <div className="space-y-2 max-h-[300px] overflow-y-auto border rounded-lg p-2">
+              {members
+                .filter(m => (m.profile?.profile_type || '') === 'plantonista')
+                .sort((a, b) => (a.profile?.name || '').localeCompare(b.profile?.name || '', 'pt-BR'))
+                .map((member) => {
+                  const displayName = member.profile?.name || 'Sem nome';
 
-                return (
-                  <div
-                    key={member.user_id}
-                    className="flex items-center gap-3 p-2 rounded hover:bg-accent"
-                  >
-                    <Checkbox
-                      id={member.user_id}
-                      checked={selectedMembers.includes(member.user_id)}
-                      disabled={!isPlantonista}
-                      onCheckedChange={(checked) => {
-                        if (!isPlantonista) return;
-                        if (checked) {
-                          setSelectedMembers([...selectedMembers, member.user_id]);
-                        } else {
-                          setSelectedMembers(selectedMembers.filter(id => id !== member.user_id));
-                        }
-                      }}
-                    />
-
+                  return (
                     <div
-                      className="cursor-pointer flex-1"
+                      key={member.user_id}
+                      className="flex items-center gap-3 p-2 rounded hover:bg-accent cursor-pointer"
                       onClick={() => {
-                        if (!isPlantonista) return;
                         const next = selectedMembers.includes(member.user_id)
                           ? selectedMembers.filter((id) => id !== member.user_id)
                           : [...selectedMembers, member.user_id];
                         setSelectedMembers(next);
                       }}
                     >
-                      <div className="flex items-center justify-between gap-3">
-                        <span>{displayName}</span>
-                        <div className="flex items-center gap-2">
-                          <Badge variant={isPlantonista ? 'secondary' : 'outline'}>
-                            {isPlantonista ? 'Plantonista' : 'Não é plantonista'}
-                          </Badge>
-                          {!isPlantonista && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                makePlantonista(member.user_id);
-                              }}
-                            >
-                              Tornar plantonista
-                            </Button>
-                          )}
-                        </div>
-                      </div>
+                      <Checkbox
+                        id={member.user_id}
+                        checked={selectedMembers.includes(member.user_id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedMembers([...selectedMembers, member.user_id]);
+                          } else {
+                            setSelectedMembers(selectedMembers.filter(id => id !== member.user_id));
+                          }
+                        }}
+                      />
+                      <span className="flex-1">{displayName}</span>
+                      {selectedMembers.includes(member.user_id) && (
+                        <Badge variant="secondary" className="text-xs">Membro</Badge>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
-            <div className="flex justify-between pt-4">
+            <div className="flex justify-between pt-4 border-t">
               <span className="text-sm text-muted-foreground">
                 {selectedMembers.length} selecionado(s)
               </span>
-              <Button onClick={saveSectorMembers}>
-                Salvar
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setMembersDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={saveSectorMembers}>
+                  Salvar
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
