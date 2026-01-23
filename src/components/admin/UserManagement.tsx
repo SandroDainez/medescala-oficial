@@ -15,7 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square, Search, KeyRound, Send } from 'lucide-react';
+import { Shield, User, UserPlus, Trash2, Copy, Users, UserCheck, UserX, Stethoscope, Building2, CreditCard, Phone, MapPin, FileText, Edit, Mail, Layers, Eye, EyeOff, RefreshCw, Check, CheckSquare, Square, Search, KeyRound, Send, MessageCircle } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface MemberWithProfile {
@@ -2229,30 +2229,62 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              {/* Copy All Button */}
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={copyAllCredentials}
-              >
-                {sendAccessCopiedField === 'both' ? (
-                  <>
-                    <Check className="h-4 w-4 mr-2 text-green-600" />
-                    Copiado!
-                  </>
-                ) : (
-                  <>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copiar Tudo
-                  </>
-                )}
-              </Button>
+              {/* Action Buttons */}
+              <div className="grid grid-cols-2 gap-2">
+                {/* Copy All Button */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={copyAllCredentials}
+                >
+                  {sendAccessCopiedField === 'both' ? (
+                    <>
+                      <Check className="h-4 w-4 mr-2 text-green-600" />
+                      Copiado!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copiar Tudo
+                    </>
+                  )}
+                </Button>
+                
+                {/* WhatsApp Button */}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full bg-green-50 hover:bg-green-100 border-green-300 text-green-700"
+                  onClick={() => {
+                    const userName = sendAccessMember?.profile?.name || 'usuário';
+                    const hospitalName = currentTenantName || 'hospital';
+                    const message = `Olá ${userName}! 👋\n\nSuas credenciais de acesso ao *MedEscala* (${hospitalName}) foram geradas:\n\n📧 *Email:* ${sendAccessCredentials.email}\n🔐 *Senha:* ${sendAccessCredentials.password}\n\n⚠️ *Importante:* Você deverá alterar a senha no primeiro login.\n\n🔗 Acesse: ${window.location.origin}/auth`;
+                    
+                    // Get user phone if available
+                    const userPhone = sendAccessMember?.privateProfile?.phone?.replace(/\D/g, '') || '';
+                    
+                    // Create WhatsApp URL
+                    const whatsappUrl = userPhone 
+                      ? `https://wa.me/55${userPhone}?text=${encodeURIComponent(message)}`
+                      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+                    
+                    window.open(whatsappUrl, '_blank');
+                  }}
+                >
+                  <MessageCircle className="h-4 w-4 mr-2" />
+                  WhatsApp
+                </Button>
+              </div>
               
               <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <p className="text-xs text-amber-700">
-                  <strong>⚠️ Importante:</strong> Compartilhe essas credenciais com o usuário de forma segura 
-                  (WhatsApp, SMS, etc.). A senha será exibida apenas uma vez.
+                  <strong>⚠️ Importante:</strong> A senha será exibida apenas uma vez. 
+                  {sendAccessMember?.privateProfile?.phone && (
+                    <span className="block mt-1">
+                      📱 Telefone cadastrado: {sendAccessMember.privateProfile.phone}
+                    </span>
+                  )}
                 </p>
               </div>
               
