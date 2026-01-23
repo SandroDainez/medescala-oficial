@@ -27,7 +27,6 @@ import Privacy from "./pages/Privacy";
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminCalendar from "./pages/admin/Calendar";
-import AdminShifts from "./pages/admin/Shifts";
 import AdminUsers from "./pages/admin/Users";
 import AdminSectors from "./pages/admin/Sectors";
 import AdminSwaps from "./pages/admin/Swaps";
@@ -109,7 +108,6 @@ const AppRoutes = forwardRef<HTMLDivElement>(function AppRoutes(_props, ref) {
           <Route index element={<AdminDashboard />} />
           <Route path="calendar" element={<AdminCalendar />} />
           <Route path="calendar/:sectorId" element={<AdminCalendar />} />
-          <Route path="shifts" element={<AdminShifts />} />
           <Route path="users" element={<AdminUsers />} />
           <Route path="sectors" element={<AdminSectors />} />
           <Route path="swaps" element={<AdminSwaps />} />

@@ -19,7 +19,6 @@ import {
   Menu,
   X,
   CreditCard,
-  ListTodo,
   Stethoscope,
   FileSpreadsheet,
   Shield,
@@ -40,7 +39,6 @@ interface Sector {
 }
 
 const navItems = [
-  { to: '/admin/shifts', label: 'Lista de Plantões', icon: ListTodo },
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },

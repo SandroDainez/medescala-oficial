@@ -2039,7 +2039,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   .eq('id', currentAssignment.id);
                 if (updErr) throw updErr;
               } else {
-                // Different user - this is a TRANSFER
+                // Different user - this is a SUBSTITUTION (not a transfer)
+                // The old user is REMOVED, the new user is ADDED
                 const oldUserName = currentAssignment.profile?.name || 'Desconhecido';
                 const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
                 const newUserName = newUserMember?.profile?.name || 'Desconhecido';
@@ -2065,7 +2066,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   .eq('id', currentAssignment.id);
                 if (delErr) throw delErr;
 
-                // Record the transfer
+                // Record the REMOVAL of the old user (substitution means they're out, not transferred)
                 const shiftDate = parseISO(originalShift.shift_date);
                 await recordScheduleMovement({
                   tenant_id: currentTenantId,
@@ -2073,13 +2074,29 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   year: shiftDate.getFullYear(),
                   user_id: currentAssignment.user_id,
                   user_name: oldUserName,
-                  movement_type: 'transferred',
+                  movement_type: 'removed',
                   source_sector_id: originalShift.sector_id || null,
                   source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
                   source_shift_date: originalShift.shift_date,
                   source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
                   source_assignment_id: currentAssignment.id,
                   reason: `Substituído por ${newUserName}`,
+                  performed_by: user.id,
+                });
+
+                // Record the ADDITION of the new user
+                await recordScheduleMovement({
+                  tenant_id: currentTenantId,
+                  month: shiftDate.getMonth() + 1,
+                  year: shiftDate.getFullYear(),
+                  user_id: editData.assigned_user_id,
+                  user_name: newUserName,
+                  movement_type: 'added',
+                  destination_sector_id: originalShift.sector_id || null,
+                  destination_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
+                  destination_shift_date: originalShift.shift_date,
+                  destination_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
+                  reason: `Substituiu ${oldUserName}`,
                   performed_by: user.id,
                 });
               }
