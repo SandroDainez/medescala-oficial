@@ -8,6 +8,7 @@ const corsHeaders = {
 interface PiiData {
   cpf?: string | null;
   crm?: string | null;
+  rqe?: string | null;
   phone?: string | null;
   address?: string | null;
   bank_name?: string | null;
@@ -179,7 +180,7 @@ Deno.serve(async (req) => {
       // Fetch all profiles_private for allowed users in one query
       const { data: profiles, error: fetchError } = await supabaseAdmin
         .from('profiles_private')
-        .select('user_id, cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
+        .select('user_id, cpf_enc, crm_enc, rqe_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
         .in('user_id', Array.from(allowedUserIds))
 
       if (fetchError) {
@@ -188,7 +189,7 @@ Deno.serve(async (req) => {
       }
 
       const result: Record<string, PiiData> = {}
-      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+      const fields = ['cpf', 'crm', 'rqe', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
 
       for (const profile of (profiles || [])) {
         const decryptedData: PiiData = {}
@@ -283,7 +284,7 @@ Deno.serve(async (req) => {
       // Encrypt data and save to database (bytea columns)
       // IMPORTANT: profiles_private.*_enc are bytea. We must store raw bytes, not the base64 text.
       // We store as Postgres bytea hex format: "\\x...".
-      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+      const fields = ['cpf', 'crm', 'rqe', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
 
       const updatePayload: Record<string, unknown> = { user_id: userId }
 
@@ -329,7 +330,7 @@ Deno.serve(async (req) => {
       // Fetch and decrypt data (only encrypted columns exist now)
       const { data: profile, error: fetchError } = await supabaseAdmin
         .from('profiles_private')
-        .select('cpf_enc, crm_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
+        .select('cpf_enc, crm_enc, rqe_enc, phone_enc, address_enc, bank_name_enc, bank_agency_enc, bank_account_enc, pix_key_enc')
         .eq('user_id', userId)
         .maybeSingle()
 
@@ -349,7 +350,7 @@ Deno.serve(async (req) => {
       }
 
       const decryptedData: PiiData = {}
-      const fields = ['cpf', 'crm', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
+      const fields = ['cpf', 'crm', 'rqe', 'phone', 'address', 'bank_name', 'bank_agency', 'bank_account', 'pix_key'] as const
 
       for (const field of fields) {
         const encField = `${field}_enc` as keyof typeof profile
