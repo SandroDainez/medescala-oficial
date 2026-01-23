@@ -5,6 +5,7 @@ import { useSuperAdmin } from '@/hooks/useSuperAdmin';
 import { useAdminPendingCounts } from '@/hooks/useAdminPendingCounts';
 import { TenantSelector } from '@/components/TenantSelector';
 import { TrialBanner } from '@/components/TrialBanner';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
@@ -129,6 +130,7 @@ export function AdminLayout() {
             <span className="hidden text-sm text-muted-foreground sm:inline max-w-[180px] truncate">
               {user?.email}
             </span>
+            <ThemeToggle />
             <Button 
               variant="ghost" 
               size="sm" 

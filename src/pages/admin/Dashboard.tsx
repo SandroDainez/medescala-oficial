@@ -12,6 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useNavigate } from 'react-router-dom';
+import { DashboardCharts } from '@/components/admin/DashboardCharts';
+import { AnimatedNumber } from '@/components/AnimatedContainer';
 import {
   Calendar,
   Users,
@@ -28,6 +30,7 @@ import {
   Building2,
   Eye,
   Plus,
+  BarChart3,
 } from 'lucide-react';
 import {
   format,
@@ -518,8 +521,9 @@ export default function AdminDashboard() {
             <Calendar className="h-5 w-5 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.totalShifts}</div>
-            <p className="text-xs text-muted-foreground">Ver calendário →</p>
+            <div className="text-2xl font-bold">
+              <AnimatedNumber value={stats.totalShifts} />
+            </div>
           </CardContent>
         </Card>
 
@@ -561,21 +565,44 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <div>
-          <Tabs defaultValue="swaps" className="space-y-4">
-            <TabsList>
-              <TabsTrigger value="swaps">
-                <ArrowLeftRight className="mr-2 h-4 w-4" />
+          <Tabs defaultValue="analytics" className="space-y-4">
+            <TabsList className="flex-wrap h-auto gap-1">
+              <TabsTrigger value="analytics" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Analytics
+              </TabsTrigger>
+              <TabsTrigger value="swaps" className="gap-2">
+                <ArrowLeftRight className="h-4 w-4" />
                 Trocas ({swaps.length})
               </TabsTrigger>
-              <TabsTrigger value="financial">
-                <DollarSign className="mr-2 h-4 w-4" />
+              <TabsTrigger value="financial" className="gap-2">
+                <DollarSign className="h-4 w-4" />
                 Financeiro
               </TabsTrigger>
-              <TabsTrigger value="members">
-                <Users className="mr-2 h-4 w-4" />
+              <TabsTrigger value="members" className="gap-2">
+                <Users className="h-4 w-4" />
                 Equipe
               </TabsTrigger>
             </TabsList>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics">
+          <Card>
+            <CardHeader>
+              <CardTitle>Análise do Mês</CardTitle>
+              <CardDescription>Visualização de dados de {format(currentDate, 'MMMM yyyy', { locale: ptBR })}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <DashboardCharts 
+                shifts={shifts}
+                assignments={assignments}
+                sectors={sectors}
+                members={members.filter(m => m.active).map(m => ({ id: m.user_id, name: m.profile?.name || null }))}
+                currentMonth={currentDate}
+              />
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Swaps Tab */}
         <TabsContent value="swaps">
