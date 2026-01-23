@@ -355,30 +355,41 @@ export default function AdminSectors() {
   };
 
   if (loading) {
-    return <div className="text-muted-foreground">Carregando...</div>;
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex flex-col items-center gap-3">
+          <RefreshCw className="h-8 w-8 text-primary animate-spin" />
+          <span className="text-muted-foreground">Carregando setores...</span>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="space-y-8 animate-fade-in">
+      {/* Page Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-border/60">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Setores</h2>
-          <p className="text-muted-foreground">Gerencie os setores/unidades do hospital</p>
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Setores</h1>
+          <p className="text-muted-foreground mt-1">Gerencie os setores/unidades do hospital</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeDialog()}>
           <DialogTrigger asChild>
-            <Button onClick={() => setDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={() => setDialogOpen(true)} size="lg" className="shadow-primary">
+              <Plus className="mr-2 h-5 w-5" />
               Novo Setor
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{editingSector ? 'Editar Setor' : 'Novo Setor'}</DialogTitle>
+              <DialogTitle className="text-xl">{editingSector ? 'Editar Setor' : 'Novo Setor'}</DialogTitle>
+              <DialogDescription>
+                {editingSector ? 'Atualize as informações do setor' : 'Adicione um novo setor ao hospital'}
+              </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5 p-6">
               <div className="space-y-2">
-                <Label htmlFor="name">Nome do Setor</Label>
+                <Label htmlFor="name" className="text-sm font-medium">Nome do Setor</Label>
                 <Input
                   id="name"
                   value={formData.name}
@@ -388,7 +399,7 @@ export default function AdminSectors() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="description">Descrição (opcional)</Label>
+                <Label htmlFor="description" className="text-sm font-medium">Descrição (opcional)</Label>
                 <Input
                   id="description"
                   value={formData.description}
@@ -397,66 +408,91 @@ export default function AdminSectors() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="color">Cor</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    id="color"
-                    type="color"
-                    value={formData.color}
-                    onChange={(e) => setFormData({ ...formData, color: e.target.value })}
-                    className="h-10 w-20 cursor-pointer"
-                  />
-                  <span className="text-sm text-muted-foreground">{formData.color}</span>
+                <Label htmlFor="color" className="text-sm font-medium">Cor do Setor</Label>
+                <div className="flex items-center gap-3">
+                  <div className="relative">
+                    <Input
+                      id="color"
+                      type="color"
+                      value={formData.color}
+                      onChange={(e) => setFormData({ ...formData, color: e.target.value })}
+                      className="h-12 w-16 cursor-pointer p-1 rounded-xl"
+                    />
+                  </div>
+                  <div 
+                    className="h-10 px-4 rounded-lg flex items-center text-sm font-medium text-white"
+                    style={{ backgroundColor: formData.color }}
+                  >
+                    {formData.name || 'Preview'}
+                  </div>
                 </div>
               </div>
-              <Button type="submit" className="w-full">
+            </form>
+            <DialogFooter>
+              <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
+              <Button type="submit" onClick={handleSubmit}>
                 {editingSector ? 'Salvar Alterações' : 'Criar Setor'}
               </Button>
-            </form>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Card>
+      {/* Stats Cards */}
+      <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        <Card className="stat-card group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total de Setores</CardTitle>
-            <Building2 className="h-5 w-5 text-primary" />
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{sectors.length}</div>
+            <div className="text-3xl font-bold text-foreground">{sectors.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">setores cadastrados</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="stat-card group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Setores Ativos</CardTitle>
-            <Building2 className="h-5 w-5 text-green-500" />
+            <div className="h-10 w-10 rounded-xl bg-success-light flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+              <Building2 className="h-5 w-5 text-primary" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{sectors.filter(s => s.active).length}</div>
+            <div className="text-3xl font-bold text-foreground">{sectors.filter(s => s.active).length}</div>
+            <p className="text-xs text-muted-foreground mt-1">em operação</p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="stat-card group">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total de Atribuições</CardTitle>
-            <Users className="h-5 w-5 text-blue-500" />
+            <div className="h-10 w-10 rounded-xl bg-info-light flex items-center justify-center group-hover:bg-info/20 transition-colors">
+              <Users className="h-5 w-5 text-info" />
+            </div>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{sectorMemberships.length}</div>
+            <div className="text-3xl font-bold text-foreground">{sectorMemberships.length}</div>
+            <p className="text-xs text-muted-foreground mt-1">membros em setores</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Sectors Table */}
-      <Card>
+      <Card className="overflow-hidden border-border/60">
+        <CardHeader className="bg-muted/30 border-b border-border/60 py-4">
+          <CardTitle className="text-base font-semibold flex items-center gap-2">
+            <Building2 className="h-5 w-5 text-primary" />
+            Lista de Setores
+          </CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Cor</TableHead>
+                <TableHead className="w-16">Cor</TableHead>
                 <TableHead>Nome</TableHead>
-                <TableHead>Descrição</TableHead>
+                <TableHead className="hidden md:table-cell">Descrição</TableHead>
                 <TableHead>Valores</TableHead>
                 <TableHead>Check-in</TableHead>
                 <TableHead>Membros</TableHead>
@@ -467,63 +503,68 @@ export default function AdminSectors() {
             <TableBody>
               {sectors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center text-muted-foreground">
-                    Nenhum setor cadastrado. Crie o primeiro setor para começar.
+                  <TableCell colSpan={8} className="h-32">
+                    <div className="flex flex-col items-center justify-center text-muted-foreground">
+                      <Building2 className="h-10 w-10 mb-2 opacity-40" />
+                      <p>Nenhum setor cadastrado.</p>
+                      <p className="text-sm">Crie o primeiro setor para começar.</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
-                sectors.map((sector) => (
-                  <TableRow key={sector.id}>
+                sectors.map((sector, index) => (
+                  <TableRow key={sector.id} className="group" style={{ animationDelay: `${index * 50}ms` }}>
                     <TableCell>
                       <div
-                        className="h-6 w-6 rounded-full"
+                        className="h-8 w-8 rounded-lg shadow-sm border-2 border-white"
                         style={{ backgroundColor: sector.color }}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{sector.name}</TableCell>
-                    <TableCell className="text-muted-foreground">
+                    <TableCell>
+                      <span className="font-semibold text-foreground">{sector.name}</span>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-muted-foreground max-w-[200px] truncate">
                       {sector.description || '-'}
                     </TableCell>
                     <TableCell>
-                      <div className="text-xs space-y-1">
-                        <div className="flex items-center gap-1">
-                          <span className="text-amber-500">D:</span>
-                          <span>{formatCurrency(sector.default_day_value)}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="w-4 h-4 rounded bg-warning-light flex items-center justify-center text-warning font-bold">D</span>
+                          <span className="font-medium">{formatCurrency(sector.default_day_value)}</span>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-blue-500">N:</span>
-                          <span>{formatCurrency(sector.default_night_value)}</span>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="w-4 h-4 rounded bg-info-light flex items-center justify-center text-info font-bold">N</span>
+                          <span className="font-medium">{formatCurrency(sector.default_night_value)}</span>
                         </div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <button
                         onClick={() => openCheckinDialog(sector)}
-                        className="flex flex-col gap-0.5 hover:opacity-80 transition-opacity cursor-pointer"
+                        className="flex flex-col gap-1 hover:opacity-80 transition-opacity cursor-pointer"
                         title="Clique para configurar check-in e GPS"
                       >
                         <Badge 
-                          variant={sector.checkin_enabled ? 'default' : 'secondary'}
-                          className="text-xs"
+                          variant={sector.checkin_enabled ? 'success' : 'secondary'}
                         >
                           {sector.checkin_enabled ? 'Ativo' : 'Inativo'}
                         </Badge>
                         {sector.checkin_enabled && sector.require_gps_checkin && (
-                          <Badge variant="outline" className="text-xs">
+                          <Badge variant="info" className="text-xs">
                             <MapPin className="mr-1 h-3 w-3" />
-                            GPS {sector.allowed_checkin_radius_meters || 500}m
+                            {sector.allowed_checkin_radius_meters || 500}m
                           </Badge>
                         )}
                       </button>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">
-                        <Users className="mr-1 h-3 w-3" />
+                      <Badge variant="secondary" className="font-semibold">
+                        <Users className="mr-1.5 h-3 w-3" />
                         {getMemberCount(sector.id)}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={sector.active ? 'default' : 'outline'}>
+                      <Badge variant={sector.active ? 'success' : 'outline'}>
                         {sector.active ? 'Ativo' : 'Inativo'}
                       </Badge>
                     </TableCell>
