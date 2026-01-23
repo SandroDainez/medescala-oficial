@@ -115,7 +115,12 @@ export default function UserShifts() {
         .from('sectors')
         .select('id, name, color, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes, reference_latitude, reference_longitude')
         .eq('tenant_id', currentTenantId)
-        .eq('active', true),
+        // Importante: não filtrar por "active" aqui.
+        // Se um setor foi desativado depois do plantão ser criado,
+        // ainda precisamos carregar suas configurações para:
+        // - exibir corretamente o status
+        // - permitir check-out quando houver check-in pendente
+        // (evita o cenário de "aparece em alguns plantões e outros não").
     ]);
 
     if (assignmentsRes.error) {
@@ -783,12 +788,17 @@ export default function UserShifts() {
                                   )}
                                 </div>
 
-                                {/* Check-in/Check-out buttons - show when sector has checkin enabled */}
-                                {sectorInfo.checkin_enabled && (
+                                {/*
+                                  Check-in/Check-out:
+                                  - Check-in só quando o setor tem check-in habilitado
+                                  - Check-out deve aparecer sempre que houver check-in pendente,
+                                    mesmo se o setor tiver sido desativado depois.
+                                */}
+                                {(sectorInfo.checkin_enabled || needsCheckout) && (
                                   <div className="flex gap-2 flex-shrink-0">
-                                    {needsCheckin && !isShiftPast && (
-                                      <Button 
-                                        size="sm" 
+                                    {sectorInfo.checkin_enabled && needsCheckin && !isShiftPast && (
+                                      <Button
+                                        size="sm"
                                         onClick={() => handleCheckin(a)}
                                         disabled={isProcessing}
                                       >
@@ -800,10 +810,11 @@ export default function UserShifts() {
                                         Check-in
                                       </Button>
                                     )}
+
                                     {needsCheckout && (
-                                      <Button 
-                                        size="sm" 
-                                        variant="outline" 
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
                                         onClick={() => handleCheckout(a)}
                                         disabled={isProcessing}
                                       >
