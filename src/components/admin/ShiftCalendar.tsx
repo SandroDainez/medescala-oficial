@@ -2525,33 +2525,46 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       });
     });
 
-    // Check for overlapping shifts
+    // Check for overlapping shifts - only include shifts that actually overlap
     Object.entries(userDateAssignments).forEach(([key, data]) => {
       if (data.shifts.length > 1) {
-        // Check for time overlaps
-        const hasOverlap = data.shifts.some((s1, i) => 
-          data.shifts.slice(i + 1).some(s2 => {
+        // Find shifts that actually overlap with at least one other shift
+        const overlappingShifts: typeof data.shifts = [];
+        
+        data.shifts.forEach((s1, i) => {
+          const hasOverlapWithAnother = data.shifts.some((s2, j) => {
+            if (i === j) return false;
+            
             const s1Start = parseInt(s1.startTime.replace(':', ''));
             const s1End = parseInt(s1.endTime.replace(':', ''));
             const s2Start = parseInt(s2.startTime.replace(':', ''));
             const s2End = parseInt(s2.endTime.replace(':', ''));
             
-            // Handle overnight shifts
-            const s1EndAdjusted = s1End < s1Start ? s1End + 2400 : s1End;
-            const s2EndAdjusted = s2End < s2Start ? s2End + 2400 : s2End;
+            // Handle overnight shifts - add 2400 if end time is before start time
+            const s1EndAdjusted = s1End <= s1Start ? s1End + 2400 : s1End;
+            const s2EndAdjusted = s2End <= s2Start ? s2End + 2400 : s2End;
             
-            // Check overlap
-            return s1Start < s2EndAdjusted && s2Start < s1EndAdjusted;
-          })
-        );
+            // For overnight comparison, also adjust start if comparing across midnight
+            const s1StartAdjusted = s1Start;
+            const s2StartAdjusted = s2Start;
+            
+            // Check overlap: two intervals overlap if one starts before the other ends
+            // Strictly less than (<) means touching endpoints (07:00-19:00 and 19:00-07:00) don't overlap
+            return s1StartAdjusted < s2EndAdjusted && s2StartAdjusted < s1EndAdjusted;
+          });
+          
+          if (hasOverlapWithAnother && !overlappingShifts.some(os => os.shiftId === s1.shiftId)) {
+            overlappingShifts.push(s1);
+          }
+        });
 
-        if (hasOverlap) {
+        if (overlappingShifts.length > 1) {
           conflicts.push({
             id: key,
             userId: data.userId,
             userName: data.userName,
             date: data.date,
-            shifts: data.shifts
+            shifts: overlappingShifts // Only include shifts that actually overlap
           });
         }
       }
