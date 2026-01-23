@@ -302,7 +302,7 @@ export default function UserFinancial() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Plantões</CardTitle>
@@ -387,17 +387,19 @@ export default function UserFinancial() {
                 </div>
               </div>
               
-              {/* Shifts Table */}
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/20">
-                    <TableHead>Data</TableHead>
-                    <TableHead>Plantão</TableHead>
-                    <TableHead>Horário</TableHead>
-                    <TableHead className="text-center">Duração</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                  </TableRow>
-                </TableHeader>
+              {/* Shifts Table - Mobile scroll */}
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="min-w-[500px] sm:min-w-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/20">
+                        <TableHead className="whitespace-nowrap">Data</TableHead>
+                        <TableHead className="whitespace-nowrap">Plantão</TableHead>
+                        <TableHead className="whitespace-nowrap">Horário</TableHead>
+                        <TableHead className="text-center whitespace-nowrap">Duração</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">Valor</TableHead>
+                      </TableRow>
+                    </TableHeader>
                 <TableBody>
                   {sector.shifts.map(shift => (
                     <TableRow key={shift.id}>
@@ -426,7 +428,9 @@ export default function UserFinancial() {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
+                  </Table>
+                </div>
+              </div>
             </Card>
           ))}
 
@@ -438,48 +442,50 @@ export default function UserFinancial() {
                 Resumo por Setor
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/30">
-                    <TableHead>Setor</TableHead>
-                    <TableHead className="text-center">Plantões</TableHead>
-                    <TableHead className="text-center">Horas</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sectorSummaries.map(sector => (
-                    <TableRow key={sector.sector_id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <Building className="h-4 w-4 text-muted-foreground" />
-                          {sector.sector_name}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="secondary">{sector.total_shifts}</Badge>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-600">
-                        R$ {sector.total_value.toFixed(2)}
-                      </TableCell>
+            <CardContent className="p-0 overflow-x-auto">
+              <div className="min-w-[400px] sm:min-w-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30">
+                      <TableHead className="whitespace-nowrap">Setor</TableHead>
+                      <TableHead className="text-center whitespace-nowrap">Plantões</TableHead>
+                      <TableHead className="text-center whitespace-nowrap">Horas</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Valor</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-                <tfoot>
-                  <tr className="bg-primary/10 font-bold text-foreground">
-                    <td className="p-3">TOTAL GERAL</td>
-                    <td className="p-3 text-center">{summary.totalShifts} plantões</td>
-                    <td className="p-3 text-center">{summary.totalHours.toFixed(1)}h</td>
-                    <td className="p-3 text-right text-green-600 text-lg">
-                      R$ {summary.totalValue.toFixed(2)}
-                    </td>
-                  </tr>
-                </tfoot>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {sectorSummaries.map(sector => (
+                      <TableRow key={sector.sector_id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate max-w-[120px] sm:max-w-none">{sector.sector_name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="secondary">{sector.total_shifts}</Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-green-600 whitespace-nowrap">
+                          R$ {sector.total_value.toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                  <tfoot>
+                    <tr className="bg-primary/10 font-bold text-foreground">
+                      <td className="p-3 whitespace-nowrap">TOTAL GERAL</td>
+                      <td className="p-3 text-center whitespace-nowrap">{summary.totalShifts}</td>
+                      <td className="p-3 text-center whitespace-nowrap">{summary.totalHours.toFixed(1)}h</td>
+                      <td className="p-3 text-right text-green-600 text-lg whitespace-nowrap">
+                        R$ {summary.totalValue.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </Table>
+              </div>
             </CardContent>
           </Card>
         </div>
