@@ -802,11 +802,12 @@ export default function UserShifts() {
                                 */}
                                 {(sectorInfo.checkin_enabled || needsCheckout) && (
                                   <div className="flex gap-2 flex-shrink-0">
-                                    {sectorInfo.checkin_enabled && needsCheckin && !isShiftPast && (
+                                    {sectorInfo.checkin_enabled && needsCheckin && (
                                       <Button
                                         size="sm"
                                         onClick={() => handleCheckin(a)}
-                                        disabled={isProcessing}
+                                        disabled={isProcessing || isShiftPast}
+                                        title={isShiftPast ? 'Plantão passado' : undefined}
                                       >
                                         {isProcessing ? (
                                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -822,7 +823,9 @@ export default function UserShifts() {
                                         size="sm"
                                         variant="outline"
                                         onClick={() => handleCheckout(a)}
-                                        disabled={isProcessing}
+                                        // Permitir check-out mesmo em plantões passados se já houve check-in.
+                                        disabled={isProcessing || (isShiftPast && !a.checkin_at)}
+                                        title={isShiftPast && !a.checkin_at ? 'Plantão passado' : undefined}
                                       >
                                         {isProcessing ? (
                                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
