@@ -570,6 +570,54 @@ export type Database = {
         }
         Relationships: []
       }
+      sector_expenses: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string | null
+          expense_name: string
+          expense_type: string
+          id: string
+          month: number
+          notes: string | null
+          sector_id: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          year: number
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          expense_name: string
+          expense_type: string
+          id?: string
+          month: number
+          notes?: string | null
+          sector_id: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          year: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string | null
+          expense_name?: string
+          expense_type?: string
+          id?: string
+          month?: number
+          notes?: string | null
+          sector_id?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          year?: number
+        }
+        Relationships: []
+      }
       sector_memberships: {
         Row: {
           created_at: string
@@ -618,6 +666,51 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      sector_revenues: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          fixed_revenue: number
+          id: string
+          month: number
+          notes: string | null
+          sector_id: string
+          tenant_id: string
+          updated_at: string
+          updated_by: string | null
+          variable_revenue: number
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          fixed_revenue?: number
+          id?: string
+          month: number
+          notes?: string | null
+          sector_id: string
+          tenant_id: string
+          updated_at?: string
+          updated_by?: string | null
+          variable_revenue?: number
+          year: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          fixed_revenue?: number
+          id?: string
+          month?: number
+          notes?: string | null
+          sector_id?: string
+          tenant_id?: string
+          updated_at?: string
+          updated_by?: string | null
+          variable_revenue?: number
+          year?: number
+        }
+        Relationships: []
       }
       sectors: {
         Row: {
