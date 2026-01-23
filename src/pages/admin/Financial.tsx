@@ -75,13 +75,18 @@ export default function AdminFinancial() {
     return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
   }, [rawEntries]);
 
+  // Plantonistas filtrados pelo setor selecionado
   const plantonistas = useMemo(() => {
     const map = new Map<string, string>();
-    rawEntries.forEach(e => {
+    const entriesToUse = filterSetor === 'all' 
+      ? rawEntries 
+      : rawEntries.filter(e => e.sector_id === filterSetor);
+    
+    entriesToUse.forEach(e => {
       map.set(e.assignee_id, e.assignee_name);
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [rawEntries]);
+  }, [rawEntries, filterSetor]);
 
   // Quick date presets
   function setThisMonth() {
@@ -543,7 +548,11 @@ export default function AdminFinancial() {
           <div className="flex flex-wrap gap-4">
             <div className="space-y-1.5 min-w-[200px]">
               <Label>Setor</Label>
-              <Select value={filterSetor} onValueChange={setFilterSetor}>
+              <Select value={filterSetor} onValueChange={(value) => {
+                setFilterSetor(value);
+                // Reset plantonista filter when sector changes (plantonista may not exist in new sector)
+                setFilterPlantonista('all');
+              }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os setores" />
                 </SelectTrigger>
