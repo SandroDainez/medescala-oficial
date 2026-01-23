@@ -48,12 +48,23 @@ export function getFinalValue(
   return { final_value: null, source: 'none' };
 }
 
+/**
+ * Check if a sector is a training sector (residentes/estagiários) that should have no remuneration.
+ * This is specific to GABS tenant.
+ */
+function isTrainingSector(sectorName: string): boolean {
+  const normalized = sectorName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return normalized.includes('residente') || normalized.includes('estagiario');
+}
+
 export function mapScheduleToFinancialEntries(params: {
   shifts: ScheduleShift[];
   assignments: ScheduleAssignment[];
   sectors?: SectorLookup[];
   /** When a shift has no assignee, we still include it as a row grouped under this id */
   unassignedLabel?: { id: string; name: string };
+  /** Tenant slug - used for tenant-specific rules (e.g., GABS training sectors have no remuneration) */
+  tenantSlug?: string;
 }): FinancialEntry[] {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
 
@@ -68,9 +79,15 @@ export function mapScheduleToFinancialEntries(params: {
 
   const entries: FinancialEntry[] = [];
 
+  // GABS-specific rule: training sectors (residentes/estagiários) have no remuneration
+  const isGabs = params.tenantSlug?.toLowerCase() === 'gabs';
+
   for (const shift of params.shifts) {
     const duration_hours = calculateDurationHours(shift.start_time, shift.end_time);
     const sector_name = shift.sector_id ? sectorNameById.get(shift.sector_id) ?? 'Sem Setor' : 'Sem Setor';
+
+    // Check if this is a training sector in GABS (no remuneration)
+    const noRemuneration = isGabs && isTrainingSector(sector_name);
 
     const shiftAssignments = assignmentsByShift.get(shift.id) ?? [];
 
@@ -99,7 +116,10 @@ export function mapScheduleToFinancialEntries(params: {
     }
 
     for (const a of shiftAssignments) {
-      const { final_value, source, invalidReason } = getFinalValue(a.assigned_value, shift.base_value);
+      // For GABS training sectors, always return no value
+      const valueResult = noRemuneration 
+        ? { final_value: null, source: 'none' as const, invalidReason: undefined }
+        : getFinalValue(a.assigned_value, shift.base_value);
 
       entries.push({
         id: a.id,
@@ -114,11 +134,11 @@ export function mapScheduleToFinancialEntries(params: {
         assignee_name: a.profile_name ?? 'Sem nome',
         title: shift.title ?? null,
         hospital: shift.hospital ?? null,
-        assigned_value: a.assigned_value,
-        base_value: shift.base_value ?? null,
-        final_value,
-        value_source: source,
-        value_invalid_reason: invalidReason,
+        assigned_value: noRemuneration ? null : a.assigned_value,
+        base_value: noRemuneration ? null : (shift.base_value ?? null),
+        final_value: valueResult.final_value,
+        value_source: valueResult.source,
+        value_invalid_reason: valueResult.invalidReason,
       });
     }
   }
