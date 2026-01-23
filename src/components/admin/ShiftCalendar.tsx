@@ -137,6 +137,51 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [removeConfirmDialogOpen, setRemoveConfirmDialogOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<{ conflict: ShiftConflict; assignmentToRemove: ShiftConflict['shifts'][0]; assignmentToKeep: ShiftConflict['shifts'][0] } | null>(null);
 
+  function safeParseConflictDetails(details: any): any[] {
+    if (!details) return [];
+    if (Array.isArray(details)) return details;
+    if (typeof details === 'string') {
+      try {
+        const parsed = JSON.parse(details);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function getResolutionLocation(
+    resolution: any,
+    kind: 'removed' | 'kept'
+  ): { sectorName: string; shiftTime: string } {
+    const sectorNameFromColumns = kind === 'removed' ? resolution?.removed_sector_name : resolution?.kept_sector_name;
+    const shiftTimeFromColumns = kind === 'removed' ? resolution?.removed_shift_time : resolution?.kept_shift_time;
+
+    // Prefer explicit columns (newer records)
+    if ((sectorNameFromColumns && String(sectorNameFromColumns).trim()) || (shiftTimeFromColumns && String(shiftTimeFromColumns).trim())) {
+      return {
+        sectorName: sectorNameFromColumns || 'Não informado',
+        shiftTime: shiftTimeFromColumns || '—',
+      };
+    }
+
+    // Fallback for older records: derive from conflict_details using assignment IDs
+    const details = safeParseConflictDetails(resolution?.conflict_details);
+    const assignmentId = kind === 'removed' ? resolution?.removed_assignment_id : resolution?.kept_assignment_id;
+    const match = assignmentId ? details.find((d: any) => d?.assignmentId === assignmentId) : null;
+
+    if (match) {
+      const sectorName = match?.sectorName || 'Não informado';
+      const start = typeof match?.startTime === 'string' ? match.startTime.slice(0, 5) : null;
+      const end = typeof match?.endTime === 'string' ? match.endTime.slice(0, 5) : null;
+      const shiftTime = start && end ? `${start} - ${end}` : '—';
+      return { sectorName, shiftTime };
+    }
+
+    return { sectorName: 'Não informado', shiftTime: '—' };
+  }
+
   // Bulk edit (apply same changes to selected shifts)
   const [bulkApplyDialogOpen, setBulkApplyDialogOpen] = useState(false);
   const [bulkApplyData, setBulkApplyData] = useState({
@@ -4457,13 +4502,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
                           <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
-                          <p className="text-sm font-medium">{resolution.removed_sector_name}</p>
-                          <p className="text-xs text-muted-foreground">{resolution.removed_shift_time}</p>
+                          <p className="text-sm font-medium">{getResolutionLocation(resolution, 'removed').sectorName}</p>
+                          <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'removed').shiftTime}</p>
                         </div>
                         <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
                           <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
-                          <p className="text-sm font-medium">{resolution.kept_sector_name}</p>
-                          <p className="text-xs text-muted-foreground">{resolution.kept_shift_time}</p>
+                          <p className="text-sm font-medium">{getResolutionLocation(resolution, 'kept').sectorName}</p>
+                          <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'kept').shiftTime}</p>
                         </div>
                       </div>
                     )}
