@@ -1,9 +1,11 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Info, ExternalLink, Shield, FileText, Mail } from 'lucide-react';
+import { Info, ExternalLink, Shield, FileText, Mail, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function UserAbout() {
+  const navigate = useNavigate();
   const appVersion = '1.0.0';
 
   return (
@@ -75,15 +77,23 @@ export default function UserAbout() {
           <CardTitle className="text-lg">Legal</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Button variant="ghost" className="w-full justify-start h-auto py-3">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start h-auto py-3"
+            onClick={() => navigate('/terms')}
+          >
             <FileText className="h-4 w-4 mr-3" />
             <span>Termos de Uso</span>
-            <ExternalLink className="h-4 w-4 ml-auto text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
           </Button>
-          <Button variant="ghost" className="w-full justify-start h-auto py-3">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start h-auto py-3"
+            onClick={() => navigate('/privacy')}
+          >
             <Shield className="h-4 w-4 mr-3" />
             <span>Política de Privacidade</span>
-            <ExternalLink className="h-4 w-4 ml-auto text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
           </Button>
         </CardContent>
       </Card>
