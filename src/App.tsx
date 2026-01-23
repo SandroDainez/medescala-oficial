@@ -36,6 +36,7 @@ import AdminOffers from "./pages/admin/Offers";
 import AdminFinancial from "./pages/admin/Financial";
 import AdminReports from "./pages/admin/Reports";
 import AdminSubscription from "./pages/admin/Subscription";
+import AdminCheckinReport from "./pages/admin/CheckinReport";
 
 // User pages
 import UserCalendar from "./pages/user/Calendar";
@@ -116,6 +117,7 @@ const AppRoutes = forwardRef<HTMLDivElement>(function AppRoutes(_props, ref) {
           <Route path="notifications" element={<AdminNotifications />} />
           <Route path="financial" element={<AdminFinancial />} />
           <Route path="reports" element={<AdminReports />} />
+          <Route path="checkins" element={<AdminCheckinReport />} />
           <Route path="subscription" element={<AdminSubscription />} />
         </Route>
 
