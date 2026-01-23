@@ -603,9 +603,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     ? shifts 
     : shifts.filter(s => s.sector_id === filterSector);
 
-  // Get shifts for a specific date
-  function getShiftsForDate(date: Date) {
-    return filteredShifts.filter(s => isSameDay(parseISO(s.shift_date), date));
+  // Get shifts for a specific date, optionally filtered by sector context
+  // When dayDialogSectorId is set (user clicked on a specific sector's day), 
+  // only return shifts for that sector
+  function getShiftsForDate(date: Date, sectorIdContext?: string | null) {
+    const effectiveSectorId = sectorIdContext ?? (filterSector !== 'all' ? filterSector : null);
+    return shifts.filter(s => 
+      isSameDay(parseISO(s.shift_date), date) && 
+      (effectiveSectorId ? s.sector_id === effectiveSectorId : true)
+    );
+  }
+  
+  // Convenience function for day dialog that uses dayDialogSectorId context
+  function getShiftsForDayDialog(date: Date) {
+    return getShiftsForDate(date, dayDialogSectorId);
   }
 
   // Get assignments for a shift
@@ -1649,10 +1660,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setBulkEditShifts([]);
   }
 
-  function openBulkEditDialog(date: Date) {
+  // Open bulk edit dialog with sector context from day dialog
+  function openBulkEditDialog(date: Date, sectorIdContext?: string | null) {
     if (bulkEditDialogCloseGuardRef.current) return;
 
-    const dayShifts = getShiftsForDate(date);
+    // Use sector context if provided, otherwise use dayDialogSectorId
+    const effectiveSectorId = sectorIdContext ?? dayDialogSectorId;
+    const dayShifts = getShiftsForDate(date, effectiveSectorId);
     if (dayShifts.length === 0) return;
 
     setBulkEditShifts(dayShifts);
@@ -1675,7 +1689,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setBulkEditDialogOpen(true);
   }
   function openBulkApplySelectedDialog(date: Date) {
-    const dayShiftIds = getShiftsForDate(date).map((s) => s.id);
+    const dayShiftIds = getShiftsForDayDialog(date).map((s) => s.id);
     const selectedInDay = dayShiftIds.filter((id) => selectedShiftIds.has(id));
 
     if (selectedInDay.length === 0) {
@@ -3077,16 +3091,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <DialogTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span>
                 {selectedDate && format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                {dayDialogSectorId && (
+                  <Badge variant="outline" className="ml-2">
+                    {sectors.find(s => s.id === dayDialogSectorId)?.name}
+                  </Badge>
+                )}
               </span>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {selectedDate && getShiftsForDate(selectedDate).length > 0 && (
+                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
                   <>
                     {/* Select all in this day */}
                     <Button 
                       variant="outline" 
                       size="sm"
                       onClick={() => {
-                        const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                        const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
                         const allSelected = dayShiftIds.every(id => selectedShiftIds.has(id));
                         if (allSelected) {
                           // Deselect all
@@ -3108,7 +3127,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     >
                       <CheckSquare className="mr-2 h-4 w-4" />
                       {(() => {
-                        const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                        const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
                         const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
                         return selectedCount > 0 
                           ? `${selectedCount} selecionado(s)` 
@@ -3116,7 +3135,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       })()}
                     </Button>
                     {(() => {
-                      const dayShiftIds = getShiftsForDate(selectedDate).map(s => s.id);
+                      const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
                       const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
                       if (selectedCount > 0) {
                         return (
@@ -3148,7 +3167,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     })()}
                   </>
                 )}
-                {selectedDate && getShiftsForDate(selectedDate).length > 0 && (
+                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -3161,7 +3180,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     }}
                   >
                     <Edit className="mr-2 h-4 w-4" />
-                    Editar Todos ({getShiftsForDate(selectedDate).length})
+                    Editar Todos ({getShiftsForDayDialog(selectedDate).length})
                   </Button>
                 )}
                 <Button
@@ -3178,18 +3197,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           </DialogHeader>
 
           <div className="space-y-4">
-            {selectedDate && getShiftsForDate(selectedDate).length === 0 ? (
+            {selectedDate && getShiftsForDayDialog(selectedDate).length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
                 Nenhum plantão neste dia
               </p>
             ) : (
-              selectedDate && sortShiftsByTimeAndName(getShiftsForDate(selectedDate)).map(shift => {
+              selectedDate && sortShiftsByTimeAndName(getShiftsForDayDialog(selectedDate)).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
                 const shiftPendingOffers = getOffersForShift(shift.id);
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
                 const isAvailable = isShiftAvailable(shift);
-                const showSectorName = filterSector === 'all';
+                const showSectorName = filterSector === 'all' && !dayDialogSectorId;
                 const isShiftSelected = selectedShiftIds.has(shift.id);
                 
                 return (
