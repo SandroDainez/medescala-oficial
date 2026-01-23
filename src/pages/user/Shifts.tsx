@@ -555,8 +555,13 @@ export default function UserShifts() {
             {todayShifts.map((a) => {
               const sectorInfo = getSectorInfo(a.shift.sector_id || 'sem-setor');
               const isProcessing = processingId === a.id;
-              const needsCheckin = a.status === 'assigned' && !a.checkin_at;
-              const needsCheckout = a.checkin_at && !a.checkout_at;
+              // Alguns dados legados podem ter status diferente sem os timestamps preenchidos.
+              // Para UX: mostrar check-in sempre que ainda não houve check-in e o plantão não foi finalizado/cancelado.
+              const needsCheckin =
+                !a.checkin_at && a.status !== 'completed' && a.status !== 'cancelled';
+              // Mostrar check-out quando há check-in pendente de finalização.
+              // Se por algum motivo o status ficou "confirmed" mas checkin_at não foi gravado, ainda assim permitir check-out.
+              const needsCheckout = !a.checkout_at && (Boolean(a.checkin_at) || a.status === 'confirmed');
 
               return (
                 <div 
@@ -605,7 +610,7 @@ export default function UserShifts() {
 
                     {/* Large Check-in/Check-out buttons for mobile */}
                     <div className="flex gap-2">
-                      {needsCheckin && (
+                      {sectorInfo.checkin_enabled && needsCheckin && (
                         <Button 
                           size="lg" 
                           className="flex-1 h-14 text-lg font-semibold"
@@ -733,8 +738,9 @@ export default function UserShifts() {
                           const isShiftTomorrow = isTomorrow(shiftDate);
                           const isShiftPast = isPast(shiftDate) && !isShiftToday;
                           const isProcessing = processingId === a.id;
-                          const needsCheckin = a.status === 'assigned' && !a.checkin_at;
-                          const needsCheckout = a.checkin_at && !a.checkout_at;
+                          const needsCheckin =
+                            !a.checkin_at && a.status !== 'completed' && a.status !== 'cancelled';
+                          const needsCheckout = !a.checkout_at && (Boolean(a.checkin_at) || a.status === 'confirmed');
 
                           return (
                             <div 
