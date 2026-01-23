@@ -232,24 +232,21 @@ export default function AdminFinancial() {
 
   // Export CSV
   function exportCSV() {
-    // Debug: log what's being exported
-    console.log('[exportCSV] filterPlantonista:', filterPlantonista);
-    console.log('[exportCSV] filterSetor:', filterSetor);
-    console.log('[exportCSV] filteredEntries count:', filteredEntries.length);
-    console.log('[exportCSV] rawEntries count:', rawEntries.length);
-    
     const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
-    const rows = filteredEntries.map(e => {
-      const val = e.value_source === 'invalid' ? null : e.final_value;
-      return [
-        format(parseISO(e.shift_date), 'dd/MM/yyyy'),
-        `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
-        e.duration_hours.toFixed(1),
-        e.sector_name,
-        e.assignee_name,
-        val !== null ? val.toFixed(2) : 'Sem valor',
-      ];
-    });
+    const rows = filteredEntries
+      .slice()
+      .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''))
+      .map(e => {
+        const val = e.value_source === 'invalid' ? null : e.final_value;
+        return [
+          format(parseISO(e.shift_date), 'dd/MM/yyyy'),
+          `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
+          e.duration_hours.toFixed(1),
+          e.sector_name,
+          e.assignee_name,
+          val !== null ? val.toFixed(2) : 'Sem valor',
+        ];
+      });
     rows.push(['', '', '', '', 'TOTAL', grandTotals.totalValue.toFixed(2)]);
 
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
@@ -258,7 +255,6 @@ export default function AdminFinancial() {
     const a = document.createElement('a');
     a.href = url;
     
-    // Include filter info in filename
     const plantonistaName = filterPlantonista !== 'all' 
       ? plantonistas.find(p => p.id === filterPlantonista)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
       : 'todos';
@@ -269,6 +265,214 @@ export default function AdminFinancial() {
     a.download = `financeiro-${startDate}-a-${endDate}-${plantonistaName}-${setorName}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // Print - uses same data as CSV for consistency
+  function handlePrint() {
+    const plantonistaName = filterPlantonista !== 'all' 
+      ? plantonistas.find(p => p.id === filterPlantonista)?.name ?? 'Filtrado'
+      : 'Todos os plantonistas';
+    const setorName = filterSetor !== 'all'
+      ? sectors.find(s => s.id === filterSetor)?.name ?? 'Filtrado'
+      : 'Todos os setores';
+
+    const sortedEntries = filteredEntries
+      .slice()
+      .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
+
+    const tableRows = sortedEntries.map(e => {
+      const val = e.value_source === 'invalid' ? null : e.final_value;
+      return `
+        <tr>
+          <td>${format(parseISO(e.shift_date), 'dd/MM/yyyy')}</td>
+          <td>${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}</td>
+          <td class="center">${e.duration_hours.toFixed(1)}h</td>
+          <td>${e.sector_name}</td>
+          <td>${e.assignee_name}</td>
+          <td class="right">${val !== null ? formatCurrency(val) : '<span class="no-value">Sem valor</span>'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Relatório Financeiro - ${startDate} a ${endDate}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            padding: 20px; 
+            color: #333;
+            background: #fff;
+            font-size: 12px;
+          }
+          .header {
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #22c55e;
+          }
+          h1 { 
+            font-size: 20px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 5px;
+          }
+          .subtitle {
+            font-size: 14px;
+            color: #666;
+          }
+          .filters {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 11px;
+          }
+          .filters span {
+            margin-right: 20px;
+          }
+          .stats { 
+            display: flex; 
+            gap: 15px; 
+            margin-bottom: 20px; 
+          }
+          .stat-card { 
+            padding: 12px 18px; 
+            background: #f5f5f5; 
+            border-radius: 8px; 
+            text-align: center;
+            flex: 1;
+          }
+          .stat-number { font-size: 18px; font-weight: bold; color: #1a1a1a; }
+          .stat-label { font-size: 10px; color: #666; text-transform: uppercase; margin-top: 2px; }
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+          }
+          th {
+            background: #f8f9fa;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 11px;
+            border-bottom: 2px solid #e5e7eb;
+            text-transform: uppercase;
+            color: #555;
+          }
+          td {
+            padding: 8px;
+            border-bottom: 1px solid #e5e7eb;
+          }
+          tr:nth-child(even) {
+            background: #fafafa;
+          }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .total-row {
+            font-weight: bold;
+            background: #f0fdf4 !important;
+          }
+          .total-row td {
+            border-top: 2px solid #22c55e;
+            padding-top: 12px;
+          }
+          .total-value {
+            font-size: 16px;
+            color: #16a34a;
+          }
+          .no-value {
+            color: #f59e0b;
+            font-size: 10px;
+          }
+          .footer { 
+            margin-top: 20px; 
+            padding-top: 10px; 
+            border-top: 1px solid #ddd; 
+            font-size: 10px; 
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+          }
+          @media print {
+            body { padding: 10px; }
+            .stat-card { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Relatório Financeiro</h1>
+          <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
+        </div>
+
+        <div class="filters">
+          <span><strong>Setor:</strong> ${setorName}</span>
+          <span><strong>Plantonista:</strong> ${plantonistaName}</span>
+        </div>
+
+        <div class="stats">
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalPlantonistas}</div>
+            <div class="stat-label">Plantonistas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalShifts}</div>
+            <div class="stat-label">Plantões</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.totalHours.toFixed(1)}h</div>
+            <div class="stat-label">Horas</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${grandTotals.unpricedShifts}</div>
+            <div class="stat-label">Sem Valor</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number" style="color: #16a34a;">${formatCurrency(grandTotals.totalValue)}</div>
+            <div class="stat-label">Total</div>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Horário</th>
+              <th class="center">Duração</th>
+              <th>Setor</th>
+              <th>Plantonista</th>
+              <th class="right">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+            <tr class="total-row">
+              <td colspan="5" class="right">TOTAL GERAL</td>
+              <td class="right total-value">${formatCurrency(grandTotals.totalValue)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="footer">
+          <span>Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")}</span>
+          <span>${filteredEntries.length} registros</span>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
   }
 
   // ============================================================
@@ -305,7 +509,7 @@ export default function AdminFinancial() {
             <Download className="h-4 w-4 mr-2" />
             Exportar CSV
           </Button>
-          <Button variant="outline" size="sm" onClick={() => window.print()}>
+          <Button variant="outline" size="sm" onClick={handlePrint}>
             <Printer className="h-4 w-4 mr-2" />
             Imprimir
           </Button>
