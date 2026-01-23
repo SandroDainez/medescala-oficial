@@ -703,12 +703,11 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Dia a Dia | Tabela de Plantonistas | Por Plantonista | Por Setor | Todos os Plantões | Rentabilidade */}
+      {/* TABS: Dia a Dia | Plantonistas | Por Setor | Todos os Plantões | Rentabilidade */}
       <Tabs defaultValue="dia" className="w-full">
-        <TabsList className="grid w-full grid-cols-6">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
-          <TabsTrigger value="plantonista">Por Plantonista</TabsTrigger>
           <TabsTrigger value="setor">Por Setor</TabsTrigger>
           <TabsTrigger value="todos">Todos</TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
@@ -923,104 +922,6 @@ export default function AdminFinancial() {
               </div>
             </DialogContent>
           </Dialog>
-        </TabsContent>
-
-        {/* TAB: Por Plantonista */}
-        <TabsContent value="plantonista" className="space-y-4 mt-4">
-          {plantonistaReports.length === 0 ? (
-            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
-          ) : (
-            plantonistaReports.map(report => {
-              const isExpanded = expandedPlantonistas.has(report.assignee_id);
-              return (
-                <Card key={report.assignee_id}>
-                  <div className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70" onClick={() => togglePlantonista(report.assignee_id)}>
-                    <div className="flex items-center gap-3">
-                      {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                      <div>
-                        <h3 className="font-semibold text-lg">{report.assignee_name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {report.total_shifts} plantões · {report.total_hours.toFixed(1)}h
-                          {report.unpriced_shifts > 0 && <span className="text-amber-500 ml-2">({report.unpriced_shifts} sem valor)</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      {report.paid_shifts === 0 ? (
-                        <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>
-                      ) : (
-                        <p className="text-xl font-bold text-green-600">{formatCurrency(report.total_to_receive)}</p>
-                      )}
-                    </div>
-                  </div>
-                  {isExpanded && (
-                    <CardContent className="p-0">
-                      {/* Subtotais por setor */}
-                      <Table>
-                        <TableHeader>
-                          <TableRow className="bg-muted/30">
-                            <TableHead>Setor</TableHead>
-                            <TableHead className="text-center">Plantões</TableHead>
-                            <TableHead className="text-center">Horas</TableHead>
-                            <TableHead className="text-center">Sem valor</TableHead>
-                            <TableHead className="text-right">Subtotal</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {report.sectors.map(s => (
-                            <TableRow key={s.sector_id}>
-                              <TableCell className="font-medium"><Building className="h-4 w-4 inline mr-2 text-muted-foreground" />{s.sector_name}</TableCell>
-                              <TableCell className="text-center">{s.sector_shifts}</TableCell>
-                              <TableCell className="text-center">{s.sector_hours.toFixed(1)}h</TableCell>
-                              <TableCell className="text-center">{s.sector_unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{s.sector_unpriced}</Badge> : '0'}</TableCell>
-                              <TableCell className="text-right font-medium text-green-600">{s.sector_paid > 0 ? formatCurrency(s.sector_total) : <span className="text-muted-foreground">—</span>}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                      {/* Lista detalhada de plantões */}
-                      <div className="p-4 border-t">
-                        <div className="flex items-center justify-between gap-3 mb-2">
-                          <p className="text-sm font-medium">Detalhamento: ({report.entries.length} plantões)</p>
-                          <p className="text-xs text-muted-foreground">Role a lista para ver todos</p>
-                        </div>
-                        <div className="max-h-[60vh] overflow-y-scroll border rounded">
-                          <Table>
-                            <TableHeader className="sticky top-0 bg-background z-10">
-                              <TableRow>
-                                <TableHead>Data</TableHead>
-                                <TableHead>Horário</TableHead>
-                                <TableHead>Setor</TableHead>
-                                <TableHead className="text-right">Valor</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {report.entries
-                                .slice()
-                                .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''))
-                                .map(e => {
-                                const val = e.value_source === 'invalid' ? null : e.final_value;
-                                return (
-                                  <TableRow key={e.id}>
-                                    <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
-                                    <TableCell>{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
-                                    <TableCell>{e.sector_name}</TableCell>
-                                    <TableCell className="text-right">
-                                      {val !== null ? <span className="text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
-                                    </TableCell>
-                                  </TableRow>
-                                );
-                              })}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })
-          )}
         </TabsContent>
 
         {/* TAB: Por Setor */}
