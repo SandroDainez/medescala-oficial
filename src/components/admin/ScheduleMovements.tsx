@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label';
 interface ScheduleFinalization {
   id: string;
   tenant_id: string;
+  sector_id: string | null;
   month: number;
   year: number;
   finalized_at: string;
@@ -50,9 +51,11 @@ interface ScheduleMovement {
 interface ScheduleMovementsProps {
   currentMonth: number;
   currentYear: number;
+  sectorId?: string | null;
+  sectorName?: string | null;
 }
 
-export default function ScheduleMovements({ currentMonth, currentYear }: ScheduleMovementsProps) {
+export default function ScheduleMovements({ currentMonth, currentYear, sectorId, sectorName }: ScheduleMovementsProps) {
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -71,28 +74,45 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
     if (currentTenantId && user?.id) {
       fetchData();
     }
-  }, [currentTenantId, user?.id, currentMonth, currentYear]);
+  }, [currentTenantId, user?.id, currentMonth, currentYear, sectorId]);
 
   async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
 
     try {
+      // Build query for finalization - now includes sector_id
+      let finalizationQuery = supabase
+        .from('schedule_finalizations')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .eq('month', currentMonth)
+        .eq('year', currentYear);
+      
+      // Filter by sector_id if provided
+      if (sectorId) {
+        finalizationQuery = finalizationQuery.eq('sector_id', sectorId);
+      } else {
+        finalizationQuery = finalizationQuery.is('sector_id', null);
+      }
+
+      // Build query for movements - filter by sector if provided
+      let movementsQuery = supabase
+        .from('schedule_movements')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .eq('month', currentMonth)
+        .eq('year', currentYear)
+        .order('performed_at', { ascending: false });
+
+      // If we have a sector, filter movements that involve this sector
+      if (sectorId) {
+        movementsQuery = movementsQuery.or(`source_sector_id.eq.${sectorId},destination_sector_id.eq.${sectorId}`);
+      }
+
       const [finalizationRes, movementsRes] = await Promise.all([
-        supabase
-          .from('schedule_finalizations')
-          .select('*')
-          .eq('tenant_id', currentTenantId)
-          .eq('month', currentMonth)
-          .eq('year', currentYear)
-          .maybeSingle(),
-        supabase
-          .from('schedule_movements')
-          .select('*')
-          .eq('tenant_id', currentTenantId)
-          .eq('month', currentMonth)
-          .eq('year', currentYear)
-          .order('performed_at', { ascending: false }),
+        finalizationQuery.maybeSingle(),
+        movementsQuery,
       ]);
 
       if (finalizationRes.error) throw finalizationRes.error;
@@ -115,6 +135,7 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
         .from('schedule_finalizations')
         .insert({
           tenant_id: currentTenantId,
+          sector_id: sectorId || null,
           month: currentMonth,
           year: currentYear,
           finalized_by: user.id,
@@ -125,7 +146,9 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
 
       toast({
         title: 'Escala finalizada!',
-        description: 'A escala foi marcada como concluída. Qualquer movimentação será registrada.',
+        description: sectorName 
+          ? `A escala do setor "${sectorName}" foi marcada como concluída. Qualquer movimentação será registrada.`
+          : 'A escala foi marcada como concluída. Qualquer movimentação será registrada.',
       });
       setFinalizeDialogOpen(false);
       setFinalizeNotes('');
@@ -152,7 +175,9 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
 
       toast({
         title: 'Escala reaberta',
-        description: 'A escala pode ser editada novamente sem registro de movimentações.',
+        description: sectorName 
+          ? `A escala do setor "${sectorName}" pode ser editada novamente sem registro de movimentações.`
+          : 'A escala pode ser editada novamente sem registro de movimentações.',
       });
       setReopenDialogOpen(false);
       fetchData();
@@ -205,6 +230,7 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
   }
 
   const monthName = format(new Date(currentYear, currentMonth - 1), 'MMMM yyyy', { locale: ptBR });
+  const displayTitle = sectorName ? `${sectorName} - ${monthName}` : monthName;
 
   if (loading) {
     return null;
@@ -222,7 +248,7 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
                   <Lock className="h-5 w-5 text-green-600" />
                   <div>
                     <span className="font-bold text-green-700 dark:text-green-400">
-                      ✅ Escala Finalizada
+                      ✅ Escala Finalizada {sectorName && `(${sectorName})`}
                     </span>
                     <p className="text-sm text-muted-foreground">
                       Finalizada em {format(parseISO(finalization.finalized_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
@@ -234,7 +260,7 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
                   <Unlock className="h-5 w-5 text-amber-600" />
                   <div>
                     <span className="font-bold text-amber-700 dark:text-amber-400">
-                      📝 Escala em edição
+                      📝 Escala em edição {sectorName && `(${sectorName})`}
                     </span>
                     <p className="text-sm text-muted-foreground">
                       Finalize a escala para começar a registrar movimentações
@@ -286,10 +312,10 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle className="h-5 w-5 text-green-600" />
-              Finalizar Escala - {monthName}
+              Finalizar Escala - {displayTitle}
             </DialogTitle>
             <DialogDescription>
-              Ao finalizar a escala, qualquer movimentação de plantonistas (remoção, transferência ou adição) 
+              Ao finalizar a escala{sectorName ? ` do setor "${sectorName}"` : ''}, qualquer movimentação de plantonistas (remoção, transferência ou adição) 
               será registrada automaticamente para auditoria.
             </DialogDescription>
           </DialogHeader>
@@ -338,10 +364,10 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Unlock className="h-5 w-5 text-amber-600" />
-              Reabrir Escala - {monthName}
+              Reabrir Escala - {displayTitle}
             </DialogTitle>
             <DialogDescription>
-              Ao reabrir a escala, as movimentações não serão mais registradas até que você finalize novamente.
+              Ao reabrir a escala{sectorName ? ` do setor "${sectorName}"` : ''}, as movimentações não serão mais registradas até que você finalize novamente.
               O histórico de movimentações existentes será mantido.
             </DialogDescription>
           </DialogHeader>
@@ -364,7 +390,7 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Histórico de Movimentações - {monthName}
+              Histórico de Movimentações - {displayTitle}
             </DialogTitle>
             <DialogDescription>
               Registro de todas as movimentações de plantonistas após a finalização da escala.
@@ -447,6 +473,9 @@ export default function ScheduleMovements({ currentMonth, currentYear }: Schedul
 }
 
 // Helper function to record a movement (to be called from ShiftCalendar)
+// IMPORTANT: When replacing user A with user B on a shift:
+// - User B is being ADDED to this sector (transferred TO here from somewhere else or added fresh)
+// - User A is being REMOVED from this sector (with no destination, or transferred somewhere else)
 export async function recordScheduleMovement(params: {
   tenant_id: string;
   month: number;
@@ -468,16 +497,22 @@ export async function recordScheduleMovement(params: {
   performed_by: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    // First check if schedule is finalized
+    // Check if schedule is finalized for the relevant sector
+    // For removals, check the source sector; for additions, check the destination sector
+    const sectorIdToCheck = params.movement_type === 'removed' 
+      ? params.source_sector_id 
+      : params.destination_sector_id;
+    
     const { data: finalization } = await supabase
       .from('schedule_finalizations')
       .select('id')
       .eq('tenant_id', params.tenant_id)
       .eq('month', params.month)
       .eq('year', params.year)
+      .eq('sector_id', sectorIdToCheck || '')
       .maybeSingle();
 
-    // Only record if schedule is finalized
+    // Only record if schedule is finalized for this sector
     if (!finalization) {
       return { success: true }; // Not an error, just don't record
     }
@@ -588,15 +623,22 @@ export async function recordScheduleMovement(params: {
   }
 }
 
-// Helper to check if schedule is finalized
-export async function isScheduleFinalized(tenant_id: string, month: number, year: number): Promise<boolean> {
-  const { data } = await supabase
+// Helper to check if schedule is finalized for a specific sector
+export async function isScheduleFinalized(tenant_id: string, month: number, year: number, sector_id?: string | null): Promise<boolean> {
+  let query = supabase
     .from('schedule_finalizations')
     .select('id')
     .eq('tenant_id', tenant_id)
     .eq('month', month)
-    .eq('year', year)
-    .maybeSingle();
+    .eq('year', year);
+  
+  if (sector_id) {
+    query = query.eq('sector_id', sector_id);
+  } else {
+    query = query.is('sector_id', null);
+  }
+  
+  const { data } = await query.maybeSingle();
   
   return !!data;
 }
