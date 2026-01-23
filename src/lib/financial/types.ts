@@ -1,6 +1,6 @@
 export type Money = number; // always in reais as number; only format in UI
 
-export type FinancialValueSource = 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid';
+export type FinancialValueSource = 'assigned' | 'base' | 'sector_default' | 'zero_assigned' | 'zero_base' | 'none' | 'invalid';
 
 export interface ScheduleShift {
   id: string;

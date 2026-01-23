@@ -42,11 +42,21 @@ function isNightShift(startTime: string): boolean {
   return hour >= 19 || hour < 7;
 }
 
+/**
+ * Determines the final value for a shift assignment.
+ * Priority:
+ * 1. assigned_value > 0 → use assigned_value
+ * 2. assigned_value === 0 → INTENTIONALLY NO VALUE (no fallback)
+ * 3. base_value > 0 → use base_value
+ * 4. base_value === 0 → INTENTIONALLY NO VALUE (no fallback)
+ * 5. sector_default_value → use sector default
+ * 6. none → no value available
+ */
 export function getFinalValue(
   assigned_value: unknown,
   base_value: unknown,
   sector_default_value: number | null = null
-): { final_value: number | null; source: 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid'; invalidReason?: string } {
+): { final_value: number | null; source: 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
   const assigned = normalizeMoney(assigned_value);
   const base = normalizeMoney(base_value);
   const sectorDefault = sector_default_value !== null && sector_default_value > 0 ? sector_default_value : null;
@@ -55,11 +65,22 @@ export function getFinalValue(
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
-  // Priority: assigned_value > 0, then base_value > 0, then sector default
+  // Priority 1: assigned_value > 0 → use it
   if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
+  
+  // Priority 2: assigned_value === 0 → INTENTIONALLY NO VALUE (admin set it to zero)
+  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
+  
+  // Priority 3: base_value > 0 → use it
   if (base !== null && base > 0) return { final_value: base, source: 'base' };
+  
+  // Priority 4: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
+  if (base === 0) return { final_value: 0, source: 'zero_base' };
+  
+  // Priority 5: sector default as fallback
   if (sectorDefault !== null) return { final_value: sectorDefault, source: 'sector_default' };
   
+  // Priority 6: no value available
   return { final_value: null, source: 'none' };
 }
 
