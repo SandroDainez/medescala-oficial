@@ -386,6 +386,48 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
   }
 
+  // Get display value for a shift (calculates pro-rata based on duration)
+  // This is used to show calculated values in the calendar view
+  function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }): number | null {
+    const duration = calculateDurationHours(shift.start_time, shift.end_time);
+    
+    // If shift has explicit base_value, calculate pro-rata from it
+    if (shift.base_value !== null && shift.base_value > 0) {
+      return calculateProRataValue(shift.base_value, duration);
+    }
+    
+    // Otherwise calculate from sector default
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    return calculateProRataValue(sectorValue, duration);
+  }
+
+  // Get display value for an assignment (considers individual user values and pro-rata)
+  function getAssignmentDisplayValue(
+    assignment: { assigned_value: number | null; user_id: string },
+    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
+  ): number | null {
+    const duration = calculateDurationHours(shift.start_time, shift.end_time);
+    
+    // If assignment has explicit value, use it (already calculated at save time)
+    if (assignment.assigned_value !== null && assignment.assigned_value > 0) {
+      return assignment.assigned_value;
+    }
+    
+    // Check for individual plantonista value
+    const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
+    if (userValue !== null) {
+      return calculateProRataValue(userValue, duration);
+    }
+    
+    // Fall back to shift base value or sector default
+    if (shift.base_value !== null && shift.base_value > 0) {
+      return calculateProRataValue(shift.base_value, duration);
+    }
+    
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    return calculateProRataValue(sectorValue, duration);
+  }
+
   // Generate automatic title based on time
   function generateShiftTitle(startTime: string, endTime: string): string {
     const isNight = isNightShift(startTime, endTime);
@@ -3079,7 +3121,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                             </span>
                             <span className="font-medium text-foreground">
-                              R$ {Number(shift.base_value).toFixed(2)}
+                              R$ {(getShiftDisplayValue(shift) ?? 0).toFixed(2)}
+                              {calculateDurationHours(shift.start_time, shift.end_time) !== 12 && (
+                                <span className="ml-1 text-xs text-muted-foreground">
+                                  ({calculateDurationHours(shift.start_time, shift.end_time).toFixed(0)}h)
+                                </span>
+                              )}
                             </span>
                             </div>
                           </div>
@@ -3125,7 +3172,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                         {assignment.profile?.name || 'Sem nome'}
                                       </div>
                                       <div className="text-xs text-muted-foreground">
-                                        Valor: R$ {Number(assignment.assigned_value).toFixed(2)}
+                                        Valor: R$ {(getAssignmentDisplayValue(assignment, shift) ?? 0).toFixed(2)}
                                       </div>
                                     </div>
                                   </div>
@@ -3447,7 +3494,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     formData.use_sector_default && formData.sector_id 
                       ? (() => {
                           const sectorValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
-                          return sectorValue ? `Padrão: R$ ${sectorValue.toFixed(2)}` : '0.00';
+                          if (!sectorValue) return '0.00';
+                          const duration = calculateDurationHours(formData.start_time, formData.end_time);
+                          const proRataValue = calculateProRataValue(sectorValue, duration);
+                          if (duration !== 12) {
+                            return `Pro-rata ${duration.toFixed(0)}h: R$ ${(proRataValue ?? 0).toFixed(2)}`;
+                          }
+                          return `Padrão: R$ ${sectorValue.toFixed(2)}`;
                         })()
                       : '0.00'
                   }
@@ -3462,12 +3515,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     />
                     <Label htmlFor="use_sector_default" className="text-xs text-muted-foreground cursor-pointer">
                       Usar valor padrão do setor se vazio
-                      {formData.use_sector_default && formData.start_time && (
+                      {formData.use_sector_default && formData.start_time && formData.end_time && (
                         <span className="ml-1 text-primary">
                           ({isNightShift(formData.start_time, '') ? 'Noturno' : 'Diurno'}: 
                           {(() => {
                             const v = getSectorDefaultValue(formData.sector_id, formData.start_time);
-                            return v ? ` R$ ${v.toFixed(2)}` : ' não definido';
+                            if (!v) return ' não definido';
+                            const duration = calculateDurationHours(formData.start_time, formData.end_time);
+                            const proRataVal = calculateProRataValue(v, duration);
+                            if (duration !== 12) {
+                              return ` R$ ${(proRataVal ?? 0).toFixed(2)} (${duration.toFixed(0)}h)`;
+                            }
+                            return ` R$ ${v.toFixed(2)}`;
                           })()})
                         </span>
                       )}
