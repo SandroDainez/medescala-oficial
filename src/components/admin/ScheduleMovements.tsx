@@ -319,9 +319,10 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
                     Movimentações ({movements.length})
                   </Button>
                   <Button 
-                    variant="ghost" 
+                    variant="outline" 
                     size="sm"
                     onClick={() => setReopenDialogOpen(true)}
+                    className="border-amber-500 text-amber-700 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-950/30"
                   >
                     <Unlock className="mr-2 h-4 w-4" />
                     Reabrir
