@@ -2619,9 +2619,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Prepare removal - show confirmation with context
   function prepareRemoveConflictAssignment(conflict: ShiftConflict, assignmentToRemove: ShiftConflict['shifts'][0]) {
-    // Find the other assignment(s) that will be kept
-    const assignmentToKeep = conflict.shifts.find(s => s.assignmentId !== assignmentToRemove.assignmentId);
-    if (!assignmentToKeep) return;
+    // Find all other assignments that will be kept (there might be more than one)
+    const keptAssignments = conflict.shifts.filter(s => s.assignmentId !== assignmentToRemove.assignmentId);
+    if (keptAssignments.length === 0) return;
+    
+    // Use the first one as primary for the record, but we'll store all in conflict_details
+    const assignmentToKeep = keptAssignments[0];
     
     setPendingRemoval({ conflict, assignmentToRemove, assignmentToKeep });
     setRemoveConfirmDialogOpen(true);
@@ -4223,17 +4226,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         <p className="text-sm">{resolution.justification}</p>
                       </div>
                     ) : (
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
-                          <p className="text-xs font-medium text-red-600">Removido de:</p>
-                          <p className="text-sm font-medium">{resolution.removed_sector_name}</p>
-                          <p className="text-xs text-muted-foreground">{resolution.removed_shift_time}</p>
+                      <div className="mt-2 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
+                            <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
+                            <p className="text-sm font-medium">{resolution.removed_sector_name}</p>
+                            <p className="text-xs text-muted-foreground">{resolution.removed_shift_time}</p>
+                          </div>
+                          <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                            <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
+                            <p className="text-sm font-medium">{resolution.kept_sector_name}</p>
+                            <p className="text-xs text-muted-foreground">{resolution.kept_shift_time}</p>
+                          </div>
                         </div>
-                        <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
-                          <p className="text-xs font-medium text-green-600">Mantido em:</p>
-                          <p className="text-sm font-medium">{resolution.kept_sector_name}</p>
-                          <p className="text-xs text-muted-foreground">{resolution.kept_shift_time}</p>
-                        </div>
+                        {/* Show all shifts that were in conflict for full context */}
+                        {resolution.conflict_details && Array.isArray(resolution.conflict_details) && resolution.conflict_details.length > 2 && (
+                          <div className="p-2 rounded bg-muted/50 text-xs">
+                            <p className="font-medium mb-1">Outros locais mantidos:</p>
+                            {resolution.conflict_details
+                              .filter((s: any) => s.assignmentId !== resolution.removed_assignment_id && s.assignmentId !== resolution.kept_assignment_id)
+                              .map((s: any, idx: number) => (
+                                <p key={idx} className="text-muted-foreground">
+                                  • {s.sectorName} ({s.startTime?.slice(0,5)} - {s.endTime?.slice(0,5)})
+                                </p>
+                              ))
+                            }
+                          </div>
+                        )}
                       </div>
                     )}
                     
