@@ -86,6 +86,9 @@ export default function AdminReports() {
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [checkins, setCheckins] = useState<CheckinRecord[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [financialData, setFinancialData] = useState<any[]>([]);
+  const [movements, setMovements] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
   // Dialog states
@@ -521,6 +524,9 @@ export default function AdminReports() {
                 <SelectContent>
                   <SelectItem value="afastamentos">Afastamentos</SelectItem>
                   <SelectItem value="checkins">Check-ins/Check-outs</SelectItem>
+                  <SelectItem value="plantoes">Plantões por Período</SelectItem>
+                  <SelectItem value="financeiro">Resumo Financeiro</SelectItem>
+                  <SelectItem value="movimentacoes">Movimentações de Escala</SelectItem>
                 </SelectContent>
               </Select>
             </div>

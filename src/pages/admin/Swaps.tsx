@@ -4,13 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Check, X, ArrowLeftRight, Hand, Clock, MapPin, Calendar } from 'lucide-react';
+import { Check, X, ArrowLeftRight, Hand, Clock, MapPin, Calendar, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -56,6 +57,10 @@ export default function AdminSwaps() {
   const [swapDialogOpen, setSwapDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [actionType, setActionType] = useState<'approve' | 'reject' | null>(null);
+  const [selectedSwapsForDelete, setSelectedSwapsForDelete] = useState<Set<string>>(new Set());
+  const [selectedOffersForDelete, setSelectedOffersForDelete] = useState<Set<string>>(new Set());
+  const [deleteSwapsDialogOpen, setDeleteSwapsDialogOpen] = useState(false);
+  const [deleteOffersDialogOpen, setDeleteOffersDialogOpen] = useState(false);
 
   useEffect(() => {
     if (currentTenantId) {
@@ -207,6 +212,87 @@ export default function AdminSwaps() {
     setSelectedOffer(offer);
     setActionType(action);
     setOfferDialogOpen(true);
+  }
+
+  // Delete functions for offers
+  async function handleDeleteOffers() {
+    if (selectedOffersForDelete.size === 0) return;
+
+    const { error } = await supabase
+      .from('shift_offers')
+      .delete()
+      .in('id', Array.from(selectedOffersForDelete));
+
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedOffersForDelete.size} oferta(s) excluída(s)` });
+      setSelectedOffersForDelete(new Set());
+      fetchOffers();
+    }
+    setDeleteOffersDialogOpen(false);
+  }
+
+  // Delete functions for swaps
+  async function handleDeleteSwaps() {
+    if (selectedSwapsForDelete.size === 0) return;
+
+    const { error } = await supabase
+      .from('swap_requests')
+      .delete()
+      .in('id', Array.from(selectedSwapsForDelete));
+
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedSwapsForDelete.size} troca(s) excluída(s)` });
+      setSelectedSwapsForDelete(new Set());
+      fetchSwaps();
+    }
+    setDeleteSwapsDialogOpen(false);
+  }
+
+  function toggleSelectOffer(id: string) {
+    setSelectedOffersForDelete(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }
+
+  function toggleSelectSwap(id: string) {
+    setSelectedSwapsForDelete(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }
+
+  const reviewedOffers = offers.filter(o => o.status !== 'pending');
+  const reviewedSwaps = swaps.filter(s => s.status !== 'pending');
+
+  function toggleSelectAllOffers() {
+    if (selectedOffersForDelete.size === reviewedOffers.length) {
+      setSelectedOffersForDelete(new Set());
+    } else {
+      setSelectedOffersForDelete(new Set(reviewedOffers.map(o => o.id)));
+    }
+  }
+
+  function toggleSelectAllSwaps() {
+    if (selectedSwapsForDelete.size === reviewedSwaps.length) {
+      setSelectedSwapsForDelete(new Set());
+    } else {
+      setSelectedSwapsForDelete(new Set(reviewedSwaps.map(s => s.id)));
+    }
   }
 
   const statusColors = { 
@@ -371,19 +457,37 @@ export default function AdminSwaps() {
         {/* Swaps Tab */}
         <TabsContent value="swaps" className="space-y-4">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <ArrowLeftRight className="h-5 w-5 text-primary" />
-                Solicitações de Troca
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Plantonistas solicitando troca de plantão com outro colega
-              </p>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ArrowLeftRight className="h-5 w-5 text-primary" />
+                  Solicitações de Troca
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Plantonistas solicitando troca de plantão com outro colega
+                </p>
+              </div>
+              {selectedSwapsForDelete.size > 0 && (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setDeleteSwapsDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir ({selectedSwapsForDelete.size})
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]">
+                      <Checkbox
+                        checked={selectedSwapsForDelete.size === reviewedSwaps.length && reviewedSwaps.length > 0}
+                        onCheckedChange={toggleSelectAllSwaps}
+                      />
+                    </TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Solicitante</TableHead>
                     <TableHead>Plantão</TableHead>
@@ -395,13 +499,21 @@ export default function AdminSwaps() {
                 <TableBody>
                   {swaps.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         Nenhuma solicitação de troca
                       </TableCell>
                     </TableRow>
                   ) : (
                     swaps.map((swap) => (
                       <TableRow key={swap.id}>
+                        <TableCell>
+                          {swap.status !== 'pending' && (
+                            <Checkbox
+                              checked={selectedSwapsForDelete.has(swap.id)}
+                              onCheckedChange={() => toggleSelectSwap(swap.id)}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {format(new Date(swap.created_at), 'dd/MM/yyyy', { locale: ptBR })}
                         </TableCell>
@@ -588,6 +700,54 @@ export default function AdminSwaps() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Offers Confirmation Dialog */}
+      <Dialog open={deleteOffersDialogOpen} onOpenChange={setDeleteOffersDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Excluir Ofertas
+            </DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedOffersForDelete.size} oferta(s) do histórico?
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOffersDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteOffers}>
+              Confirmar Exclusão
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Swaps Confirmation Dialog */}
+      <Dialog open={deleteSwapsDialogOpen} onOpenChange={setDeleteSwapsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Excluir Trocas
+            </DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedSwapsForDelete.size} troca(s) do histórico?
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteSwapsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteSwaps}>
+              Confirmar Exclusão
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
