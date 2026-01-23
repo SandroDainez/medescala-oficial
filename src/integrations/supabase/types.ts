@@ -758,6 +758,8 @@ export type Database = {
           description: string | null
           id: string
           name: string
+          reference_latitude: number | null
+          reference_longitude: number | null
           require_gps_checkin: boolean
           tenant_id: string
           updated_at: string
@@ -776,6 +778,8 @@ export type Database = {
           description?: string | null
           id?: string
           name: string
+          reference_latitude?: number | null
+          reference_longitude?: number | null
           require_gps_checkin?: boolean
           tenant_id: string
           updated_at?: string
@@ -794,6 +798,8 @@ export type Database = {
           description?: string | null
           id?: string
           name?: string
+          reference_latitude?: number | null
+          reference_longitude?: number | null
           require_gps_checkin?: boolean
           tenant_id?: string
           updated_at?: string
