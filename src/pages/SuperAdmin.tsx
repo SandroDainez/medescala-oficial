@@ -29,7 +29,8 @@ import {
   RefreshCw,
   Stethoscope,
   Search,
-  Database
+  Database,
+  Lock
 } from 'lucide-react';
 
 interface Tenant {
@@ -58,6 +59,13 @@ export default function SuperAdmin() {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [saving, setSaving] = useState(false);
   const [migratingPii, setMigratingPii] = useState(false);
+  
+  // Reopen password management
+  const [reopenPassword, setReopenPassword] = useState('');
+  const [newReopenPassword, setNewReopenPassword] = useState('');
+  const [confirmReopenPassword, setConfirmReopenPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
 
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
@@ -114,6 +122,67 @@ export default function SuperAdmin() {
       });
     } finally {
       setMigratingPii(false);
+    }
+  }
+
+  async function handleChangeReopenPassword() {
+    if (!newReopenPassword.trim()) {
+      toast({
+        title: 'Erro',
+        description: 'Digite a nova senha',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (newReopenPassword !== confirmReopenPassword) {
+      toast({
+        title: 'Erro',
+        description: 'As senhas não coincidem',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (newReopenPassword.length < 6) {
+      toast({
+        title: 'Erro',
+        description: 'A senha deve ter pelo menos 6 caracteres',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setSavingPassword(true);
+    
+    try {
+      const { error } = await supabase
+        .from('system_settings')
+        .update({ 
+          setting_value: newReopenPassword,
+          updated_at: new Date().toISOString(),
+          updated_by: user?.id 
+        })
+        .eq('setting_key', 'schedule_reopen_password');
+      
+      if (error) throw error;
+      
+      toast({
+        title: 'Senha alterada!',
+        description: 'A senha de reabertura de escalas foi atualizada com sucesso.',
+      });
+      
+      setNewReopenPassword('');
+      setConfirmReopenPassword('');
+      setShowPasswordFields(false);
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao alterar senha',
+        description: error.message,
+        variant: 'destructive',
+      });
+    } finally {
+      setSavingPassword(false);
     }
   }
 
@@ -419,6 +488,75 @@ export default function SuperAdmin() {
             </Button>
             <p className="text-xs text-muted-foreground mt-2">
               Converte CPF, CRM, telefone, endereço e dados bancários para armazenamento criptografado.
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Schedule Reopen Password */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Senha de Reabertura de Escalas
+            </CardTitle>
+            <CardDescription>
+              Defina a senha necessária para reabrir escalas finalizadas
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!showPasswordFields ? (
+              <Button 
+                onClick={() => setShowPasswordFields(true)}
+                variant="outline"
+              >
+                <Edit className="h-4 w-4 mr-2" />
+                Alterar senha de reabertura
+              </Button>
+            ) : (
+              <div className="space-y-4 max-w-md">
+                <div className="space-y-2">
+                  <Label htmlFor="new-reopen-password">Nova senha</Label>
+                  <Input
+                    id="new-reopen-password"
+                    type="password"
+                    placeholder="Digite a nova senha..."
+                    value={newReopenPassword}
+                    onChange={(e) => setNewReopenPassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-reopen-password">Confirmar senha</Label>
+                  <Input
+                    id="confirm-reopen-password"
+                    type="password"
+                    placeholder="Confirme a nova senha..."
+                    value={confirmReopenPassword}
+                    onChange={(e) => setConfirmReopenPassword(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    onClick={handleChangeReopenPassword}
+                    disabled={savingPassword}
+                  >
+                    {savingPassword ? 'Salvando...' : 'Salvar nova senha'}
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      setShowPasswordFields(false);
+                      setNewReopenPassword('');
+                      setConfirmReopenPassword('');
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Esta senha é exigida quando um administrador tenta reabrir uma escala já finalizada.
+              Somente você (Super Admin) pode alterar esta senha.
             </p>
           </CardContent>
         </Card>

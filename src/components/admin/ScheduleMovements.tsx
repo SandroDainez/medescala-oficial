@@ -13,6 +13,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 
 interface ScheduleFinalization {
   id: string;
@@ -69,6 +70,9 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
   const [finalizeNotes, setFinalizeNotes] = useState('');
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
   const [reopenDialogOpen, setReopenDialogOpen] = useState(false);
+  const [reopenPassword, setReopenPassword] = useState('');
+  const [reopenPasswordError, setReopenPasswordError] = useState('');
+  const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
 
   useEffect(() => {
     if (currentTenantId && user?.id) {
@@ -164,8 +168,30 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
 
   async function handleReopenSchedule() {
     if (!currentTenantId || !finalization?.id) return;
-
+    
+    // Verify password first
+    if (!reopenPassword.trim()) {
+      setReopenPasswordError('Digite a senha para reabrir');
+      return;
+    }
+    
+    setIsVerifyingPassword(true);
+    setReopenPasswordError('');
+    
     try {
+      // Verify password using the database function
+      const { data: isValid, error: verifyError } = await supabase
+        .rpc('verify_schedule_reopen_password', { _password: reopenPassword });
+      
+      if (verifyError) throw verifyError;
+      
+      if (!isValid) {
+        setReopenPasswordError('Senha incorreta');
+        setIsVerifyingPassword(false);
+        return;
+      }
+      
+      // Password verified, proceed with reopen
       const { error } = await supabase
         .from('schedule_finalizations')
         .delete()
@@ -180,6 +206,8 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
           : 'A escala pode ser editada novamente sem registro de movimentações.',
       });
       setReopenDialogOpen(false);
+      setReopenPassword('');
+      setReopenPasswordError('');
       fetchData();
     } catch (error: any) {
       toast({
@@ -187,7 +215,15 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
         description: error?.message || 'Erro desconhecido',
         variant: 'destructive',
       });
+    } finally {
+      setIsVerifyingPassword(false);
     }
+  }
+
+  function handleCloseReopenDialog() {
+    setReopenDialogOpen(false);
+    setReopenPassword('');
+    setReopenPasswordError('');
   }
 
   function getMovementIcon(type: string) {
@@ -358,8 +394,8 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
         </DialogContent>
       </Dialog>
 
-      {/* Reopen Dialog */}
-      <Dialog open={reopenDialogOpen} onOpenChange={setReopenDialogOpen}>
+      {/* Reopen Dialog - Requires Password */}
+      <Dialog open={reopenDialogOpen} onOpenChange={handleCloseReopenDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -372,13 +408,58 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex gap-2 pt-4">
-            <Button variant="outline" className="flex-1" onClick={() => setReopenDialogOpen(false)}>
+          <div className="space-y-4 py-4">
+            <div className="p-4 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+              <div className="flex items-start gap-2">
+                <Lock className="h-5 w-5 text-red-600 mt-0.5" />
+                <div className="text-sm text-red-800 dark:text-red-200">
+                  <p className="font-medium">Ação protegida por senha</p>
+                  <p className="mt-1">Esta ação requer a senha de reabertura definida pelo administrador master.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reopen-password">Senha de reabertura</Label>
+              <Input
+                id="reopen-password"
+                type="password"
+                placeholder="Digite a senha..."
+                value={reopenPassword}
+                onChange={(e) => {
+                  setReopenPassword(e.target.value);
+                  setReopenPasswordError('');
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleReopenSchedule();
+                  }
+                }}
+              />
+              {reopenPasswordError && (
+                <p className="text-sm text-red-600">{reopenPasswordError}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1" onClick={handleCloseReopenDialog}>
               Cancelar
             </Button>
-            <Button variant="destructive" className="flex-1" onClick={handleReopenSchedule}>
-              <Unlock className="mr-2 h-4 w-4" />
-              Reabrir Escala
+            <Button 
+              variant="destructive" 
+              className="flex-1" 
+              onClick={handleReopenSchedule}
+              disabled={isVerifyingPassword}
+            >
+              {isVerifyingPassword ? (
+                <>Verificando...</>
+              ) : (
+                <>
+                  <Unlock className="mr-2 h-4 w-4" />
+                  Reabrir Escala
+                </>
+              )}
             </Button>
           </div>
         </DialogContent>
