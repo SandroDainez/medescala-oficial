@@ -783,37 +783,40 @@ export default function UserShifts() {
                                   )}
                                 </div>
 
-                                <div className="flex gap-2 flex-shrink-0">
-                                  {needsCheckin && isShiftToday && (
-                                    <Button 
-                                      size="sm" 
-                                      onClick={() => handleCheckin(a)}
-                                      disabled={isProcessing}
-                                    >
-                                      {isProcessing ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <LogIn className="mr-2 h-4 w-4" />
-                                      )}
-                                      Check-in
-                                    </Button>
-                                  )}
-                                  {needsCheckout && (
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline" 
-                                      onClick={() => handleCheckout(a)}
-                                      disabled={isProcessing}
-                                    >
-                                      {isProcessing ? (
-                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                      ) : (
-                                        <LogOut className="mr-2 h-4 w-4" />
-                                      )}
-                                      Check-out
-                                    </Button>
-                                  )}
-                                </div>
+                                {/* Check-in/Check-out buttons - show when sector has checkin enabled */}
+                                {sectorInfo.checkin_enabled && (
+                                  <div className="flex gap-2 flex-shrink-0">
+                                    {needsCheckin && !isShiftPast && (
+                                      <Button 
+                                        size="sm" 
+                                        onClick={() => handleCheckin(a)}
+                                        disabled={isProcessing}
+                                      >
+                                        {isProcessing ? (
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <LogIn className="mr-2 h-4 w-4" />
+                                        )}
+                                        Check-in
+                                      </Button>
+                                    )}
+                                    {needsCheckout && (
+                                      <Button 
+                                        size="sm" 
+                                        variant="outline" 
+                                        onClick={() => handleCheckout(a)}
+                                        disabled={isProcessing}
+                                      >
+                                        {isProcessing ? (
+                                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                        ) : (
+                                          <LogOut className="mr-2 h-4 w-4" />
+                                        )}
+                                        Check-out
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             </div>
                           );
