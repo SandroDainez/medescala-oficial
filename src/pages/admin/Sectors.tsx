@@ -5,14 +5,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw, MapPin, Clock } from 'lucide-react';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 
@@ -24,6 +25,10 @@ interface Sector {
   active: boolean;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  checkin_enabled?: boolean;
+  require_gps_checkin?: boolean;
+  allowed_checkin_radius_meters?: number | null;
+  checkin_tolerance_minutes?: number;
 }
 
 interface Member {
@@ -59,6 +64,14 @@ export default function AdminSectors() {
   const [selectedSectorForValues, setSelectedSectorForValues] = useState<Sector | null>(null);
   const [selectedSectorForUserValues, setSelectedSectorForUserValues] = useState<Sector | null>(null);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
+  const [selectedSectorForCheckin, setSelectedSectorForCheckin] = useState<Sector | null>(null);
+  const [checkinSettings, setCheckinSettings] = useState({
+    checkin_enabled: false,
+    require_gps_checkin: false,
+    allowed_checkin_radius_meters: 500,
+    checkin_tolerance_minutes: 30,
+  });
 
   const [formData, setFormData] = useState({
     name: '',
@@ -281,6 +294,41 @@ export default function AdminSectors() {
     setUserValuesDialogOpen(true);
   }
 
+  function openCheckinDialog(sector: Sector) {
+    setSelectedSectorForCheckin(sector);
+    setCheckinSettings({
+      checkin_enabled: sector.checkin_enabled || false,
+      require_gps_checkin: sector.require_gps_checkin || false,
+      allowed_checkin_radius_meters: sector.allowed_checkin_radius_meters || 500,
+      checkin_tolerance_minutes: sector.checkin_tolerance_minutes || 30,
+    });
+    setCheckinDialogOpen(true);
+  }
+
+  async function saveCheckinSettings() {
+    if (!selectedSectorForCheckin) return;
+
+    const { error } = await supabase
+      .from('sectors')
+      .update({
+        checkin_enabled: checkinSettings.checkin_enabled,
+        require_gps_checkin: checkinSettings.require_gps_checkin,
+        allowed_checkin_radius_meters: checkinSettings.allowed_checkin_radius_meters,
+        checkin_tolerance_minutes: checkinSettings.checkin_tolerance_minutes,
+        updated_by: user?.id,
+      })
+      .eq('id', selectedSectorForCheckin.id);
+
+    if (error) {
+      toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Configurações de check-in salvas!' });
+    fetchData();
+    setCheckinDialogOpen(false);
+  }
+
   const formatCurrency = (value: number | null | undefined) => {
     if (value === null || value === undefined) return '-';
     return `R$ ${value.toFixed(2).replace('.', ',')}`;
@@ -390,6 +438,7 @@ export default function AdminSectors() {
                 <TableHead>Nome</TableHead>
                 <TableHead>Descrição</TableHead>
                 <TableHead>Valores</TableHead>
+                <TableHead>Check-in</TableHead>
                 <TableHead>Membros</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -398,7 +447,7 @@ export default function AdminSectors() {
             <TableBody>
               {sectors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground">
                     Nenhum setor cadastrado. Crie o primeiro setor para começar.
                   </TableCell>
                 </TableRow>
@@ -426,6 +475,26 @@ export default function AdminSectors() {
                           <span>{formatCurrency(sector.default_night_value)}</span>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <button
+                        onClick={() => openCheckinDialog(sector)}
+                        className="flex flex-col gap-0.5 hover:opacity-80 transition-opacity cursor-pointer"
+                        title="Clique para configurar check-in e GPS"
+                      >
+                        <Badge 
+                          variant={sector.checkin_enabled ? 'default' : 'secondary'}
+                          className="text-xs"
+                        >
+                          {sector.checkin_enabled ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                        {sector.checkin_enabled && sector.require_gps_checkin && (
+                          <Badge variant="outline" className="text-xs">
+                            <MapPin className="mr-1 h-3 w-3" />
+                            GPS {sector.allowed_checkin_radius_meters || 500}m
+                          </Badge>
+                        )}
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">
@@ -644,6 +713,119 @@ export default function AdminSectors() {
         userId={user?.id}
         onSuccess={fetchData}
       />
+
+      {/* Check-in Configuration Dialog */}
+      <Dialog open={checkinDialogOpen} onOpenChange={setCheckinDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              Configurar Check-in: {selectedSectorForCheckin?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Configure como os plantonistas confirmam presença nos plantões deste setor.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6 py-4">
+            {/* Enable Check-in */}
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-base font-medium">Habilitar Check-in</Label>
+                <p className="text-sm text-muted-foreground">
+                  Plantonistas precisam confirmar presença
+                </p>
+              </div>
+              <Switch
+                checked={checkinSettings.checkin_enabled}
+                onCheckedChange={(checked) => 
+                  setCheckinSettings({ ...checkinSettings, checkin_enabled: checked })
+                }
+              />
+            </div>
+
+            {checkinSettings.checkin_enabled && (
+              <>
+                {/* Tolerance */}
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Tolerância (minutos)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Tempo antes/depois do horário permitido para check-in
+                  </p>
+                  <Input
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={checkinSettings.checkin_tolerance_minutes}
+                    onChange={(e) => 
+                      setCheckinSettings({ 
+                        ...checkinSettings, 
+                        checkin_tolerance_minutes: parseInt(e.target.value) || 30 
+                      })
+                    }
+                  />
+                </div>
+
+                {/* Require GPS */}
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-base font-medium flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Exigir GPS
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Validar localização do plantonista
+                    </p>
+                  </div>
+                  <Switch
+                    checked={checkinSettings.require_gps_checkin}
+                    onCheckedChange={(checked) => 
+                      setCheckinSettings({ ...checkinSettings, require_gps_checkin: checked })
+                    }
+                  />
+                </div>
+
+                {checkinSettings.require_gps_checkin && (
+                  <div className="space-y-2">
+                    <Label>Raio permitido (metros)</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Distância máxima do local de trabalho para aceitar o check-in
+                    </p>
+                    <Input
+                      type="number"
+                      min={50}
+                      max={5000}
+                      step={50}
+                      value={checkinSettings.allowed_checkin_radius_meters}
+                      onChange={(e) => 
+                        setCheckinSettings({ 
+                          ...checkinSettings, 
+                          allowed_checkin_radius_meters: parseInt(e.target.value) || 500 
+                        })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Recomendado: 500m para hospitais grandes, 200m para clínicas
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCheckinDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={saveCheckinSettings}>
+              Salvar Configurações
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
