@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { Info, ExternalLink, Shield, FileText, Mail, ChevronRight } from 'lucide-react';
+import { Info, ExternalLink, Shield, FileText, Mail, ChevronRight, Phone, MessageCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export default function UserAbout() {
@@ -113,7 +113,7 @@ export default function UserAbout() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Contato</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-1">
           <Button 
             variant="ghost" 
             className="w-full justify-start h-auto py-3"
@@ -121,6 +121,22 @@ export default function UserAbout() {
           >
             <Mail className="h-4 w-4 mr-3" />
             <span>sandrodainez1@gmail.com</span>
+          </Button>
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start h-auto py-3"
+            onClick={() => window.location.href = 'tel:+5513997000649'}
+          >
+            <Phone className="h-4 w-4 mr-3" />
+            <span>(13) 99700-0649</span>
+          </Button>
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start h-auto py-3 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
+            onClick={() => window.open('https://wa.me/5513997000649', '_blank')}
+          >
+            <MessageCircle className="h-4 w-4 mr-3" />
+            <span>WhatsApp</span>
           </Button>
         </CardContent>
       </Card>
