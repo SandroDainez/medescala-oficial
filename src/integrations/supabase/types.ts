@@ -175,6 +175,27 @@ export type Database = {
           },
         ]
       }
+      login_cpf_rate_limits: {
+        Row: {
+          attempts: number
+          first_attempt_at: string
+          key: string
+          last_attempt_at: string
+        }
+        Insert: {
+          attempts?: number
+          first_attempt_at?: string
+          key: string
+          last_attempt_at?: string
+        }
+        Update: {
+          attempts?: number
+          first_attempt_at?: string
+          key?: string
+          last_attempt_at?: string
+        }
+        Relationships: []
+      }
       memberships: {
         Row: {
           active: boolean

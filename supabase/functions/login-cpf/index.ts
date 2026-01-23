@@ -5,6 +5,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Rate limit config
+const MAX_ATTEMPTS = 5;
+const WINDOW_MINUTES = 15;
+
 // Format CPF to digits only
 function formatCpf(cpf: string): string {
   return cpf.replace(/\D/g, '');
@@ -41,6 +45,12 @@ async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string>
   return decoder.decode(decrypted);
 }
 
+// Add random delay (100-300 ms) to mitigate timing attack
+async function randomDelay(): Promise<void> {
+  const delay = 100 + Math.random() * 200;
+  return new Promise(resolve => setTimeout(resolve, delay));
+}
+
 interface LoginCpfRequest {
   cpf: string;
   password: string;
@@ -65,7 +75,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const formattedCpf = formatCpf(cpf);
-    console.log(`Login attempt with CPF: ${formattedCpf.substring(0, 3)}***`);
+    const rateLimitKey = `cpf:${formattedCpf.substring(0, 6)}`; // Partial key to avoid storing full CPF
+    console.log(`Login attempt with CPF partial key: ${rateLimitKey}`);
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL") ?? "",
@@ -78,7 +89,52 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     );
 
-    // Get encryption key
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rate Limiting (using service role - table has RLS USING false)
+    // ─────────────────────────────────────────────────────────────────────────
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - WINDOW_MINUTES * 60 * 1000);
+
+    const { data: rateLimitRow } = await supabaseAdmin
+      .from("login_cpf_rate_limits")
+      .select("attempts, first_attempt_at")
+      .eq("key", rateLimitKey)
+      .maybeSingle();
+
+    if (rateLimitRow) {
+      const firstAttempt = new Date(rateLimitRow.first_attempt_at);
+      if (firstAttempt > windowStart) {
+        // Still within window
+        if (rateLimitRow.attempts >= MAX_ATTEMPTS) {
+          console.warn(`Rate limit exceeded for ${rateLimitKey}`);
+          await randomDelay();
+          return new Response(
+            JSON.stringify({ error: "Muitas tentativas. Tente novamente em 15 minutos." }),
+            { status: 429, headers: { "Content-Type": "application/json", ...corsHeaders } }
+          );
+        }
+        // Increment attempts
+        await supabaseAdmin
+          .from("login_cpf_rate_limits")
+          .update({ attempts: rateLimitRow.attempts + 1, last_attempt_at: now.toISOString() })
+          .eq("key", rateLimitKey);
+      } else {
+        // Window expired, reset
+        await supabaseAdmin
+          .from("login_cpf_rate_limits")
+          .update({ attempts: 1, first_attempt_at: now.toISOString(), last_attempt_at: now.toISOString() })
+          .eq("key", rateLimitKey);
+      }
+    } else {
+      // First attempt
+      await supabaseAdmin
+        .from("login_cpf_rate_limits")
+        .insert({ key: rateLimitKey, attempts: 1, first_attempt_at: now.toISOString(), last_attempt_at: now.toISOString() });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CPF lookup
+    // ─────────────────────────────────────────────────────────────────────────
     const encryptionKey = Deno.env.get("PII_ENCRYPTION_KEY");
     if (!encryptionKey) {
       throw new Error("PII_ENCRYPTION_KEY not configured");
@@ -97,37 +153,31 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error("Erro ao buscar dados");
     }
 
-    if (!profiles || profiles.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "CPF não encontrado" }),
-        { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
-      );
-    }
-
-    // Find matching CPF by decrypting each one
+    // Always iterate all rows (constant-time pattern to mitigate timing attacks)
     let matchedUserId: string | null = null;
 
-    for (const profile of profiles) {
+    for (const profile of profiles ?? []) {
       if (profile.cpf_enc) {
         try {
-          const decryptedCpf = await decryptValue(profile.cpf_enc, cryptoKey);
+          const decryptedCpf = await decryptValue(profile.cpf_enc as unknown as string, cryptoKey);
           const formattedDecryptedCpf = formatCpf(decryptedCpf);
           
           if (formattedDecryptedCpf === formattedCpf) {
             matchedUserId = profile.user_id;
-            break;
+            // Continue iterating to ensure constant time
           }
         } catch (err) {
           console.error("Error decrypting CPF:", err);
-          continue;
         }
       }
     }
 
+    await randomDelay(); // Additional delay before returning result
+
     if (!matchedUserId) {
       console.log("CPF not found in any profile");
       return new Response(
-        JSON.stringify({ error: "CPF não encontrado" }),
+        JSON.stringify({ error: "CPF ou senha incorretos" }),
         { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
@@ -140,7 +190,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (userError || !authUser?.user?.email) {
       console.error("Error fetching user:", userError);
       return new Response(
-        JSON.stringify({ error: "Usuário não encontrado" }),
+        JSON.stringify({ error: "CPF ou senha incorretos" }),
         { status: 401, headers: { "Content-Type": "application/json", ...corsHeaders } }
       );
     }
@@ -159,6 +209,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Success - reset rate limit
+    // ─────────────────────────────────────────────────────────────────────────
+    await supabaseAdmin
+      .from("login_cpf_rate_limits")
+      .delete()
+      .eq("key", rateLimitKey);
+
     console.log("Login successful via CPF");
 
     return new Response(
@@ -174,6 +232,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const errorMessage = error instanceof Error ? error.message : "Erro no login";
     console.error("login-cpf error:", errorMessage);
     
+    await randomDelay();
     return new Response(
       JSON.stringify({ error: errorMessage }),
       { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }
