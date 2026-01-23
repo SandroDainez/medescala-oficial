@@ -703,13 +703,11 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Dia a Dia | Plantonistas | Por Setor | Todos os Plantões | Rentabilidade */}
+      {/* TABS: Dia a Dia | Plantonistas | Rentabilidade */}
       <Tabs defaultValue="dia" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
-          <TabsTrigger value="setor">Por Setor</TabsTrigger>
-          <TabsTrigger value="todos">Todos</TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
             <Calculator className="h-3 w-3" />
             Rentabilidade
@@ -924,156 +922,6 @@ export default function AdminFinancial() {
           </Dialog>
         </TabsContent>
 
-        {/* TAB: Por Setor */}
-        <TabsContent value="setor" className="space-y-4 mt-4">
-          {sectorReports.length === 0 ? (
-            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
-          ) : (
-            sectorReports.map(report => {
-              const isExpanded = expandedSectors.has(report.sector_id);
-              // Agrupar plantões por dia para este setor
-              const entriesBySector = filteredEntries.filter(e => e.sector_id === report.sector_id);
-              const entriesByDay = entriesBySector.reduce((acc, entry) => {
-                const day = entry.shift_date;
-                if (!acc[day]) acc[day] = [];
-                acc[day].push(entry);
-                return acc;
-              }, {} as Record<string, typeof entriesBySector>);
-              const sortedDays = Object.keys(entriesByDay).sort();
-              
-              return (
-                <Card key={report.sector_id}>
-                  <div className="flex items-center justify-between p-4 bg-muted/50 cursor-pointer hover:bg-muted/70" onClick={() => toggleSector(report.sector_id)}>
-                    <div className="flex items-center gap-3">
-                      {isExpanded ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-                      <div>
-                        <h3 className="font-semibold text-lg flex items-center gap-2"><Building className="h-5 w-5 text-muted-foreground" />{report.sector_name}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {report.total_shifts} plantões · {report.total_hours.toFixed(1)}h · {report.plantonistas.length} plantonista(s)
-                          {report.unpriced_shifts > 0 && <span className="text-amber-500 ml-2">({report.unpriced_shifts} sem valor)</span>}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="text-xl font-bold text-green-600">{formatCurrency(report.total_value)}</p>
-                  </div>
-                  {isExpanded && (
-                    <CardContent className="p-0">
-                      {/* Resumo por plantonista */}
-                      <div className="border-b">
-                        <Table>
-                          <TableHeader>
-                            <TableRow className="bg-muted/30">
-                              <TableHead>Plantonista</TableHead>
-                              <TableHead className="text-center">Plantões</TableHead>
-                              <TableHead className="text-center">Horas</TableHead>
-                              <TableHead className="text-center">Sem valor</TableHead>
-                              <TableHead className="text-right">Subtotal</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {report.plantonistas.map(p => (
-                              <TableRow key={p.assignee_id}>
-                                <TableCell className="font-medium">{p.assignee_name}</TableCell>
-                                <TableCell className="text-center">{p.shifts}</TableCell>
-                                <TableCell className="text-center">{p.hours.toFixed(1)}h</TableCell>
-                                <TableCell className="text-center">{p.unpriced > 0 ? <Badge variant="outline" className="text-amber-500 border-amber-500">{p.unpriced}</Badge> : '0'}</TableCell>
-                                <TableCell className="text-right font-medium text-green-600">{p.paid > 0 ? formatCurrency(p.value) : <span className="text-muted-foreground">—</span>}</TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      {/* Lista detalhada por dia */}
-                      <div className="p-4">
-                        <p className="text-sm font-medium mb-3">Plantões por dia:</p>
-                        <div className="max-h-[400px] overflow-y-auto border rounded">
-                          <div className="space-y-4 p-2">
-                            {sortedDays.map(day => {
-                              const dayEntries = entriesByDay[day];
-                              const dayTotal = dayEntries.reduce((sum, e) => {
-                                if (e.value_source !== 'invalid' && e.final_value !== null) {
-                                  return sum + e.final_value;
-                                }
-                                return sum;
-                              }, 0);
-                              return (
-                                <div key={day} className="border rounded-lg overflow-hidden">
-                                  <div className="bg-muted/50 px-4 py-2 flex items-center justify-between">
-                                    <span className="font-medium">{format(parseISO(day), "dd/MM/yyyy (EEEE)", { locale: ptBR })}</span>
-                                    <span className="text-sm text-green-600 font-medium">{dayTotal > 0 ? formatCurrency(dayTotal) : ''}</span>
-                                  </div>
-                                  <Table>
-                                    <TableBody>
-                                      {dayEntries.sort((a, b) => (a.start_time || '').localeCompare(b.start_time || '')).map(e => {
-                                        const val = e.value_source === 'invalid' ? null : e.final_value;
-                                        return (
-                                          <TableRow key={e.id}>
-                                            <TableCell className="w-32">{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
-                                            <TableCell>{e.assignee_name}</TableCell>
-                                            <TableCell className="text-right w-32">
-                                              {val !== null ? <span className="text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
-                                            </TableCell>
-                                          </TableRow>
-                                        );
-                                      })}
-                                    </TableBody>
-                                  </Table>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              );
-            })
-          )}
-        </TabsContent>
-
-        {/* TAB: Todos os Plantões */}
-        <TabsContent value="todos" className="mt-4">
-          {filteredEntries.length === 0 ? (
-            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
-          ) : (
-            <Card>
-              <CardContent className="p-0">
-                <div className="h-[calc(100vh-400px)] min-h-[400px] overflow-y-auto">
-                  <Table>
-                    <TableHeader className="sticky top-0 bg-background z-10">
-                      <TableRow>
-                        <TableHead>Data</TableHead>
-                        <TableHead>Horário</TableHead>
-                        <TableHead className="text-center">Duração</TableHead>
-                        <TableHead>Setor</TableHead>
-                        <TableHead>Plantonista</TableHead>
-                        <TableHead className="text-right">Valor</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredEntries.sort((a, b) => new Date(a.shift_date).getTime() - new Date(b.shift_date).getTime()).map(e => {
-                        const val = e.value_source === 'invalid' ? null : e.final_value;
-                        return (
-                          <TableRow key={e.id}>
-                            <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
-                            <TableCell>{e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}</TableCell>
-                            <TableCell className="text-center"><Badge variant="outline">{e.duration_hours.toFixed(1)}h</Badge></TableCell>
-                            <TableCell>{e.sector_name}</TableCell>
-                            <TableCell>{e.assignee_name}</TableCell>
-                            <TableCell className="text-right">
-                              {val !== null ? <span className="font-medium text-green-600">{formatCurrency(val)}</span> : <Badge variant="outline" className="text-amber-500 border-amber-500">Sem valor</Badge>}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
 
         {/* TAB: Rentabilidade por Setor */}
         <TabsContent value="rentabilidade" className="mt-4">
