@@ -736,7 +736,7 @@ export default function AdminSectors() {
 
       {/* Check-in Configuration Dialog */}
       <Dialog open={checkinDialogOpen} onOpenChange={setCheckinDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
@@ -747,7 +747,7 @@ export default function AdminSectors() {
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-6 py-4">
+          <div className="flex-1 overflow-y-auto space-y-6 py-4 pr-2">
             {/* Enable Check-in */}
             <div className="flex items-center justify-between">
               <div className="space-y-0.5">
@@ -883,7 +883,7 @@ export default function AdminSectors() {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="border-t pt-4">
             <Button variant="outline" onClick={() => setCheckinDialogOpen(false)}>
               Cancelar
             </Button>
