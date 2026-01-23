@@ -710,7 +710,7 @@ export default function AdminFinancial() {
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
             <Calculator className="h-3 w-3" />
-            Rentabilidade
+            Balanço dos Setores
           </TabsTrigger>
         </TabsList>
 
