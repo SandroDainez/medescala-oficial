@@ -264,7 +264,10 @@ export default function UserFinancial() {
     setLoading(false);
   }
 
-  if (loading) return <div className="text-muted-foreground p-4">Carregando...</div>;
+  // Show loading while month/year are being auto-selected
+  if (loading || selectedMonth === null || selectedYear === null) {
+    return <div className="text-muted-foreground p-4">Carregando...</div>;
+  }
 
   return (
     <div className="space-y-6">
