@@ -32,6 +32,7 @@ interface MemberWithProfile {
     phone: string | null;
     cpf: string | null;
     crm: string | null;
+    rqe: string | null;
     address: string | null;
     bank_name: string | null;
     bank_agency: string | null;
@@ -98,6 +99,7 @@ export default function UserManagement() {
   const [editPhone, setEditPhone] = useState('');
   const [editCpf, setEditCpf] = useState('');
   const [editCrm, setEditCrm] = useState('');
+  const [editRqe, setEditRqe] = useState('');
   const [resetPasswordOnSave, setResetPasswordOnSave] = useState(false);
   const [sendEmailOnSave, setSendEmailOnSave] = useState(false);
   const [newPasswordFromReset, setNewPasswordFromReset] = useState<string | null>(null);
@@ -119,6 +121,7 @@ export default function UserManagement() {
   const [invitePhone, setInvitePhone] = useState('');
   const [inviteCpf, setInviteCpf] = useState('');
   const [inviteCrm, setInviteCrm] = useState('');
+  const [inviteRqe, setInviteRqe] = useState('');
   const [inviteAddress, setInviteAddress] = useState('');
   const [inviteBankName, setInviteBankName] = useState('');
   const [inviteBankAgency, setInviteBankAgency] = useState('');
@@ -473,6 +476,7 @@ export default function UserManagement() {
     setInvitePhone('');
     setInviteCpf('');
     setInviteCrm('');
+    setInviteRqe('');
     setInviteAddress('');
     setInviteBankName('');
     setInviteBankAgency('');
@@ -486,6 +490,7 @@ export default function UserManagement() {
     setEditPhone(member.privateProfile?.phone || '');
     setEditCpf(member.privateProfile?.cpf || '');
     setEditCrm(member.privateProfile?.crm || '');
+    setEditRqe(member.privateProfile?.rqe || '');
     setEditAddress(member.privateProfile?.address || '');
     setEditBankName(member.privateProfile?.bank_name || '');
     setEditBankAgency(member.privateProfile?.bank_agency || '');
@@ -535,6 +540,7 @@ export default function UserManagement() {
         phone: editPhone || null,
         cpf: editCpf || null,
         crm: editCrm || null,
+        rqe: editRqe || null,
         address: editAddress || null,
         bank_name: editBankName || null,
         bank_agency: editBankAgency || null,
@@ -745,6 +751,7 @@ export default function UserManagement() {
             phone: invitePhone || null,
             cpf: inviteCpf || null,
             crm: inviteCrm || null,
+            rqe: inviteRqe || null,
             address: inviteAddress || null,
             bankName: inviteBankName || null,
             bankAgency: inviteBankAgency || null,
@@ -777,10 +784,24 @@ export default function UserManagement() {
       fetchMembers();
       fetchTenantInfo();
 
-      toast({ 
-        title: 'Usuário criado com sucesso!',
-        description: 'As credenciais foram geradas.'
-      });
+      // Show appropriate toast based on email status
+      if (result.emailSent) {
+        toast({ 
+          title: 'Usuário criado com sucesso!',
+          description: 'Email de convite enviado para o usuário.'
+        });
+      } else if (result.emailError) {
+        toast({ 
+          title: 'Usuário criado!',
+          description: `Email não enviado: ${result.emailError}. Compartilhe as credenciais manualmente.`,
+          variant: 'default'
+        });
+      } else {
+        toast({ 
+          title: 'Usuário criado com sucesso!',
+          description: 'Compartilhe as credenciais abaixo com o usuário.'
+        });
+      }
     } catch (error: any) {
       console.error('Error creating user:', error);
       
@@ -1069,17 +1090,27 @@ export default function UserManagement() {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="inviteAddress">Endereço</Label>
-                        <div className="relative">
-                          <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                          <Input
-                            id="inviteAddress"
-                            value={inviteAddress}
-                            onChange={(e) => setInviteAddress(e.target.value)}
-                            placeholder="Rua, número, cidade"
-                            className="pl-10"
-                          />
-                        </div>
+                        <Label htmlFor="inviteRqe">RQE (se especialista)</Label>
+                        <Input
+                          id="inviteRqe"
+                          value={inviteRqe}
+                          onChange={(e) => setInviteRqe(e.target.value)}
+                          placeholder="RQE 00000"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="inviteAddress">Endereço</Label>
+                      <div className="relative">
+                        <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="inviteAddress"
+                          value={inviteAddress}
+                          onChange={(e) => setInviteAddress(e.target.value)}
+                          placeholder="Rua, número, cidade"
+                          className="pl-10"
+                        />
                       </div>
                     </div>
                   </div>
@@ -1585,17 +1616,27 @@ export default function UserManagement() {
                     </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="editAddress">Endereço</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        id="editAddress"
-                        value={editAddress}
-                        onChange={(e) => setEditAddress(e.target.value)}
-                        className="pl-10"
-                        placeholder="Rua, número, cidade"
-                      />
-                    </div>
+                    <Label htmlFor="editRqe">RQE</Label>
+                    <Input
+                      id="editRqe"
+                      value={editRqe}
+                      onChange={(e) => setEditRqe(e.target.value)}
+                      placeholder="RQE 00000"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="editAddress">Endereço</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="editAddress"
+                      value={editAddress}
+                      onChange={(e) => setEditAddress(e.target.value)}
+                      className="pl-10"
+                      placeholder="Rua, número, cidade"
+                    />
                   </div>
                 </div>
               </div>

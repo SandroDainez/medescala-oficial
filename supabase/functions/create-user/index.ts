@@ -98,6 +98,7 @@ Deno.serve(async (req) => {
       phone,
       cpf,
       crm,
+      rqe,
       address,
       bankName,
       bankAgency,
@@ -176,6 +177,7 @@ Deno.serve(async (req) => {
           { key: 'phone', value: phone },
           { key: 'cpf', value: cpf },
           { key: 'crm', value: crm },
+          { key: 'rqe', value: rqe },
           { key: 'address', value: address },
           { key: 'bank_name', value: bankName },
           { key: 'bank_agency', value: bankAgency },
@@ -237,10 +239,14 @@ Deno.serve(async (req) => {
 
     // Send invite email if requested and we have a real email
     let emailSent = false
+    let emailError: string | null = null
     if (sendInviteEmail && email && !email.includes('@interno.hospital')) {
-      try {
-        const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
-        if (RESEND_API_KEY) {
+      const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY")
+      if (!RESEND_API_KEY) {
+        emailError = 'RESEND_API_KEY não configurada'
+        console.warn('RESEND_API_KEY not configured, skipping email')
+      } else {
+        try {
           const loginUrl = `${req.headers.get('origin') || 'https://app.medescala.com'}/auth`
           
           const htmlContent = `
@@ -309,13 +315,19 @@ Deno.serve(async (req) => {
             emailSent = true
             console.log('Invite email sent successfully')
           } else {
-            const emailError = await emailResponse.json()
-            console.error('Failed to send invite email:', emailError)
+            const errorData = await emailResponse.json()
+            console.error('Failed to send invite email:', errorData)
+            // Common Resend sandbox error: can only send to verified emails
+            if (errorData?.message?.includes('verify a domain') || errorData?.statusCode === 403) {
+              emailError = 'Domínio de email não verificado. Configure um domínio no Resend para enviar para qualquer email.'
+            } else {
+              emailError = errorData?.message || 'Falha ao enviar email'
+            }
           }
+        } catch (err) {
+          console.error('Error sending invite email:', err)
+          emailError = err instanceof Error ? err.message : 'Erro ao enviar email'
         }
-      } catch (emailError) {
-        console.error('Error sending invite email:', emailError)
-        // Don't throw, user creation succeeded
       }
     }
 
@@ -324,7 +336,8 @@ Deno.serve(async (req) => {
         success: true, 
         userId: newUser.user.id,
         email: newUser.user.email,
-        emailSent
+        emailSent,
+        emailError
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
