@@ -465,6 +465,111 @@ export type Database = {
           },
         ]
       }
+      schedule_finalizations: {
+        Row: {
+          created_at: string
+          finalized_at: string
+          finalized_by: string
+          id: string
+          month: number
+          notes: string | null
+          tenant_id: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          finalized_at?: string
+          finalized_by: string
+          id?: string
+          month: number
+          notes?: string | null
+          tenant_id: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          finalized_at?: string
+          finalized_by?: string
+          id?: string
+          month?: number
+          notes?: string | null
+          tenant_id?: string
+          year?: number
+        }
+        Relationships: []
+      }
+      schedule_movements: {
+        Row: {
+          created_at: string
+          destination_assignment_id: string | null
+          destination_sector_id: string | null
+          destination_sector_name: string | null
+          destination_shift_date: string | null
+          destination_shift_time: string | null
+          id: string
+          month: number
+          movement_type: string
+          performed_at: string
+          performed_by: string
+          reason: string | null
+          source_assignment_id: string | null
+          source_sector_id: string | null
+          source_sector_name: string | null
+          source_shift_date: string | null
+          source_shift_time: string | null
+          tenant_id: string
+          user_id: string
+          user_name: string
+          year: number
+        }
+        Insert: {
+          created_at?: string
+          destination_assignment_id?: string | null
+          destination_sector_id?: string | null
+          destination_sector_name?: string | null
+          destination_shift_date?: string | null
+          destination_shift_time?: string | null
+          id?: string
+          month: number
+          movement_type: string
+          performed_at?: string
+          performed_by: string
+          reason?: string | null
+          source_assignment_id?: string | null
+          source_sector_id?: string | null
+          source_sector_name?: string | null
+          source_shift_date?: string | null
+          source_shift_time?: string | null
+          tenant_id: string
+          user_id: string
+          user_name: string
+          year: number
+        }
+        Update: {
+          created_at?: string
+          destination_assignment_id?: string | null
+          destination_sector_id?: string | null
+          destination_sector_name?: string | null
+          destination_shift_date?: string | null
+          destination_shift_time?: string | null
+          id?: string
+          month?: number
+          movement_type?: string
+          performed_at?: string
+          performed_by?: string
+          reason?: string | null
+          source_assignment_id?: string | null
+          source_sector_id?: string | null
+          source_sector_name?: string | null
+          source_shift_date?: string | null
+          source_shift_time?: string | null
+          tenant_id?: string
+          user_id?: string
+          user_name?: string
+          year?: number
+        }
+        Relationships: []
+      }
       sector_memberships: {
         Row: {
           created_at: string
