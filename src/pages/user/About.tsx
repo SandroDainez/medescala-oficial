@@ -68,6 +68,16 @@ export default function UserAbout() {
               <p className="text-muted-foreground">Acompanhe seus valores a receber</p>
             </div>
           </div>
+          <Separator />
+          <div className="flex items-start gap-3">
+            <div className="h-8 w-8 rounded-lg bg-orange-500/10 flex items-center justify-center shrink-0">
+              <span className="text-orange-500">📊</span>
+            </div>
+            <div>
+              <p className="font-medium">Contabilidade por Setor</p>
+              <p className="text-muted-foreground">Controle financeiro básico por setor</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -104,9 +114,13 @@ export default function UserAbout() {
           <CardTitle className="text-lg">Contato</CardTitle>
         </CardHeader>
         <CardContent>
-          <Button variant="ghost" className="w-full justify-start h-auto py-3">
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start h-auto py-3"
+            onClick={() => window.location.href = 'mailto:sandrodainez1@gmail.com'}
+          >
             <Mail className="h-4 w-4 mr-3" />
-            <span>suporte@medescala.com.br</span>
+            <span>sandrodainez1@gmail.com</span>
           </Button>
         </CardContent>
       </Card>
