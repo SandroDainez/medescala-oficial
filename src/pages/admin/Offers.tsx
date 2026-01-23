@@ -78,11 +78,11 @@ export default function AdminOffers() {
     if (!user || !currentTenantId) return;
     setProcessing(true);
 
-    // 1. Update offer status
+    // 1. Update offer status to 'accepted' (valid values: pending, accepted, rejected)
     const { error: offerError } = await supabase
       .from('shift_offers')
       .update({
-        status: 'approved',
+        status: 'accepted',
         reviewed_at: new Date().toISOString(),
         reviewed_by: user.id,
       })
@@ -182,13 +182,13 @@ export default function AdminOffers() {
 
   const statusColors: Record<string, string> = {
     pending: 'bg-yellow-500/10 text-yellow-600 border-yellow-500',
-    approved: 'bg-green-500/10 text-green-600 border-green-500',
+    accepted: 'bg-green-500/10 text-green-600 border-green-500',
     rejected: 'bg-red-500/10 text-red-600 border-red-500',
   };
 
   const statusLabels: Record<string, string> = {
     pending: 'Pendente',
-    approved: 'Aprovado',
+    accepted: 'Aprovado',
     rejected: 'Rejeitado',
   };
 
@@ -371,9 +371,9 @@ export default function AdminOffers() {
                     <TableBody>
                       {reviewedOffers.map(offer => (
                         <TableRow key={offer.id}>
-                          <TableCell>
+                        <TableCell>
                             <Badge variant="outline" className={statusColors[offer.status]}>
-                              {offer.status === 'approved' && <CheckCircle className="h-3 w-3 mr-1" />}
+                              {offer.status === 'accepted' && <CheckCircle className="h-3 w-3 mr-1" />}
                               {offer.status === 'rejected' && <XCircle className="h-3 w-3 mr-1" />}
                               {statusLabels[offer.status]}
                             </Badge>
