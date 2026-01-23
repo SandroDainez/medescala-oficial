@@ -703,107 +703,15 @@ export default function AdminFinancial() {
         </Card>
       )}
 
-      {/* TABS: Dia a Dia | Plantonistas | Rentabilidade */}
-      <Tabs defaultValue="dia" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="dia">Dia a Dia</TabsTrigger>
+      {/* TABS: Plantonistas | Balanço dos Setores */}
+      <Tabs defaultValue="plantonistas_tabela" className="w-full">
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
             <Calculator className="h-3 w-3" />
             Balanço dos Setores
           </TabsTrigger>
         </TabsList>
-
-        {/* TAB: Dia a Dia */}
-        <TabsContent value="dia" className="space-y-2 mt-4">
-          {filteredEntries.length === 0 ? (
-            <Card><CardContent className="p-8 text-center text-muted-foreground"><FileText className="h-12 w-12 mx-auto mb-4 opacity-50" /><p>Nenhum plantão encontrado no período.</p></CardContent></Card>
-          ) : (
-            (() => {
-              // Agrupar por dia
-              const byDay = filteredEntries.reduce((acc, entry) => {
-                const day = entry.shift_date;
-                if (!acc[day]) acc[day] = [];
-                acc[day].push(entry);
-                return acc;
-              }, {} as Record<string, FinancialEntry[]>);
-
-              // Garantir que TODOS os dias do intervalo apareçam (mesmo sem plantões)
-              const allDays = eachDayOfInterval({
-                start: parseISO(startDate),
-                end: parseISO(endDate),
-              }).map((d) => format(d, 'yyyy-MM-dd'));
-
-              return (
-                <div className="h-[calc(100vh-400px)] min-h-[400px] overflow-y-auto border rounded-lg">
-                  <div className="space-y-1 p-1">
-                    {allDays.map((day) => {
-                      const dayEntries = (byDay[day] ?? []).sort((a, b) =>
-                        (a.start_time || '').localeCompare(b.start_time || '')
-                      );
-
-                      const dayTotal = dayEntries.reduce((sum, e) => {
-                        if (e.value_source !== 'invalid' && e.final_value !== null) {
-                          return sum + e.final_value;
-                        }
-                        return sum;
-                      }, 0);
-
-                      return (
-                        <Card key={day} className="overflow-hidden">
-                          <div className="bg-muted/60 px-4 py-2 flex items-center justify-between border-b">
-                            <span className="font-semibold">
-                              {format(parseISO(day), 'dd/MM (EEEE)', { locale: ptBR })}
-                            </span>
-                            {dayEntries.length > 0 ? (
-                              <span className="text-green-600 font-bold">{formatCurrency(dayTotal)}</span>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">Sem plantões</span>
-                            )}
-                          </div>
-
-                          <CardContent className="p-0">
-                            <Table>
-                              <TableBody>
-                                {dayEntries.length === 0 ? (
-                                  <TableRow>
-                                    <TableCell colSpan={4} className="py-6 text-center text-muted-foreground">
-                                      Nenhum plantão neste dia.
-                                    </TableCell>
-                                  </TableRow>
-                                ) : (
-                                  dayEntries.map((e) => {
-                                    const val = e.value_source === 'invalid' ? null : e.final_value;
-                                    return (
-                                      <TableRow key={e.id}>
-                                        <TableCell className="w-28 text-muted-foreground">
-                                          {e.start_time?.slice(0, 5)} - {e.end_time?.slice(0, 5)}
-                                        </TableCell>
-                                        <TableCell className="font-medium">{e.assignee_name}</TableCell>
-                                        <TableCell className="text-muted-foreground text-sm">{e.sector_name}</TableCell>
-                                        <TableCell className="text-right w-32">
-                                          {val !== null ? (
-                                            <span className="text-green-600 font-medium">{formatCurrency(val)}</span>
-                                          ) : (
-                                            <span className="text-amber-500 text-sm">Sem valor definido</span>
-                                          )}
-                                        </TableCell>
-                                      </TableRow>
-                                    );
-                                  })
-                                )}
-                              </TableBody>
-                            </Table>
-                          </CardContent>
-                        </Card>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()
-          )}
-        </TabsContent>
 
         {/* TAB: Plantonistas (tabela) */}
         <TabsContent value="plantonistas_tabela" className="space-y-4 mt-4">
