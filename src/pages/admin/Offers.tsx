@@ -6,11 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { Hand, Check, X, Clock, Calendar, User, Building, CheckCircle, XCircle } from 'lucide-react';
+import { Hand, Check, X, Clock, Calendar, User, Building, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -44,6 +45,8 @@ export default function AdminOffers() {
   const [offers, setOffers] = useState<ShiftOffer[]>([]);
   const [selectedOffer, setSelectedOffer] = useState<ShiftOffer | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   useEffect(() => {
     if (currentTenantId) {
@@ -175,6 +178,47 @@ export default function AdminOffers() {
     
     setProcessing(false);
     setSelectedOffer(null);
+  }
+
+  async function handleDeleteSelected() {
+    if (selectedForDelete.size === 0) return;
+    setProcessing(true);
+
+    const { error } = await supabase
+      .from('shift_offers')
+      .delete()
+      .in('id', Array.from(selectedForDelete));
+
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedForDelete.size} candidatura(s) excluída(s)` });
+      setSelectedForDelete(new Set());
+      fetchOffers();
+    }
+    
+    setProcessing(false);
+    setDeleteDialogOpen(false);
+  }
+
+  function toggleSelectOffer(id: string) {
+    setSelectedForDelete(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedForDelete.size === reviewedOffers.length) {
+      setSelectedForDelete(new Set());
+    } else {
+      setSelectedForDelete(new Set(reviewedOffers.map(o => o.id)));
+    }
   }
 
   const pendingOffers = offers.filter(o => o.status === 'pending');
@@ -347,9 +391,21 @@ export default function AdminOffers() {
         {/* Reviewed Offers */}
         <TabsContent value="reviewed">
           <Card>
-            <CardHeader>
-              <CardTitle>Histórico de Candidaturas</CardTitle>
-              <CardDescription>Candidaturas já processadas</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Histórico de Candidaturas</CardTitle>
+                <CardDescription>Candidaturas já processadas</CardDescription>
+              </div>
+              {selectedForDelete.size > 0 && (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir ({selectedForDelete.size})
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {reviewedOffers.length === 0 ? (
@@ -361,6 +417,12 @@ export default function AdminOffers() {
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
+                        <TableHead className="w-[40px]">
+                          <Checkbox
+                            checked={selectedForDelete.size === reviewedOffers.length && reviewedOffers.length > 0}
+                            onCheckedChange={toggleSelectAll}
+                          />
+                        </TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Plantonista</TableHead>
                         <TableHead>Plantão</TableHead>
@@ -371,7 +433,13 @@ export default function AdminOffers() {
                     <TableBody>
                       {reviewedOffers.map(offer => (
                         <TableRow key={offer.id}>
-                        <TableCell>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedForDelete.has(offer.id)}
+                              onCheckedChange={() => toggleSelectOffer(offer.id)}
+                            />
+                          </TableCell>
+                          <TableCell>
                             <Badge variant="outline" className={statusColors[offer.status]}>
                               {offer.status === 'accepted' && <CheckCircle className="h-3 w-3 mr-1" />}
                               {offer.status === 'rejected' && <XCircle className="h-3 w-3 mr-1" />}
@@ -419,6 +487,34 @@ export default function AdminOffers() {
               disabled={processing}
             >
               {processing ? 'Processando...' : 'Confirmar Rejeição'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Excluir Candidaturas
+            </DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedForDelete.size} candidatura(s) do histórico?
+              Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={handleDeleteSelected}
+              disabled={processing}
+            >
+              {processing ? 'Excluindo...' : 'Confirmar Exclusão'}
             </Button>
           </DialogFooter>
         </DialogContent>
