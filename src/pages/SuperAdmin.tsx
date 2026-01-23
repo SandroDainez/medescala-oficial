@@ -30,7 +30,9 @@ import {
   Stethoscope,
   Search,
   Database,
-  Lock
+  Lock,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 interface Tenant {
@@ -61,11 +63,13 @@ export default function SuperAdmin() {
   const [migratingPii, setMigratingPii] = useState(false);
   
   // Reopen password management
-  const [reopenPassword, setReopenPassword] = useState('');
+  const [currentReopenPassword, setCurrentReopenPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [newReopenPassword, setNewReopenPassword] = useState('');
   const [confirmReopenPassword, setConfirmReopenPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
   const [showPasswordFields, setShowPasswordFields] = useState(false);
+  const [loadingPassword, setLoadingPassword] = useState(false);
 
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
@@ -172,9 +176,12 @@ export default function SuperAdmin() {
         description: 'A senha de reabertura de escalas foi atualizada com sucesso.',
       });
       
+      // Update local state with new password
+      setCurrentReopenPassword(newReopenPassword);
       setNewReopenPassword('');
       setConfirmReopenPassword('');
       setShowPasswordFields(false);
+      setShowCurrentPassword(false);
     } catch (error: any) {
       toast({
         title: 'Erro ao alterar senha',
@@ -206,8 +213,26 @@ export default function SuperAdmin() {
     }
 
     setIsSuperAdmin(true);
-    await fetchTenants();
+    await Promise.all([fetchTenants(), fetchReopenPassword()]);
     setLoading(false);
+  }
+
+  async function fetchReopenPassword() {
+    setLoadingPassword(true);
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'schedule_reopen_password')
+        .maybeSingle();
+      
+      if (error) throw error;
+      setCurrentReopenPassword(data?.setting_value || '');
+    } catch (error) {
+      console.error('Error fetching reopen password:', error);
+    } finally {
+      setLoadingPassword(false);
+    }
   }
 
   async function fetchTenants() {
@@ -504,6 +529,35 @@ export default function SuperAdmin() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Current password display */}
+            <div className="p-4 rounded-lg bg-muted/50 border">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">Senha atual</p>
+                  {loadingPassword ? (
+                    <p className="text-lg font-mono">Carregando...</p>
+                  ) : (
+                    <p className="text-lg font-mono">
+                      {showCurrentPassword ? currentReopenPassword : '••••••••••'}
+                    </p>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  disabled={loadingPassword}
+                >
+                  {showCurrentPassword ? (
+                    <EyeOff className="h-5 w-5" />
+                  ) : (
+                    <Eye className="h-5 w-5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {/* Change password section */}
             {!showPasswordFields ? (
               <Button 
                 onClick={() => setShowPasswordFields(true)}
