@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { Mail, ArrowLeft, CheckCircle } from 'lucide-react';
+import { Mail, ArrowLeft, CheckCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
 
 const emailSchema = z.string().email('Email inválido');
@@ -16,6 +16,30 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
+
+  async function sendPasswordResetEmail(targetEmail: string) {
+    const redirectUrl = `${window.location.origin}/reset-password`;
+
+    // Use the edge function for reliable email delivery
+    const { data, error } = await supabase.functions.invoke('send-password-reset', {
+      body: { 
+        email: targetEmail,
+        redirectUrl 
+      }
+    });
+
+    if (error) {
+      console.error('Edge function error:', error);
+      throw new Error('Erro ao enviar email');
+    }
+
+    if (data?.error) {
+      console.error('API error:', data.error);
+      throw new Error(data.error);
+    }
+
+    return data;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -35,37 +59,51 @@ export default function ForgotPassword() {
 
     setLoading(true);
 
-    const redirectUrl = `${window.location.origin}/reset-password`;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: redirectUrl,
-    });
-
-    setLoading(false);
-
-    if (error) {
+    try {
+      await sendPasswordResetEmail(email);
+      
+      setEmailSent(true);
+      toast({
+        title: 'Email enviado!',
+        description: 'Verifique sua caixa de entrada para redefinir sua senha.',
+      });
+    } catch (error: any) {
       toast({
         title: 'Erro',
-        description: 'Não foi possível enviar o email. Tente novamente.',
+        description: error.message || 'Não foi possível enviar o email. Tente novamente.',
         variant: 'destructive',
       });
-      return;
+    } finally {
+      setLoading(false);
     }
+  }
 
-    setEmailSent(true);
-    toast({
-      title: 'Email enviado!',
-      description: 'Verifique sua caixa de entrada para redefinir sua senha.',
-    });
+  async function handleResend() {
+    setLoading(true);
+    try {
+      await sendPasswordResetEmail(email);
+      toast({
+        title: 'Email reenviado!',
+        description: 'Verifique sua caixa de entrada e spam.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro',
+        description: error.message || 'Erro ao reenviar email.',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (emailSent) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
         <Card className="w-full max-w-md text-center">
           <CardHeader>
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-              <CheckCircle className="h-8 w-8 text-green-600" />
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+              <CheckCircle className="h-8 w-8 text-green-600 dark:text-green-400" />
             </div>
             <CardTitle className="text-2xl">Email enviado!</CardTitle>
             <CardDescription className="space-y-3">
@@ -77,7 +115,7 @@ export default function ForgotPassword() {
                 <ul className="list-disc list-inside space-y-1">
                   <li>Verifique a <strong>caixa de spam/lixo eletrônico</strong></li>
                   <li>O email pode demorar alguns minutos</li>
-                  <li>Procure por email de: <strong>noreply@</strong></li>
+                  <li>Procure por email de: <strong>MedEscala</strong></li>
                 </ul>
               </div>
             </CardDescription>
@@ -96,23 +134,17 @@ export default function ForgotPassword() {
             <Button
               variant="secondary"
               className="w-full"
-              onClick={async () => {
-                setLoading(true);
-                const redirectUrl = `${window.location.origin}/reset-password`;
-                const { error } = await supabase.auth.resetPasswordForEmail(email, {
-                  redirectTo: redirectUrl,
-                });
-                setLoading(false);
-                if (!error) {
-                  toast({
-                    title: 'Email reenviado!',
-                    description: 'Verifique sua caixa de entrada e spam.',
-                  });
-                }
-              }}
+              onClick={handleResend}
               disabled={loading}
             >
-              {loading ? 'Reenviando...' : 'Reenviar email'}
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Reenviando...
+                </>
+              ) : (
+                'Reenviar email'
+              )}
             </Button>
             <Link to="/auth">
               <Button variant="ghost" className="w-full">
@@ -127,7 +159,7 @@ export default function ForgotPassword() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -153,7 +185,14 @@ export default function ForgotPassword() {
             </div>
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Enviando...' : 'Enviar link de recuperação'}
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Enviar link de recuperação'
+              )}
             </Button>
 
             <Link to="/auth">
