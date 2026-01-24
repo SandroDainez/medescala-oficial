@@ -711,8 +711,10 @@ export default function UserManagement() {
         body: {
           userId: member.user_id,
           tenantId: currentTenantId,
+          email: userEmail,
           resetPassword: true,
-          sendInviteEmail: false, // We'll show credentials manually
+          // Send credentials by email as well (so the user can access without admin copy/paste)
+          sendInviteEmail: true,
         },
       });
 
