@@ -47,10 +47,8 @@ export function DashboardCharts({
 }: DashboardChartsProps) {
   // Sectors to exclude from charts (case-insensitive partial match)
   const excludedSectorPatterns = [
-    'pre anestesico',
-    'pré anestésico',
-    'pre anestésico',
-    'pré anestesico',
+    'pré anest',
+    'pre anest',
     'horario extendido',
     'horário extendido',
     'estagio uti',
