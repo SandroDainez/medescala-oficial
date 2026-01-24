@@ -45,6 +45,35 @@ export function DashboardCharts({
   members,
   currentMonth 
 }: DashboardChartsProps) {
+  // Build a map of first names to count occurrences for disambiguation
+  const firstNameCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    members.forEach(m => {
+      const firstName = m.name?.split(' ')[0]?.toLowerCase() || '';
+      if (firstName) {
+        counts[firstName] = (counts[firstName] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [members]);
+
+  // Get display name - if first name is duplicated, show first + second name
+  const getDisplayName = (fullName: string | null): string => {
+    if (!fullName) return 'N/A';
+    const parts = fullName.split(' ').filter(p => p.length > 0);
+    if (parts.length === 0) return 'N/A';
+    
+    const firstName = parts[0];
+    const firstNameLower = firstName.toLowerCase();
+    
+    // If there are multiple people with this first name, show more of the name
+    if (firstNameCounts[firstNameLower] > 1 && parts.length > 1) {
+      // Show first name + second name (e.g., "Jose Carlos")
+      return `${parts[0]} ${parts[1]}`;
+    }
+    
+    return firstName;
+  };
   const normalizeSectorName = (name: string) => {
     // Normalize: lowercase, remove accents/diacritics, remove punctuation, collapse whitespace.
     return name
@@ -102,7 +131,7 @@ export function DashboardCharts({
       userData: Object.entries(sector.users).map(([userId, count]) => {
         const member = members.find(m => m.id === userId);
         return {
-          name: member?.name?.split(' ')[0] || 'N/A',
+          name: getDisplayName(member?.name || null),
           fullName: member?.name || 'N/A',
           plantoes: count,
         };
@@ -122,7 +151,7 @@ export function DashboardCharts({
       .map(([userId, count]) => {
         const member = members.find(m => m.id === userId);
         return {
-          name: member?.name?.split(' ')[0] || 'N/A',
+          name: getDisplayName(member?.name || null),
           plantoes: count,
         };
       })
@@ -151,7 +180,7 @@ export function DashboardCharts({
             };
           }
           const member = members.find(m => m.id === assignment.user_id);
-          const memberName = member?.name?.split(' ')[0] || 'N/A';
+          const memberName = getDisplayName(member?.name || null);
           if (!sectorData[sector.id].users[assignment.user_id]) {
             sectorData[sector.id].users[assignment.user_id] = {
               name: memberName,
