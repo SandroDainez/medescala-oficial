@@ -1553,16 +1553,16 @@ export default function AdminReports() {
                 Gerenciar Ausências
               </CardTitle>
               <div className="flex gap-2">
-                {selectedAbsences.size > 0 && (
-                  <Button 
-                    variant="destructive" 
-                    size="sm"
-                    onClick={() => setDeleteAbsencesDialogOpen(true)}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Excluir ({selectedAbsences.size})
-                  </Button>
-                )}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setDeleteAbsencesDialogOpen(true)}
+                  disabled={selectedAbsences.size === 0}
+                  title={selectedAbsences.size === 0 ? 'Selecione uma ou mais ausências para excluir' : 'Excluir ausências selecionadas'}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir{selectedAbsences.size > 0 ? ` (${selectedAbsences.size})` : ''}
+                </Button>
                 <Button onClick={() => setAbsenceDialogOpen(true)}>
                   <Plus className="mr-2 h-4 w-4" />
                   Nova Ausência
@@ -1597,10 +1597,15 @@ export default function AdminReports() {
                       </TableRow>
                     ) : (
                       absences.map(absence => (
-                        <TableRow key={absence.id}>
+                        <TableRow
+                          key={absence.id}
+                          className="cursor-pointer"
+                          onClick={() => toggleSelectAbsence(absence.id)}
+                        >
                           <TableCell>
                             <Checkbox
                               checked={selectedAbsences.has(absence.id)}
+                              onClick={(e) => e.stopPropagation()}
                               onCheckedChange={() => toggleSelectAbsence(absence.id)}
                             />
                           </TableCell>
@@ -1631,7 +1636,10 @@ export default function AdminReports() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleUpdateAbsenceStatus(absence.id, 'approved')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateAbsenceStatus(absence.id, 'approved');
+                                  }}
                                   className="text-green-600 hover:text-green-700 hover:bg-green-50"
                                 >
                                   <Check className="h-4 w-4" />
@@ -1639,7 +1647,10 @@ export default function AdminReports() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleUpdateAbsenceStatus(absence.id, 'rejected')}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateAbsenceStatus(absence.id, 'rejected');
+                                  }}
                                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                 >
                                   <X className="h-4 w-4" />
