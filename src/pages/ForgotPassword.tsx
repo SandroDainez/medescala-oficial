@@ -68,9 +68,18 @@ export default function ForgotPassword() {
               <CheckCircle className="h-8 w-8 text-green-600" />
             </div>
             <CardTitle className="text-2xl">Email enviado!</CardTitle>
-            <CardDescription>
-              Enviamos um link de recuperação para <strong>{email}</strong>. 
-              Verifique sua caixa de entrada e spam.
+            <CardDescription className="space-y-3">
+              <p>
+                Enviamos um link de recuperação para <strong>{email}</strong>.
+              </p>
+              <div className="bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200 p-3 rounded-lg text-sm text-left">
+                <p className="font-medium mb-1">⚠️ Importante:</p>
+                <ul className="list-disc list-inside space-y-1">
+                  <li>Verifique a <strong>caixa de spam/lixo eletrônico</strong></li>
+                  <li>O email pode demorar alguns minutos</li>
+                  <li>Procure por email de: <strong>noreply@</strong></li>
+                </ul>
+              </div>
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -83,6 +92,27 @@ export default function ForgotPassword() {
               }}
             >
               Enviar para outro email
+            </Button>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={async () => {
+                setLoading(true);
+                const redirectUrl = `${window.location.origin}/reset-password`;
+                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                  redirectTo: redirectUrl,
+                });
+                setLoading(false);
+                if (!error) {
+                  toast({
+                    title: 'Email reenviado!',
+                    description: 'Verifique sua caixa de entrada e spam.',
+                  });
+                }
+              }}
+              disabled={loading}
+            >
+              {loading ? 'Reenviando...' : 'Reenviar email'}
             </Button>
             <Link to="/auth">
               <Button variant="ghost" className="w-full">
