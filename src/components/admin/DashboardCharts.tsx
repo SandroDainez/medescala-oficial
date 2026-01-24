@@ -47,20 +47,29 @@ export function DashboardCharts({
 }: DashboardChartsProps) {
   // Sectors to exclude from charts (case-insensitive partial match)
   const excludedSectorPatterns = [
-    'pré anest',
+    // IMPORTANT: keep patterns *without* accents; we normalize names before matching.
     'pre anest',
     'horario extendido',
-    'horário extendido',
-    'estagio uti',
-    'estágio uti'
+    'estagio uti'
   ];
+
+  const normalizeSectorName = (name: string) => {
+    // Normalize: lowercase, remove accents/diacritics, remove punctuation, collapse whitespace.
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+      .replace(/\s+/g, ' ');
+  };
 
   // Filter out excluded sectors
   const filteredSectors = useMemo(() => {
     return sectors.filter(sector => {
-      const sectorNameLower = sector.name.toLowerCase();
+      const sectorNameLower = normalizeSectorName(sector.name);
       return !excludedSectorPatterns.some(pattern => 
-        sectorNameLower.includes(pattern.toLowerCase())
+        sectorNameLower.includes(pattern)
       );
     });
   }, [sectors]);
