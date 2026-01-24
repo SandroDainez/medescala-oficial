@@ -10,6 +10,24 @@ interface PasswordResetRequest {
   redirectUrl: string;
 }
 
+function normalizeRedirectUrl(input: string | undefined): string {
+  const fallback = 'https://escala-sem-stress.lovable.app/reset-password';
+  if (!input) return fallback;
+
+  try {
+    const url = new URL(input);
+    // Capacitor/local origins are not reachable from an email client.
+    if (url.protocol === 'capacitor:' || url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+      return fallback;
+    }
+
+    // Force path to reset-password for safety/consistency
+    return `${url.origin}/reset-password`;
+  } catch {
+    return fallback;
+  }
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   console.log("send-password-reset function called");
 
@@ -26,7 +44,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     console.log(`Processing password reset for: ${email}`);
-    console.log(`Redirect URL: ${redirectUrl}`);
+    const safeRedirectUrl = normalizeRedirectUrl(redirectUrl);
+    console.log(`Redirect URL (raw): ${redirectUrl}`);
+    console.log(`Redirect URL (safe): ${safeRedirectUrl}`);
 
     // Create Supabase client with service role
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -64,7 +84,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       type: 'recovery',
       email: email,
       options: {
-        redirectTo: redirectUrl,
+        redirectTo: safeRedirectUrl,
       },
     });
 

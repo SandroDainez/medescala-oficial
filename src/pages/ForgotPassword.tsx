@@ -18,7 +18,15 @@ export default function ForgotPassword() {
   const [emailSent, setEmailSent] = useState(false);
 
   async function sendPasswordResetEmail(targetEmail: string) {
-    const redirectUrl = `${window.location.origin}/reset-password`;
+    // On mobile (Capacitor) window.location.origin may be `capacitor://localhost`.
+    // The recovery email must contain a publicly reachable URL.
+    const origin = window.location.origin;
+    const publicBaseUrl =
+      origin.startsWith('capacitor://') || origin.includes('localhost')
+        ? 'https://escala-sem-stress.lovable.app'
+        : origin;
+
+    const redirectUrl = `${publicBaseUrl}/reset-password`;
 
     // Use the edge function for reliable email delivery
     const { data, error } = await supabase.functions.invoke('send-password-reset', {
