@@ -91,7 +91,7 @@ export function AdminLayout() {
   const isCalendarRoute = location.pathname.startsWith('/admin/calendar');
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
       {/* Trial Banner */}
       <TrialBanner />
       {/* Header */}
@@ -466,7 +466,7 @@ export function AdminLayout() {
         )}
 
         {/* Main Content */}
-        <main className="flex-1 p-4 md:p-6 lg:p-8 animate-fade-in">
+        <main className="flex-1 p-3 md:p-6 lg:p-8 animate-fade-in overflow-x-hidden pb-safe">
           <Outlet />
         </main>
       </div>

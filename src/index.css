@@ -160,6 +160,7 @@
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
 
   html {
@@ -168,6 +169,9 @@
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     color-scheme: dark;
+    /* Prevent text size adjustment on orientation change */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
   body {
@@ -177,6 +181,9 @@
     overflow-x: hidden;
     min-height: 100vh;
     min-height: 100dvh; /* Dynamic viewport height for mobile browsers */
+    /* Safe area for notched devices */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   #root {
@@ -184,6 +191,8 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    width: 100%;
+    overflow-x: hidden;
   }
 
   /* Typography hierarchy */
@@ -211,6 +220,15 @@
   /* Improved focus states */
   :focus-visible {
     @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Safe area bottom padding utility */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
   }
 }
 
