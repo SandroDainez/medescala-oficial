@@ -10,6 +10,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { UserLayout } from "@/components/layouts/UserLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { forwardRef } from "react";
 
 import Auth from "./pages/Auth";
 import Landing from "./pages/Landing";
@@ -79,6 +80,14 @@ function RoleRedirect() {
   return <Navigate to="/app" replace />;
 }
 
+// Wrapper component that accepts refs to prevent React warnings
+// when BrowserRouter with future flags tries to pass refs to children
+const AppContent = forwardRef<HTMLDivElement, { children: React.ReactNode }>(
+  function AppContent({ children }, ref) {
+    return <div ref={ref}>{children}</div>;
+  }
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -91,72 +100,74 @@ const App = () => (
             v7_relativeSplatPath: true,
           }}
         >
-          <AuthProvider>
-            <TenantProvider>
-              <ErrorBoundary>
-                <Routes>
-                  <Route path="/" element={<Landing />} />
-                  <Route path="/home" element={<RoleRedirect />} />
-                  <Route path="/auth" element={<Auth />} />
-                  <Route path="/onboarding" element={<Onboarding />} />
-                  <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-                  <Route path="/change-password" element={<ChangePassword />} />
-                  <Route path="/trial-expired" element={<TrialExpired />} />
-                  <Route path="/super-admin" element={<SuperAdmin />} />
-                  <Route path="/install" element={<Install />} />
-                  <Route path="/terms" element={<Terms />} />
-                  <Route path="/privacy" element={<Privacy />} />
+          <AppContent>
+            <AuthProvider>
+              <TenantProvider>
+                <ErrorBoundary>
+                  <Routes>
+                    <Route path="/" element={<Landing />} />
+                    <Route path="/home" element={<RoleRedirect />} />
+                    <Route path="/auth" element={<Auth />} />
+                    <Route path="/onboarding" element={<Onboarding />} />
+                    <Route path="/forgot-password" element={<ForgotPassword />} />
+                    <Route path="/reset-password" element={<ResetPassword />} />
+                    <Route path="/change-password" element={<ChangePassword />} />
+                    <Route path="/trial-expired" element={<TrialExpired />} />
+                    <Route path="/super-admin" element={<SuperAdmin />} />
+                    <Route path="/install" element={<Install />} />
+                    <Route path="/terms" element={<Terms />} />
+                    <Route path="/privacy" element={<Privacy />} />
 
-                  {/* Admin Routes */}
-                  <Route
-                    path="/admin"
-                    element={
-                      <ProtectedRoute requiredRole="admin">
-                        <AdminLayout />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<AdminDashboard />} />
-                    <Route path="calendar" element={<AdminCalendar />} />
-                    <Route path="calendar/:sectorId" element={<AdminCalendar />} />
-                    <Route path="users" element={<AdminUsers />} />
-                    <Route path="sectors" element={<AdminSectors />} />
-                    <Route path="swaps" element={<AdminSwaps />} />
-                    <Route path="offers" element={<AdminOffers />} />
-                    <Route path="notifications" element={<AdminNotifications />} />
-                    <Route path="financial" element={<AdminFinancial />} />
-                    <Route path="reports" element={<AdminReports />} />
-                    <Route path="checkins" element={<AdminCheckinReport />} />
-                    <Route path="subscription" element={<AdminSubscription />} />
-                  </Route>
+                    {/* Admin Routes */}
+                    <Route
+                      path="/admin"
+                      element={
+                        <ProtectedRoute requiredRole="admin">
+                          <AdminLayout />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<AdminDashboard />} />
+                      <Route path="calendar" element={<AdminCalendar />} />
+                      <Route path="calendar/:sectorId" element={<AdminCalendar />} />
+                      <Route path="users" element={<AdminUsers />} />
+                      <Route path="sectors" element={<AdminSectors />} />
+                      <Route path="swaps" element={<AdminSwaps />} />
+                      <Route path="offers" element={<AdminOffers />} />
+                      <Route path="notifications" element={<AdminNotifications />} />
+                      <Route path="financial" element={<AdminFinancial />} />
+                      <Route path="reports" element={<AdminReports />} />
+                      <Route path="checkins" element={<AdminCheckinReport />} />
+                      <Route path="subscription" element={<AdminSubscription />} />
+                    </Route>
 
-                  {/* User Routes */}
-                  <Route
-                    path="/app"
-                    element={
-                      <ProtectedRoute requiredRole="user">
-                        <UserLayout />
-                      </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<UserCalendar />} />
-                    <Route path="calendar" element={<UserCalendar />} />
-                    <Route path="shifts" element={<UserShifts />} />
-                    <Route path="available" element={<UserAvailableShifts />} />
-                    <Route path="swaps" element={<UserSwaps />} />
-                    <Route path="financial" element={<UserFinancial />} />
-                    <Route path="notifications" element={<UserNotifications />} />
-                    <Route path="settings" element={<UserSettings />} />
-                    <Route path="help" element={<UserAbout />} />
-                    <Route path="feedback" element={<UserFeedback />} />
-                  </Route>
+                    {/* User Routes */}
+                    <Route
+                      path="/app"
+                      element={
+                        <ProtectedRoute requiredRole="user">
+                          <UserLayout />
+                        </ProtectedRoute>
+                      }
+                    >
+                      <Route index element={<UserCalendar />} />
+                      <Route path="calendar" element={<UserCalendar />} />
+                      <Route path="shifts" element={<UserShifts />} />
+                      <Route path="available" element={<UserAvailableShifts />} />
+                      <Route path="swaps" element={<UserSwaps />} />
+                      <Route path="financial" element={<UserFinancial />} />
+                      <Route path="notifications" element={<UserNotifications />} />
+                      <Route path="settings" element={<UserSettings />} />
+                      <Route path="help" element={<UserAbout />} />
+                      <Route path="feedback" element={<UserFeedback />} />
+                    </Route>
 
-                  <Route path="*" element={<NotFound />} />
-                </Routes>
-              </ErrorBoundary>
-            </TenantProvider>
-          </AuthProvider>
+                    <Route path="*" element={<NotFound />} />
+                  </Routes>
+                </ErrorBoundary>
+              </TenantProvider>
+            </AuthProvider>
+          </AppContent>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
