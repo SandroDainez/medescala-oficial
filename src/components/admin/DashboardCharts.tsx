@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import React, { useMemo, forwardRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   BarChart, 
@@ -172,10 +172,10 @@ export function DashboardCharts({
     })).filter(s => s.totalValue > 0);
   }, [assignments, shifts, filteredSectors, members]);
 
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = React.forwardRef<HTMLDivElement, any>(({ active, payload, label }, ref) => {
     if (active && payload && payload.length) {
       return (
-        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+        <div ref={ref} className="bg-card border border-border rounded-lg p-3 shadow-lg">
           <p className="font-medium text-foreground">{label}</p>
           {payload.map((entry: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: entry.color }}>
@@ -188,7 +188,7 @@ export function DashboardCharts({
       );
     }
     return null;
-  };
+  });
 
   if (shifts.length === 0) {
     return (
