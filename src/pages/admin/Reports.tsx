@@ -1290,18 +1290,18 @@ export default function AdminReports() {
                 </ScrollArea>
               ) : reportType === 'movimentacoes' ? (
                 <div className="space-y-4">
-                  {selectedMovements.size > 0 && (
-                    <div className="flex justify-end">
-                      <Button 
-                        variant="destructive" 
-                        size="sm"
-                        onClick={() => setDeleteMovementsDialogOpen(true)}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Excluir ({selectedMovements.size})
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex justify-end">
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      onClick={() => setDeleteMovementsDialogOpen(true)}
+                      disabled={selectedMovements.size === 0}
+                      title={selectedMovements.size === 0 ? 'Selecione uma ou mais movimentações para excluir' : 'Excluir movimentações selecionadas'}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir{selectedMovements.size > 0 ? ` (${selectedMovements.size})` : ''}
+                    </Button>
+                  </div>
                   <ScrollArea className="h-[500px]">
                     <Table>
                       <TableHeader>
@@ -1455,16 +1455,16 @@ export default function AdminReports() {
                 <AlertTriangle className="h-5 w-5" />
                 Histórico de Conflitos Resolvidos
               </CardTitle>
-              {selectedConflicts.size > 0 && (
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => setDeleteConflictsDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir ({selectedConflicts.size})
-                </Button>
-              )}
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setDeleteConflictsDialogOpen(true)}
+                disabled={selectedConflicts.size === 0}
+                title={selectedConflicts.size === 0 ? 'Selecione um ou mais conflitos para excluir' : 'Excluir conflitos selecionados'}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir{selectedConflicts.size > 0 ? ` (${selectedConflicts.size})` : ''}
+              </Button>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px]">
