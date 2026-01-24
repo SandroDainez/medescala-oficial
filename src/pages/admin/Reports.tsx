@@ -367,7 +367,7 @@ export default function AdminReports() {
     }
     
     const financialRecords = Array.from(userSummary.values())
-      .sort((a, b) => b.total_value - a.total_value);
+      .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
     
     setFinancialData(financialRecords);
   }

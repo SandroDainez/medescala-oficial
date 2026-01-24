@@ -7,8 +7,7 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  ResponsiveContainer,
-  Cell
+  ResponsiveContainer
 } from 'recharts';
 import { Users, DollarSign, Building } from 'lucide-react';
 
@@ -75,31 +74,14 @@ export function DashboardCharts({
         const member = members.find(m => m.id === userId);
         return {
           name: member?.name?.split(' ')[0] || 'N/A',
+          fullName: member?.name || 'N/A',
           plantoes: count,
         };
-      }).sort((a, b) => b.plantoes - a.plantoes)
+      }).sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'))
     })).filter(s => s.userData.length > 0);
   }, [assignments, shifts, sectors, members]);
 
-  // Value by sector
-  const valueBySector = useMemo(() => {
-    const sectorValues: Record<string, number> = {};
-
-    assignments.forEach(assignment => {
-      const shift = shifts.find(s => s.id === assignment.shift_id);
-      if (shift && shift.sector_id) {
-        sectorValues[shift.sector_id] = (sectorValues[shift.sector_id] || 0) + (assignment.assigned_value || 0);
-      }
-    });
-
-    return sectors.map(sector => ({
-      name: sector.name,
-      valor: sectorValues[sector.id] || 0,
-      color: sector.color || '#22c55e',
-    })).filter(s => s.valor > 0);
-  }, [assignments, shifts, sectors]);
-
-  // Top plantonistas
+  // Top plantonistas - sorted by shift count (keep this sort for ranking)
   const topPlantonistas = useMemo(() => {
     const userShifts: Record<string, number> = {};
 
@@ -118,6 +100,48 @@ export function DashboardCharts({
       .sort((a, b) => b.plantoes - a.plantoes)
       .slice(0, 5);
   }, [assignments, members]);
+
+  // Values by sector with plantonista breakdown
+  const valuesBySectorWithPlantonistas = useMemo(() => {
+    const sectorData: Record<string, { 
+      sectorName: string; 
+      sectorColor: string; 
+      users: Record<string, { name: string; value: number }> 
+    }> = {};
+
+    assignments.forEach(assignment => {
+      const shift = shifts.find(s => s.id === assignment.shift_id);
+      if (shift && shift.sector_id) {
+        const sector = sectors.find(s => s.id === shift.sector_id);
+        if (sector) {
+          if (!sectorData[sector.id]) {
+            sectorData[sector.id] = {
+              sectorName: sector.name,
+              sectorColor: sector.color || '#22c55e',
+              users: {}
+            };
+          }
+          const member = members.find(m => m.id === assignment.user_id);
+          const memberName = member?.name?.split(' ')[0] || 'N/A';
+          if (!sectorData[sector.id].users[assignment.user_id]) {
+            sectorData[sector.id].users[assignment.user_id] = {
+              name: memberName,
+              value: 0
+            };
+          }
+          sectorData[sector.id].users[assignment.user_id].value += (assignment.assigned_value || 0);
+        }
+      }
+    });
+
+    return Object.values(sectorData).map(sector => ({
+      ...sector,
+      userData: Object.values(sector.users)
+        .filter(u => u.value > 0)
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+      totalValue: Object.values(sector.users).reduce((sum, u) => sum + u.value, 0)
+    })).filter(s => s.totalValue > 0);
+  }, [assignments, shifts, sectors, members]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -224,43 +248,41 @@ export function DashboardCharts({
           </CardContent>
         </Card>
 
-        {/* Value by Sector - Bar Chart */}
-        {valueBySector.length > 0 && (
-          <Card className="card-elevated">
+        {/* Values Paid by Sector with Plantonista Breakdown */}
+        {valuesBySectorWithPlantonistas.length > 0 && (
+          <Card className="card-elevated md:col-span-1">
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <DollarSign className="h-4 w-4 text-success" />
                 Valores Pagos por Setor
               </CardTitle>
-              <CardDescription>Total pago no mês</CardDescription>
+              <CardDescription>Detalhamento por plantonista</CardDescription>
             </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={valueBySector}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis 
-                    dataKey="name" 
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 10 }}
-                    angle={-15}
-                    textAnchor="end"
-                    height={60}
-                  />
-                  <YAxis 
-                    tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                    tickFormatter={(value) => `R$${(value/1000).toFixed(0)}k`}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar 
-                    dataKey="valor" 
-                    radius={[4, 4, 0, 0]}
-                    name="Valor"
-                  >
-                    {valueBySector.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.color} />
+            <CardContent className="space-y-4">
+              {valuesBySectorWithPlantonistas.map((sector, idx) => (
+                <div key={idx} className="border-b border-border pb-3 last:border-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div 
+                        className="w-3 h-3 rounded-full" 
+                        style={{ backgroundColor: sector.sectorColor }}
+                      />
+                      <span className="font-medium text-sm">{sector.sectorName}</span>
+                    </div>
+                    <span className="text-sm font-semibold text-success">
+                      R$ {sector.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="grid gap-1 pl-5">
+                    {sector.userData.map((user, uIdx) => (
+                      <div key={uIdx} className="flex justify-between text-xs text-muted-foreground">
+                        <span>{user.name}</span>
+                        <span>R$ {user.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                      </div>
                     ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+                  </div>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}
