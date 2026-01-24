@@ -160,7 +160,7 @@ export function DashboardCharts({
         };
       }).sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'))
     })).filter(s => s.userData.length > 0);
-  }, [assignments, shifts, filteredSectors, members]);
+  }, [assignments, shifts, filteredSectors, members, nameCounts]);
 
   // Top plantonistas - sorted by shift count (keep this sort for ranking)
   const topPlantonistas = useMemo(() => {
@@ -180,7 +180,7 @@ export function DashboardCharts({
       })
       .sort((a, b) => b.plantoes - a.plantoes)
       .slice(0, 5);
-  }, [assignments, members]);
+  }, [assignments, members, nameCounts]);
 
   // Values by sector with plantonista breakdown
   const valuesBySectorWithPlantonistas = useMemo(() => {
@@ -222,7 +222,7 @@ export function DashboardCharts({
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
       totalValue: Object.values(sector.users).reduce((sum, u) => sum + u.value, 0)
     })).filter(s => s.totalValue > 0);
-  }, [assignments, shifts, filteredSectors, members]);
+  }, [assignments, shifts, filteredSectors, members, nameCounts]);
 
   const CustomTooltip = React.forwardRef<HTMLDivElement, any>(({ active, payload, label }, ref) => {
     if (active && payload && payload.length) {
