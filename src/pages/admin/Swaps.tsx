@@ -347,19 +347,37 @@ export default function AdminSwaps() {
         {/* Offers Tab */}
         <TabsContent value="offers" className="space-y-4">
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Hand className="h-5 w-5 text-primary" />
-                Plantonistas Oferecendo-se
-              </CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Plantonistas que clicaram em plantões disponíveis oferecendo-se para trabalhar
-              </p>
+            <CardHeader className="pb-3 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Hand className="h-5 w-5 text-primary" />
+                  Plantonistas Oferecendo-se
+                </CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Plantonistas que clicaram em plantões disponíveis oferecendo-se para trabalhar
+                </p>
+              </div>
+              {selectedOffersForDelete.size > 0 && (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setDeleteOffersDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir ({selectedOffersForDelete.size})
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[40px]">
+                      <Checkbox
+                        checked={selectedOffersForDelete.size === reviewedOffers.length && reviewedOffers.length > 0}
+                        onCheckedChange={toggleSelectAllOffers}
+                      />
+                    </TableHead>
                     <TableHead>Data</TableHead>
                     <TableHead>Plantonista</TableHead>
                     <TableHead>Plantão</TableHead>
@@ -371,13 +389,21 @@ export default function AdminSwaps() {
                 <TableBody>
                   {offers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                         Nenhuma oferta recebida
                       </TableCell>
                     </TableRow>
                   ) : (
                     offers.map((offer) => (
                       <TableRow key={offer.id}>
+                        <TableCell>
+                          {offer.status !== 'pending' && (
+                            <Checkbox
+                              checked={selectedOffersForDelete.has(offer.id)}
+                              onCheckedChange={() => toggleSelectOffer(offer.id)}
+                            />
+                          )}
+                        </TableCell>
                         <TableCell className="whitespace-nowrap">
                           {format(new Date(offer.created_at), 'dd/MM/yyyy HH:mm', { locale: ptBR })}
                         </TableCell>
