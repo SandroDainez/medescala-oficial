@@ -45,19 +45,28 @@ export function DashboardCharts({
   members,
   currentMonth 
 }: DashboardChartsProps) {
-  // Build a map of first names to count occurrences for disambiguation
-  const firstNameCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+  // Build maps for disambiguation at different levels
+  const nameCounts = useMemo(() => {
+    const firstNameCounts: Record<string, number> = {};
+    const twoNameCounts: Record<string, number> = {};
+    
     members.forEach(m => {
-      const firstName = m.name?.split(' ')[0]?.toLowerCase() || '';
-      if (firstName) {
-        counts[firstName] = (counts[firstName] || 0) + 1;
+      const parts = m.name?.split(' ').filter(p => p.length > 0) || [];
+      if (parts.length > 0) {
+        const firstName = parts[0].toLowerCase();
+        firstNameCounts[firstName] = (firstNameCounts[firstName] || 0) + 1;
+        
+        if (parts.length > 1) {
+          const twoNames = `${parts[0]} ${parts[1]}`.toLowerCase();
+          twoNameCounts[twoNames] = (twoNameCounts[twoNames] || 0) + 1;
+        }
       }
     });
-    return counts;
+    
+    return { firstNameCounts, twoNameCounts };
   }, [members]);
 
-  // Get display name - if first name is duplicated, show first + second name
+  // Get display name with smart disambiguation
   const getDisplayName = (fullName: string | null): string => {
     if (!fullName) return 'N/A';
     const parts = fullName.split(' ').filter(p => p.length > 0);
@@ -66,9 +75,23 @@ export function DashboardCharts({
     const firstName = parts[0];
     const firstNameLower = firstName.toLowerCase();
     
-    // If there are multiple people with this first name, show more of the name
-    if (firstNameCounts[firstNameLower] > 1 && parts.length > 1) {
-      // Show first name + second name (e.g., "Jose Carlos")
+    // If first name is unique, just show it
+    if ((nameCounts.firstNameCounts[firstNameLower] || 0) <= 1) {
+      return firstName;
+    }
+    
+    // First name is duplicated, need more info
+    if (parts.length > 1) {
+      const twoNames = `${parts[0]} ${parts[1]}`.toLowerCase();
+      
+      // If first + second name is also duplicated, use format: "Pedro H. Garcia"
+      if ((nameCounts.twoNameCounts[twoNames] || 0) > 1 && parts.length > 2) {
+        const lastName = parts[parts.length - 1];
+        const middleInitial = parts[1].charAt(0).toUpperCase();
+        return `${firstName} ${middleInitial}. ${lastName}`;
+      }
+      
+      // Otherwise just show first + second name
       return `${parts[0]} ${parts[1]}`;
     }
     
