@@ -357,16 +357,16 @@ export default function AdminSwaps() {
                   Plantonistas que clicaram em plantões disponíveis oferecendo-se para trabalhar
                 </p>
               </div>
-              {selectedOffersForDelete.size > 0 && (
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => setDeleteOffersDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir ({selectedOffersForDelete.size})
-                </Button>
-              )}
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setDeleteOffersDialogOpen(true)}
+                disabled={selectedOffersForDelete.size === 0}
+                title={selectedOffersForDelete.size === 0 ? 'Selecione ofertas processadas para excluir' : 'Excluir ofertas selecionadas'}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir{selectedOffersForDelete.size > 0 ? ` (${selectedOffersForDelete.size})` : ''}
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -493,16 +493,16 @@ export default function AdminSwaps() {
                   Plantonistas solicitando troca de plantão com outro colega
                 </p>
               </div>
-              {selectedSwapsForDelete.size > 0 && (
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => setDeleteSwapsDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir ({selectedSwapsForDelete.size})
-                </Button>
-              )}
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setDeleteSwapsDialogOpen(true)}
+                disabled={selectedSwapsForDelete.size === 0}
+                title={selectedSwapsForDelete.size === 0 ? 'Selecione trocas processadas para excluir' : 'Excluir trocas selecionadas'}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir{selectedSwapsForDelete.size > 0 ? ` (${selectedSwapsForDelete.size})` : ''}
+              </Button>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
