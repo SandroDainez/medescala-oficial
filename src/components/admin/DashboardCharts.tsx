@@ -45,6 +45,28 @@ export function DashboardCharts({
   members,
   currentMonth 
 }: DashboardChartsProps) {
+  // Sectors to exclude from charts (case-insensitive partial match)
+  const excludedSectorPatterns = [
+    'pre anestesico',
+    'pré anestésico',
+    'pre anestésico',
+    'pré anestesico',
+    'horario extendido',
+    'horário extendido',
+    'estagio uti',
+    'estágio uti'
+  ];
+
+  // Filter out excluded sectors
+  const filteredSectors = useMemo(() => {
+    return sectors.filter(sector => {
+      const sectorNameLower = sector.name.toLowerCase();
+      return !excludedSectorPatterns.some(pattern => 
+        sectorNameLower.includes(pattern.toLowerCase())
+      );
+    });
+  }, [sectors]);
+
   // Plantonistas by sector (grouped bar chart data)
   const plantonistasBySector = useMemo(() => {
     const sectorData: Record<string, { sectorName: string; sectorColor: string; users: Record<string, number> }> = {};
@@ -52,7 +74,7 @@ export function DashboardCharts({
     assignments.forEach(assignment => {
       const shift = shifts.find(s => s.id === assignment.shift_id);
       if (shift && shift.sector_id) {
-        const sector = sectors.find(s => s.id === shift.sector_id);
+        const sector = filteredSectors.find(s => s.id === shift.sector_id);
         if (sector) {
           if (!sectorData[sector.id]) {
             sectorData[sector.id] = {
@@ -79,7 +101,7 @@ export function DashboardCharts({
         };
       }).sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'))
     })).filter(s => s.userData.length > 0);
-  }, [assignments, shifts, sectors, members]);
+  }, [assignments, shifts, filteredSectors, members]);
 
   // Top plantonistas - sorted by shift count (keep this sort for ranking)
   const topPlantonistas = useMemo(() => {
@@ -112,7 +134,7 @@ export function DashboardCharts({
     assignments.forEach(assignment => {
       const shift = shifts.find(s => s.id === assignment.shift_id);
       if (shift && shift.sector_id) {
-        const sector = sectors.find(s => s.id === shift.sector_id);
+        const sector = filteredSectors.find(s => s.id === shift.sector_id);
         if (sector) {
           if (!sectorData[sector.id]) {
             sectorData[sector.id] = {
@@ -141,7 +163,7 @@ export function DashboardCharts({
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
       totalValue: Object.values(sector.users).reduce((sum, u) => sum + u.value, 0)
     })).filter(s => s.totalValue > 0);
-  }, [assignments, shifts, sectors, members]);
+  }, [assignments, shifts, filteredSectors, members]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
