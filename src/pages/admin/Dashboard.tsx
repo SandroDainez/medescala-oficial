@@ -314,7 +314,7 @@ export default function AdminDashboard() {
         summaryMap.set(a.user_id, existing);
       });
       
-      setFinancialData(Array.from(summaryMap.values()).sort((a, b) => b.total_value - a.total_value));
+      setFinancialData(Array.from(summaryMap.values()).sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR')));
     }
 
     // Calculate stats
@@ -805,7 +805,9 @@ export default function AdminDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {members.map(m => (
+                  {[...members]
+                    .sort((a, b) => (a.profile?.name || 'Zzz').localeCompare(b.profile?.name || 'Zzz', 'pt-BR'))
+                    .map(m => (
                     <TableRow key={m.id}>
                       <TableCell className="font-medium">{m.profile?.name || 'Sem nome'}</TableCell>
                       <TableCell>
@@ -882,7 +884,9 @@ export default function AdminDashboard() {
                           <p className="text-sm text-muted-foreground">Nenhum plantonista atribuído</p>
                         ) : (
                           <div className="flex flex-wrap gap-2">
-                            {shiftAssignments.map(a => (
+                            {[...shiftAssignments]
+                              .sort((a, b) => (a.profile?.name || 'Zzz').localeCompare(b.profile?.name || 'Zzz', 'pt-BR'))
+                              .map(a => (
                               <Badge key={a.id} variant="secondary">
                                 {a.profile?.name || 'Sem nome'} • R$ {Number(a.assigned_value).toFixed(2)}
                               </Badge>
