@@ -120,7 +120,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "MedEscala <noreply@resend.dev>",
+        from: "MedEscala <noreply@medescala.com>",
         to: [email],
         subject: "🔐 Recuperação de Senha - MedEscala",
         html: `
