@@ -113,17 +113,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error("Serviço de email não configurado");
     }
 
-    const emailResponse = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: "MedEscala <noreply@medescala.com>",
-        to: [email],
-        subject: "🔐 Recuperação de Senha - MedEscala",
-        html: `
+    const subject = "🔐 Recuperação de Senha - MedEscala";
+    const html = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -212,15 +203,48 @@ Deno.serve(async (req: Request): Promise<Response> => {
   </table>
 </body>
 </html>
-        `,
-      }),
-    });
+        `;
 
-    const emailResult = await emailResponse.json();
+    const sendEmail = async (from: string) => {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: [email],
+          subject,
+          html,
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      return { res, body };
+    };
+
+    // Attempt with custom domain first. If it's not verified on Resend yet, fallback to a permitted sender.
+    const primaryFrom = "MedEscala <noreply@medescala.com>";
+    const fallbackFrom = "MedEscala <onboarding@resend.dev>";
+
+    let { res: emailResponse, body: emailResult } = await sendEmail(primaryFrom);
+
+    if (!emailResponse.ok) {
+      const msg = String((emailResult as any)?.message || "");
+      const isDomainNotVerified = emailResponse.status === 403 && msg.toLowerCase().includes("domain") && msg.toLowerCase().includes("not verified");
+
+      if (isDomainNotVerified) {
+        console.warn(
+          "Resend domain not verified for medescala.com. Falling back to onboarding@resend.dev sender.",
+        );
+        ({ res: emailResponse, body: emailResult } = await sendEmail(fallbackFrom));
+      }
+    }
 
     if (!emailResponse.ok) {
       console.error("Resend API error:", emailResult);
-      throw new Error(emailResult.message || "Erro ao enviar email");
+      throw new Error((emailResult as any)?.message || "Erro ao enviar email");
     }
 
     console.log("Email sent successfully:", emailResult);
