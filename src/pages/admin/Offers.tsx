@@ -396,16 +396,16 @@ export default function AdminOffers() {
                 <CardTitle>Histórico de Candidaturas</CardTitle>
                 <CardDescription>Candidaturas já processadas</CardDescription>
               </div>
-              {selectedForDelete.size > 0 && (
-                <Button 
-                  variant="destructive" 
-                  size="sm"
-                  onClick={() => setDeleteDialogOpen(true)}
-                >
-                  <Trash2 className="h-4 w-4 mr-2" />
-                  Excluir ({selectedForDelete.size})
-                </Button>
-              )}
+              <Button 
+                variant="destructive" 
+                size="sm"
+                onClick={() => setDeleteDialogOpen(true)}
+                disabled={selectedForDelete.size === 0}
+                title={selectedForDelete.size === 0 ? 'Selecione uma ou mais candidaturas para excluir' : 'Excluir candidaturas selecionadas'}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Excluir{selectedForDelete.size > 0 ? ` (${selectedForDelete.size})` : ''}
+              </Button>
             </CardHeader>
             <CardContent>
               {reviewedOffers.length === 0 ? (
@@ -432,10 +432,15 @@ export default function AdminOffers() {
                     </TableHeader>
                     <TableBody>
                       {reviewedOffers.map(offer => (
-                        <TableRow key={offer.id}>
+                        <TableRow
+                          key={offer.id}
+                          className="cursor-pointer"
+                          onClick={() => toggleSelectOffer(offer.id)}
+                        >
                           <TableCell>
                             <Checkbox
                               checked={selectedForDelete.has(offer.id)}
+                              onClick={(e) => e.stopPropagation()}
                               onCheckedChange={() => toggleSelectOffer(offer.id)}
                             />
                           </TableCell>
