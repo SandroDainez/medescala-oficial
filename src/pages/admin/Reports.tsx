@@ -7,9 +7,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
@@ -147,6 +148,14 @@ export default function AdminReports() {
   const [movements, setMovements] = useState<MovementRecord[]>([]);
   const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Selection for bulk delete
+  const [selectedMovements, setSelectedMovements] = useState<Set<string>>(new Set());
+  const [selectedConflicts, setSelectedConflicts] = useState<Set<string>>(new Set());
+  const [selectedAbsences, setSelectedAbsences] = useState<Set<string>>(new Set());
+  const [deleteMovementsDialogOpen, setDeleteMovementsDialogOpen] = useState(false);
+  const [deleteConflictsDialogOpen, setDeleteConflictsDialogOpen] = useState(false);
+  const [deleteAbsencesDialogOpen, setDeleteAbsencesDialogOpen] = useState(false);
   
   // Dialog states
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
@@ -760,6 +769,109 @@ export default function AdminReports() {
     fetchCheckins();
   }
 
+  // Bulk delete functions
+  async function handleDeleteMovements() {
+    if (selectedMovements.size === 0) return;
+    const { error } = await supabase
+      .from('schedule_movements')
+      .delete()
+      .in('id', Array.from(selectedMovements));
+    
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedMovements.size} movimentação(ões) excluída(s)` });
+      setSelectedMovements(new Set());
+      fetchMovements();
+    }
+    setDeleteMovementsDialogOpen(false);
+  }
+
+  async function handleDeleteConflicts() {
+    if (selectedConflicts.size === 0) return;
+    const { error } = await supabase
+      .from('conflict_resolutions')
+      .delete()
+      .in('id', Array.from(selectedConflicts));
+    
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedConflicts.size} conflito(s) excluído(s)` });
+      setSelectedConflicts(new Set());
+      fetchConflicts();
+    }
+    setDeleteConflictsDialogOpen(false);
+  }
+
+  async function handleDeleteAbsences() {
+    if (selectedAbsences.size === 0) return;
+    const { error } = await supabase
+      .from('absences')
+      .delete()
+      .in('id', Array.from(selectedAbsences));
+    
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedAbsences.size} afastamento(s) excluído(s)` });
+      setSelectedAbsences(new Set());
+      fetchAbsences();
+    }
+    setDeleteAbsencesDialogOpen(false);
+  }
+
+  function toggleSelectMovement(id: string) {
+    setSelectedMovements(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }
+
+  function toggleSelectAllMovements() {
+    if (selectedMovements.size === movements.length) {
+      setSelectedMovements(new Set());
+    } else {
+      setSelectedMovements(new Set(movements.map(m => m.id)));
+    }
+  }
+
+  function toggleSelectConflict(id: string) {
+    setSelectedConflicts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }
+
+  function toggleSelectAllConflicts() {
+    if (selectedConflicts.size === conflicts.length) {
+      setSelectedConflicts(new Set());
+    } else {
+      setSelectedConflicts(new Set(conflicts.map(c => c.id)));
+    }
+  }
+
+  function toggleSelectAbsence(id: string) {
+    setSelectedAbsences(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }
+
+  function toggleSelectAllAbsences() {
+    if (selectedAbsences.size === absences.length) {
+      setSelectedAbsences(new Set());
+    } else {
+      setSelectedAbsences(new Set(absences.map(a => a.id)));
+    }
+  }
+
   function exportToXLS() {
     let csvContent = '';
     
@@ -1177,71 +1289,97 @@ export default function AdminReports() {
                   </Table>
                 </ScrollArea>
               ) : reportType === 'movimentacoes' ? (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Data/Hora</TableHead>
-                        <TableHead>Tipo</TableHead>
-                        <TableHead>Plantonista</TableHead>
-                        <TableHead>Origem</TableHead>
-                        <TableHead>Destino</TableHead>
-                        <TableHead>Motivo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {movements.length === 0 ? (
+                <div className="space-y-4">
+                  {selectedMovements.size > 0 && (
+                    <div className="flex justify-end">
+                      <Button 
+                        variant="destructive" 
+                        size="sm"
+                        onClick={() => setDeleteMovementsDialogOpen(true)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Excluir ({selectedMovements.size})
+                      </Button>
+                    </div>
+                  )}
+                  <ScrollArea className="h-[500px]">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
-                            Nenhuma movimentação encontrada no período
-                          </TableCell>
+                          <TableHead className="w-[40px]">
+                            <Checkbox
+                              checked={selectedMovements.size === movements.length && movements.length > 0}
+                              onCheckedChange={toggleSelectAllMovements}
+                            />
+                          </TableHead>
+                          <TableHead>Data/Hora</TableHead>
+                          <TableHead>Tipo</TableHead>
+                          <TableHead>Plantonista</TableHead>
+                          <TableHead>Origem</TableHead>
+                          <TableHead>Destino</TableHead>
+                          <TableHead>Motivo</TableHead>
                         </TableRow>
-                      ) : (
-                        movements.map(movement => (
-                          <TableRow key={movement.id}>
-                            <TableCell>{format(parseISO(movement.performed_at), 'dd/MM/yyyy HH:mm')}</TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="gap-1">
-                                <ArrowRightLeft className="h-3 w-3" />
-                                {movementTypeLabels[movement.movement_type] || movement.movement_type}
-                              </Badge>
+                      </TableHeader>
+                      <TableBody>
+                        {movements.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                              Nenhuma movimentação encontrada no período
                             </TableCell>
-                            <TableCell className="font-medium">{movement.user_name}</TableCell>
-                            <TableCell>
-                              {movement.source_sector_name ? (
-                                <div className="text-sm">
-                                  <div>{movement.source_sector_name}</div>
-                                  {movement.source_shift_date && (
-                                    <div className="text-muted-foreground text-xs">
-                                      {format(parseISO(movement.source_shift_date), 'dd/MM')} {movement.source_shift_time || ''}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {movement.destination_sector_name ? (
-                                <div className="text-sm">
-                                  <div>{movement.destination_sector_name}</div>
-                                  {movement.destination_shift_date && (
-                                    <div className="text-muted-foreground text-xs">
-                                      {format(parseISO(movement.destination_shift_date), 'dd/MM')} {movement.destination_shift_time || ''}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="max-w-[200px] truncate">{movement.reason || '-'}</TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                        ) : (
+                          movements.map(movement => (
+                            <TableRow key={movement.id}>
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedMovements.has(movement.id)}
+                                  onCheckedChange={() => toggleSelectMovement(movement.id)}
+                                />
+                              </TableCell>
+                              <TableCell>{format(parseISO(movement.performed_at), 'dd/MM/yyyy HH:mm')}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="gap-1">
+                                  <ArrowRightLeft className="h-3 w-3" />
+                                  {movementTypeLabels[movement.movement_type] || movement.movement_type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="font-medium">{movement.user_name}</TableCell>
+                              <TableCell>
+                                {movement.source_sector_name ? (
+                                  <div className="text-sm">
+                                    <div>{movement.source_sector_name}</div>
+                                    {movement.source_shift_date && (
+                                      <div className="text-muted-foreground text-xs">
+                                        {format(parseISO(movement.source_shift_date), 'dd/MM')} {movement.source_shift_time || ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {movement.destination_sector_name ? (
+                                  <div className="text-sm">
+                                    <div>{movement.destination_sector_name}</div>
+                                    {movement.destination_shift_date && (
+                                      <div className="text-muted-foreground text-xs">
+                                        {format(parseISO(movement.destination_shift_date), 'dd/MM')} {movement.destination_shift_time || ''}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <span className="text-muted-foreground">-</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="max-w-[200px] truncate">{movement.reason || '-'}</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </div>
               ) : reportType === 'conflitos' ? (
                 <ScrollArea className="h-[500px]">
                   <Table>
@@ -1312,17 +1450,33 @@ export default function AdminReports() {
 
         <TabsContent value="conflicts">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
                 <AlertTriangle className="h-5 w-5" />
                 Histórico de Conflitos Resolvidos
               </CardTitle>
+              {selectedConflicts.size > 0 && (
+                <Button 
+                  variant="destructive" 
+                  size="sm"
+                  onClick={() => setDeleteConflictsDialogOpen(true)}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Excluir ({selectedConflicts.size})
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[40px]">
+                        <Checkbox
+                          checked={selectedConflicts.size === conflicts.length && conflicts.length > 0}
+                          onCheckedChange={toggleSelectAllConflicts}
+                        />
+                      </TableHead>
                       <TableHead>Data Conflito</TableHead>
                       <TableHead>Plantonista</TableHead>
                       <TableHead>Resolução</TableHead>
@@ -1335,13 +1489,19 @@ export default function AdminReports() {
                   <TableBody>
                     {conflicts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                           Nenhum conflito resolvido no período. Selecione um período e clique em "Gerar" para ver conflitos.
                         </TableCell>
                       </TableRow>
                     ) : (
                       conflicts.map(conflict => (
                         <TableRow key={conflict.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedConflicts.has(conflict.id)}
+                              onCheckedChange={() => toggleSelectConflict(conflict.id)}
+                            />
+                          </TableCell>
                           <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
                           <TableCell className="font-medium">{conflict.plantonista_name}</TableCell>
                           <TableCell>
@@ -1392,16 +1552,34 @@ export default function AdminReports() {
                 <UserMinus className="h-5 w-5" />
                 Gerenciar Ausências
               </CardTitle>
-              <Button onClick={() => setAbsenceDialogOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                Nova Ausência
-              </Button>
+              <div className="flex gap-2">
+                {selectedAbsences.size > 0 && (
+                  <Button 
+                    variant="destructive" 
+                    size="sm"
+                    onClick={() => setDeleteAbsencesDialogOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Excluir ({selectedAbsences.size})
+                  </Button>
+                )}
+                <Button onClick={() => setAbsenceDialogOpen(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova Ausência
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               <ScrollArea className="h-[500px]">
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-[40px]">
+                        <Checkbox
+                          checked={selectedAbsences.size === absences.length && absences.length > 0}
+                          onCheckedChange={toggleSelectAllAbsences}
+                        />
+                      </TableHead>
                       <TableHead>Plantonista</TableHead>
                       <TableHead>Tipo</TableHead>
                       <TableHead>Período</TableHead>
@@ -1413,13 +1591,19 @@ export default function AdminReports() {
                   <TableBody>
                     {absences.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                           Nenhuma ausência registrada
                         </TableCell>
                       </TableRow>
                     ) : (
                       absences.map(absence => (
                         <TableRow key={absence.id}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedAbsences.has(absence.id)}
+                              onCheckedChange={() => toggleSelectAbsence(absence.id)}
+                            />
+                          </TableCell>
                           <TableCell className="font-medium">{absence.user_name}</TableCell>
                           <TableCell>
                             <Badge variant={absence.type === 'falta' ? 'destructive' : 'secondary'}>
@@ -1807,6 +1991,63 @@ export default function AdminReports() {
                 }
               }
             }}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Confirmar exclusão de movimentações */}
+      <Dialog open={deleteMovementsDialogOpen} onOpenChange={setDeleteMovementsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Movimentações</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedMovements.size} movimentação(ões)? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteMovementsDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteMovements}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Confirmar exclusão de conflitos */}
+      <Dialog open={deleteConflictsDialogOpen} onOpenChange={setDeleteConflictsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Conflitos</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedConflicts.size} conflito(s)? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConflictsDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteConflicts}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Confirmar exclusão de afastamentos */}
+      <Dialog open={deleteAbsencesDialogOpen} onOpenChange={setDeleteAbsencesDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Afastamentos</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedAbsences.size} afastamento(s)? Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteAbsencesDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteAbsences}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
