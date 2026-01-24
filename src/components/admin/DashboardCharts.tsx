@@ -56,28 +56,16 @@ export function DashboardCharts({
       .replace(/\s+/g, ' ');
   };
 
-  // Sectors to exclude from charts (deterministic)
-  // 1) Exact names (normalized) requested by the user
+  // Remove ONLY the specific sector charts requested by the user (no generic blocking rules)
   const excludedSectorExactNormalized = new Set([
     'pre anest cubatao',
+    'estagio uti bene',
     'pre anest i dulce',
     'pre anest bene',
-    'estagio uti bene',
     'horario extendido beneficencia',
   ]);
 
-  // 2) Fallback patterns (normalized partial match)
-  const excludedSectorPatterns = [
-    'pre anest',
-    'horario extendido',
-    'estagio uti',
-  ];
-
-  const isExcludedSectorName = (name: string) => {
-    const normalized = normalizeSectorName(name);
-    if (excludedSectorExactNormalized.has(normalized)) return true;
-    return excludedSectorPatterns.some((pattern) => normalized.includes(pattern));
-  };
+  const isExcludedSectorName = (name: string) => excludedSectorExactNormalized.has(normalizeSectorName(name));
 
   // Filter out excluded sectors
   const filteredSectors = useMemo(() => {
@@ -93,9 +81,7 @@ export function DashboardCharts({
     assignments.forEach(assignment => {
       const shift = shifts.find(s => s.id === assignment.shift_id);
       if (shift && shift.sector_id) {
-        // Defensive: block excluded sectors even if they somehow slip into filteredSectors.
-        const sector = sectors.find(s => s.id === shift.sector_id);
-        if (!sector || isExcludedSectorName(sector.name)) return;
+        const sector = filteredSectors.find(s => s.id === shift.sector_id);
         if (sector) {
           if (!sectorData[sector.id]) {
             sectorData[sector.id] = {
@@ -122,7 +108,7 @@ export function DashboardCharts({
         };
       }).sort((a, b) => a.fullName.localeCompare(b.fullName, 'pt-BR'))
     })).filter(s => s.userData.length > 0);
-  }, [assignments, shifts, sectors, members]);
+  }, [assignments, shifts, filteredSectors, members]);
 
   // Top plantonistas - sorted by shift count (keep this sort for ranking)
   const topPlantonistas = useMemo(() => {
@@ -155,9 +141,7 @@ export function DashboardCharts({
     assignments.forEach(assignment => {
       const shift = shifts.find(s => s.id === assignment.shift_id);
       if (shift && shift.sector_id) {
-        // Defensive: block excluded sectors even if they somehow slip into filteredSectors.
-        const sector = sectors.find(s => s.id === shift.sector_id);
-        if (!sector || isExcludedSectorName(sector.name)) return;
+        const sector = filteredSectors.find(s => s.id === shift.sector_id);
         if (sector) {
           if (!sectorData[sector.id]) {
             sectorData[sector.id] = {
@@ -186,7 +170,7 @@ export function DashboardCharts({
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
       totalValue: Object.values(sector.users).reduce((sum, u) => sum + u.value, 0)
     })).filter(s => s.totalValue > 0);
-  }, [assignments, shifts, sectors, members]);
+  }, [assignments, shifts, filteredSectors, members]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
