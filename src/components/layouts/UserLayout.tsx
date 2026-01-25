@@ -60,10 +60,10 @@ export function UserLayout() {
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
       {/* Header - Mobile style like Pega Plantão */}
-      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm">
+      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm flex flex-col">
         {/* Trial Banner dentro do header para não interferir */}
         <TrialBanner />
-        <div className="flex h-14 items-center justify-between px-4">
+        <div className="flex min-h-[56px] items-center justify-between px-4 py-2">
           {/* Left: Menu button */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>
