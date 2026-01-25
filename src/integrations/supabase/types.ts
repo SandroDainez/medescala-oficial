@@ -1855,18 +1855,15 @@ export type Database = {
         }[]
       }
       has_gabs_bypass: { Args: { _user_id?: string }; Returns: boolean }
-      has_gps_access: {
-        Args: { _tenant_id: string; _user_id: string }
-        Returns: boolean
-      }
-      has_payment_access: {
-        Args: { _tenant_id: string; _user_id: string }
-        Returns: boolean
-      }
-      has_pii_access: {
-        Args: { _tenant_id: string; _user_id: string }
-        Returns: boolean
-      }
+      has_gps_access:
+        | { Args: { _tenant_id: string }; Returns: boolean }
+        | { Args: { _tenant_id: string; _user_id: string }; Returns: boolean }
+      has_payment_access:
+        | { Args: { _tenant_id: string }; Returns: boolean }
+        | { Args: { _tenant_id: string; _user_id: string }; Returns: boolean }
+      has_pii_access:
+        | { Args: { _tenant_id: string }; Returns: boolean }
+        | { Args: { _tenant_id: string; _user_id: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
