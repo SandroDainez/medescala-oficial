@@ -1851,6 +1851,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return;
       }
 
+      // IMPORTANTE: Buscar valores individuais FRESCOS do banco (não usar cache)
+      const { data: freshUserValues } = await supabase
+        .from('user_sector_values')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .eq('sector_id', filterSector)
+        .eq('month', currentMonth)
+        .eq('year', currentYear);
+      
+      const freshValuesMap = new Map<string, { day_value: number | null; night_value: number | null }>();
+      (freshUserValues ?? []).forEach((uv: any) => {
+        freshValuesMap.set(uv.user_id, { day_value: uv.day_value, night_value: uv.night_value });
+      });
+
+      console.log('Fresh user values loaded:', { 
+        count: freshValuesMap.size, 
+        keys: Array.from(freshValuesMap.keys()).map(k => k.slice(0, 8)),
+        values: Array.from(freshValuesMap.entries()).map(([k, v]) => ({ user: k.slice(0, 8), ...v }))
+      });
+
       // Get sector info
       const sector = sectors.find(s => s.id === filterSector);
       
@@ -1874,9 +1894,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         let newValue: number | null = null;
         let source = 'none';
 
-        // Check individual value first - use the userSectorValues map directly
-        const userValueKey = `${filterSector}:${assignment.user_id}`;
-        const userValueEntry = userSectorValues.get(userValueKey);
+        // Check individual value first - use FRESH values from database
+        const userValueEntry = freshValuesMap.get(assignment.user_id);
         const userValue = userValueEntry 
           ? (isNight ? userValueEntry.night_value : userValueEntry.day_value)
           : null;
@@ -1916,7 +1935,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
 
       console.log('Recalculate debug:', { 
-        userSectorValuesSize: userSectorValues.size,
+        freshValuesMapSize: freshValuesMap.size,
         assignmentsToUpdate: assignmentsToUpdate.length,
         updatedCount,
         skippedCount,
