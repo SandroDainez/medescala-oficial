@@ -66,15 +66,15 @@ function isNightShift(startTime: string): boolean {
 /**
  * Determines the final value for a shift assignment.
  *
- * IMPORTANT:
- * The Financeiro must match the Escala display logic (same priority + same pro-rata behavior).
- *
- * Priority (highest to lowest):
- * 1) Individual user override (user_sector_values) — ALWAYS wins (including 0)
- * 2) assigned_value — manual per-assignment override (already final; do NOT pro-rate here)
- * 3) base_value — shift base (apply PRO-RATA like Escala display)
- * 4) sector_default_value — fallback (apply PRO-RATA)
+ * RULE CONFIRMED BY USER:
+ * 1) assigned_value (edited in Escala) — HIGHEST priority, USE AS-IS (already pro-rata)
+ * 2) Individual user override (user_sector_values) — apply PRO-RATA
+ * 3) base_value — apply PRO-RATA
+ * 4) sector_default_value — apply PRO-RATA
  * 5) none
+ *
+ * The Escala saves the final value already calculated (with pro-rata).
+ * Financeiro just uses it directly without recalculating.
  */
 export function getFinalValue(
   assigned_value: unknown,
@@ -92,25 +92,38 @@ export function getFinalValue(
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
-  // 1) Individual override ALWAYS wins (including 0)
+  // ========================================================
+  // PRIORITY 1: assigned_value (edited in Escala) — USE AS-IS
+  // This is the value the admin saved for this specific assignment.
+  // It already includes any pro-rata calculation done at save time.
+  // ========================================================
+  if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
+  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
+
+  // ========================================================
+  // PRIORITY 2: Individual user override (user_sector_values)
+  // Apply pro-rata since this is a 12h base rate
+  // ========================================================
   if (individual !== null) {
     if (individual === 0) return { final_value: 0, source: 'zero_individual' };
     const proRataValue = calculateProRataValue(individual, duration_hours);
     return { final_value: proRataValue, source: 'individual' };
   }
 
-  // 2) assigned_value (already final; do NOT pro-rate)
-  if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
-  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
-
-  // 3) base_value (apply pro-rata like Escala display)
+  // ========================================================
+  // PRIORITY 3: base_value (shift base value)
+  // Apply pro-rata since this is a 12h base rate
+  // ========================================================
   if (base !== null && base > 0) {
     const proRataValue = calculateProRataValue(base, duration_hours);
     return { final_value: proRataValue, source: 'base' };
   }
   if (base === 0) return { final_value: 0, source: 'zero_base' };
 
-  // 4) sector default (apply pro-rata)
+  // ========================================================
+  // PRIORITY 4: sector default (fallback)
+  // Apply pro-rata since this is a 12h base rate
+  // ========================================================
   if (sectorDefault !== null) {
     const proRataValue = calculateProRataValue(sectorDefault, duration_hours);
     return { final_value: proRataValue, source: 'sector_default' };
