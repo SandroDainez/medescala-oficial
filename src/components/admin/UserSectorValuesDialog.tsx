@@ -112,10 +112,14 @@ export default function UserSectorValuesDialog({
       if (membershipsWithProfiles && membershipsWithProfiles.length > 0) {
         membershipsWithProfiles.forEach((m: any) => {
           const profile = m.profiles;
-          if (profile && (profile.profile_type || '') === 'plantonista') {
-            plantonistaIds.add(m.user_id);
-          }
+          // If profile is visible, enforce profile_type.
+          // If profile comes back null (common with restrictive RLS), don't hide the user here;
+          // otherwise the dialog incorrectly shows "Nenhum plantonista" even when sector has members.
+          if (!profile || (profile.profile_type || '') === 'plantonista') plantonistaIds.add(m.user_id);
         });
+
+        // Safety: if we got rows but none qualified (e.g. all profiles hidden), show all sector members.
+        if (plantonistaIds.size === 0) sectorUserIds.forEach((id) => plantonistaIds.add(id));
       } else {
         // Fallback: assume all sector members are plantonistas if profile query failed
         sectorUserIds.forEach(id => plantonistaIds.add(id));
