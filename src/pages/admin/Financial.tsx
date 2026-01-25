@@ -258,8 +258,8 @@ export default function AdminFinancial() {
     setLoading(true);
 
     try {
-      // Fetch shifts, assignments via RPC, sectors, and tenant info in parallel
-      const [shiftsRes, assignmentsRes, sectorsRes, tenantRes] = await Promise.all([
+      // Fetch shifts, assignments via RPC, sectors, user overrides, and tenant info in parallel
+      const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
         supabase
           .from('shifts')
           .select('id, shift_date, start_time, end_time, sector_id, base_value')
@@ -279,6 +279,10 @@ export default function AdminFinancial() {
           .select('id, name, default_day_value, default_night_value')
           .eq('tenant_id', currentTenantId)
           .eq('active', true),
+        supabase
+          .from('user_sector_values')
+          .select('sector_id, user_id, day_value, night_value')
+          .eq('tenant_id', currentTenantId),
         supabase
           .from('tenants')
           .select('slug')
@@ -319,6 +323,12 @@ export default function AdminFinancial() {
         name: string | null;
       }>;
       const sectors = sectorsRes.data ?? [];
+      const userValues = (userValuesRes.data ?? []) as Array<{
+        sector_id: string;
+        user_id: string;
+        day_value: number | null;
+        night_value: number | null;
+      }>;
 
       const mapped = mapScheduleToFinancialEntries({
         shifts: shifts as unknown as ScheduleShift[],
@@ -332,6 +342,7 @@ export default function AdminFinancial() {
           })
         ),
         sectors: sectors as unknown as SectorLookup[],
+        userSectorValues: userValues,
         tenantSlug: slug ?? undefined,
       });
 

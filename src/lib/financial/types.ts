@@ -1,6 +1,6 @@
 export type Money = number; // always in reais as number; only format in UI
 
-export type FinancialValueSource = 'assigned' | 'base' | 'sector_default' | 'zero_assigned' | 'zero_base' | 'none' | 'invalid';
+export type FinancialValueSource = 'individual' | 'assigned' | 'base' | 'sector_default' | 'zero_individual' | 'zero_assigned' | 'zero_base' | 'none' | 'invalid';
 
 export interface ScheduleShift {
   id: string;
@@ -19,6 +19,13 @@ export interface ScheduleAssignment {
   user_id: string;
   assigned_value: Money | null;
   profile_name?: string | null;
+}
+
+export interface UserSectorValueLookup {
+  sector_id: string;
+  user_id: string;
+  day_value: Money | null;
+  night_value: Money | null;
 }
 
 export interface SectorLookup {
