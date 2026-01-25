@@ -3788,22 +3788,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                             info.source === 'individual'
                                               ? 'Individual'
                                               : info.source === 'assigned'
-                                                ? 'Valor do plantão'
+                                                ? 'Editado'
                                                 : info.source === 'base'
                                                   ? 'Base'
                                                   : info.source === 'sector_default'
                                                     ? 'Padrão'
                                                     : 'Sem valor';
                                           const valueText = info.value === null ? '—' : `R$ ${info.value.toFixed(2)}`;
+                                          const durationLabel = info.durationHours !== 12 ? ` (${info.durationHours.toFixed(0)}h)` : '';
                                           return (
                                             <span className="inline-flex items-center gap-2">
                                               <span>Pagamento: {valueText}</span>
                                               <Badge variant="secondary" className="h-5 px-2 text-[10px]">
-                                                {label}
+                                                {label}{durationLabel}
                                               </Badge>
-                                              {info.durationHours !== 12 && (
-                                                <span className="text-[10px] text-muted-foreground">({info.durationHours.toFixed(0)}h)</span>
-                                              )}
                                             </span>
                                           );
                                         })()}
