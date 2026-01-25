@@ -100,8 +100,73 @@ Configuração padrão do backend; pode ser habilitada nas configurações de au
 
 ---
 
+## 8) Políticas RLS RESTRICTIVE para bloqueio de acesso anônimo
+
+**Data de implementação:** 2026-01-25
+
+**Tabelas afetadas (30 tabelas):**
+- `profiles`, `profiles_private`, `payments`, `shifts`, `shift_assignments`
+- `shift_assignment_locations`, `shift_entries`, `shift_offers`, `swap_requests`
+- `tenants`, `memberships`, `sectors`, `sector_memberships`, `sector_revenues`, `sector_expenses`
+- `user_roles`, `user_sector_values`, `plans`, `notifications`, `absences`
+- `schedule_finalizations`, `schedule_movements`, `conflict_resolutions`
+- `pii_access_permissions`, `payment_access_permissions`, `pii_audit_logs`, `gps_access_logs`
+- `super_admins`, `system_settings`, `login_cpf_rate_limits`
+
+**Políticas aplicadas:**
+```sql
+CREATE POLICY "Block anon access on [table]"
+ON public.[table]
+AS RESTRICTIVE
+FOR ALL
+TO anon
+USING (false)
+WITH CHECK (false);
+```
+
+**Controles adicionais:**
+- `FORCE ROW LEVEL SECURITY` aplicado em todas as tabelas
+- View `shift_assignment_locations_secure` com `security_invoker = true`
+- Permissões `REVOKE ALL FROM anon` na view de GPS
+
+---
+
+## 9) Shifts com sector_id NULL visíveis para membros do tenant
+
+**Motivo:**  
+Shifts sem setor definido são ofertas gerais disponíveis para todos os plantonistas do tenant.
+
+**Controles existentes:**
+- RLS RESTRICTIVE bloqueia anon
+- `is_tenant_member()` exigido para qualquer acesso
+
+---
+
+## 10) GPS - Histórico ilimitado para admins
+
+**Motivo:**  
+Necessário para auditoria trabalhista e compliance com legislação de ponto.
+
+**Controles existentes:**
+- Usuários veem apenas últimos 30 dias
+- Acesso de admin é auditado via `gps_access_logs`
+- Função `get_assignment_location_with_audit` registra cada consulta
+
+---
+
 ## Observações
 
 - Estes itens devem permanecer como **risco aceito** (não são bugs).
 - Se a política de negócio mudar, revise as permissões e registre uma nova decisão aqui.
 - Ao rodar o scanner de segurança, ignore os findings listados acima ou marque-os como "risco aceito" com referência a este documento.
+
+## Resumo de Segurança (2026-01-25)
+
+| Categoria | Status |
+|-----------|--------|
+| Acesso anônimo bloqueado | ✅ 30 tabelas com RESTRICTIVE TO anon |
+| RLS habilitada + forçada | ✅ Todas as tabelas |
+| Isolamento de tenant | ✅ Via `is_tenant_member()` e `is_tenant_admin()` |
+| GPS auditing | ✅ `gps_access_logs` + view segura |
+| PII isolado | ✅ `profiles_private` com criptografia + `pii_access_permissions` |
+| Financeiro isolado | ✅ `payment_access_permissions` + RLS |
