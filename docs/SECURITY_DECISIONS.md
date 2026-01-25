@@ -249,6 +249,16 @@ log_gps_grant_trigger AFTER INSERT ON gps_access_grants
 - Acesso de admin via `get_assignment_location_with_audit()` é auditado
 - Usuário vê próprio GPS apenas de plantões do dia ou com check-in/out nas últimas 12h
 
+**Consentimento (requisito LGPD):**
+- Plantonistas são informados sobre coleta de GPS nos Termos de Uso (página /terms)
+- GPS só é coletado quando o setor tem "Exigir GPS" habilitado
+- Usuário opta por fazer check-in (ação voluntária que aciona coleta)
+- Admin deve informar verbalmente sobre política de GPS ao onboarding
+
+**Justificativa legal:**
+- Registro de ponto eletrônico é obrigação trabalhista (CLT, Portaria 671/2021)
+- Coleta de localização para validar presença no local de trabalho é legítima
+
 ---
 
 ## 14) Visibilidade Restrita de Escalas
