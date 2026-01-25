@@ -530,6 +530,32 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return calculateProRataValue(sectorValue, duration);
   }
 
+  function getAssignmentDisplayInfo(
+    assignment: { assigned_value: number | null; user_id: string },
+    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
+  ): { value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none'; durationHours: number } {
+    const duration = calculateDurationHours(shift.start_time, shift.end_time);
+
+    const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
+    if (userValue !== null) {
+      if (userValue === 0) return { value: 0, source: 'individual', durationHours: duration };
+      return { value: calculateProRataValue(userValue, duration), source: 'individual', durationHours: duration };
+    }
+
+    if (assignment.assigned_value !== null) {
+      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
+    }
+
+    if (shift.base_value !== null) {
+      if (shift.base_value === 0) return { value: 0, source: 'base', durationHours: duration };
+      return { value: calculateProRataValue(shift.base_value, duration), source: 'base', durationHours: duration };
+    }
+
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    const val = calculateProRataValue(sectorValue, duration);
+    return { value: val, source: sectorValue !== null ? 'sector_default' : 'none', durationHours: duration };
+  }
+
   // Generate automatic title based on time
   function generateShiftTitle(startTime: string, endTime: string): string {
     const isNight = isNightShift(startTime, endTime);
@@ -3680,7 +3706,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                         {getAssignmentName(assignment)}
                                       </div>
                                       <div className="text-xs text-muted-foreground">
-                                        Valor: R$ {(getAssignmentDisplayValue(assignment, shift) ?? 0).toFixed(2)}
+                                        {(() => {
+                                          const info = getAssignmentDisplayInfo(assignment, shift);
+                                          const label =
+                                            info.source === 'individual'
+                                              ? 'Individual'
+                                              : info.source === 'assigned'
+                                                ? 'Valor do plantão'
+                                                : info.source === 'base'
+                                                  ? 'Base'
+                                                  : info.source === 'sector_default'
+                                                    ? 'Padrão'
+                                                    : 'Sem valor';
+                                          const valueText = info.value === null ? '—' : `R$ ${info.value.toFixed(2)}`;
+                                          return (
+                                            <span className="inline-flex items-center gap-2">
+                                              <span>Pagamento: {valueText}</span>
+                                              <Badge variant="secondary" className="h-5 px-2 text-[10px]">
+                                                {label}
+                                              </Badge>
+                                              {info.durationHours !== 12 && (
+                                                <span className="text-[10px] text-muted-foreground">({info.durationHours.toFixed(0)}h)</span>
+                                              )}
+                                            </span>
+                                          );
+                                        })()}
                                       </div>
                                     </div>
                                   </div>
