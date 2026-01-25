@@ -59,20 +59,23 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
-      {/* Trial Banner */}
-      <TrialBanner />
-      
       {/* Header - Mobile style like Pega Plantão */}
-      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm">
+        {/* Trial Banner dentro do header para não interferir */}
+        <TrialBanner />
         <div className="flex h-14 items-center justify-between px-4">
           {/* Left: Menu button */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-9 w-9">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-10 w-10 touch-manipulation active:scale-95 transition-transform"
+              >
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0 bg-card overflow-y-auto max-h-[100dvh]">
+            <SheetContent side="left" className="w-[280px] p-0 bg-card overflow-y-auto max-h-[100dvh] z-[70]">
               {/* Profile section */}
               <div className="p-6 pb-4">
                 <div className="flex items-center gap-4">

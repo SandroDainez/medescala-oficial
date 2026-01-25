@@ -92,16 +92,16 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
-      {/* Trial Banner */}
-      <TrialBanner />
       {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-card/95 backdrop-blur-sm supports-[backdrop-filter]:bg-card/80">
+      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm">
+        {/* Trial Banner */}
+        <TrialBanner />
         <div className="flex h-16 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden hover:bg-accent"
+              className="md:hidden hover:bg-accent h-10 w-10 touch-manipulation active:scale-95 transition-transform"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -293,7 +293,7 @@ export function AdminLayout() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-x-0 top-[64px] bottom-0 z-40 bg-background/95 backdrop-blur-sm md:hidden animate-fade-in overflow-y-auto">
+          <div className="fixed inset-x-0 top-[100px] bottom-0 z-[50] bg-background md:hidden animate-fade-in overflow-y-auto">
             <nav className="flex flex-col gap-1 p-4 pb-safe">
               <div className="mb-4">
                 <TenantSelector />
