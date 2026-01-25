@@ -18,6 +18,9 @@ import { useToast } from '@/hooks/use-toast';
 import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
+import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import type { ScheduleAssignment, ScheduleShift, SectorLookup, UserSectorValueLookup } from '@/lib/financial/types';
 
 interface Absence {
   id: string;
@@ -319,97 +322,117 @@ export default function AdminReports() {
       return;
     }
 
-    // Buscar shifts no período
-    let shiftsQuery = supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, sector_id, base_value')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', startDate)
-      .lte('shift_date', endDate);
-    
-    if (selectedSector !== 'all') {
-      shiftsQuery = shiftsQuery.eq('sector_id', selectedSector);
-    }
-    
-    const { data: shiftsData, error: shiftsError } = await shiftsQuery;
-    
-    if (shiftsError) {
-      console.error('Error fetching shifts for financial report:', shiftsError);
-      setFinancialData([]);
-      return;
-    }
-    
-    if (!shiftsData || shiftsData.length === 0) {
-      setFinancialData([]);
-      return;
-    }
-    
-    // Buscar assignments usando RPC para otimização
-    const { data: assignmentsData, error: assignmentsError } = await supabase.rpc(
-      'get_shift_assignments_range',
-      {
-        _tenant_id: currentTenantId,
-        _start: startDate,
-        _end: endDate,
-      }
-    );
+    try {
+      // IMPORTANTE: este relatório deve bater 1:1 com o módulo Financeiro e a Escala.
+      // Então usamos a mesma pipeline: shifts + assignments + (sectors + overrides) -> mapScheduleToFinancialEntries -> aggregateFinancial
 
-    if (assignmentsError) {
-      console.error('Error fetching assignments for financial report:', assignmentsError);
-      setFinancialData([]);
-      return;
-    }
-    
-    if (!assignmentsData || assignmentsData.length === 0) {
-      setFinancialData([]);
-      return;
-    }
-    
-    const shiftMap = new Map(shiftsData.map(s => [s.id, s]));
-    
-    // Filtrar assignments que correspondem aos shifts no filtro de setor
-    const filteredAssignments = assignmentsData.filter(a => shiftMap.has(a.shift_id));
-    
-    const userSummary = new Map<string, FinancialSummaryRecord>();
-    
-    for (const a of filteredAssignments) {
-      const shift = shiftMap.get(a.shift_id);
-      if (!shift) continue;
-      
-      if (!userSummary.has(a.user_id)) {
-        userSummary.set(a.user_id, {
-          user_id: a.user_id,
-          user_name: a.name || 'Sem nome',
-          total_shifts: 0,
-          total_hours: 0,
-          total_value: 0,
-        });
+      // Buscar shifts no período
+      let shiftsQuery = supabase
+        .from('shifts')
+        .select('id, shift_date, start_time, end_time, sector_id, base_value, title, hospital')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', startDate)
+        .lte('shift_date', endDate)
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      if (selectedSector !== 'all') {
+        shiftsQuery = shiftsQuery.eq('sector_id', selectedSector);
       }
-      
-      const summary = userSummary.get(a.user_id)!;
-      summary.total_shifts++;
-      
-      // Calcular horas
-      const [startH, startM] = shift.start_time.split(':').map(Number);
-      const [endH, endM] = shift.end_time.split(':').map(Number);
-      let hours = endH - startH;
-      if (hours < 0) hours += 24;
-      summary.total_hours += hours + (endM - startM) / 60;
-      
-      // Calcular valor usando a mesma prioridade do Financeiro:
-      // 1. assigned_value (editado na Escala) - USAR COMO ESTÁ
-      // 2. Fallback para 0 se não tiver
-      // Nota: valores individuais e de setor já devem estar refletidos no assigned_value
-      const value = a.assigned_value ?? 0;
-      if (typeof value === 'number' && value > 0) {
-        summary.total_value += value;
+
+      const month = new Date(startDate).getMonth() + 1;
+      const year = new Date(startDate).getFullYear();
+
+      const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
+        shiftsQuery,
+        supabase.rpc('get_shift_assignments_range', {
+          _tenant_id: currentTenantId,
+          _start: startDate,
+          _end: endDate,
+        }),
+        supabase
+          .from('sectors')
+          .select('id, name, default_day_value, default_night_value')
+          .eq('tenant_id', currentTenantId)
+          .eq('active', true),
+        supabase
+          .from('user_sector_values')
+          .select('sector_id, user_id, day_value, night_value')
+          .eq('tenant_id', currentTenantId)
+          .eq('month', month)
+          .eq('year', year),
+        supabase
+          .from('tenants')
+          .select('slug')
+          .eq('id', currentTenantId)
+          .maybeSingle(),
+      ]);
+
+      if (shiftsRes.error) {
+        console.error('Error fetching shifts for financial report:', shiftsRes.error);
+        setFinancialData([]);
+        return;
       }
+      if (assignmentsRes.error) {
+        console.error('Error fetching assignments for financial report:', assignmentsRes.error);
+        setFinancialData([]);
+        return;
+      }
+
+      const shiftsData = shiftsRes.data ?? [];
+      const assignmentsData = (assignmentsRes.data ?? []) as Array<{
+        id: string;
+        shift_id: string;
+        user_id: string;
+        assigned_value: number | null;
+        status: string;
+        name: string | null;
+      }>;
+
+      if (shiftsData.length === 0 || assignmentsData.length === 0) {
+        setFinancialData([]);
+        return;
+      }
+
+      const tenantSlug = tenantRes.data?.slug ?? undefined;
+      const sectorsData = (sectorsRes.data ?? []) as unknown as SectorLookup[];
+      const userValues = (userValuesRes.data ?? []) as unknown as UserSectorValueLookup[];
+
+      const mapped = mapScheduleToFinancialEntries({
+        shifts: shiftsData as unknown as ScheduleShift[],
+        assignments: assignmentsData.map(
+          (a): ScheduleAssignment => ({
+            id: a.id,
+            shift_id: a.shift_id,
+            user_id: a.user_id,
+            assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+            profile_name: a.name ?? null,
+          })
+        ),
+        sectors: sectorsData,
+        userSectorValues: userValues,
+        tenantSlug,
+      });
+
+      // Este relatório é por plantonista; removemos linhas "Vago" (sem assignee real)
+      const assignedOnly = mapped.filter((e) => e.assignee_id !== 'unassigned');
+      const { plantonistaReports } = aggregateFinancial(assignedOnly);
+
+      const financialRecords: FinancialSummaryRecord[] = plantonistaReports
+        .map((p) => ({
+          user_id: p.assignee_id,
+          user_name: p.assignee_name,
+          total_shifts: p.total_shifts,
+          total_hours: p.total_hours,
+          total_value: p.total_to_receive,
+        }))
+        .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
+
+      setFinancialData(financialRecords);
+    } catch (err) {
+      console.error('Unexpected error in financial report:', err);
+      setFinancialData([]);
     }
-    
-    const financialRecords = Array.from(userSummary.values())
-      .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
-    
-    setFinancialData(financialRecords);
   }
 
   async function fetchMovements() {
