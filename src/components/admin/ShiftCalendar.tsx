@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw } from 'lucide-react';
 import ScheduleMovements, { recordScheduleMovement } from './ScheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -1801,6 +1801,115 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
+  const [recalculateLoading, setRecalculateLoading] = useState(false);
+
+  // Recalculate all assigned_values for the current month using current individual/sector values
+  async function handleRecalculateValues() {
+    if (!currentTenantId || !user?.id) return;
+    
+    if (filterSector === 'all') {
+      toast({ 
+        title: 'Selecione um setor', 
+        description: 'Para recalcular, primeiro selecione um setor específico.',
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    if (!confirm('Isso irá recalcular TODOS os valores do mês com base nos valores individuais/setor atuais. Valores digitados manualmente serão substituídos. Deseja continuar?')) {
+      return;
+    }
+
+    setRecalculateLoading(true);
+    try {
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentYear = currentDate.getFullYear();
+      
+      // Get all shifts for the current month and sector
+      const monthStart = format(startOfMonth(currentDate), 'yyyy-MM-dd');
+      const monthEnd = format(endOfMonth(currentDate), 'yyyy-MM-dd');
+      
+      const shiftsInMonth = shifts.filter(s => 
+        s.sector_id === filterSector &&
+        s.shift_date >= monthStart &&
+        s.shift_date <= monthEnd
+      );
+
+      if (shiftsInMonth.length === 0) {
+        toast({ title: 'Nenhum plantão encontrado', description: 'Não há plantões para recalcular neste setor/mês.' });
+        setRecalculateLoading(false);
+        return;
+      }
+
+      // Get assignments for these shifts
+      const shiftIds = shiftsInMonth.map(s => s.id);
+      const assignmentsToUpdate = assignments.filter(a => shiftIds.includes(a.shift_id));
+
+      if (assignmentsToUpdate.length === 0) {
+        toast({ title: 'Nenhuma atribuição encontrada', description: 'Não há plantonistas atribuídos para recalcular.' });
+        setRecalculateLoading(false);
+        return;
+      }
+
+      // Get sector info
+      const sector = sectors.find(s => s.id === filterSector);
+      
+      let updatedCount = 0;
+      for (const assignment of assignmentsToUpdate) {
+        const shift = shiftsInMonth.find(s => s.id === assignment.shift_id);
+        if (!shift) continue;
+
+        // Calculate duration
+        const duration = calculateDurationHours(shift.start_time, shift.end_time);
+        const shouldApplyProRata = duration !== 12;
+        const isNight = isNightShift(shift.start_time, shift.end_time);
+
+        // Priority: individual value -> sector default
+        let newValue: number | null = null;
+        let source = 'none';
+
+        // Check individual value first
+        const userValue = getUserSectorValue(filterSector, assignment.user_id, shift.start_time);
+        if (userValue !== null && userValue > 0) {
+          newValue = shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
+          source = 'individual';
+        } else {
+          // Fall back to sector default
+          const sectorValue = isNight ? sector?.default_night_value : sector?.default_day_value;
+          if (sectorValue !== null && sectorValue !== undefined && sectorValue > 0) {
+            newValue = shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
+            source = 'sector';
+          }
+        }
+
+        // Update the assignment
+        const { error } = await supabase
+          .from('shift_assignments')
+          .update({ 
+            assigned_value: newValue,
+            updated_by: user.id 
+          })
+          .eq('id', assignment.id);
+
+        if (!error) {
+          updatedCount++;
+        }
+      }
+
+      toast({ 
+        title: 'Valores recalculados!', 
+        description: `${updatedCount} de ${assignmentsToUpdate.length} atribuições atualizadas.` 
+      });
+      
+      fetchData();
+    } catch (error) {
+      console.error('Error recalculating values:', error);
+      toast({ title: 'Erro ao recalcular', variant: 'destructive' });
+    } finally {
+      setRecalculateLoading(false);
+    }
+  }
+
   function openCreateShift(date?: Date, sectorIdOverride?: string) {
     if (shiftDialogCloseGuardRef.current) return;
 
@@ -3431,6 +3540,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     >
                       <Copy className="mr-2 h-4 w-4" />
                       Copiar Escala
+                    </Button>
+
+                    <Button 
+                      variant="outline" 
+                      onClick={handleRecalculateValues}
+                      disabled={recalculateLoading || filterSector === 'all'}
+                      title={filterSector === 'all' ? 'Selecione um setor para recalcular' : 'Recalcular valores do mês com base nos valores individuais/setor atuais'}
+                    >
+                      <RefreshCw className={`mr-2 h-4 w-4 ${recalculateLoading ? 'animate-spin' : ''}`} />
+                      {recalculateLoading ? 'Recalculando...' : 'Recalcular'}
                     </Button>
 
                     <Button variant="outline" onClick={handlePrintSchedule}>
