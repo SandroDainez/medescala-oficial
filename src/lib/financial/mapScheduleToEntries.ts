@@ -64,13 +64,16 @@ function isNightShift(startTime: string): boolean {
 }
 
 /**
- * Determines the final value for a shift assignment with PRO-RATA applied.
- * Priority:
- * 1. assigned_value — manual per-shift override, ALWAYS wins (including zero)
- * 2. Individual user override (user_sector_values) — monthly override fallback (including zero), with PRO-RATA
- * 3. base_value — use as-is (Escala may already persist pro-rata into shifts.base_value)
+ * Determines the final value for a shift assignment.
+ * 
+ * SIMPLIFIED LOGIC:
+ * 1. assigned_value — if set in the Escala, USE IT AS-IS (already calculated/pro-rated at save time)
+ * 2. Individual user override (user_sector_values) — apply PRO-RATA
+ * 3. base_value — USE AS-IS (already pro-rated when saved from Escala)
  * 4. sector_default_value — apply PRO-RATA
  * 5. none → no value available
+ * 
+ * The Escala UI now saves values already pro-rated, so Financeiro just uses them directly.
  */
 export function getFinalValue(
   assigned_value: unknown,
@@ -88,38 +91,21 @@ export function getFinalValue(
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
-  // Priority 1: assigned_value — manual per-shift override, use as-is (already pro-rated at assignment time)
+  // Priority 1: assigned_value — USE DIRECTLY (Escala already saved the final value)
   if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
 
   // Priority 2: assigned_value === 0 → intentional zero (admin set it to zero)
   if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
 
-  // Priority 3: Individual override (user_sector_values) — monthly fallback, apply PRO-RATA
+  // Priority 3: Individual override (user_sector_values) — apply PRO-RATA
   if (individual !== null) {
     if (individual === 0) return { final_value: 0, source: 'zero_individual' };
     const proRataValue = calculateProRataValue(individual, duration_hours);
     return { final_value: proRataValue, source: 'individual' };
   }
 
-  // Priority 4: base_value — mirror Escala behavior (apply PRO-RATA),
-  // but avoid double-discounting when base_value was already persisted as pro-rated.
-  if (base !== null && base > 0) {
-    // If duration is 12h, base is already final.
-    if (duration_hours === STANDARD_SHIFT_HOURS) return { final_value: base, source: 'base' };
-
-    // If we have a sector default, we can detect whether base_value is already pro-rated:
-    // - If base ~= proRata(sectorDefault), treat base as already final.
-    // - Otherwise, treat base as 12h value and apply pro-rata.
-    if (sectorDefault !== null) {
-      const expectedFromSector = calculateProRataValue(sectorDefault, duration_hours);
-      if (expectedFromSector !== null && nearlyEqual(base, expectedFromSector)) {
-        return { final_value: base, source: 'base' };
-      }
-    }
-
-    const proRataValue = calculateProRataValue(base, duration_hours);
-    return { final_value: proRataValue, source: 'base' };
-  }
+  // Priority 4: base_value — USE DIRECTLY (Escala already saved the pro-rated value)
+  if (base !== null && base > 0) return { final_value: base, source: 'base' };
   
   // Priority 5: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
   if (base === 0) return { final_value: 0, source: 'zero_base' };
