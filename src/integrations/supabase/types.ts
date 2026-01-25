@@ -175,6 +175,39 @@ export type Database = {
           },
         ]
       }
+      gps_access_logs: {
+        Row: {
+          accessed_at: string
+          admin_user_id: string
+          assignment_id: string
+          id: string
+          ip_address: string | null
+          target_user_id: string
+          tenant_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          accessed_at?: string
+          admin_user_id: string
+          assignment_id: string
+          id?: string
+          ip_address?: string | null
+          target_user_id: string
+          tenant_id: string
+          user_agent?: string | null
+        }
+        Update: {
+          accessed_at?: string
+          admin_user_id?: string
+          assignment_id?: string
+          id?: string
+          ip_address?: string | null
+          target_user_id?: string
+          tenant_id?: string
+          user_agent?: string | null
+        }
+        Relationships: []
+      }
       login_cpf_rate_limits: {
         Row: {
           attempts: number
@@ -1585,6 +1618,7 @@ export type Database = {
         Args: { _tenant_id: string }
         Returns: boolean
       }
+      cleanup_old_notifications: { Args: never; Returns: number }
       create_tenant_with_admin: {
         Args: { _name: string; _slug: string }
         Returns: string
@@ -1606,6 +1640,20 @@ export type Database = {
           plan_name: string
           slug: string
           trial_ends_at: string
+        }[]
+      }
+      get_assignment_location_with_audit: {
+        Args: { _assignment_id: string; _tenant_id: string }
+        Returns: {
+          assignment_id: string
+          checkin_latitude: number
+          checkin_longitude: number
+          checkout_latitude: number
+          checkout_longitude: number
+          created_at: string
+          tenant_id: string
+          updated_at: string
+          user_id: string
         }[]
       }
       get_shift_assignments_range: {
