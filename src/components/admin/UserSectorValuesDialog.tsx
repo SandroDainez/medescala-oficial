@@ -255,14 +255,18 @@ export default function UserSectorValuesDialog({
             <Sun className="h-4 w-4 text-amber-500" />
             <span className="text-muted-foreground">Padrão Diurno:</span>
             <span className="font-medium">
-              {sector.default_day_value ? `R$ ${sector.default_day_value.toFixed(2).replace('.', ',')}` : '-'}
+              {sector.default_day_value !== null && sector.default_day_value !== undefined
+                ? `R$ ${sector.default_day_value.toFixed(2).replace('.', ',')}`
+                : '-'}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <Moon className="h-4 w-4 text-blue-500" />
             <span className="text-muted-foreground">Padrão Noturno:</span>
             <span className="font-medium">
-              {sector.default_night_value ? `R$ ${sector.default_night_value.toFixed(2).replace('.', ',')}` : '-'}
+              {sector.default_night_value !== null && sector.default_night_value !== undefined
+                ? `R$ ${sector.default_night_value.toFixed(2).replace('.', ',')}`
+                : '-'}
             </span>
           </div>
         </div>
