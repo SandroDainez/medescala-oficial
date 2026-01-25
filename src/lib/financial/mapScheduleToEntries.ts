@@ -6,25 +6,50 @@ import type {
   UserSectorValueLookup,
 } from '@/lib/financial/types';
 
-// Standard shift duration for pro-rata calculations
-const STANDARD_SHIFT_HOURS = 12;
+import {
+  calculateDurationHours,
+  calculateFinalValue,
+  isNightShift,
+  STANDARD_SHIFT_HOURS,
+  type ValueSource,
+} from '@/lib/financial/valueCalculation';
 
-function calculateDurationHours(startTime: string, endTime: string): number {
-  if (!startTime || !endTime) return 0;
-  const [startH, startM] = startTime.split(':').map(Number);
-  const [endH, endM] = endTime.split(':').map(Number);
-
-  let hours = endH - startH;
-  let minutes = endM - startM;
-  if (hours < 0 || (hours === 0 && minutes < 0)) {
-    hours += 24;
+/**
+ * @deprecated Use calculateFinalValue from valueCalculation.ts instead
+ * Mantido para compatibilidade, mas delega para a função única
+ */
+export function getFinalValue(
+  assigned_value: unknown,
+  base_value: unknown,
+  sector_default_value: number | null = null,
+  individual_override_value: number | null = null,
+  duration_hours: number = STANDARD_SHIFT_HOURS
+): { final_value: number | null; source: ValueSource | 'invalid' | 'zero_individual' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
+  // Normalize assigned_value
+  const assigned = normalizeMoney(assigned_value);
+  
+  // Validation
+  if (assigned !== null && assigned < 0) {
+    return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   }
-  return hours + minutes / 60;
-}
 
-// NOTE:
-// Pró-rata NÃO é calculado no Financeiro.
-// O valor final (já pró-rata) deve ser persistido na Escala.
+  // Use the unified calculation function
+  const result = calculateFinalValue({
+    assignedValue: assigned,
+    individualValue: individual_override_value,
+    sectorDefaultValue: sector_default_value,
+    durationHours: duration_hours,
+  });
+
+  // Map zero values to specific sources for backwards compatibility
+  if (result.finalValue === 0) {
+    if (result.source === 'assigned') return { final_value: 0, source: 'zero_assigned' };
+    if (result.source === 'individual') return { final_value: 0, source: 'zero_individual' };
+    return { final_value: 0, source: 'zero_base' };
+  }
+
+  return { final_value: result.finalValue, source: result.source };
+}
 
 function normalizeMoney(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -38,77 +63,6 @@ function normalizeMoney(value: unknown): number | null {
   if (!match) return null;
   const num = Number(match[0]);
   return Number.isFinite(num) ? num : null;
-}
-
-function nearlyEqual(a: number, b: number, epsilon = 0.01): boolean {
-  return Math.abs(a - b) <= epsilon;
-}
-
-/**
- * Determines if a shift is a night shift based on start time.
- * Night shifts typically start at 19:00 or later, or before 07:00.
- */
-function isNightShift(startTime: string): boolean {
-  if (!startTime) return false;
-  const [hour] = startTime.split(':').map(Number);
-  return hour >= 19 || hour < 7;
-}
-
-/**
- * Determines the final value for a shift assignment.
- *
- * REGRA ÚNICA (Solicitada):
- * Prioridade obrigatória:
- * 1) Valor editado na Escala -> shift_assignments.assigned_value (usar como está)
- * 2) Valor individual -> user_sector_values (usar como está)
- * 3) Valor padrão do setor -> sectors.default_day_value/default_night_value (usar como está)
- *
- * IMPORTANTE:
- * Para 6h/12h/24h, o Financeiro SEMPRE usa o valor já pró-rata salvo na Escala.
- * Ou seja: aqui NÃO recalculamos pró-rata, apenas escolhemos a fonte.
- */
-export function getFinalValue(
-  assigned_value: unknown,
-  base_value: unknown,
-  sector_default_value: number | null = null,
-  individual_override_value: number | null = null,
-  duration_hours: number = STANDARD_SHIFT_HOURS
-): { final_value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid' | 'zero_individual' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
-  const individual = individual_override_value;
-  const assigned = normalizeMoney(assigned_value);
-  const base = normalizeMoney(base_value);
-  const sectorDefault = sector_default_value !== null && sector_default_value > 0 ? sector_default_value : null;
-
-  // Negative or NaN should be excluded and audited.
-  if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
-  if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
-
-  // ========================================================
-  // PRIORITY 1: assigned_value (edited in Escala) — USE AS-IS
-  // This is the value the admin saved for this specific assignment.
-  // It already includes any pro-rata calculation done at save time.
-  // ========================================================
-  if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
-  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
-
-  // ========================================================
-  // PRIORITY 2: Individual user override (user_sector_values)
-  // USE AS-IS (pró-rata já deve ter sido persistido na Escala)
-  // ========================================================
-  if (individual !== null) {
-    if (individual === 0) return { final_value: 0, source: 'zero_individual' };
-    return { final_value: individual, source: 'individual' };
-  }
-
-  // ========================================================
-  // PRIORITY 3: sector default (fallback)
-  // USE AS-IS (pró-rata já deve ter sido persistido na Escala)
-  // ========================================================
-  if (sectorDefault !== null) {
-    return { final_value: sectorDefault, source: 'sector_default' };
-  }
-
-  return { final_value: null, source: 'none' };
 }
 
 /**

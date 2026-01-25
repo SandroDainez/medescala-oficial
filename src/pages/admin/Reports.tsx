@@ -396,8 +396,11 @@ export default function AdminReports() {
       if (hours < 0) hours += 24;
       summary.total_hours += hours + (endM - startM) / 60;
       
-      // Calcular valor (prioridade: assigned_value > base_value)
-      const value = a.assigned_value ?? shift.base_value ?? 0;
+      // Calcular valor usando a mesma prioridade do Financeiro:
+      // 1. assigned_value (editado na Escala) - USAR COMO ESTÁ
+      // 2. Fallback para 0 se não tiver
+      // Nota: valores individuais e de setor já devem estar refletidos no assigned_value
+      const value = a.assigned_value ?? 0;
       if (typeof value === 'number' && value > 0) {
         summary.total_value += value;
       }
