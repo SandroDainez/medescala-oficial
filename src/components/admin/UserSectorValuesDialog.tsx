@@ -8,6 +8,19 @@ import { useToast } from '@/hooks/use-toast';
 import { Sun, Moon, DollarSign, UserCog, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 
+function formatDateYMD(d: Date): string {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getMonthRange(month: number, year: number): { start: string; end: string } {
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  return { start: formatDateYMD(start), end: formatDateYMD(end) };
+}
+
 interface Sector {
   id: string;
   name: string;
@@ -251,6 +264,52 @@ export default function UserSectorValuesDialog({
           .eq('user_id', uv.user_id)
           .eq('month', month)
           .eq('year', year);
+      }
+
+      // =========================================================
+      // Sync Escala: when individual values change, clear assigned_value
+      // so the calendar/finance uses the latest individual/default rules.
+      // - individual NULL (blank) => falls back to sector default
+      // - individual 0 => MUST show 0 (no fallback)
+      // =========================================================
+      try {
+        const affectedUserIds = new Set<string>();
+        // users with upserted overrides
+        operations.forEach((op) => affectedUserIds.add(op.user_id));
+        // users whose overrides were deleted (cleared)
+        toDelete.forEach((uv) => affectedUserIds.add(uv.user_id));
+
+        if (affectedUserIds.size > 0) {
+          const { start, end } = getMonthRange(month, year);
+
+          const { data: monthShifts, error: shiftsErr } = await supabase
+            .from('shifts')
+            .select('id')
+            .eq('tenant_id', tenantId)
+            .eq('sector_id', sector.id)
+            .gte('shift_date', start)
+            .lte('shift_date', end);
+
+          if (!shiftsErr && monthShifts && monthShifts.length > 0) {
+            const shiftIds = monthShifts.map((s: any) => s.id);
+            const userIdsArr = Array.from(affectedUserIds);
+
+            // Clear assigned_value for affected users in that month/sector.
+            // This makes the UI immediately reflect updated individual rates.
+            const { error: clearErr } = await supabase
+              .from('shift_assignments')
+              .update({ assigned_value: null, updated_by: userId || null })
+              .in('shift_id', shiftIds)
+              .in('user_id', userIdsArr)
+              .eq('tenant_id', tenantId);
+
+            if (clearErr) {
+              console.warn('Could not clear assigned_value after saving individual values:', clearErr.message);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Sync Escala after saving individual values failed:', e);
       }
 
       toast({
