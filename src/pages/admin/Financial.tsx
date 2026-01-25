@@ -433,11 +433,11 @@ export default function AdminFinancial() {
     return aggregateFinancial(filteredEntries);
   }, [filteredEntries]);
 
-  // Hide the synthetic "Vago" group by default (it only shows when explicitly selected)
+  // ALWAYS hide the synthetic "Vago" group from the plantonistas list.
+  // Vacant shifts are not real plantonistas and should never appear in financial summaries.
   const visiblePlantonistaReports = useMemo(() => {
-    if (filterPlantonista === 'unassigned') return plantonistaReports;
     return plantonistaReports.filter((p) => p.assignee_id !== 'unassigned');
-  }, [plantonistaReports, filterPlantonista]);
+  }, [plantonistaReports]);
 
   const auditData = useMemo((): AuditData => {
     return buildAuditInfo(filteredEntries);
@@ -1084,7 +1084,7 @@ export default function AdminFinancial() {
               <div className="p-2 bg-primary/10 rounded-lg"><Users className="h-5 w-5 text-primary" /></div>
               <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Plantonistas</p>
-                <p className="text-lg md:text-xl font-bold truncate">{grandTotals.totalPlantonistas}</p>
+                <p className="text-lg md:text-xl font-bold truncate">{visiblePlantonistaReports.length}</p>
               </div>
             </div>
           </CardContent>
@@ -1364,8 +1364,10 @@ export default function AdminFinancial() {
               <div>
                 <p className="text-lg font-semibold">TOTAL GERAL</p>
                 <p className="text-sm text-muted-foreground">
-                  {grandTotals.totalPlantonistas} plantonistas · {grandTotals.totalShifts} plantões · {grandTotals.totalHours.toFixed(1)}h
-                  {grandTotals.unpricedShifts > 0 && <span className="text-amber-500 ml-2">· {grandTotals.unpricedShifts} sem valor</span>}
+                  {visiblePlantonistaReports.length} plantonistas · {grandTotals.totalShifts - (plantonistaReports.find(p => p.assignee_id === 'unassigned')?.total_shifts ?? 0)} plantões · {(grandTotals.totalHours - (plantonistaReports.find(p => p.assignee_id === 'unassigned')?.total_hours ?? 0)).toFixed(1)}h
+                  {grandTotals.unpricedShifts - (plantonistaReports.find(p => p.assignee_id === 'unassigned')?.unpriced_shifts ?? 0) > 0 && (
+                    <span className="text-amber-500 ml-2">· {grandTotals.unpricedShifts - (plantonistaReports.find(p => p.assignee_id === 'unassigned')?.unpriced_shifts ?? 0)} sem valor</span>
+                  )}
                 </p>
               </div>
               <p className="text-3xl font-bold text-green-600">{formatCurrency(grandTotals.totalValue)}</p>
