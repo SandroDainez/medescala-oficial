@@ -83,26 +83,50 @@ export default function UserSectorValuesDialog({
         return;
       }
 
-      // 2) Get memberships with profile info (this uses the existing RLS-friendly join)
-      // The memberships->profiles join works because memberships has proper FK to profiles
+      // 2) Use RPC function to get member names (bypasses restrictive RLS on profiles)
+      const { data: tenantMembers, error: membersError } = await supabase
+        .rpc('get_tenant_member_names', { _tenant_id: tenantId });
+
+      if (membersError) throw membersError;
+
+      // Create a map of user_id -> name from the RPC result
+      const memberNameMap = new Map<string, string>();
+      (tenantMembers || []).forEach((m: { user_id: string; name: string }) => {
+        memberNameMap.set(m.user_id, m.name || 'Sem nome');
+      });
+
+      // 3) Get memberships to check profile_type (only for sector members)
       const { data: membershipsWithProfiles, error: membershipsError } = await supabase
         .from('memberships')
-        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, name, profile_type)')
+        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
         .in('user_id', sectorUserIds);
 
-      if (membershipsError) throw membershipsError;
+      if (membershipsError) {
+        console.warn('Could not fetch profile types, using all sector members:', membershipsError.message);
+      }
+
+      // Build a set of plantonista user_ids (or fall back to all sector members if profiles failed)
+      const plantonistaIds = new Set<string>();
+      if (membershipsWithProfiles && membershipsWithProfiles.length > 0) {
+        membershipsWithProfiles.forEach((m: any) => {
+          const profile = m.profiles;
+          if (profile && (profile.profile_type || '') === 'plantonista') {
+            plantonistaIds.add(m.user_id);
+          }
+        });
+      } else {
+        // Fallback: assume all sector members are plantonistas if profile query failed
+        sectorUserIds.forEach(id => plantonistaIds.add(id));
+      }
 
       // Filter to only plantonistas and map to Member format
-      const members: Member[] = (membershipsWithProfiles || [])
-        .filter((m: any) => {
-          const profile = m.profiles;
-          return profile && (profile.profile_type || '') === 'plantonista';
-        })
-        .map((m: any) => ({
-          user_id: m.user_id,
-          user_name: m.profiles?.name || 'Sem nome',
+      const members: Member[] = sectorUserIds
+        .filter(userId => plantonistaIds.has(userId))
+        .map(userId => ({
+          user_id: userId,
+          user_name: memberNameMap.get(userId) || 'Sem nome',
         }))
         .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
       
