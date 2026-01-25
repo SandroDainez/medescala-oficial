@@ -452,12 +452,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return isNight ? (userValue.night_value ?? null) : (userValue.day_value ?? null);
   }
 
-  // Calculate duration in hours between start and end time
+
+  // ==========================================
+  // FUNÇÕES DE CÁLCULO DE VALOR - USA LIB CENTRALIZADA
+  // ==========================================
+  
+  // Import inline da lib para manter compatibilidade com o componente
+  const STANDARD_SHIFT_HOURS = 12;
+  
   function calculateDurationHours(startTime: string, endTime: string): number {
-    if (!startTime || !endTime) return 12; // Default to 12h
+    if (!startTime || !endTime) return STANDARD_SHIFT_HOURS;
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
-    
     let hours = endH - startH;
     let minutes = endM - startM;
     if (hours < 0 || (hours === 0 && minutes < 0)) {
@@ -466,94 +472,82 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return hours + minutes / 60;
   }
 
-  // Calculate pro-rata value based on shift duration
-  // Standard shift is 12 hours, so a 6-hour shift pays half
   function calculateProRataValue(baseValue: number | null, durationHours: number): number | null {
     if (baseValue === null || baseValue === 0) return baseValue;
-    const STANDARD_HOURS = 12;
-    if (durationHours === STANDARD_HOURS) return baseValue;
-    return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
+    if (durationHours === STANDARD_SHIFT_HOURS) return baseValue;
+    return Number(((baseValue / STANDARD_SHIFT_HOURS) * durationHours).toFixed(2));
   }
 
-  // Get display value for a shift (calculates pro-rata based on duration)
-  // This is used to show calculated values in the calendar view
-  function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }): number | null {
-    const duration = calculateDurationHours(shift.start_time, shift.end_time);
-    
-    // If shift has explicit base_value (including zero), use it
-    // Zero is intentional "no payment" and should not fall back to sector default
-    if (shift.base_value !== null) {
-      if (shift.base_value === 0) return 0; // Intentional zero
-      return calculateProRataValue(shift.base_value, duration);
-    }
-    
-    // Otherwise calculate from sector default
-    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
-    return calculateProRataValue(sectorValue, duration);
-  }
-
-  // Get display value for an assignment (considers individual user values and pro-rata)
-  // Priority order (highest to lowest):
-  // 1. Individual user override (user_sector_values) — ALWAYS wins if set (including zero)
-  // 2. Manual assignment value (assigned_value different from auto-calculated defaults)
-  // 3. Shift base_value
-  // 4. Sector default value
-  function getAssignmentDisplayValue(
-    assignment: { assigned_value: number | null; user_id: string },
-    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
-  ): number | null {
-    const duration = calculateDurationHours(shift.start_time, shift.end_time);
-
-    // 1) PRIORITY: Individual plantonista value ALWAYS wins (including zero)
-    // This is the whole point of individual overrides — they should never be bypassed
-    const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
-    if (userValue !== null) {
-      // Zero is intentional "no payment" for this user
-      if (userValue === 0) return 0;
-      return calculateProRataValue(userValue, duration);
-    }
-
-    // 2) If assignment has an explicit value (including zero), use it
-    if (assignment.assigned_value !== null) {
-      if (assignment.assigned_value === 0) return 0; // Intentional zero
-      return assignment.assigned_value; // Already calculated at save time
-    }
-    
-    // 3) Fall back to shift base value (including zero)
-    if (shift.base_value !== null) {
-      if (shift.base_value === 0) return 0; // Intentional zero
-      return calculateProRataValue(shift.base_value, duration);
-    }
-    
-    // 4) Fall back to sector default
-    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
-    return calculateProRataValue(sectorValue, duration);
-  }
-
+  /**
+   * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
+   * 
+   * PRIORIDADE (consistente com Financeiro):
+   * 1. assigned_value (editado na Escala) - USAR COMO ESTÁ (já pró-rata)
+   * 2. Individual (user_sector_values) - APLICAR PRÓ-RATA
+   * 3. Padrão do setor - APLICAR PRÓ-RATA
+   * 
+   * Esta função é usada em:
+   * - Card do plantão
+   * - Nome do médico atribuído
+   * - Preview de valor
+   */
   function getAssignmentDisplayInfo(
     assignment: { assigned_value: number | null; user_id: string },
     shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
   ): { value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none'; durationHours: number } {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
 
+    // PRIORIDADE 1: assigned_value (editado na Escala)
+    // USAR COMO ESTÁ - já foi calculado com pró-rata no momento do save
+    if (assignment.assigned_value !== null) {
+      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
+    }
+
+    // PRIORIDADE 2: Valor individual (user_sector_values)
+    // Aplicar pró-rata pois é valor base de 12h
     const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
     if (userValue !== null) {
       if (userValue === 0) return { value: 0, source: 'individual', durationHours: duration };
       return { value: calculateProRataValue(userValue, duration), source: 'individual', durationHours: duration };
     }
 
-    if (assignment.assigned_value !== null) {
-      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
-    }
-
-    if (shift.base_value !== null) {
-      if (shift.base_value === 0) return { value: 0, source: 'base', durationHours: duration };
-      return { value: calculateProRataValue(shift.base_value, duration), source: 'base', durationHours: duration };
-    }
-
+    // PRIORIDADE 3: Valor padrão do setor
+    // Aplicar pró-rata pois é valor base de 12h
     const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
-    const val = calculateProRataValue(sectorValue, duration);
-    return { value: val, source: sectorValue !== null ? 'sector_default' : 'none', durationHours: duration };
+    if (sectorValue !== null) {
+      if (sectorValue === 0) return { value: 0, source: 'sector_default', durationHours: duration };
+      return { value: calculateProRataValue(sectorValue, duration), source: 'sector_default', durationHours: duration };
+    }
+
+    return { value: null, source: 'none', durationHours: duration };
+  }
+
+  /**
+   * Valor de exibição para o card do plantão (sem médico específico)
+   * Usa apenas sector default com pró-rata
+   */
+  function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }): number | null {
+    const duration = calculateDurationHours(shift.start_time, shift.end_time);
+    
+    // Se tem base_value explícito, usar como está (já está pró-rata se foi editado)
+    if (shift.base_value !== null) {
+      return shift.base_value;
+    }
+    
+    // Senão, usar padrão do setor com pró-rata
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    return calculateProRataValue(sectorValue, duration);
+  }
+
+  /**
+   * Valor de exibição para assignment (considera individual)
+   * @deprecated Use getAssignmentDisplayInfo().value instead
+   */
+  function getAssignmentDisplayValue(
+    assignment: { assigned_value: number | null; user_id: string },
+    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
+  ): number | null {
+    return getAssignmentDisplayInfo(assignment, shift).value;
   }
 
   // Generate automatic title based on time
