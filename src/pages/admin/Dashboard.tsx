@@ -293,20 +293,22 @@ export default function AdminDashboard() {
     if (monthShiftsFullRes.data) {
       setMonthShifts(monthShiftsFullRes.data as unknown as Shift[]);
       
-      // Fetch assignments do mês completo para os gráficos
-      if (monthShiftsFullRes.data.length > 0) {
-        const monthShiftIds = monthShiftsFullRes.data.map(s => s.id);
-        const { data: monthAssignmentsData } = await supabase
-          .from('shift_assignments')
-          .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-          .in('shift_id', monthShiftIds);
-        
-        if (monthAssignmentsData) {
-          setMonthAssignmentsForCharts(monthAssignmentsData as unknown as ShiftAssignment[]);
-        }
+      // Fetch assignments do mês completo para os gráficos usando RPC para evitar limite de URL
+      const { data: monthAssignmentsData } = await supabase
+        .rpc('get_shift_assignments_range', {
+          _tenant_id: currentTenantId,
+          _start: format(monthStart, 'yyyy-MM-dd'),
+          _end: format(monthEnd, 'yyyy-MM-dd')
+        });
+      
+      if (monthAssignmentsData) {
+        setMonthAssignmentsForCharts(monthAssignmentsData as unknown as ShiftAssignment[]);
       } else {
         setMonthAssignmentsForCharts([]);
       }
+    } else {
+      setMonthShifts([]);
+      setMonthAssignmentsForCharts([]);
     }
 
     // Calculate financial data for the month
