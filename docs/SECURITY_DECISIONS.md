@@ -188,42 +188,70 @@ public.has_gabs_bypass(_user_id)
 **Tabelas com bypass:**
 - `profiles` - via `can_view_profile()`
 - `shifts` - via `can_view_shift()`
-- `payments` - via `has_payment_access()`
-- `profiles_private` - via `has_pii_access()`
-- `shift_assignments` - verificação direta
-- `shift_assignment_locations` - verificação direta
+
+**REMOVIDO do bypass (requer grant explícito):**
+- `payments` - `has_payment_access()` agora requer grant em `payment_access_permissions`
+- `profiles_private` - `has_pii_access()` requer grant em `pii_access_permissions`
+- `shift_assignment_locations` - `has_gps_access()` requer grant em `gps_access_grants`
 
 **Controles:**
-- Requer AMBOS: super_admin E membership ativa no GABS
-- Não funciona para outros tenants
+- Requer AMBOS: super_admin E membership ativa no GABS (para profiles/shifts apenas)
+- Para dados sensíveis (PII, pagamentos, GPS): grant temporal obrigatório
 - Bypass é imutável (hardcoded tenant ID)
 
 ---
 
-## 12) Grants Temporais (PII e Financeiro)
+## 12) Grants Temporais (PII, Financeiro, GPS)
 
-**Tabelas afetadas:**
-- `pii_access_permissions`
-- `payment_access_permissions`
+**Data de atualização:** 2026-01-25
 
-**Novas colunas:**
+**Tabelas de grants:**
+- `pii_access_permissions` - Acesso a dados pessoais criptografados
+- `payment_access_permissions` - Acesso a dados financeiros
+- `gps_access_grants` - Acesso a localização GPS (NOVA)
+
+**Colunas obrigatórias:**
 - `expires_at` - Data/hora de expiração do grant
 - `reason` - Justificativa obrigatória
+- `tenant_id` - Isolamento por tenant
+- `granted_by` - Quem concedeu
 
-**Comportamento:**
-- Grant sem `expires_at` = permanente (legacy)
-- Grant expirado = automaticamente ignorado
-- Criação de grant é logada em `pii_audit_logs`
+**Comportamento ATUALIZADO:**
+- Grant SEM `expires_at` = válido indefinidamente (use com cautela)
+- Grant expirado = automaticamente ignorado pelas funções
+- Super admins NÃO têm bypass automático - precisam de grant explícito
+- has_gabs_bypass NÃO funciona para PII/pagamentos/GPS
 
-**Trigger de auditoria:**
+**Triggers de auditoria:**
 ```sql
 log_pii_grant_trigger AFTER INSERT ON pii_access_permissions
--- Registra: granted_to, expires_at, reason
+log_payment_grant_trigger AFTER INSERT ON payment_access_permissions  
+log_gps_grant_trigger AFTER INSERT ON gps_access_grants
+-- Registra: granted_to, expires_at, reason em pii_audit_logs
 ```
 
 ---
 
-## 13) Visibilidade Restrita de Escalas
+## 13) Visibilidade de GPS (shift_assignment_locations)
+
+**Data de implementação:** 2026-01-25
+
+**Quem pode ver GPS:**
+1. Próprio usuário - apenas shifts ativos (12h window)
+2. Usuários com grant explícito em `gps_access_grants`
+
+**Quem NÃO pode ver (REMOVIDO):**
+- Tenant admins genéricos (removida política ampla)
+- has_gabs_bypass (não funciona mais para GPS)
+
+**Controles:**
+- `has_gps_access()` valida grant + expires_at + tenant_id
+- Acesso de admin via `get_assignment_location_with_audit()` é auditado
+- Usuário vê próprio GPS apenas de plantões do dia ou com check-in/out nas últimas 12h
+
+---
+
+## 14) Visibilidade Restrita de Escalas
 
 **Política:** `Authorized users can view shifts`
 
@@ -231,8 +259,7 @@ log_pii_grant_trigger AFTER INSERT ON pii_access_permissions
 1. Admin do tenant
 2. Usuário escalado (via `shift_assignments`)
 3. Membro do setor do shift (via `sector_memberships`)
-4. Financeiro com `payment_access` (para reconciliação)
-5. GABS bypass
+4. GABS bypass (apenas para shifts, não para dados sensíveis)
 
 **Quem NÃO pode ver:**
 - Outros usuários do tenant não relacionados
@@ -246,9 +273,10 @@ log_pii_grant_trigger AFTER INSERT ON pii_access_permissions
 | Função | Propósito |
 |--------|-----------|
 | `get_gabs_tenant_id()` | Retorna UUID do GABS (imutável) |
-| `has_gabs_bypass(user_id)` | Verifica super_admin + GABS member |
+| `has_gabs_bypass(user_id)` | Verifica super_admin + GABS member (profiles/shifts apenas) |
 | `can_view_profile(profile_id)` | Próprio OU admin OU bypass |
-| `can_view_shift(shift_id, tenant_id)` | Escalado OU setor OU admin OU finance |
+| `can_view_shift(shift_id, tenant_id)` | Escalado OU setor OU admin |
 | `is_assigned_to_shift(shift_id, user_id)` | Verifica assignment |
-| `has_pii_access(user_id, tenant_id)` | Bypass OU grant temporal válido |
-| `has_payment_access(user_id, tenant_id)` | Bypass OU grant temporal válido |
+| `has_pii_access(user_id, tenant_id)` | Grant temporal válido (SEM bypass) |
+| `has_payment_access(user_id, tenant_id)` | Grant temporal válido (SEM bypass) |
+| `has_gps_access(user_id, tenant_id)` | Grant temporal válido (NOVA, SEM bypass) |
