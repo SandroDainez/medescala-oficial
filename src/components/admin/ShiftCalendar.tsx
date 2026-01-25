@@ -639,15 +639,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     applyProRata?: boolean; // If true, calculate value based on duration
   }): number | null {
     const rawStr = (params.raw ?? '').toString().trim();
-    
-    // If user typed a value explicitly, use it as-is
-    if (rawStr) return parseMoneyNullable(rawStr);
-    
-    if (!params.useSectorDefault) return null;
-    
+
     const endTime = params.end_time || (isNightShift(params.start_time, '') ? '07:00' : '19:00');
     const duration = calculateDurationHours(params.start_time, endTime);
     const shouldApplyProRata = params.applyProRata !== false && duration !== 12;
+    
+    // If user typed a value explicitly, treat it as the 12h base and apply pro-rata when needed.
+    // This matches the UI expectation for 6h/24h and keeps Financeiro consistent with Escala.
+    if (rawStr) {
+      const parsed = parseMoneyNullable(rawStr);
+      if (parsed === null) return null;
+      return shouldApplyProRata ? calculateProRataValue(parsed, duration) : parsed;
+    }
+
+    if (!params.useSectorDefault) return null;
     
     // Check for individual plantonista value first
     if (params.user_id && params.user_id !== 'vago' && params.user_id !== 'disponivel') {
@@ -1622,7 +1627,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     e.preventDefault();
     if (!selectedShift || !currentTenantId) return;
 
-    const assignedValue = parseMoneyNullable(assignData.assigned_value);
+    const raw = (assignData.assigned_value ?? '').toString().trim();
+    const assignedValue = raw
+      ? resolveValue({
+          raw,
+          sector_id: selectedShift.sector_id || null,
+          start_time: selectedShift.start_time.slice(0, 5),
+          end_time: selectedShift.end_time.slice(0, 5),
+          user_id: assignData.user_id,
+          // In this dialog, if the admin typed a value we treat it as an explicit override.
+          // If left blank, we keep it null so the system can use individual/sector/default rules.
+          useSectorDefault: false,
+          applyProRata: true,
+        })
+      : null;
     
     // Check if there's already an assignment (to determine if this is an add or update)
     const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
@@ -1713,7 +1731,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         tenant_id: currentTenantId,
         shift_id: offer.shift_id,
         user_id: offer.user_id,
-        assigned_value: shift.base_value,
+        // Keep null so the value is always derived consistently (individual/base/sector) with pro-rata.
+        assigned_value: null,
         created_by: user.id,
         updated_by: user.id,
       }, { onConflict: 'shift_id,user_id' });
@@ -1977,40 +1996,82 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (shiftIds.length === 0) return;
 
     try {
-      const shiftUpdate: Partial<Pick<Shift, 'title' | 'start_time' | 'end_time' | 'base_value'>> & { updated_by: string } = {
+      const hasRawValue = !!bulkApplyData.base_value.trim();
+
+      const shiftUpdate: Partial<Pick<Shift, 'title' | 'start_time' | 'end_time'>> & { updated_by: string } = {
         updated_by: user.id,
       };
 
       if (bulkApplyData.title.trim()) shiftUpdate.title = bulkApplyData.title.trim();
       if (bulkApplyData.start_time) shiftUpdate.start_time = bulkApplyData.start_time;
       if (bulkApplyData.end_time) shiftUpdate.end_time = bulkApplyData.end_time;
-      if (bulkApplyData.base_value.trim()) shiftUpdate.base_value = parseMoneyValue(bulkApplyData.base_value);
-
       const needsShiftUpdate = Object.keys(shiftUpdate).length > 1;
 
-      if (needsShiftUpdate) {
+      if (needsShiftUpdate && !hasRawValue) {
+        // When there's no value to calculate, we can safely update in bulk.
         const { error } = await supabase.from('shifts').update(shiftUpdate).in('id', shiftIds);
         if (error) throw error;
       }
 
+      if (hasRawValue) {
+        // Value needs pro-rata calculation per shift (6h/12h/24h), so update per-row.
+        await Promise.all(
+          shiftIds.map(async (shiftId) => {
+            const s = shifts.find((x) => x.id === shiftId);
+            if (!s) return;
+
+            const start_time = bulkApplyData.start_time || s.start_time.slice(0, 5);
+            const end_time = bulkApplyData.end_time || s.end_time.slice(0, 5);
+
+            const base_value = resolveValue({
+              raw: bulkApplyData.base_value,
+              sector_id: s.sector_id || null,
+              start_time,
+              end_time,
+              useSectorDefault: false,
+              applyProRata: true,
+            });
+
+            const payload: any = {
+              ...shiftUpdate,
+              base_value,
+            };
+
+            const { error } = await supabase.from('shifts').update(payload).eq('id', shiftId);
+            if (error) throw error;
+          })
+        );
+      }
+
       // Assignment (plantonista) update
       if (bulkApplyData.assigned_user_id) {
-        const valueToApply = (() => {
-          const raw = bulkApplyData.base_value.trim();
-          if (!raw) return undefined; // keep existing
-          return parseMoneyValue(raw); // includes 0
-        })();
-
         if (bulkApplyData.assigned_user_id === '__clear__') {
           const { error } = await supabase.from('shift_assignments').delete().in('shift_id', shiftIds);
           if (error) throw error;
         } else {
           await Promise.all(
             shiftIds.map(async (shiftId) => {
+              const s = shifts.find((x) => x.id === shiftId);
+              if (!s) return;
+
+              const start_time = bulkApplyData.start_time || s.start_time.slice(0, 5);
+              const end_time = bulkApplyData.end_time || s.end_time.slice(0, 5);
+
               // To avoid unique constraint issues (shift_id,user_id), treat bulk-apply assignee as a replace:
               // 1) remove existing assignees for the shift
               // 2) upsert the chosen assignee
-              const valueToApplyFinal = valueToApply; // can be undefined (keep) or number
+              const shouldSetValue = !!bulkApplyData.base_value.trim();
+              const valueToApplyFinal = shouldSetValue
+                ? resolveValue({
+                    raw: bulkApplyData.base_value,
+                    sector_id: s.sector_id || null,
+                    start_time,
+                    end_time,
+                    user_id: bulkApplyData.assigned_user_id,
+                    useSectorDefault: false,
+                    applyProRata: true,
+                  })
+                : undefined;
 
               const { error: delErr } = await supabase
                 .from('shift_assignments')
@@ -2067,7 +2128,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             location: editData.location || null,
             start_time: editData.start_time,
             end_time: editData.end_time,
-            base_value: parseMoneyNullable(editData.base_value),
+            base_value: resolveValue({
+              raw: editData.base_value,
+              sector_id: editData.sector_id || null,
+              start_time: editData.start_time,
+              end_time: editData.end_time,
+              useSectorDefault: false,
+              applyProRata: true,
+            }),
             notes: editData.notes || null,
             sector_id: editData.sector_id || null,
             title: generateShiftTitle(editData.start_time, editData.end_time),
@@ -2085,7 +2153,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           const currentAssignment = assignments.find(a => a.shift_id === editData.id);
 
           if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
-            const assignedValue = parseMoneyNullable(editData.base_value);
+            const assignedValue = resolveValue({
+              raw: editData.base_value,
+              sector_id: editData.sector_id || null,
+              start_time: editData.start_time,
+              end_time: editData.end_time,
+              user_id: editData.assigned_user_id,
+              useSectorDefault: false,
+              applyProRata: true,
+            });
 
             if (currentAssignment) {
               if (currentAssignment.user_id === editData.assigned_user_id) {
@@ -4365,6 +4441,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   }))
                 }
               />
+              {selectedShift && assignData.user_id && (
+                <p className="text-xs text-muted-foreground">
+                  {(() => {
+                    const value = resolveValue({
+                      raw: assignData.assigned_value,
+                      sector_id: selectedShift.sector_id || null,
+                      start_time: selectedShift.start_time.slice(0, 5),
+                      end_time: selectedShift.end_time.slice(0, 5),
+                      user_id: assignData.user_id,
+                      // For preview, show what the system will pay using the same rules as Financeiro.
+                      useSectorDefault: true,
+                      applyProRata: true,
+                    });
+                    const duration = calculateDurationHours(selectedShift.start_time.slice(0, 5), selectedShift.end_time.slice(0, 5));
+                    return `Valor que será pago: ${value === null ? '—' : `R$ ${value.toFixed(2)}`}${duration !== 12 ? ` (${duration.toFixed(0)}h)` : ''}`;
+                  })()}
+                </p>
+              )}
             </div>
             <Button type="submit" className="w-full" disabled={!assignData.user_id}>
               Atribuir Plantonista
