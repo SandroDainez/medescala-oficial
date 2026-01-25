@@ -193,8 +193,15 @@ export default function UserFinancial() {
       .eq('year', selectedYear)
       .maybeSingle();
 
-    if (assignments && assignments.length > 0) {
+    // DEBUG: Log raw financial query results
+    console.log('[UserFinancial] Raw query results:', {
+      assignments: assignments?.length ?? 0,
+      error: error?.message ?? null,
+      firstAssignment: assignments?.[0] ?? null,
+      nullShifts: assignments?.filter((a: any) => !a.shift)?.length ?? 0,
+    });
 
+    if (assignments && assignments.length > 0) {
       // Normaliza a partir da MESMA fonte da Escala
       const scheduleShifts: ScheduleShift[] = assignments
         .map((a: any) => a.shift)

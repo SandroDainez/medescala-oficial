@@ -132,8 +132,26 @@ export default function UserShifts() {
       console.error('[UserShifts] Error fetching sectors:', sectorsRes.error);
     }
 
+    // DEBUG: Log raw results to help diagnose RLS issues
+    console.log('[UserShifts] Raw assignments response:', {
+      data: assignmentsRes.data,
+      error: assignmentsRes.error,
+      count: assignmentsRes.data?.length,
+      nullShiftCount: assignmentsRes.data?.filter((a: any) => !a.shift).length
+    });
+
     if (assignmentsRes.data) {
-      setAssignments((assignmentsRes.data as unknown as Assignment[]).filter((a) => !!a.shift));
+      const allAssignments = assignmentsRes.data as unknown as Assignment[];
+      const validAssignments = allAssignments.filter((a) => !!a.shift);
+      
+      // DEBUG: Log filtered results
+      console.log('[UserShifts] Filtered assignments:', {
+        total: allAssignments.length,
+        valid: validAssignments.length,
+        filtered: allAssignments.length - validAssignments.length
+      });
+      
+      setAssignments(validAssignments);
     } else {
       setAssignments([]);
     }
