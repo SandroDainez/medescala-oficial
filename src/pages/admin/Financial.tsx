@@ -232,6 +232,9 @@ export default function AdminFinancial() {
       : rawEntries.filter(e => e.sector_id === filterSetor);
     
     entriesToUse.forEach(e => {
+      // When filtering by a specific sector, don't show the synthetic "Vago" group in the plantonista selector.
+      // This avoids confusion and prevents users from thinking vacancies belong to the selected schedule.
+      if (filterSetor !== 'all' && e.assignee_id === 'unassigned') return;
       map.set(e.assignee_id, e.assignee_name);
     });
     return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
@@ -401,6 +404,9 @@ export default function AdminFinancial() {
     const result = rawEntries.filter(e => {
       if (filterSetor !== 'all' && e.sector_id !== filterSetor) return false;
       if (filterPlantonista !== 'all' && e.assignee_id !== filterPlantonista) return false;
+      // When a specific sector is selected, hide the synthetic "Vago" rows by default.
+      // (They can still be inspected by selecting the plantonista filter = "unassigned" if needed.)
+      if (filterSetor !== 'all' && filterPlantonista === 'all' && e.assignee_id === 'unassigned') return false;
       return true;
     });
     
