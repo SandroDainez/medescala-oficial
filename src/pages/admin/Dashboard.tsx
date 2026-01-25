@@ -129,6 +129,10 @@ export default function AdminDashboard() {
   const [swaps, setSwaps] = useState<SwapRequest[]>([]);
   const [financialData, setFinancialData] = useState<FinancialSummary[]>([]);
   
+  // Dados do mês completo para os gráficos (independente do viewMode)
+  const [monthShifts, setMonthShifts] = useState<Shift[]>([]);
+  const [monthAssignmentsForCharts, setMonthAssignmentsForCharts] = useState<ShiftAssignment[]>([]);
+  
   // Stats
   const [stats, setStats] = useState({
     totalShifts: 0,
@@ -215,7 +219,7 @@ export default function AdminDashboard() {
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
 
-    const [shiftsRes, sectorsRes, membersRes, swapsRes, monthShiftsRes] = await Promise.all([
+    const [shiftsRes, sectorsRes, membersRes, swapsRes, monthShiftsRes, monthShiftsFullRes] = await Promise.all([
       supabase
         .from('shifts')
         .select('*, sector:sectors(*)')
@@ -252,6 +256,14 @@ export default function AdminDashboard() {
         .eq('tenant_id', currentTenantId)
         .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
         .lte('shift_date', format(monthEnd, 'yyyy-MM-dd')),
+      // Buscar shifts completos do mês para os gráficos
+      supabase
+        .from('shifts')
+        .select('*, sector:sectors(*)')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
+        .lte('shift_date', format(monthEnd, 'yyyy-MM-dd'))
+        .order('shift_date'),
     ]);
 
     if (sectorsRes.data) setSectors(sectorsRes.data);
@@ -261,7 +273,7 @@ export default function AdminDashboard() {
     if (shiftsRes.data) {
       setShifts(shiftsRes.data as unknown as Shift[]);
       
-      // Fetch assignments
+      // Fetch assignments para o calendario (view atual)
       if (shiftsRes.data.length > 0) {
         const shiftIds = shiftsRes.data.map(s => s.id);
         const { data: assignmentsData } = await supabase
@@ -272,6 +284,28 @@ export default function AdminDashboard() {
         if (assignmentsData) {
           setAssignments(assignmentsData as unknown as ShiftAssignment[]);
         }
+      } else {
+        setAssignments([]);
+      }
+    }
+
+    // Processar dados do mês completo para os gráficos
+    if (monthShiftsFullRes.data) {
+      setMonthShifts(monthShiftsFullRes.data as unknown as Shift[]);
+      
+      // Fetch assignments do mês completo para os gráficos
+      if (monthShiftsFullRes.data.length > 0) {
+        const monthShiftIds = monthShiftsFullRes.data.map(s => s.id);
+        const { data: monthAssignmentsData } = await supabase
+          .from('shift_assignments')
+          .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+          .in('shift_id', monthShiftIds);
+        
+        if (monthAssignmentsData) {
+          setMonthAssignmentsForCharts(monthAssignmentsData as unknown as ShiftAssignment[]);
+        }
+      } else {
+        setMonthAssignmentsForCharts([]);
       }
     }
 
@@ -594,8 +628,8 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <DashboardCharts 
-                shifts={shifts}
-                assignments={assignments}
+                shifts={monthShifts}
+                assignments={monthAssignmentsForCharts}
                 sectors={sectors}
                 members={members.filter(m => m.active).map(m => ({ id: m.user_id, name: m.profile?.name || null }))}
                 currentMonth={currentDate}
