@@ -466,8 +466,10 @@ export function AdminLayout() {
         )}
 
         {/* Main Content */}
-        <main className="flex-1 p-3 md:p-6 lg:p-8 animate-fade-in overflow-x-hidden pb-safe">
-          <Outlet />
+        <main className="flex-1 p-3 md:p-6 lg:p-8 animate-fade-in overflow-x-hidden pb-safe w-full max-w-full">
+          <div className="w-full max-w-full overflow-x-hidden">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>

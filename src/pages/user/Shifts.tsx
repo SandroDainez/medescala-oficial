@@ -531,7 +531,7 @@ export default function UserShifts() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
       {/* GPS Error Dialog */}
       <AlertDialog open={showGpsErrorDialog} onOpenChange={setShowGpsErrorDialog}>
         <AlertDialogContent>
@@ -556,8 +556,8 @@ export default function UserShifts() {
       </AlertDialog>
 
       <header>
-        <h1 className="text-2xl font-bold text-foreground">Minha Agenda</h1>
-        <p className="text-muted-foreground">Escolha o mês e veja seus plantões</p>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Minha Agenda</h1>
+        <p className="text-sm text-muted-foreground">Escolha o mês e veja seus plantões</p>
       </header>
 
       {/* Today's Shifts - Quick Check-in Section */}
