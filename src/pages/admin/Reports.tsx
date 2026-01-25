@@ -223,24 +223,29 @@ export default function AdminReports() {
   }
 
   async function generateReport() {
+    if (!currentTenantId) return;
+    
     setLoading(true);
-    setActiveTab('report'); // Muda automaticamente para a aba de relatório
     
-    if (reportType === 'afastamentos') {
-      await fetchAbsences();
-    } else if (reportType === 'checkins') {
-      await fetchCheckins();
-    } else if (reportType === 'plantoes') {
-      await fetchShiftsReport();
-    } else if (reportType === 'financeiro') {
-      await fetchFinancialReport();
-    } else if (reportType === 'movimentacoes') {
-      await fetchMovements();
-    } else if (reportType === 'conflitos') {
-      await fetchConflicts();
+    try {
+      if (reportType === 'afastamentos') {
+        await fetchAbsences();
+      } else if (reportType === 'checkins') {
+        await fetchCheckins();
+      } else if (reportType === 'plantoes') {
+        await fetchShiftsReport();
+      } else if (reportType === 'financeiro') {
+        await fetchFinancialReport();
+      } else if (reportType === 'movimentacoes') {
+        await fetchMovements();
+      } else if (reportType === 'conflitos') {
+        await fetchConflicts();
+      }
+    } finally {
+      setLoading(false);
+      // Muda para a aba de relatório APÓS carregar os dados
+      setActiveTab('report');
     }
-    
-    setLoading(false);
   }
 
   async function fetchShiftsReport() {
@@ -309,7 +314,13 @@ export default function AdminReports() {
   }
 
   async function fetchFinancialReport() {
-    let query = supabase
+    if (!currentTenantId) {
+      setFinancialData([]);
+      return;
+    }
+
+    // Buscar shifts no período
+    let shiftsQuery = supabase
       .from('shifts')
       .select('id, shift_date, start_time, end_time, sector_id, base_value')
       .eq('tenant_id', currentTenantId)
@@ -317,47 +328,58 @@ export default function AdminReports() {
       .lte('shift_date', endDate);
     
     if (selectedSector !== 'all') {
-      query = query.eq('sector_id', selectedSector);
+      shiftsQuery = shiftsQuery.eq('sector_id', selectedSector);
     }
     
-    const { data: shiftsData } = await query;
+    const { data: shiftsData, error: shiftsError } = await shiftsQuery;
+    
+    if (shiftsError) {
+      console.error('Error fetching shifts for financial report:', shiftsError);
+      setFinancialData([]);
+      return;
+    }
     
     if (!shiftsData || shiftsData.length === 0) {
       setFinancialData([]);
       return;
     }
     
-    const shiftIds = shiftsData.map(s => s.id);
-    
-    const { data: assignments } = await supabase
-      .from('shift_assignments')
-      .select('shift_id, user_id, assigned_value')
-      .in('shift_id', shiftIds);
-    
-    if (!assignments) {
+    // Buscar assignments usando RPC para otimização
+    const { data: assignmentsData, error: assignmentsError } = await supabase.rpc(
+      'get_shift_assignments_range',
+      {
+        _tenant_id: currentTenantId,
+        _start: startDate,
+        _end: endDate,
+      }
+    );
+
+    if (assignmentsError) {
+      console.error('Error fetching assignments for financial report:', assignmentsError);
       setFinancialData([]);
       return;
     }
     
-    const userIds = [...new Set(assignments.map(a => a.user_id))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, name')
-      .in('id', userIds);
+    if (!assignmentsData || assignmentsData.length === 0) {
+      setFinancialData([]);
+      return;
+    }
     
-    const profileMap = new Map(profiles?.map(p => [p.id, p.name || 'Sem nome']) || []);
     const shiftMap = new Map(shiftsData.map(s => [s.id, s]));
+    
+    // Filtrar assignments que correspondem aos shifts no filtro de setor
+    const filteredAssignments = assignmentsData.filter(a => shiftMap.has(a.shift_id));
     
     const userSummary = new Map<string, FinancialSummaryRecord>();
     
-    for (const a of assignments) {
+    for (const a of filteredAssignments) {
       const shift = shiftMap.get(a.shift_id);
       if (!shift) continue;
       
       if (!userSummary.has(a.user_id)) {
         userSummary.set(a.user_id, {
           user_id: a.user_id,
-          user_name: profileMap.get(a.user_id) || 'Sem nome',
+          user_name: a.name || 'Sem nome',
           total_shifts: 0,
           total_hours: 0,
           total_value: 0,
@@ -367,12 +389,14 @@ export default function AdminReports() {
       const summary = userSummary.get(a.user_id)!;
       summary.total_shifts++;
       
+      // Calcular horas
       const [startH, startM] = shift.start_time.split(':').map(Number);
       const [endH, endM] = shift.end_time.split(':').map(Number);
       let hours = endH - startH;
       if (hours < 0) hours += 24;
       summary.total_hours += hours + (endM - startM) / 60;
       
+      // Calcular valor (prioridade: assigned_value > base_value)
       const value = a.assigned_value ?? shift.base_value ?? 0;
       if (typeof value === 'number' && value > 0) {
         summary.total_value += value;
