@@ -433,6 +433,12 @@ export default function AdminFinancial() {
     return aggregateFinancial(filteredEntries);
   }, [filteredEntries]);
 
+  // Hide the synthetic "Vago" group by default (it only shows when explicitly selected)
+  const visiblePlantonistaReports = useMemo(() => {
+    if (filterPlantonista === 'unassigned') return plantonistaReports;
+    return plantonistaReports.filter((p) => p.assignee_id !== 'unassigned');
+  }, [plantonistaReports, filterPlantonista]);
+
   const auditData = useMemo((): AuditData => {
     return buildAuditInfo(filteredEntries);
   }, [filteredEntries]);
@@ -1216,7 +1222,7 @@ export default function AdminFinancial() {
 
         {/* TAB: Plantonistas (tabela) */}
         <TabsContent value="plantonistas_tabela" className="space-y-4 mt-4">
-          {plantonistaReports.length === 0 ? (
+          {visiblePlantonistaReports.length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
@@ -1242,7 +1248,7 @@ export default function AdminFinancial() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {plantonistaReports.map((p) => (
+                      {visiblePlantonistaReports.map((p) => (
                         <TableRow key={p.assignee_id}>
                           <TableCell className="font-medium">{p.assignee_name}</TableCell>
                           <TableCell className="text-center">{p.total_shifts}</TableCell>
