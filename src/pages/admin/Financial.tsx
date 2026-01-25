@@ -373,8 +373,18 @@ export default function AdminFinancial() {
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
-    console.log('[filteredEntries] Computing with filterPlantonista:', filterPlantonista, 'filterSetor:', filterSetor);
+    console.log('[filteredEntries] filterSetor:', filterSetor, 'filterPlantonista:', filterPlantonista);
     console.log('[filteredEntries] rawEntries count:', rawEntries.length);
+    
+    // Log vagos before filtering
+    const vagosBeforeFilter = rawEntries.filter(e => e.assignee_id === 'unassigned');
+    if (vagosBeforeFilter.length > 0) {
+      console.log('[filteredEntries] VAGOS before filter:', vagosBeforeFilter.map(e => ({
+        date: e.shift_date,
+        sector_id: e.sector_id,
+        sector_name: e.sector_name,
+      })));
+    }
     
     const result = rawEntries.filter(e => {
       if (filterSetor !== 'all' && e.sector_id !== filterSetor) return false;
@@ -382,11 +392,17 @@ export default function AdminFinancial() {
       return true;
     });
     
-    console.log('[filteredEntries] Result count:', result.length);
-    if (filterPlantonista !== 'all') {
-      console.log('[filteredEntries] Looking for assignee_id:', filterPlantonista);
-      console.log('[filteredEntries] Available assignee_ids:', [...new Set(rawEntries.map(e => e.assignee_id))]);
+    // Log vagos after filtering
+    const vagosAfterFilter = result.filter(e => e.assignee_id === 'unassigned');
+    if (vagosAfterFilter.length > 0) {
+      console.log('[filteredEntries] VAGOS after filter (THESE WILL SHOW):', vagosAfterFilter.map(e => ({
+        date: e.shift_date,
+        sector_id: e.sector_id,
+        sector_name: e.sector_name,
+      })));
     }
+    
+    console.log('[filteredEntries] Result count:', result.length);
     
     return result;
   }, [rawEntries, filterSetor, filterPlantonista]);
