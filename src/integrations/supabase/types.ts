@@ -340,26 +340,32 @@ export type Database = {
       }
       payment_access_permissions: {
         Row: {
+          expires_at: string | null
           granted_at: string
           granted_by: string | null
           id: string
           notes: string | null
+          reason: string | null
           tenant_id: string
           user_id: string
         }
         Insert: {
+          expires_at?: string | null
           granted_at?: string
           granted_by?: string | null
           id?: string
           notes?: string | null
+          reason?: string | null
           tenant_id: string
           user_id: string
         }
         Update: {
+          expires_at?: string | null
           granted_at?: string
           granted_by?: string | null
           id?: string
           notes?: string | null
+          reason?: string | null
           tenant_id?: string
           user_id?: string
         }
@@ -432,26 +438,32 @@ export type Database = {
       }
       pii_access_permissions: {
         Row: {
+          expires_at: string | null
           granted_at: string
           granted_by: string | null
           id: string
           notes: string | null
+          reason: string | null
           tenant_id: string
           user_id: string
         }
         Insert: {
+          expires_at?: string | null
           granted_at?: string
           granted_by?: string | null
           id?: string
           notes?: string | null
+          reason?: string | null
           tenant_id: string
           user_id: string
         }
         Update: {
+          expires_at?: string | null
           granted_at?: string
           granted_by?: string | null
           id?: string
           notes?: string | null
+          reason?: string | null
           tenant_id?: string
           user_id?: string
         }
@@ -1667,6 +1679,11 @@ export type Database = {
         Args: { _profile_id: string }
         Returns: boolean
       }
+      can_view_profile: { Args: { _profile_id: string }; Returns: boolean }
+      can_view_shift: {
+        Args: { _shift_id: string; _tenant_id: string }
+        Returns: boolean
+      }
       check_tenant_shift_limit: {
         Args: { _tenant_id: string }
         Returns: boolean
@@ -1713,6 +1730,7 @@ export type Database = {
           user_id: string
         }[]
       }
+      get_gabs_tenant_id: { Args: never; Returns: string }
       get_shift_assignments_range: {
         Args: { _end: string; _start: string; _tenant_id: string }
         Returns: {
@@ -1819,6 +1837,7 @@ export type Database = {
           tenant_name: string
         }[]
       }
+      has_gabs_bypass: { Args: { _user_id?: string }; Returns: boolean }
       has_payment_access: {
         Args: { _tenant_id: string; _user_id: string }
         Returns: boolean
@@ -1832,6 +1851,10 @@ export type Database = {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_assigned_to_shift: {
+        Args: { _shift_id: string; _user_id?: string }
         Returns: boolean
       }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }

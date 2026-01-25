@@ -170,3 +170,85 @@ Necessário para auditoria trabalhista e compliance com legislação de ponto.
 | GPS auditing | ✅ `gps_access_logs` + view segura |
 | PII isolado | ✅ `profiles_private` com criptografia + `pii_access_permissions` |
 | Financeiro isolado | ✅ `payment_access_permissions` + RLS |
+
+---
+
+## 11) Exceção GABS (Internal Access)
+
+**Data de implementação:** 2026-01-25
+
+**Tenant ID:** `b2541db1-5029-4fb9-8d1c-870c2738e0d6`
+
+**Função de bypass:**
+```sql
+public.has_gabs_bypass(_user_id)
+-- Retorna TRUE se: super_admin + membro ativo do GABS
+```
+
+**Tabelas com bypass:**
+- `profiles` - via `can_view_profile()`
+- `shifts` - via `can_view_shift()`
+- `payments` - via `has_payment_access()`
+- `profiles_private` - via `has_pii_access()`
+- `shift_assignments` - verificação direta
+- `shift_assignment_locations` - verificação direta
+
+**Controles:**
+- Requer AMBOS: super_admin E membership ativa no GABS
+- Não funciona para outros tenants
+- Bypass é imutável (hardcoded tenant ID)
+
+---
+
+## 12) Grants Temporais (PII e Financeiro)
+
+**Tabelas afetadas:**
+- `pii_access_permissions`
+- `payment_access_permissions`
+
+**Novas colunas:**
+- `expires_at` - Data/hora de expiração do grant
+- `reason` - Justificativa obrigatória
+
+**Comportamento:**
+- Grant sem `expires_at` = permanente (legacy)
+- Grant expirado = automaticamente ignorado
+- Criação de grant é logada em `pii_audit_logs`
+
+**Trigger de auditoria:**
+```sql
+log_pii_grant_trigger AFTER INSERT ON pii_access_permissions
+-- Registra: granted_to, expires_at, reason
+```
+
+---
+
+## 13) Visibilidade Restrita de Escalas
+
+**Política:** `Authorized users can view shifts`
+
+**Quem pode ver um shift:**
+1. Admin do tenant
+2. Usuário escalado (via `shift_assignments`)
+3. Membro do setor do shift (via `sector_memberships`)
+4. Financeiro com `payment_access` (para reconciliação)
+5. GABS bypass
+
+**Quem NÃO pode ver:**
+- Outros usuários do tenant não relacionados
+- Qualquer anon
+- Qualquer cross-tenant
+
+---
+
+## Funções de Segurança Implementadas
+
+| Função | Propósito |
+|--------|-----------|
+| `get_gabs_tenant_id()` | Retorna UUID do GABS (imutável) |
+| `has_gabs_bypass(user_id)` | Verifica super_admin + GABS member |
+| `can_view_profile(profile_id)` | Próprio OU admin OU bypass |
+| `can_view_shift(shift_id, tenant_id)` | Escalado OU setor OU admin OU finance |
+| `is_assigned_to_shift(shift_id, user_id)` | Verifica assignment |
+| `has_pii_access(user_id, tenant_id)` | Bypass OU grant temporal válido |
+| `has_payment_access(user_id, tenant_id)` | Bypass OU grant temporal válido |
