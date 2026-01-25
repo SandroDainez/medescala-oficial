@@ -11,7 +11,8 @@
  * PRIORIDADE (nunca muda):
  * 1. assigned_value (valor editado manualmente na Escala) - USAR COMO ESTÁ
  * 2. Individual (user_sector_values) - APLICAR PRÓ-RATA
- * 3. Padrão do setor (sectors.default_day/night_value) - APLICAR PRÓ-RATA
+ * 3. base_value do plantão (shifts.base_value) - USAR COMO ESTÁ
+ * 4. Padrão do setor (sectors.default_day/night_value) - APLICAR PRÓ-RATA
  * 
  * REGRA DE PRÓ-RATA:
  * - assigned_value JÁ ESTÁ pró-rata (foi calculado no momento do save)
@@ -62,6 +63,7 @@ export function isNightShift(startTime: string): boolean {
 export type ValueSource = 
   | 'assigned'        // Editado manualmente na Escala
   | 'individual'      // user_sector_values
+  | 'base'            // shifts.base_value
   | 'sector_default'  // sectors.default_day/night_value
   | 'none';           // Sem valor definido
 
@@ -90,10 +92,11 @@ export interface ValueResult {
 export function calculateFinalValue(params: {
   assignedValue: number | null;
   individualValue: number | null;
+  baseValue: number | null;
   sectorDefaultValue: number | null;
   durationHours: number;
 }): ValueResult {
-  const { assignedValue, individualValue, sectorDefaultValue, durationHours } = params;
+  const { assignedValue, individualValue, baseValue, sectorDefaultValue, durationHours } = params;
 
   // PRIORIDADE 1: assigned_value (editado na Escala)
   // USAR COMO ESTÁ - já foi calculado com pró-rata no momento do save
@@ -118,7 +121,18 @@ export function calculateFinalValue(params: {
     };
   }
 
-  // PRIORIDADE 3: Valor padrão do setor
+  // PRIORIDADE 3: base_value do plantão (shifts.base_value)
+  // USAR COMO ESTÁ - é um valor final por plantão (não é base 12h)
+  if (baseValue !== null) {
+    return {
+      finalValue: baseValue,
+      source: 'base',
+      durationHours,
+      baseValueUsed: null,
+    };
+  }
+
+  // PRIORIDADE 4: Valor padrão do setor
   // Aplicar pró-rata pois é valor base de 12h
   if (sectorDefaultValue !== null && sectorDefaultValue > 0) {
     const proRataValue = calculateProRata(sectorDefaultValue, durationHours);
@@ -156,6 +170,8 @@ export function getSourceLabel(source: ValueSource): string {
       return 'Editado';
     case 'individual':
       return 'Individual';
+    case 'base':
+      return 'Base do plantão';
     case 'sector_default':
       return 'Padrão';
     case 'none':

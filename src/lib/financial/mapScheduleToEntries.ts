@@ -27,16 +27,21 @@ export function getFinalValue(
 ): { final_value: number | null; source: ValueSource | 'invalid' | 'zero_individual' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
   // Normalize assigned_value
   const assigned = normalizeMoney(assigned_value);
+  const base = normalizeMoney(base_value);
   
   // Validation
   if (assigned !== null && assigned < 0) {
     return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
+  }
+  if (base !== null && base < 0) {
+    return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
   }
 
   // Use the unified calculation function
   const result = calculateFinalValue({
     assignedValue: assigned,
     individualValue: individual_override_value,
+    baseValue: base,
     sectorDefaultValue: sector_default_value,
     durationHours: duration_hours,
   });
