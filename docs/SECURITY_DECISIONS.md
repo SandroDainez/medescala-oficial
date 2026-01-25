@@ -203,24 +203,33 @@ public.has_gabs_bypass(_user_id)
 
 ## 12) Grants Temporais (PII, Financeiro, GPS)
 
-**Data de atualização:** 2026-01-25
+**Data de atualização:** 2026-01-25 (HARDENED)
 
 **Tabelas de grants:**
 - `pii_access_permissions` - Acesso a dados pessoais criptografados
 - `payment_access_permissions` - Acesso a dados financeiros
-- `gps_access_grants` - Acesso a localização GPS (NOVA)
+- `gps_access_grants` - Acesso a localização GPS
 
 **Colunas obrigatórias:**
-- `expires_at` - Data/hora de expiração do grant
+- `expires_at` - Data/hora de expiração do grant (**OBRIGATÓRIO**)
 - `reason` - Justificativa obrigatória
 - `tenant_id` - Isolamento por tenant
 - `granted_by` - Quem concedeu
 
-**Comportamento ATUALIZADO:**
-- Grant SEM `expires_at` = válido indefinidamente (use com cautela)
-- Grant expirado = automaticamente ignorado pelas funções
-- Super admins NÃO têm bypass automático - precisam de grant explícito
-- has_gabs_bypass NÃO funciona para PII/pagamentos/GPS
+**Comportamento HARDENED (2026-01-25):**
+- ❌ Grant SEM `expires_at` = **REJEITADO** (constraint CHECK no banco)
+- ❌ Grant com `expires_at` no passado = **IGNORADO**
+- ❌ Super admins **NÃO TÊM BYPASS** - precisam de grant explícito
+- ❌ has_gabs_bypass **NÃO FUNCIONA** para PII/pagamentos/GPS
+- ❌ is_super_admin **NÃO FUNCIONA** para PII/pagamentos/GPS
+- ✅ Apenas grants temporais válidos com expiração futura são aceitos
+
+**Funções de acesso (SEM BYPASS):**
+```sql
+has_pii_access(_tenant_id) -- EXIGE grant com expires_at > now()
+has_payment_access(_tenant_id) -- EXIGE grant com expires_at > now()
+has_gps_access(_tenant_id) -- EXIGE grant com expires_at > now()
+```
 
 **Triggers de auditoria:**
 ```sql
