@@ -172,8 +172,15 @@ export default function UserSectorValuesDialog({
     setSaving(true);
 
     try {
+      // IMPORTANT: Check for explicit values including zero (0 is valid, empty string is not)
+      // "0" or "0,00" should be saved as 0, only truly empty values should be skipped
       const operations = userValues
-        .filter(uv => uv.day_value || uv.night_value) // Only save if at least one value is set
+        .filter(uv => {
+          const dayParsed = parseCurrency(uv.day_value);
+          const nightParsed = parseCurrency(uv.night_value);
+          // Include if either value is explicitly set (including zero)
+          return dayParsed !== null || nightParsed !== null;
+        })
         .map(uv => ({
           tenant_id: tenantId,
           sector_id: sector.id,
@@ -193,8 +200,12 @@ export default function UserSectorValuesDialog({
         if (error) throw error;
       }
 
-      // Delete overrides that were cleared
-      const toDelete = userValues.filter(uv => uv.hasOverride && !uv.day_value && !uv.night_value);
+      // Delete overrides that were truly cleared (both fields empty, not zero)
+      const toDelete = userValues.filter(uv => {
+        const dayParsed = parseCurrency(uv.day_value);
+        const nightParsed = parseCurrency(uv.night_value);
+        return uv.hasOverride && dayParsed === null && nightParsed === null;
+      });
       for (const uv of toDelete) {
         await supabase
           .from('user_sector_values')
