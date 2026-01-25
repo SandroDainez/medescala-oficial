@@ -49,6 +49,10 @@ function normalizeMoney(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+function nearlyEqual(a: number, b: number, epsilon = 0.01): boolean {
+  return Math.abs(a - b) <= epsilon;
+}
+
 /**
  * Determines if a shift is a night shift based on start time.
  * Night shifts typically start at 19:00 or later, or before 07:00.
@@ -97,11 +101,24 @@ export function getFinalValue(
     return { final_value: proRataValue, source: 'individual' };
   }
 
-  // Priority 4: base_value — use as-is.
-  // NOTE: In this app, shift.base_value may already be stored as the final (pro-rated) value
-  // when created/updated from the Escala UI. Applying pro-rata again would double-discount.
+  // Priority 4: base_value — mirror Escala behavior (apply PRO-RATA),
+  // but avoid double-discounting when base_value was already persisted as pro-rated.
   if (base !== null && base > 0) {
-    return { final_value: base, source: 'base' };
+    // If duration is 12h, base is already final.
+    if (duration_hours === STANDARD_SHIFT_HOURS) return { final_value: base, source: 'base' };
+
+    // If we have a sector default, we can detect whether base_value is already pro-rated:
+    // - If base ~= proRata(sectorDefault), treat base as already final.
+    // - Otherwise, treat base as 12h value and apply pro-rata.
+    if (sectorDefault !== null) {
+      const expectedFromSector = calculateProRataValue(sectorDefault, duration_hours);
+      if (expectedFromSector !== null && nearlyEqual(base, expectedFromSector)) {
+        return { final_value: base, source: 'base' };
+      }
+    }
+
+    const proRataValue = calculateProRataValue(base, duration_hours);
+    return { final_value: proRataValue, source: 'base' };
   }
   
   // Priority 5: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
