@@ -1885,44 +1885,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           continue;
         }
 
-        // Calculate duration
-        const duration = calculateDurationHours(shift.start_time, shift.end_time);
-        const shouldApplyProRata = duration !== 12;
+        // IMPORTANT:
+        // To guarantee that individual overrides (including 0) are respected,
+        // we CLEAR assigned_value instead of writing a computed number.
+        // The UI/Finance will then derive the value from individual/sector rules.
+        // This also fixes legacy data where assigned_value was previously set to sector defaults.
         const isNight = isNightShift(shift.start_time, shift.end_time);
-
-        // Priority: individual value -> sector default
-        let newValue: number | null = null;
-        let source = 'none';
-
-        // Check individual value first - use FRESH values from database
         const userValueEntry = freshValuesMap.get(assignment.user_id);
-        const userValue = userValueEntry 
-          ? (isNight ? userValueEntry.night_value : userValueEntry.day_value)
-          : null;
-        
-        if (userValue !== null && userValue > 0) {
-          newValue = shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
-          source = 'individual';
-        } else if (userValue === 0) {
-          // Explicit zero means no payment
-          newValue = 0;
-          source = 'individual-zero';
-        } else {
-          // Fall back to sector default
-          const sectorValue = isNight ? sector?.default_night_value : sector?.default_day_value;
-          if (sectorValue !== null && sectorValue !== undefined && sectorValue > 0) {
-            newValue = shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
-            source = 'sector';
-          }
-        }
+        const userValue = userValueEntry ? (isNight ? userValueEntry.night_value : userValueEntry.day_value) : null;
+        const source = userValueEntry ? (userValue === 0 ? 'individual-zero' : 'individual-or-blank') : 'sector-default';
 
-        debugInfo.push(`${assignment.user_id.slice(0, 8)}: ${source} -> ${newValue}`);
+        debugInfo.push(`${assignment.user_id.slice(0, 8)}: ${source} -> assigned_value = null`);
 
         // Update the assignment
         const { error } = await supabase
           .from('shift_assignments')
           .update({ 
-            assigned_value: newValue,
+            assigned_value: null,
             updated_by: user.id 
           })
           .eq('id', assignment.id);
@@ -1944,7 +1923,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       toast({ 
         title: 'Valores recalculados!', 
-        description: `${updatedCount} de ${assignmentsToUpdate.length} atribuições atualizadas.` 
+        description: `${updatedCount} de ${assignmentsToUpdate.length} atribuições atualizadas (assigned_value limpo para usar valores individuais/padrão).` 
       });
       
       fetchData();
