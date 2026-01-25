@@ -136,30 +136,46 @@ export default function UserFinancial() {
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
 
-    const { data: assignments, error } = await supabase
-      .from('shift_assignments')
-      .select(`
-        id, 
-        assigned_value, 
-        checkin_at, 
-        checkout_at, 
-        shift:shifts!inner(
-          id,
-          title, 
-          hospital, 
-          shift_date, 
-          base_value,
-          start_time,
-          end_time,
-          sector_id,
-          sector:sectors(id, name)
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('user_id', user.id)
-      .in('status', ['assigned', 'confirmed', 'completed'])
-      .gte('shift.shift_date', startDate)
-      .lte('shift.shift_date', endDate);
+    // Fetch assignments and user's individual overrides in parallel
+    const [assignmentsRes, userValuesRes] = await Promise.all([
+      supabase
+        .from('shift_assignments')
+        .select(`
+          id, 
+          assigned_value, 
+          checkin_at, 
+          checkout_at, 
+          shift:shifts!inner(
+            id,
+            title, 
+            hospital, 
+            shift_date, 
+            base_value,
+            start_time,
+            end_time,
+            sector_id,
+            sector:sectors(id, name)
+          )
+        `)
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id)
+        .in('status', ['assigned', 'confirmed', 'completed'])
+        .gte('shift.shift_date', startDate)
+        .lte('shift.shift_date', endDate),
+      supabase
+        .from('user_sector_values')
+        .select('sector_id, user_id, day_value, night_value')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id),
+    ]);
+
+    const { data: assignments, error } = assignmentsRes;
+    const userValues = (userValuesRes.data ?? []) as Array<{
+      sector_id: string;
+      user_id: string;
+      day_value: number | null;
+      night_value: number | null;
+    }>;
 
     if (error) {
       console.error('[UserFinancial] Error fetching:', error);
@@ -213,6 +229,7 @@ export default function UserFinancial() {
         shifts: scheduleShifts,
         assignments: scheduleAssignments,
         sectors,
+        userSectorValues: userValues,
         unassignedLabel: { id: 'unassigned', name: 'Vago' },
       }).map((e) => ({
         ...e,

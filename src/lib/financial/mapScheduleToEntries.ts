@@ -3,6 +3,7 @@ import type {
   ScheduleAssignment,
   ScheduleShift,
   SectorLookup,
+  UserSectorValueLookup,
 } from '@/lib/financial/types';
 
 function calculateDurationHours(startTime: string, endTime: string): number {
@@ -45,18 +46,21 @@ function isNightShift(startTime: string): boolean {
 /**
  * Determines the final value for a shift assignment.
  * Priority:
- * 1. assigned_value > 0 → use assigned_value
- * 2. assigned_value === 0 → INTENTIONALLY NO VALUE (no fallback)
- * 3. base_value > 0 → use base_value
- * 4. base_value === 0 → INTENTIONALLY NO VALUE (no fallback)
- * 5. sector_default_value → use sector default
- * 6. none → no value available
+ * 1. Individual user override (user_sector_values) — ALWAYS wins if set (including zero)
+ * 2. assigned_value > 0 → use assigned_value
+ * 3. assigned_value === 0 → INTENTIONALLY NO VALUE (no fallback)
+ * 4. base_value > 0 → use base_value
+ * 5. base_value === 0 → INTENTIONALLY NO VALUE (no fallback)
+ * 6. sector_default_value → use sector default
+ * 7. none → no value available
  */
 export function getFinalValue(
   assigned_value: unknown,
   base_value: unknown,
-  sector_default_value: number | null = null
-): { final_value: number | null; source: 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
+  sector_default_value: number | null = null,
+  individual_override_value: number | null = null
+): { final_value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none' | 'invalid' | 'zero_individual' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
+  const individual = individual_override_value;
   const assigned = normalizeMoney(assigned_value);
   const base = normalizeMoney(base_value);
   const sectorDefault = sector_default_value !== null && sector_default_value > 0 ? sector_default_value : null;
@@ -65,22 +69,28 @@ export function getFinalValue(
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
-  // Priority 1: assigned_value > 0 → use it
+  // Priority 1: Individual override (user_sector_values) — ALWAYS wins
+  if (individual !== null) {
+    if (individual === 0) return { final_value: 0, source: 'zero_individual' };
+    return { final_value: individual, source: 'individual' };
+  }
+
+  // Priority 2: assigned_value > 0 → use it
   if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
   
-  // Priority 2: assigned_value === 0 → INTENTIONALLY NO VALUE (admin set it to zero)
+  // Priority 3: assigned_value === 0 → INTENTIONALLY NO VALUE (admin set it to zero)
   if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
   
-  // Priority 3: base_value > 0 → use it
+  // Priority 4: base_value > 0 → use it
   if (base !== null && base > 0) return { final_value: base, source: 'base' };
   
-  // Priority 4: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
+  // Priority 5: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
   if (base === 0) return { final_value: 0, source: 'zero_base' };
   
-  // Priority 5: sector default as fallback
+  // Priority 6: sector default as fallback
   if (sectorDefault !== null) return { final_value: sectorDefault, source: 'sector_default' };
   
-  // Priority 6: no value available
+  // Priority 7: no value available
   return { final_value: null, source: 'none' };
 }
 
@@ -97,6 +107,8 @@ export function mapScheduleToFinancialEntries(params: {
   shifts: ScheduleShift[];
   assignments: ScheduleAssignment[];
   sectors?: SectorLookup[];
+  /** Individual user overrides (user_sector_values) */
+  userSectorValues?: UserSectorValueLookup[];
   /** When a shift has no assignee, we still include it as a row grouped under this id */
   unassignedLabel?: { id: string; name: string };
   /** Tenant slug - used for tenant-specific rules (e.g., GABS training sectors have no remuneration) */
@@ -113,6 +125,13 @@ export function mapScheduleToFinancialEntries(params: {
     sectorNameById.set(s.id, s.name);
     sectorDefaultDayById.set(s.id, s.default_day_value ?? null);
     sectorDefaultNightById.set(s.id, s.default_night_value ?? null);
+  });
+
+  // Build individual user override lookup: key = "sector_id:user_id"
+  const userValueMap = new Map<string, { day_value: number | null; night_value: number | null }>();
+  (params.userSectorValues ?? []).forEach((uv) => {
+    const key = `${uv.sector_id}:${uv.user_id}`;
+    userValueMap.set(key, { day_value: uv.day_value, night_value: uv.night_value });
   });
 
   const assignmentsByShift = new Map<string, ScheduleAssignment[]>();
@@ -169,11 +188,18 @@ export function mapScheduleToFinancialEntries(params: {
     }
 
     for (const a of shiftAssignments) {
+      // Look up individual user override for this sector/user combination
+      const userOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}` : null;
+      const userOverride = userOverrideKey ? userValueMap.get(userOverrideKey) : undefined;
+      const individualValue = userOverride 
+        ? (isNight ? userOverride.night_value : userOverride.day_value) 
+        : null;
+
       // For GABS training sectors, always return no value
-      // Otherwise use priority: assigned_value > base_value > sector_default
+      // Otherwise use priority: individual > assigned_value > base_value > sector_default
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
-        : getFinalValue(a.assigned_value, shift.base_value, sectorDefaultValue);
+        : getFinalValue(a.assigned_value, shift.base_value, sectorDefaultValue, individualValue);
 
       entries.push({
         id: a.id,
