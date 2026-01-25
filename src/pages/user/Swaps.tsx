@@ -397,10 +397,10 @@ export default function UserSwaps() {
   if (loading) return <div className="text-muted-foreground">Carregando...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Trocas de Plantão</h2>
-        <p className="text-muted-foreground">Passe ou troque plantões com colegas</p>
+        <h2 className="text-xl sm:text-2xl font-bold text-foreground">Trocas de Plantão</h2>
+        <p className="text-sm text-muted-foreground">Passe ou troque plantões com colegas</p>
       </div>
 
       <Tabs defaultValue="my-shifts" className="space-y-4">

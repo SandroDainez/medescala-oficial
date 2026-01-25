@@ -296,29 +296,29 @@ export default function UserFinancial() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Financeiro</h2>
-          <p className="text-muted-foreground">Seu resumo mensal de plantões</p>
+          <h2 className="text-xl sm:text-2xl font-bold text-foreground">Financeiro</h2>
+          <p className="text-sm text-muted-foreground">Seu resumo mensal de plantões</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 w-full">
           <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="flex-1 min-w-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover z-50">
               {months.map(m => (
                 <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
           <Select value={selectedYear.toString()} onValueChange={(v) => setSelectedYear(parseInt(v))}>
-            <SelectTrigger className="w-24">
+            <SelectTrigger className="w-20 sm:w-24 shrink-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover z-50">
               {years.map(y => (
                 <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
               ))}
@@ -328,46 +328,37 @@ export default function UserFinancial() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Plantões</CardTitle>
-            <Calendar className="h-5 w-5 text-primary" />
+      <div className="grid gap-2 sm:gap-4 grid-cols-2">
+        <Card className="p-0">
+          <CardHeader className="flex flex-row items-center justify-between p-3 pb-1">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Plantões</CardTitle>
+            <Calendar className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.totalShifts}</div>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg sm:text-2xl font-bold">{summary.totalShifts}</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Setores</CardTitle>
-            <Building className="h-5 w-5 text-primary" />
+        <Card className="p-0">
+          <CardHeader className="flex flex-row items-center justify-between p-3 pb-1">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Horas</CardTitle>
+            <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{sectorSummaries.length}</div>
+          <CardContent className="p-3 pt-0">
+            <div className="text-lg sm:text-2xl font-bold">{summary.totalHours.toFixed(1)}h</div>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Horas</CardTitle>
-            <Clock className="h-5 w-5 text-primary" />
+        <Card className="col-span-2 bg-primary/5 p-0">
+          <CardHeader className="flex flex-row items-center justify-between p-3 pb-1">
+            <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">Total a Receber</CardTitle>
+            <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-green-600 shrink-0" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{summary.totalHours.toFixed(1)}h</div>
-          </CardContent>
-        </Card>
-        <Card className="bg-primary/5">
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">Total a Receber</CardTitle>
-            <DollarSign className="h-5 w-5 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-2">
-              <span className="text-2xl font-bold text-green-600">
+          <CardContent className="p-3 pt-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xl sm:text-2xl font-bold text-green-600">
                 R$ {summary.totalValue.toFixed(2)}
               </span>
               {summary.status && (
-                <Badge variant="outline">
+                <Badge variant="outline" className="text-xs">
                   {summary.status === 'closed' ? 'Fechado' : summary.status === 'paid' ? 'Pago' : 'Aberto'}
                 </Badge>
               )}
@@ -413,49 +404,39 @@ export default function UserFinancial() {
                 </div>
               </div>
               
-              {/* Shifts Table - Mobile scroll */}
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <div className="min-w-[500px] sm:min-w-0">
-                  <Table>
-                    <TableHeader>
-                      <TableRow className="bg-muted/20">
-                        <TableHead className="whitespace-nowrap">Data</TableHead>
-                        <TableHead className="whitespace-nowrap">Plantão</TableHead>
-                        <TableHead className="whitespace-nowrap">Horário</TableHead>
-                        <TableHead className="text-center whitespace-nowrap">Duração</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">Valor</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                <TableBody>
-                  {sector.shifts.map(shift => (
-                    <TableRow key={shift.id}>
-                      <TableCell className="font-medium">
-                        {shift.shift_date && format(parseDateOnly(shift.shift_date), 'dd/MM (EEE)', { locale: ptBR })}
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{shift.title}</p>
-                          <p className="text-xs text-muted-foreground">{shift.hospital}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant="outline">{shift.duration_hours.toFixed(1)}h</Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-semibold text-green-600">
+              {/* Shifts List - Mobile friendly cards instead of table */}
+              <div className="divide-y divide-border">
+                {sector.shifts.map(shift => (
+                  <div key={shift.id} className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                    {/* Date & Time */}
+                    <div className="flex items-center justify-between sm:block sm:w-24 shrink-0">
+                      <span className="text-sm font-medium">
+                        {shift.shift_date && format(parseDateOnly(shift.shift_date), 'dd/MM', { locale: ptBR })}
+                      </span>
+                      <span className="text-xs text-muted-foreground sm:block">
+                        {shift.start_time?.slice(0, 5)}-{shift.end_time?.slice(0, 5)}
+                      </span>
+                    </div>
+                    
+                    {/* Title & Hospital */}
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-sm truncate">{shift.title}</p>
+                      <p className="text-xs text-muted-foreground truncate">{shift.hospital}</p>
+                    </div>
+                    
+                    {/* Duration & Value */}
+                    <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 sm:w-40 shrink-0">
+                      <Badge variant="outline" className="text-xs">{shift.duration_hours.toFixed(1)}h</Badge>
+                      <span className="font-semibold text-green-600 text-sm">
                         {shift.final_value === null ? (
-                          <span className="text-muted-foreground font-medium">Sem valor</span>
+                          <span className="text-muted-foreground font-medium text-xs">Sem valor</span>
                         ) : (
-                          <>R$ {shift.final_value.toFixed(2)}</>
+                          `R$ ${shift.final_value.toFixed(2)}`
                         )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-                  </Table>
-                </div>
+                      </span>
+                    </div>
+                  </div>
+                ))}
               </div>
             </Card>
           ))}

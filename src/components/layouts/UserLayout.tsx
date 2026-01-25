@@ -181,7 +181,7 @@ export function UserLayout() {
 
       {/* Main Content - Full height with proper scrolling */}
       <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-safe">
-        <div className="w-full max-w-7xl mx-auto px-3 py-4 sm:px-6 lg:px-8">
+        <div className="w-full max-w-7xl mx-auto px-3 py-4 sm:px-6 lg:px-8 overflow-x-hidden">
           <Outlet />
         </div>
       </main>

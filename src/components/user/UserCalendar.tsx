@@ -322,7 +322,7 @@ export default function UserCalendar() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background">
+    <div className="flex-1 flex flex-col bg-background w-full max-w-full overflow-x-hidden">
       {/* Calendar Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-card">
         <Button 
@@ -406,8 +406,8 @@ export default function UserCalendar() {
 
       {/* Expandable Panel */}
       <div className={cn(
-        "bg-card border-t transition-all duration-300",
-        panelExpanded ? "flex-1 min-h-[40vh]" : "h-auto"
+        "bg-card border-t transition-all duration-300 flex flex-col",
+        panelExpanded ? "flex-1 min-h-[35vh] max-h-[50vh]" : "h-auto"
       )}>
         {/* Panel Toggle */}
         <button 
@@ -445,7 +445,7 @@ export default function UserCalendar() {
 
         {/* Shifts List */}
         {panelExpanded && (
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden">
             {!hasAnyShiftsForSelectedDate ? (
               <div className="flex items-center justify-center py-12 text-muted-foreground text-sm">
                 {activeTab === 'meus' 
