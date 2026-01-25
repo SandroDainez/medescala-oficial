@@ -3654,10 +3654,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               }).map(assignment => (
                                 <div 
                                   key={assignment.id} 
-                                  className="flex items-center justify-between p-2 rounded-lg bg-green-50 border border-green-200"
+                                  className="flex items-center justify-between p-2 rounded-lg border bg-muted/40 text-foreground"
                                 >
                                   <div className="flex items-center gap-2">
-                                    <Users className="h-4 w-4 text-green-600" />
+                                    <Users className="h-4 w-4 text-primary" />
                                     <div>
                                       <div className="font-medium text-sm">
                                         {getAssignmentName(assignment)}
