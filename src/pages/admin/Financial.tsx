@@ -22,7 +22,7 @@ import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2 } from 'lucide-react';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2, RefreshCw } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -332,6 +332,12 @@ export default function AdminFinancial() {
         night_value: number | null;
       }>;
 
+      // Debug: Log raw assignments to verify values are coming from DB correctly
+      console.log('[AdminFinancial] Raw assignments sample:', assignmentsRaw.slice(0, 5).map(a => ({
+        name: a.name,
+        assigned_value: a.assigned_value,
+      })));
+
       const mapped = mapScheduleToFinancialEntries({
         shifts: shifts as unknown as ScheduleShift[],
         assignments: assignmentsRaw.map(
@@ -347,6 +353,14 @@ export default function AdminFinancial() {
         userSectorValues: userValues,
         tenantSlug: slug ?? undefined,
       });
+
+      // Debug: Log mapped entries to verify final values
+      console.log('[AdminFinancial] Mapped entries sample:', mapped.slice(0, 5).map(e => ({
+        assignee_name: e.assignee_name,
+        assigned_value: e.assigned_value,
+        final_value: e.final_value,
+        value_source: e.value_source,
+      })));
 
       setRawEntries(mapped);
     } catch (err) {
@@ -909,6 +923,15 @@ export default function AdminFinancial() {
           <p className="text-muted-foreground">Relatório detalhado de plantões e valores</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={fetchData}
+            disabled={loading}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${loading ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
           <div className="flex items-center gap-2 mr-4">
             <Switch checked={auditMode} onCheckedChange={setAuditMode} id="audit-mode" />
             <Label htmlFor="audit-mode" className="flex items-center gap-1 cursor-pointer">
