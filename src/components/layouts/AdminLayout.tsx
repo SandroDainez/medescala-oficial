@@ -293,8 +293,8 @@ export function AdminLayout() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-0 top-16 z-40 bg-background/95 backdrop-blur-sm md:hidden animate-fade-in">
-            <nav className="flex flex-col gap-1 p-4 overflow-y-auto max-h-[calc(100vh-4rem)]">
+          <div className="fixed inset-x-0 top-[64px] bottom-0 z-40 bg-background/95 backdrop-blur-sm md:hidden animate-fade-in overflow-y-auto">
+            <nav className="flex flex-col gap-1 p-4 pb-safe">
               <div className="mb-4">
                 <TenantSelector />
               </div>

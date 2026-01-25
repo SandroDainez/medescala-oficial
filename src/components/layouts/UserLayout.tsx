@@ -72,7 +72,7 @@ export function UserLayout() {
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-[280px] p-0 bg-card">
+            <SheetContent side="left" className="w-[280px] p-0 bg-card overflow-y-auto max-h-[100dvh]">
               {/* Profile section */}
               <div className="p-6 pb-4">
                 <div className="flex items-center gap-4">
