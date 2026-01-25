@@ -643,7 +643,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (rawStr) {
       const parsed = parseMoneyNullable(rawStr);
       if (parsed === null) return null;
-      return shouldApplyProRata ? calculateProRataValue(parsed, duration) : parsed;
+      // IMPORTANT: 0 is a valid explicit value (user wants to set value as zero)
+      const result = shouldApplyProRata ? calculateProRataValue(parsed, duration) : parsed;
+      return result;
     }
 
     if (!params.useSectorDefault) return null;
@@ -651,14 +653,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Check for individual plantonista value first
     if (params.user_id && params.user_id !== 'vago' && params.user_id !== 'disponivel') {
       const userValue = getUserSectorValue(params.sector_id, params.user_id, params.start_time);
-      if (userValue !== null) {
+      if (userValue !== null && userValue > 0) {
         return shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
       }
     }
     
     // Fall back to sector default
     const sectorValue = getSectorDefaultValue(params.sector_id, params.start_time);
-    return shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
+    // IMPORTANT: Only use sector default if it has a positive value
+    // If sector default is 0 or null, return null (no value defined)
+    if (sectorValue !== null && sectorValue > 0) {
+      return shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
+    }
+    
+    return null;
   }
 
   // --- Reliable writes helpers (professional-grade) ---

@@ -160,7 +160,7 @@ export default function AdminSwaps() {
           tenant_id: currentTenantId,
           shift_id: selectedOffer.shift_id,
           user_id: selectedOffer.user_id,
-          assigned_value: shiftData?.base_value || 0,
+          assigned_value: shiftData?.base_value || null,
           created_by: user?.id,
         });
 
