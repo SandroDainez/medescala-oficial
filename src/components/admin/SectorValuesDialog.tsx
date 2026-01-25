@@ -78,6 +78,29 @@ export default function SectorValuesDialog({
     return hour >= 19 || hour < 7;
   };
 
+  // Calculate duration in hours between start and end time
+  const calculateDurationHours = (startTime: string, endTime: string): number => {
+    if (!startTime || !endTime) return 12; // Default to 12h
+    const [startH, startM] = startTime.split(':').map(Number);
+    const [endH, endM] = endTime.split(':').map(Number);
+    
+    let hours = endH - startH;
+    let minutes = endM - startM;
+    if (hours < 0 || (hours === 0 && minutes < 0)) {
+      hours += 24;
+    }
+    return hours + minutes / 60;
+  };
+
+  // Calculate pro-rata value based on shift duration
+  // Standard shift is 12 hours, so a 6-hour shift pays half
+  const calculateProRataValue = (baseValue: number | null, durationHours: number): number | null => {
+    if (baseValue === null || baseValue === 0) return baseValue;
+    const STANDARD_HOURS = 12;
+    if (durationHours === STANDARD_HOURS) return baseValue;
+    return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
+  };
+
   async function handleSave() {
     if (!sector || !tenantId) return;
     setSaving(true);
@@ -100,11 +123,12 @@ export default function SectorValuesDialog({
 
       // If apply to existing shifts is checked, update shifts.base_value and shift_assignments.assigned_value
       // so the same values flow Escalas -> Financeiro.
+      // IMPORTANT: Apply pro-rata based on shift duration (12h standard)
       if (applyToExisting) {
-        // 1) Update shifts base_value (by day/night)
+        // 1) Update shifts base_value (by day/night with pro-rata)
         const { data: shifts, error: shiftsError } = await supabase
           .from('shifts')
-          .select('id, start_time')
+          .select('id, start_time, end_time')
           .eq('tenant_id', tenantId)
           .eq('sector_id', sector.id);
 
@@ -113,10 +137,12 @@ export default function SectorValuesDialog({
         if (shifts && shifts.length > 0) {
           const shiftUpdates = shifts.map((s) => {
             const isNight = isNightShift(s.start_time);
-            const newValue = isNight ? nightVal : dayVal; // can be null or 0
+            const baseValue = isNight ? nightVal : dayVal; // Base 12h value
+            const duration = calculateDurationHours(s.start_time, s.end_time);
+            const proRataValue = calculateProRataValue(baseValue, duration);
             return supabase
               .from('shifts')
-              .update({ base_value: newValue, updated_by: userId })
+              .update({ base_value: proRataValue, updated_by: userId })
               .eq('id', s.id);
           });
           const results = await Promise.all(shiftUpdates);
@@ -124,7 +150,7 @@ export default function SectorValuesDialog({
           if (errors.length > 0) console.error('Some shift updates failed:', errors);
         }
 
-        // 2) Update assignments assigned_value for this sector (by shift time)
+        // 2) Update assignments assigned_value for this sector (by shift time with pro-rata)
         const { data: assignments, error: fetchError } = await supabase
           .from('shift_assignments')
           .select(`
@@ -132,7 +158,8 @@ export default function SectorValuesDialog({
             shift:shifts!inner(
               id,
               sector_id,
-              start_time
+              start_time,
+              end_time
             )
           `)
           .eq('tenant_id', tenantId)
@@ -142,14 +169,16 @@ export default function SectorValuesDialog({
 
         if (assignments && assignments.length > 0) {
           const updates = assignments.map(async (assignment) => {
-            const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string };
+            const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string; end_time: string };
             const isNight = isNightShift(shift.start_time);
-            const newValue = isNight ? nightVal : dayVal; // can be null or 0
+            const baseValue = isNight ? nightVal : dayVal; // Base 12h value
+            const duration = calculateDurationHours(shift.start_time, shift.end_time);
+            const proRataValue = calculateProRataValue(baseValue, duration);
 
             return supabase
               .from('shift_assignments')
               .update({
-                assigned_value: newValue,
+                assigned_value: proRataValue,
                 updated_by: userId,
               })
               .eq('id', assignment.id);
