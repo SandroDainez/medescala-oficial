@@ -104,7 +104,7 @@ export default function AdminOffers() {
         tenant_id: currentTenantId,
         shift_id: offer.shift_id,
         user_id: offer.user_id,
-        assigned_value: offer.shift?.base_value || 0,
+        assigned_value: offer.shift?.base_value || null,
         status: 'assigned',
         created_by: user.id,
       });
