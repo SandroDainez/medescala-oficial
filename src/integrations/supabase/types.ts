@@ -305,6 +305,33 @@ export type Database = {
           },
         ]
       }
+      payment_access_permissions: {
+        Row: {
+          granted_at: string
+          granted_by: string | null
+          id: string
+          notes: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          notes?: string | null
+          tenant_id: string
+          user_id: string
+        }
+        Update: {
+          granted_at?: string
+          granted_by?: string | null
+          id?: string
+          notes?: string | null
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       payments: {
         Row: {
           closed_at: string | null
@@ -1680,6 +1707,10 @@ export type Database = {
           tenant_id: string
           tenant_name: string
         }[]
+      }
+      has_payment_access: {
+        Args: { _tenant_id: string; _user_id: string }
+        Returns: boolean
       }
       has_pii_access: {
         Args: { _tenant_id: string; _user_id: string }
