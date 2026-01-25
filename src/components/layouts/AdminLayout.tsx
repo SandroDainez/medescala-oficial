@@ -93,10 +93,10 @@ export function AdminLayout() {
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
       {/* Header */}
-      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm">
+      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm flex flex-col">
         {/* Trial Banner */}
         <TrialBanner />
-        <div className="flex h-16 items-center justify-between px-4 lg:px-6">
+        <div className="flex min-h-[64px] items-center justify-between px-4 lg:px-6 py-2">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
