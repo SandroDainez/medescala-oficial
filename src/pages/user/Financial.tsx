@@ -166,7 +166,9 @@ export default function UserFinancial() {
         .from('user_sector_values')
         .select('sector_id, user_id, day_value, night_value')
         .eq('tenant_id', currentTenantId)
-        .eq('user_id', user.id),
+        .eq('user_id', user.id)
+        .eq('month', effectiveMonth)
+        .eq('year', effectiveYear),
     ]);
 
     const { data: assignments, error } = assignmentsRes;

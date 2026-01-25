@@ -68,6 +68,11 @@ export default function AdminSectors() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
   const [selectedSectorForCheckin, setSelectedSectorForCheckin] = useState<Sector | null>(null);
+  
+  // Month/Year for individual values dialog
+  const [userValuesMonth, setUserValuesMonth] = useState<number>(new Date().getMonth() + 1);
+  const [userValuesYear, setUserValuesYear] = useState<number>(new Date().getFullYear());
+  
   const [checkinSettings, setCheckinSettings] = useState({
     checkin_enabled: false,
     require_gps_checkin: false,
@@ -478,6 +483,48 @@ export default function AdminSectors() {
         </Card>
       </div>
 
+      {/* Month/Year Selector for Individual Values */}
+      <Card className="p-4 border-border/60">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-muted-foreground" />
+            <span className="text-sm font-medium">Mês/Ano para Valores Individuais:</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              value={userValuesMonth}
+              onChange={(e) => setUserValuesMonth(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border rounded-md bg-background"
+            >
+              <option value={1}>Janeiro</option>
+              <option value={2}>Fevereiro</option>
+              <option value={3}>Março</option>
+              <option value={4}>Abril</option>
+              <option value={5}>Maio</option>
+              <option value={6}>Junho</option>
+              <option value={7}>Julho</option>
+              <option value={8}>Agosto</option>
+              <option value={9}>Setembro</option>
+              <option value={10}>Outubro</option>
+              <option value={11}>Novembro</option>
+              <option value={12}>Dezembro</option>
+            </select>
+            <select
+              value={userValuesYear}
+              onChange={(e) => setUserValuesYear(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border rounded-md bg-background"
+            >
+              {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Os valores individuais editados valem apenas para o mês/ano selecionado.
+          </span>
+        </div>
+      </Card>
+
       {/* Sectors Table */}
       <Card className="overflow-hidden border-border/60">
         <CardHeader className="bg-muted/30 border-b border-border/60 py-4">
@@ -772,6 +819,8 @@ export default function AdminSectors() {
         sector={selectedSectorForUserValues}
         tenantId={currentTenantId || ''}
         userId={user?.id}
+        month={userValuesMonth}
+        year={userValuesYear}
         onSuccess={fetchData}
       />
 

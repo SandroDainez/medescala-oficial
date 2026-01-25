@@ -36,6 +36,8 @@ interface UserSectorValuesDialogProps {
   sector: Sector | null;
   tenantId: string;
   userId?: string;
+  month: number; // 1-12
+  year: number;
   onSuccess: () => void;
 }
 
@@ -45,6 +47,8 @@ export default function UserSectorValuesDialog({
   sector,
   tenantId,
   userId,
+  month,
+  year,
   onSuccess,
 }: UserSectorValuesDialogProps) {
   const { toast } = useToast();
@@ -53,13 +57,13 @@ export default function UserSectorValuesDialog({
   const [userValues, setUserValues] = useState<UserSectorValue[]>([]);
 
   useEffect(() => {
-    if (open && sector && tenantId) {
+    if (open && sector && tenantId && month && year) {
       fetchUserValues();
     }
-  }, [open, sector, tenantId]);
+  }, [open, sector, tenantId, month, year]);
 
   async function fetchUserValues() {
-    if (!sector || !tenantId) return;
+    if (!sector || !tenantId || !month || !year) return;
     setLoading(true);
 
     try {
@@ -108,12 +112,14 @@ export default function UserSectorValuesDialog({
         return;
       }
 
-      // Get existing overrides
+      // Get existing overrides for specific month/year
       const { data: overrides, error: overridesError } = await supabase
         .from('user_sector_values')
         .select('*')
         .eq('tenant_id', tenantId)
-        .eq('sector_id', sector.id);
+        .eq('sector_id', sector.id)
+        .eq('month', month)
+        .eq('year', year);
 
       if (overridesError) throw overridesError;
 
@@ -185,17 +191,19 @@ export default function UserSectorValuesDialog({
           tenant_id: tenantId,
           sector_id: sector.id,
           user_id: uv.user_id,
+          month: month,
+          year: year,
           day_value: parseCurrency(uv.day_value),
           night_value: parseCurrency(uv.night_value),
           updated_by: userId,
           created_by: userId,
         }));
 
-      // Upsert all values
+      // Upsert all values (with new unique constraint including month/year)
       if (operations.length > 0) {
         const { error } = await supabase
           .from('user_sector_values')
-          .upsert(operations, { onConflict: 'tenant_id,sector_id,user_id' });
+          .upsert(operations, { onConflict: 'tenant_id,sector_id,user_id,month,year' });
 
         if (error) throw error;
       }
@@ -212,7 +220,9 @@ export default function UserSectorValuesDialog({
           .delete()
           .eq('tenant_id', tenantId)
           .eq('sector_id', sector.id)
-          .eq('user_id', uv.user_id);
+          .eq('user_id', uv.user_id)
+          .eq('month', month)
+          .eq('year', year);
       }
 
       toast({
@@ -245,7 +255,7 @@ export default function UserSectorValuesDialog({
             Valores Individuais: {sector.name}
           </DialogTitle>
           <DialogDescription>
-            Defina valores personalizados por plantonista. Deixe em branco para usar o valor padrão do setor.
+            Mês: <span className="font-semibold text-foreground">{month.toString().padStart(2, '0')}/{year}</span> — Defina valores personalizados por plantonista. Deixe em branco para usar o valor padrão do setor.
           </DialogDescription>
         </DialogHeader>
 

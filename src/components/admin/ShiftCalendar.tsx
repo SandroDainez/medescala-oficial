@@ -332,11 +332,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setSectorMemberships(sectorMembershipsRes.data ?? []);
       setMembers((membersRes.data ?? []) as unknown as Member[]);
 
-      // Fetch user sector values for individual pricing
+      // Fetch user sector values for individual pricing (scoped to current month/year)
+      const currentMonth = currentDate.getMonth() + 1; // 1-12
+      const currentYear = currentDate.getFullYear();
       const { data: userValuesData } = await supabase
         .from('user_sector_values')
         .select('*')
-        .eq('tenant_id', currentTenantId);
+        .eq('tenant_id', currentTenantId)
+        .eq('month', currentMonth)
+        .eq('year', currentYear);
       
       const valuesMap = new Map<string, { day_value: number | null; night_value: number | null }>();
       (userValuesData ?? []).forEach((uv: any) => {
