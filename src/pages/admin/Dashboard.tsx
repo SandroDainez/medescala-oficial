@@ -302,7 +302,18 @@ export default function AdminDashboard() {
         });
       
       if (monthAssignmentsData) {
-        setMonthAssignmentsForCharts(monthAssignmentsData as unknown as ShiftAssignment[]);
+        // Mapear o resultado da RPC para o formato esperado pelo ShiftAssignment
+        // A RPC retorna { id, shift_id, user_id, assigned_value, status, name }
+        // Precisamos converter 'name' para 'profile: { name }'
+        const mappedAssignments: ShiftAssignment[] = (monthAssignmentsData as any[]).map(a => ({
+          id: a.id,
+          shift_id: a.shift_id,
+          user_id: a.user_id,
+          assigned_value: a.assigned_value ?? 0,
+          status: a.status,
+          profile: { name: a.name }
+        }));
+        setMonthAssignmentsForCharts(mappedAssignments);
       } else {
         setMonthAssignmentsForCharts([]);
       }
