@@ -62,8 +62,8 @@ function isNightShift(startTime: string): boolean {
 /**
  * Determines the final value for a shift assignment with PRO-RATA applied.
  * Priority:
- * 1. Individual user override (user_sector_values) — ALWAYS wins if set (including zero), with PRO-RATA
- * 2. assigned_value — ALREADY has pro-rata applied at assignment time, use as-is
+ * 1. assigned_value — manual per-shift override, ALWAYS wins (including zero)
+ * 2. Individual user override (user_sector_values) — monthly override fallback (including zero), with PRO-RATA
  * 3. base_value — apply PRO-RATA
  * 4. sector_default_value — apply PRO-RATA
  * 5. none → no value available
@@ -84,19 +84,19 @@ export function getFinalValue(
   if (assigned !== null && assigned < 0) return { final_value: null, source: 'invalid', invalidReason: 'assigned_value negativo' };
   if (base !== null && base < 0) return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
 
-  // Priority 1: Individual override (user_sector_values) — ALWAYS wins, apply PRO-RATA
+  // Priority 1: assigned_value — manual per-shift override, use as-is (already pro-rated at assignment time)
+  if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
+
+  // Priority 2: assigned_value === 0 → intentional zero (admin set it to zero)
+  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
+
+  // Priority 3: Individual override (user_sector_values) — monthly fallback, apply PRO-RATA
   if (individual !== null) {
     if (individual === 0) return { final_value: 0, source: 'zero_individual' };
     const proRataValue = calculateProRataValue(individual, duration_hours);
     return { final_value: proRataValue, source: 'individual' };
   }
 
-  // Priority 2: assigned_value — ALREADY calculated with pro-rata at assignment time
-  if (assigned !== null && assigned > 0) return { final_value: assigned, source: 'assigned' };
-  
-  // Priority 3: assigned_value === 0 → INTENTIONALLY NO VALUE (admin set it to zero)
-  if (assigned === 0) return { final_value: 0, source: 'zero_assigned' };
-  
   // Priority 4: base_value — apply PRO-RATA
   if (base !== null && base > 0) {
     const proRataValue = calculateProRataValue(base, duration_hours);
