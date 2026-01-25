@@ -476,8 +476,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }): number | null {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
     
-    // If shift has explicit base_value, calculate pro-rata from it
-    if (shift.base_value !== null && shift.base_value > 0) {
+    // If shift has explicit base_value (including zero), use it
+    // Zero is intentional "no payment" and should not fall back to sector default
+    if (shift.base_value !== null) {
+      if (shift.base_value === 0) return 0; // Intentional zero
       return calculateProRataValue(shift.base_value, duration);
     }
     
@@ -493,22 +495,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   ): number | null {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
     
-    // If assignment has explicit value, use it (already calculated at save time)
-    if (assignment.assigned_value !== null && assignment.assigned_value > 0) {
-      return assignment.assigned_value;
+    // If assignment has explicit value (including zero), use it
+    // Zero is intentional "no payment" and should not fall back
+    if (assignment.assigned_value !== null) {
+      if (assignment.assigned_value === 0) return 0; // Intentional zero
+      return assignment.assigned_value; // Already calculated at save time
     }
     
-    // Check for individual plantonista value
+    // Check for individual plantonista value (including zero)
     const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
     if (userValue !== null) {
+      if (userValue === 0) return 0; // Intentional zero for this user
       return calculateProRataValue(userValue, duration);
     }
     
-    // Fall back to shift base value or sector default
-    if (shift.base_value !== null && shift.base_value > 0) {
+    // Fall back to shift base value (including zero)
+    if (shift.base_value !== null) {
+      if (shift.base_value === 0) return 0; // Intentional zero
       return calculateProRataValue(shift.base_value, duration);
     }
     
+    // Fall back to sector default
     const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
     return calculateProRataValue(sectorValue, duration);
   }
