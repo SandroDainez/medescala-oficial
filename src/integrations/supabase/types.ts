@@ -1501,36 +1501,42 @@ export type Database = {
           created_by: string | null
           day_value: number | null
           id: string
+          month: number | null
           night_value: number | null
           sector_id: string
           tenant_id: string
           updated_at: string
           updated_by: string | null
           user_id: string
+          year: number | null
         }
         Insert: {
           created_at?: string
           created_by?: string | null
           day_value?: number | null
           id?: string
+          month?: number | null
           night_value?: number | null
           sector_id: string
           tenant_id: string
           updated_at?: string
           updated_by?: string | null
           user_id: string
+          year?: number | null
         }
         Update: {
           created_at?: string
           created_by?: string | null
           day_value?: number | null
           id?: string
+          month?: number | null
           night_value?: number | null
           sector_id?: string
           tenant_id?: string
           updated_at?: string
           updated_by?: string | null
           user_id?: string
+          year?: number | null
         }
         Relationships: [
           {

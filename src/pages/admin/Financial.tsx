@@ -282,7 +282,9 @@ export default function AdminFinancial() {
         supabase
           .from('user_sector_values')
           .select('sector_id, user_id, day_value, night_value')
-          .eq('tenant_id', currentTenantId),
+          .eq('tenant_id', currentTenantId)
+          .eq('month', new Date(startDate).getMonth() + 1)
+          .eq('year', new Date(startDate).getFullYear()),
         supabase
           .from('tenants')
           .select('slug')
