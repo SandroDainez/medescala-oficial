@@ -251,23 +251,31 @@ export default function AdminFinancial() {
   // Fetch data
   useEffect(() => {
     if (currentTenantId) fetchData();
-  }, [currentTenantId, startDate, endDate]);
+  }, [currentTenantId, startDate, endDate, filterSetor]);
 
   async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
 
     try {
+      const shiftsQuery = supabase
+        .from('shifts')
+        .select('id, shift_date, start_time, end_time, sector_id, base_value')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', startDate)
+        .lte('shift_date', endDate)
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true });
+
+      // When a single sector is selected, fetch ONLY that sector's shifts.
+      // This prevents other sectors' vacant shifts from leaking into the report via client-side grouping.
+      if (filterSetor !== 'all') {
+        shiftsQuery.eq('sector_id', filterSetor);
+      }
+
       // Fetch shifts, assignments via RPC, sectors, user overrides, and tenant info in parallel
       const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
-        supabase
-          .from('shifts')
-          .select('id, shift_date, start_time, end_time, sector_id, base_value')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', startDate)
-          .lte('shift_date', endDate)
-          .order('shift_date', { ascending: true })
-          .order('start_time', { ascending: true }),
+        shiftsQuery,
         // Use RPC to avoid URL length limit with .in(...ids...)
         supabase.rpc('get_shift_assignments_range', {
           _tenant_id: currentTenantId,
@@ -316,6 +324,7 @@ export default function AdminFinancial() {
       setTenantSlug(slug);
 
       const shifts = shiftsRes.data ?? [];
+      const shiftIdSet = new Set(shifts.map((s) => s.id));
       const assignmentsRaw = (assignmentsRes.data ?? []) as Array<{
         id: string;
         shift_id: string;
@@ -324,6 +333,9 @@ export default function AdminFinancial() {
         status: string;
         name: string | null;
       }>;
+
+      // Ensure assignments match ONLY the fetched shifts (important when sector filter is active).
+      const assignmentsScoped = assignmentsRaw.filter((a) => shiftIdSet.has(a.shift_id));
       const sectors = sectorsRes.data ?? [];
       const userValues = (userValuesRes.data ?? []) as Array<{
         sector_id: string;
@@ -340,7 +352,7 @@ export default function AdminFinancial() {
 
       const mapped = mapScheduleToFinancialEntries({
         shifts: shifts as unknown as ScheduleShift[],
-        assignments: assignmentsRaw.map(
+        assignments: assignmentsScoped.map(
           (a): ScheduleAssignment => ({
             id: a.id,
             shift_id: a.shift_id,
