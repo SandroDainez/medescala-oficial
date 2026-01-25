@@ -1674,6 +1674,22 @@ export type Database = {
         }[]
       }
       get_gabs_tenant_id: { Args: never; Returns: string }
+      get_profile_private_with_audit: {
+        Args: { _tenant_id: string; _user_id: string }
+        Returns: {
+          address_enc: string
+          bank_account_enc: string
+          bank_agency_enc: string
+          bank_name_enc: string
+          cpf_enc: string
+          crm_enc: string
+          phone_enc: string
+          pix_key_enc: string
+          rqe_enc: string
+          tenant_id: string
+          user_id: string
+        }[]
+      }
       get_shift_assignments_range: {
         Args: { _end: string; _start: string; _tenant_id: string }
         Returns: {
