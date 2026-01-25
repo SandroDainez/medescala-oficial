@@ -1628,19 +1628,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!selectedShift || !currentTenantId) return;
 
     const raw = (assignData.assigned_value ?? '').toString().trim();
-    const assignedValue = raw
-      ? resolveValue({
-          raw,
-          sector_id: selectedShift.sector_id || null,
-          start_time: selectedShift.start_time.slice(0, 5),
-          end_time: selectedShift.end_time.slice(0, 5),
-          user_id: assignData.user_id,
-          // In this dialog, if the admin typed a value we treat it as an explicit override.
-          // If left blank, we keep it null so the system can use individual/sector/default rules.
-          useSectorDefault: false,
-          applyProRata: true,
-        })
-      : null;
+    // REGRA ÚNICA: o Financeiro não recalcula.
+    // Portanto, ao atribuir um plantonista, precisamos PERSISTIR o valor final (já pró-rata) aqui.
+    // - Se admin digitou um valor, tratamos como override explícito.
+    // - Se ficou em branco, calculamos via regras (individual -> setor) e persistimos o resultado.
+    const assignedValue = resolveValue({
+      raw,
+      sector_id: selectedShift.sector_id || null,
+      start_time: selectedShift.start_time.slice(0, 5),
+      end_time: selectedShift.end_time.slice(0, 5),
+      user_id: assignData.user_id,
+      useSectorDefault: raw.length === 0,
+      applyProRata: true,
+    });
     
     // Check if there's already an assignment (to determine if this is an add or update)
     const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
