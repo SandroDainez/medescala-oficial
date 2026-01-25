@@ -494,19 +494,39 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
   ): number | null {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
+
+    // Helper: treat values as equal with small tolerance to avoid float noise
+    const approxEqual = (a: number, b: number, eps = 0.01) => Math.abs(a - b) <= eps;
+
+    // Compute the "derived default" assignment value (what the system would auto-fill)
+    // This lets us respect individual overrides even when assignments.assigned_value
+    // was previously populated by sector/shift defaults.
+    const derivedDefault = (() => {
+      if (shift.base_value !== null) {
+        // base_value is already stored (it may already be pro-rata)
+        return shift.base_value;
+      }
+      const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+      return calculateProRataValue(sectorValue, duration);
+    })();
     
-    // If assignment has explicit value (including zero), use it
-    // Zero is intentional "no payment" and should not fall back
-    if (assignment.assigned_value !== null) {
-      if (assignment.assigned_value === 0) return 0; // Intentional zero
-      return assignment.assigned_value; // Already calculated at save time
-    }
-    
-    // Check for individual plantonista value (including zero)
+    // 1) Individual plantonista value should override defaults (including zero)
+    // even if assigned_value was pre-filled from defaults.
     const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
     if (userValue !== null) {
       if (userValue === 0) return 0; // Intentional zero for this user
       return calculateProRataValue(userValue, duration);
+    }
+
+    // 2) If assignment has a value, treat it as explicit ONLY when it differs from the derived default.
+    // If it's equal to the derived default, we keep following the fallback chain.
+    if (assignment.assigned_value !== null) {
+      if (derivedDefault !== null && approxEqual(assignment.assigned_value, derivedDefault)) {
+        // It's just an auto-filled default; continue to fallbacks (which will return derivedDefault).
+      } else {
+        if (assignment.assigned_value === 0) return 0; // Intentional manual zero
+        return assignment.assigned_value; // Manual/explicit value
+      }
     }
     
     // Fall back to shift base value (including zero)
