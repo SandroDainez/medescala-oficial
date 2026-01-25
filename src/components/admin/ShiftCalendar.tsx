@@ -698,6 +698,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return assignments.filter(a => a.shift_id === shiftId);
   }
 
+  // Helper to resolve assignment name with fallback to members list
+  function getAssignmentName(assignment: ShiftAssignment): string {
+    // Primary: use profile name from RPC response
+    if (assignment.profile?.name) {
+      return assignment.profile.name;
+    }
+    // Fallback: look up in members list by user_id
+    const member = members.find(m => m.user_id === assignment.user_id);
+    if (member?.profile?.name) {
+      return member.profile.name;
+    }
+    return 'Sem nome';
+  }
+
   // Get pending offers for a shift
   function getOffersForShift(shiftId: string) {
     return shiftOffers.filter(o => o.shift_id === shiftId);
@@ -853,7 +867,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               if (!updData) throw new Error('Atualização do plantonista bloqueada (permissão/tenant).');
             } else {
               // Different user - this is a TRANSFER
-              const oldUserName = currentAssignment.profile?.name || 'Desconhecido';
+              const oldUserName = getAssignmentName(currentAssignment);
               const newUserMember = members.find(m => m.user_id === formData.assigned_user_id);
               const newUserName = newUserMember?.profile?.name || 'Desconhecido';
               
@@ -972,7 +986,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               month: shiftDate.getMonth() + 1,
               year: shiftDate.getFullYear(),
               user_id: currentAssignment.user_id,
-              user_name: currentAssignment.profile?.name || 'Desconhecido',
+              user_name: getAssignmentName(currentAssignment),
               movement_type: 'removed',
               source_sector_id: editingShift.sector_id || null,
               source_sector_name: getSectorName(editingShift.sector_id, editingShift.hospital),
@@ -2041,7 +2055,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               } else {
                 // Different user - this is a SUBSTITUTION (not a transfer)
                 // The old user is REMOVED, the new user is ADDED
-                const oldUserName = currentAssignment.profile?.name || 'Desconhecido';
+                const oldUserName = getAssignmentName(currentAssignment);
                 const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
                 const newUserName = newUserMember?.profile?.name || 'Desconhecido';
                 
@@ -2153,7 +2167,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 month: shiftDate.getMonth() + 1,
                 year: shiftDate.getFullYear(),
                 user_id: currentAssignment.user_id,
-                user_name: currentAssignment.profile?.name || 'Desconhecido',
+                user_name: getAssignmentName(currentAssignment),
                 movement_type: 'removed',
                 source_sector_id: originalShift.sector_id || null,
                 source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
@@ -2190,7 +2204,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 month: shiftDate.getMonth() + 1,
                 year: shiftDate.getFullYear(),
                 user_id: currentAssignment.user_id,
-                user_name: currentAssignment.profile?.name || 'Desconhecido',
+                user_name: getAssignmentName(currentAssignment),
                 movement_type: 'removed',
                 source_sector_id: originalShift.sector_id || null,
                 source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
@@ -2384,8 +2398,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             {shiftAssignments.length > 0 ? (
                               // Has assigned plantonistas - show each one sorted alphabetically
                               [...shiftAssignments].sort((a, b) => {
-                                const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
-                                const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+                                const nameA = getAssignmentName(a).toLowerCase();
+                                const nameB = getAssignmentName(b).toLowerCase();
                                 return nameA.localeCompare(nameB, 'pt-BR');
                               }).map(a => (
                                 <div 
@@ -2393,7 +2407,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                   className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-background/80 text-foreground font-medium"
                                 >
                                   <Users className="h-2.5 w-2.5 flex-shrink-0 text-primary" />
-                                  <span className="truncate">{a.profile?.name || 'Sem nome'}</span>
+                                  <span className="truncate">{getAssignmentName(a)}</span>
                                 </div>
                               ))
                             ) : isAvailable ? (
@@ -2499,12 +2513,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         if (shiftAssignments.length > 0) {
           // Sort assignees alphabetically by name
           const sortedAssignments = [...shiftAssignments].sort((a, b) => {
-            const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
-            const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+            const nameA = getAssignmentName(a).toLowerCase();
+            const nameB = getAssignmentName(b).toLowerCase();
             return nameA.localeCompare(nameB, 'pt-BR');
           });
           assigneeText = sortedAssignments.map(a => {
-            const name = a.profile?.name || 'Sem nome';
+            const name = getAssignmentName(a);
             // Truncate long names
             return name.length > 15 ? name.substring(0, 15) + '...' : name;
           }).join(', ');
@@ -3634,8 +3648,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                           ) : (
                             <div className="grid gap-2">
                               {[...shiftAssignments].sort((a, b) => {
-                                const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
-                                const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+                                const nameA = getAssignmentName(a).toLowerCase();
+                                const nameB = getAssignmentName(b).toLowerCase();
                                 return nameA.localeCompare(nameB, 'pt-BR');
                               }).map(assignment => (
                                 <div 
@@ -3646,7 +3660,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                     <Users className="h-4 w-4 text-green-600" />
                                     <div>
                                       <div className="font-medium text-sm">
-                                        {assignment.profile?.name || 'Sem nome'}
+                                        {getAssignmentName(assignment)}
                                       </div>
                                       <div className="text-xs text-muted-foreground">
                                         Valor: R$ {(getAssignmentDisplayValue(assignment, shift) ?? 0).toFixed(2)}
