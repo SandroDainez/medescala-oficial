@@ -139,6 +139,7 @@ export default function AdminReports() {
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [selectedSector, setSelectedSector] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState('report');
   
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
@@ -223,6 +224,7 @@ export default function AdminReports() {
 
   async function generateReport() {
     setLoading(true);
+    setActiveTab('report'); // Muda automaticamente para a aba de relatório
     
     if (reportType === 'afastamentos') {
       await fetchAbsences();
@@ -1034,7 +1036,7 @@ export default function AdminReports() {
         </CardContent>
       </Card>
 
-      <Tabs defaultValue="report" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList className="flex-wrap">
           <TabsTrigger value="report">
             <FileSpreadsheet className="mr-2 h-4 w-4" />
