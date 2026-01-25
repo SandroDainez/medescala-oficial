@@ -153,9 +153,11 @@ export default function AdminReports() {
   const [selectedMovements, setSelectedMovements] = useState<Set<string>>(new Set());
   const [selectedConflicts, setSelectedConflicts] = useState<Set<string>>(new Set());
   const [selectedAbsences, setSelectedAbsences] = useState<Set<string>>(new Set());
+  const [selectedShifts, setSelectedShifts] = useState<Set<string>>(new Set());
   const [deleteMovementsDialogOpen, setDeleteMovementsDialogOpen] = useState(false);
   const [deleteConflictsDialogOpen, setDeleteConflictsDialogOpen] = useState(false);
   const [deleteAbsencesDialogOpen, setDeleteAbsencesDialogOpen] = useState(false);
+  const [deleteShiftsDialogOpen, setDeleteShiftsDialogOpen] = useState(false);
   
   // Dialog states
   const [absenceDialogOpen, setAbsenceDialogOpen] = useState(false);
@@ -821,6 +823,53 @@ export default function AdminReports() {
     setDeleteAbsencesDialogOpen(false);
   }
 
+  async function handleDeleteShifts() {
+    if (selectedShifts.size === 0) return;
+    
+    // Primeiro deletar assignments relacionados
+    const { error: assignmentError } = await supabase
+      .from('shift_assignments')
+      .delete()
+      .in('shift_id', Array.from(selectedShifts));
+    
+    if (assignmentError) {
+      toast({ title: 'Erro ao excluir alocações', description: assignmentError.message, variant: 'destructive' });
+      return;
+    }
+    
+    // Depois deletar os shifts
+    const { error } = await supabase
+      .from('shifts')
+      .delete()
+      .in('id', Array.from(selectedShifts));
+    
+    if (error) {
+      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+    } else {
+      toast({ title: `${selectedShifts.size} plantão(ões) excluído(s)` });
+      setSelectedShifts(new Set());
+      fetchShiftsReport();
+    }
+    setDeleteShiftsDialogOpen(false);
+  }
+
+  function toggleSelectShift(id: string) {
+    setSelectedShifts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) newSet.delete(id);
+      else newSet.add(id);
+      return newSet;
+    });
+  }
+
+  function toggleSelectAllShifts() {
+    if (selectedShifts.size === shifts.length) {
+      setSelectedShifts(new Set());
+    } else {
+      setSelectedShifts(new Set(shifts.map(s => s.id)));
+    }
+  }
+
   function toggleSelectMovement(id: string) {
     setSelectedMovements(prev => {
       const newSet = new Set(prev);
@@ -1191,57 +1240,83 @@ export default function AdminReports() {
                   </Table>
                 </ScrollArea>
               ) : reportType === 'plantoes' ? (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Data</TableHead>
-                        <TableHead>Horário</TableHead>
-                        <TableHead>Setor</TableHead>
-                        <TableHead>Título</TableHead>
-                        <TableHead>Hospital</TableHead>
-                        <TableHead>Valor Base</TableHead>
-                        <TableHead>Plantonistas</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {shifts.length === 0 ? (
+                <div className="space-y-4">
+                  <div className="flex justify-end">
+                    <Button 
+                      variant="destructive" 
+                      size="sm"
+                      onClick={() => setDeleteShiftsDialogOpen(true)}
+                      disabled={selectedShifts.size === 0}
+                      title={selectedShifts.size === 0 ? 'Selecione um ou mais plantões para excluir' : 'Excluir plantões selecionados'}
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Excluir{selectedShifts.size > 0 ? ` (${selectedShifts.size})` : ''}
+                    </Button>
+                  </div>
+                  <ScrollArea className="h-[500px]">
+                    <Table>
+                      <TableHeader>
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
-                            Nenhum plantão encontrado no período
-                          </TableCell>
+                          <TableHead className="w-[40px]">
+                            <Checkbox
+                              checked={selectedShifts.size === shifts.length && shifts.length > 0}
+                              onCheckedChange={toggleSelectAllShifts}
+                            />
+                          </TableHead>
+                          <TableHead>Data</TableHead>
+                          <TableHead>Horário</TableHead>
+                          <TableHead>Setor</TableHead>
+                          <TableHead>Título</TableHead>
+                          <TableHead>Hospital</TableHead>
+                          <TableHead>Valor Base</TableHead>
+                          <TableHead>Plantonistas</TableHead>
                         </TableRow>
-                      ) : (
-                        shifts.map(shift => (
-                          <TableRow key={shift.id}>
-                            <TableCell>{format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</TableCell>
-                            <TableCell>{shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}</TableCell>
-                            <TableCell>{shift.sector_name}</TableCell>
-                            <TableCell className="font-medium">{shift.title}</TableCell>
-                            <TableCell>{shift.hospital}</TableCell>
-                            <TableCell>
-                              {shift.base_value ? (
-                                <Badge variant="default">R$ {Number(shift.base_value).toFixed(2)}</Badge>
-                              ) : (
-                                <Badge variant="secondary">-</Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline">{shift.assignee_count}</Badge>
-                                {shift.assignees.length > 0 && (
-                                  <span className="text-sm text-muted-foreground truncate max-w-[200px]">
-                                    {shift.assignees.join(', ')}
-                                  </span>
-                                )}
-                              </div>
+                      </TableHeader>
+                      <TableBody>
+                        {shifts.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                              Nenhum plantão encontrado no período
                             </TableCell>
                           </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                        ) : (
+                          shifts.map(shift => (
+                            <TableRow key={shift.id} className="cursor-pointer" onClick={() => toggleSelectShift(shift.id)}>
+                              <TableCell onClick={(e) => e.stopPropagation()}>
+                                <Checkbox
+                                  checked={selectedShifts.has(shift.id)}
+                                  onCheckedChange={() => toggleSelectShift(shift.id)}
+                                />
+                              </TableCell>
+                              <TableCell>{format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</TableCell>
+                              <TableCell>{shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}</TableCell>
+                              <TableCell>{shift.sector_name}</TableCell>
+                              <TableCell className="font-medium">{shift.title}</TableCell>
+                              <TableCell>{shift.hospital}</TableCell>
+                              <TableCell>
+                                {shift.base_value ? (
+                                  <Badge variant="default">R$ {Number(shift.base_value).toFixed(2)}</Badge>
+                                ) : (
+                                  <Badge variant="secondary">-</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="outline">{shift.assignee_count}</Badge>
+                                  {shift.assignees.length > 0 && (
+                                    <span className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                      {shift.assignees.join(', ')}
+                                    </span>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </div>
               ) : reportType === 'financeiro' ? (
                 <ScrollArea className="h-[500px]">
                   <Table>
@@ -2056,6 +2131,26 @@ export default function AdminReports() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteAbsencesDialogOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDeleteAbsences}>
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Confirmar exclusão de plantões */}
+      <Dialog open={deleteShiftsDialogOpen} onOpenChange={setDeleteShiftsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir Plantões</DialogTitle>
+            <DialogDescription>
+              Tem certeza que deseja excluir {selectedShifts.size} plantão(ões)? 
+              Todas as alocações de plantonistas também serão removidas. Esta ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteShiftsDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteShifts}>
               <Trash2 className="h-4 w-4 mr-2" />
               Excluir
             </Button>
