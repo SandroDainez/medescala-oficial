@@ -1855,9 +1855,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const sector = sectors.find(s => s.id === filterSector);
       
       let updatedCount = 0;
+      let skippedCount = 0;
+      const debugInfo: string[] = [];
+      
       for (const assignment of assignmentsToUpdate) {
         const shift = shiftsInMonth.find(s => s.id === assignment.shift_id);
-        if (!shift) continue;
+        if (!shift) {
+          skippedCount++;
+          continue;
+        }
 
         // Calculate duration
         const duration = calculateDurationHours(shift.start_time, shift.end_time);
@@ -1868,11 +1874,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         let newValue: number | null = null;
         let source = 'none';
 
-        // Check individual value first
-        const userValue = getUserSectorValue(filterSector, assignment.user_id, shift.start_time);
+        // Check individual value first - use the userSectorValues map directly
+        const userValueKey = `${filterSector}:${assignment.user_id}`;
+        const userValueEntry = userSectorValues.get(userValueKey);
+        const userValue = userValueEntry 
+          ? (isNight ? userValueEntry.night_value : userValueEntry.day_value)
+          : null;
+        
         if (userValue !== null && userValue > 0) {
           newValue = shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
           source = 'individual';
+        } else if (userValue === 0) {
+          // Explicit zero means no payment
+          newValue = 0;
+          source = 'individual-zero';
         } else {
           // Fall back to sector default
           const sectorValue = isNight ? sector?.default_night_value : sector?.default_day_value;
@@ -1881,6 +1896,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             source = 'sector';
           }
         }
+
+        debugInfo.push(`${assignment.user_id.slice(0, 8)}: ${source} -> ${newValue}`);
 
         // Update the assignment
         const { error } = await supabase
@@ -1893,8 +1910,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         if (!error) {
           updatedCount++;
+        } else {
+          console.error('Error updating assignment:', assignment.id, error);
         }
       }
+
+      console.log('Recalculate debug:', { 
+        userSectorValuesSize: userSectorValues.size,
+        assignmentsToUpdate: assignmentsToUpdate.length,
+        updatedCount,
+        skippedCount,
+        debugInfo: debugInfo.slice(0, 10)
+      });
 
       toast({ 
         title: 'Valores recalculados!', 
