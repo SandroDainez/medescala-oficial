@@ -1609,64 +1609,7 @@ export type Database = {
       }
     }
     Views: {
-      shift_assignment_locations_secure: {
-        Row: {
-          assignment_id: string | null
-          checkin_latitude: number | null
-          checkin_longitude: number | null
-          checkout_latitude: number | null
-          checkout_longitude: number | null
-          created_at: string | null
-          tenant_id: string | null
-          updated_at: string | null
-          user_id: string | null
-        }
-        Insert: {
-          assignment_id?: string | null
-          checkin_latitude?: number | null
-          checkin_longitude?: number | null
-          checkout_latitude?: number | null
-          checkout_longitude?: number | null
-          created_at?: string | null
-          tenant_id?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Update: {
-          assignment_id?: string | null
-          checkin_latitude?: number | null
-          checkin_longitude?: number | null
-          checkout_latitude?: number | null
-          checkout_longitude?: number | null
-          created_at?: string | null
-          tenant_id?: string | null
-          updated_at?: string | null
-          user_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "shift_assignment_locations_assignment_id_fkey"
-            columns: ["assignment_id"]
-            isOneToOne: true
-            referencedRelation: "shift_assignments"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "shift_assignment_locations_tenant_id_fkey"
-            columns: ["tenant_id"]
-            isOneToOne: false
-            referencedRelation: "tenants"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "shift_assignment_locations_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
+      [_ in never]: never
     }
     Functions: {
       calculate_trial_end_date: { Args: never; Returns: string }
