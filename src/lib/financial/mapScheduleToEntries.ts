@@ -64,7 +64,7 @@ function isNightShift(startTime: string): boolean {
  * Priority:
  * 1. assigned_value — manual per-shift override, ALWAYS wins (including zero)
  * 2. Individual user override (user_sector_values) — monthly override fallback (including zero), with PRO-RATA
- * 3. base_value — apply PRO-RATA
+ * 3. base_value — use as-is (Escala may already persist pro-rata into shifts.base_value)
  * 4. sector_default_value — apply PRO-RATA
  * 5. none → no value available
  */
@@ -97,10 +97,11 @@ export function getFinalValue(
     return { final_value: proRataValue, source: 'individual' };
   }
 
-  // Priority 4: base_value — apply PRO-RATA
+  // Priority 4: base_value — use as-is.
+  // NOTE: In this app, shift.base_value may already be stored as the final (pro-rated) value
+  // when created/updated from the Escala UI. Applying pro-rata again would double-discount.
   if (base !== null && base > 0) {
-    const proRataValue = calculateProRataValue(base, duration_hours);
-    return { final_value: proRataValue, source: 'base' };
+    return { final_value: base, source: 'base' };
   }
   
   // Priority 5: base_value === 0 → INTENTIONALLY NO VALUE (shift set to zero)
