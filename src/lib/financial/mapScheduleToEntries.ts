@@ -22,18 +22,9 @@ function calculateDurationHours(startTime: string, endTime: string): number {
   return hours + minutes / 60;
 }
 
-/**
- * Calculate pro-rata value based on shift duration.
- * Standard shift is 12 hours, so a 6-hour shift pays half.
- * This ensures consistency between the calendar view and financial reports.
- */
-function calculateProRataValue(baseValue: number | null, durationHours: number): number | null {
-  if (baseValue === null) return null;
-  if (baseValue === 0) return 0; // Intentional zero remains zero
-  if (durationHours <= 0) return null;
-  if (durationHours === STANDARD_SHIFT_HOURS) return baseValue;
-  return Number(((baseValue / STANDARD_SHIFT_HOURS) * durationHours).toFixed(2));
-}
+// NOTE:
+// Pró-rata NÃO é calculado no Financeiro.
+// O valor final (já pró-rata) deve ser persistido na Escala.
 
 function normalizeMoney(value: unknown): number | null {
   if (value === null || value === undefined) return null;
@@ -66,15 +57,15 @@ function isNightShift(startTime: string): boolean {
 /**
  * Determines the final value for a shift assignment.
  *
- * RULE CONFIRMED BY USER:
- * 1) assigned_value (edited in Escala) — HIGHEST priority, USE AS-IS (already pro-rata)
- * 2) Individual user override (user_sector_values) — apply PRO-RATA
- * 3) base_value — apply PRO-RATA
- * 4) sector_default_value — apply PRO-RATA
- * 5) none
+ * REGRA ÚNICA (Solicitada):
+ * Prioridade obrigatória:
+ * 1) Valor editado na Escala -> shift_assignments.assigned_value (usar como está)
+ * 2) Valor individual -> user_sector_values (usar como está)
+ * 3) Valor padrão do setor -> sectors.default_day_value/default_night_value (usar como está)
  *
- * The Escala saves the final value already calculated (with pro-rata).
- * Financeiro just uses it directly without recalculating.
+ * IMPORTANTE:
+ * Para 6h/12h/24h, o Financeiro SEMPRE usa o valor já pró-rata salvo na Escala.
+ * Ou seja: aqui NÃO recalculamos pró-rata, apenas escolhemos a fonte.
  */
 export function getFinalValue(
   assigned_value: unknown,
@@ -102,31 +93,19 @@ export function getFinalValue(
 
   // ========================================================
   // PRIORITY 2: Individual user override (user_sector_values)
-  // Apply pro-rata since this is a 12h base rate
+  // USE AS-IS (pró-rata já deve ter sido persistido na Escala)
   // ========================================================
   if (individual !== null) {
     if (individual === 0) return { final_value: 0, source: 'zero_individual' };
-    const proRataValue = calculateProRataValue(individual, duration_hours);
-    return { final_value: proRataValue, source: 'individual' };
+    return { final_value: individual, source: 'individual' };
   }
 
   // ========================================================
-  // PRIORITY 3: base_value (shift base value)
-  // Apply pro-rata since this is a 12h base rate
-  // ========================================================
-  if (base !== null && base > 0) {
-    const proRataValue = calculateProRataValue(base, duration_hours);
-    return { final_value: proRataValue, source: 'base' };
-  }
-  if (base === 0) return { final_value: 0, source: 'zero_base' };
-
-  // ========================================================
-  // PRIORITY 4: sector default (fallback)
-  // Apply pro-rata since this is a 12h base rate
+  // PRIORITY 3: sector default (fallback)
+  // USE AS-IS (pró-rata já deve ter sido persistido na Escala)
   // ========================================================
   if (sectorDefault !== null) {
-    const proRataValue = calculateProRataValue(sectorDefault, duration_hours);
-    return { final_value: proRataValue, source: 'sector_default' };
+    return { final_value: sectorDefault, source: 'sector_default' };
   }
 
   return { final_value: null, source: 'none' };
@@ -179,6 +158,10 @@ export function mapScheduleToFinancialEntries(params: {
   }
 
   const entries: FinancialEntry[] = [];
+
+  const debugLogsEnabled =
+    typeof window !== 'undefined' &&
+    window.localStorage?.getItem('debug_financial_values') === '1';
 
   // GABS-specific rule: training sectors (residentes/estagiários) have no remuneration
   const isGabs = params.tenantSlug?.toLowerCase() === 'gabs';
@@ -239,6 +222,24 @@ export function mapScheduleToFinancialEntries(params: {
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
         : getFinalValue(a.assigned_value, shift.base_value, sectorDefaultValue, individualValue, duration_hours);
+
+      if (debugLogsEnabled) {
+        // Log temporário solicitado (em caso real do Financeiro)
+        // Ativar com: localStorage.setItem('debug_financial_values','1');
+        console.log('[FIN_DEBUG] valor_final', {
+          shift_id: shift.id,
+          assignment_id: a.id,
+          assignee_id: a.user_id,
+          shift_date: shift.shift_date,
+          duration_hours,
+          valor_escala: a.assigned_value,
+          valor_individual: individualValue,
+          valor_setor: sectorDefaultValue,
+          valor_final_usado: valueResult.final_value,
+          fonte: valueResult.source,
+          invalidReason: valueResult.invalidReason,
+        });
+      }
 
       entries.push({
         id: a.id,
