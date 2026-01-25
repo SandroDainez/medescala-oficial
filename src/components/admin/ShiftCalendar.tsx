@@ -638,14 +638,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const duration = calculateDurationHours(params.start_time, endTime);
     const shouldApplyProRata = params.applyProRata !== false && duration !== 12;
     
-    // If user typed a value explicitly, treat it as the 12h base and apply pro-rata when needed.
-    // This matches the UI expectation for 6h/24h and keeps Financeiro consistent with Escala.
+    // If user typed a value explicitly (including 0), treat it as the FINAL value.
+    // IMPORTANT: We DO NOT apply pro-rata here. Pro-rata is ONLY for sector/individual defaults
+    // (which are 12h base values). This ensures that if you type "800" for a 6h shift, the saved
+    // assigned_value is exactly 800 and Financeiro will sum 800.
     if (rawStr) {
       const parsed = parseMoneyNullable(rawStr);
       if (parsed === null) return null;
-      // IMPORTANT: 0 is a valid explicit value (user wants to set value as zero)
-      const result = shouldApplyProRata ? calculateProRataValue(parsed, duration) : parsed;
-      return result;
+      return parsed;
     }
 
     if (!params.useSectorDefault) return null;
