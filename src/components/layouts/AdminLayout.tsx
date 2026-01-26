@@ -93,18 +93,18 @@ export function AdminLayout() {
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
       {/* Header */}
-      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm flex flex-col">
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm flex flex-col">
         {/* Trial Banner */}
         <TrialBanner />
-        <div className="flex min-h-[64px] items-center justify-between px-4 lg:px-6 py-2">
+        <div className="flex h-16 items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="icon"
-              className="md:hidden hover:bg-accent h-10 w-10 touch-manipulation active:scale-95 transition-transform"
+              className="md:hidden hover:bg-accent h-11 w-11 touch-manipulation active:scale-95 transition-transform"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
             </Button>
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-primary text-primary-foreground shadow-primary">
@@ -144,10 +144,10 @@ export function AdminLayout() {
         </div>
       </header>
 
-      <div className="flex">
+      <div className="flex pt-[calc(64px+env(safe-area-inset-top))]">
         {/* Sidebar - Desktop */}
         <aside className="hidden w-64 border-r bg-card md:block">
-          <nav className="flex flex-col gap-1 p-4 sticky top-16">
+          <nav className="flex flex-col gap-1 p-4 sticky top-[calc(64px+env(safe-area-inset-top))]">
             {/* Dashboard */}
             <NavLink
               to="/admin"
