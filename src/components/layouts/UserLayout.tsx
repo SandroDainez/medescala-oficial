@@ -59,8 +59,8 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">
-      {/* Header - Fixed at very top, no padding */}
-      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm">
+      {/* Header - Fixed below safe area */}
+      <header className="fixed left-0 right-0 z-[100] border-b bg-card shadow-sm" style={{ top: 'env(safe-area-inset-top)' }}>
         {/* Trial Banner dentro do header para não interferir */}
         <TrialBanner />
         <div className="flex min-h-[56px] items-center justify-between px-4">
