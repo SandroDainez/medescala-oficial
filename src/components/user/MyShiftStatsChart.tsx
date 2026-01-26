@@ -132,10 +132,30 @@ export function MyShiftStatsChart() {
     return aggregated;
   }, [shiftData, mySectors, selectedYear]);
 
-  // Get sectors for the legend
+  // Predefined color palette for sectors without custom colors
+  const colorPalette = [
+    '#10b981', // emerald
+    '#3b82f6', // blue
+    '#f59e0b', // amber
+    '#ef4444', // red
+    '#8b5cf6', // violet
+    '#ec4899', // pink
+    '#06b6d4', // cyan
+    '#84cc16', // lime
+    '#f97316', // orange
+    '#6366f1', // indigo
+  ];
+
+  // Get sectors for the legend with distinct colors
   const sectorsForChart = useMemo(() => {
     if (!mySectors) return [];
-    return mySectors.filter(s => s !== null) as Sector[];
+    return mySectors
+      .filter(s => s !== null)
+      .map((s, index) => ({
+        ...s,
+        // Use sector's own color if set, otherwise use palette color
+        color: s.color || colorPalette[index % colorPalette.length],
+      })) as Sector[];
   }, [mySectors]);
 
   // Generate year options (current year and 2 previous years)
@@ -222,7 +242,7 @@ export function MyShiftStatsChart() {
                   key={sector.id}
                   dataKey={sector.name}
                   stackId="a"
-                  fill={sector.color || 'hsl(var(--primary))'}
+                  fill={sector.color}
                   radius={[2, 2, 0, 0]}
                 />
               ))}
