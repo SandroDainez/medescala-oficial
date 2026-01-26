@@ -58,19 +58,19 @@ export function UserLayout() {
   const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
 
   return (
-    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
-      {/* Header - Mobile style like Pega Plantão */}
-      <header className="sticky top-0 z-[60] border-b bg-card shadow-sm flex flex-col">
+    <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">
+      {/* Header - Fixed position for reliable mobile behavior */}
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm">
         {/* Trial Banner dentro do header para não interferir */}
         <TrialBanner />
-        <div className="flex min-h-[56px] items-center justify-between px-4 py-2">
+        <div className="flex h-14 items-center justify-between px-4">
           {/* Left: Menu button */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>
               <Button 
                 variant="ghost" 
                 size="icon" 
-                className="h-10 w-10 touch-manipulation active:scale-95 transition-transform"
+                className="h-10 w-10 touch-manipulation active:scale-95 transition-transform relative z-[101]"
               >
                 <Menu className="h-5 w-5" />
               </Button>
@@ -182,9 +182,9 @@ export function UserLayout() {
         </div>
       </header>
 
-      {/* Main Content - Full height with proper scrolling */}
-      <main className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-safe">
-        <div className="w-full max-w-7xl mx-auto px-3 py-4 sm:px-6 lg:px-8 overflow-x-hidden">
+      {/* Main Content - Offset by header height */}
+      <main className="pt-[calc(56px+env(safe-area-inset-top))] min-h-[100dvh] overflow-y-auto overflow-x-hidden pb-safe">
+        <div className="w-full max-w-7xl mx-auto px-3 py-4 sm:px-6 lg:px-8">
           <Outlet />
         </div>
       </main>
