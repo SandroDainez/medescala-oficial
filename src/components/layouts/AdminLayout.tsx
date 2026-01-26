@@ -92,11 +92,11 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm flex flex-col">
+      {/* Header - Fixed with safe-area support */}
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm flex flex-col pt-safe">
         {/* Trial Banner */}
         <TrialBanner />
-        <div className="flex h-16 items-center justify-between px-4 lg:px-6">
+        <div className="flex min-h-[64px] items-center justify-between px-4 lg:px-6">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
@@ -144,10 +144,13 @@ export function AdminLayout() {
         </div>
       </header>
 
-      <div className="flex pt-[calc(64px+env(safe-area-inset-top))]">
+      <div className="flex" style={{ paddingTop: 'calc(64px + env(safe-area-inset-top))' }}>
         {/* Sidebar - Desktop */}
         <aside className="hidden w-64 border-r bg-card md:block">
-          <nav className="flex flex-col gap-1 p-4 sticky top-[calc(64px+env(safe-area-inset-top))]">
+          <nav 
+            className="flex flex-col gap-1 p-4 sticky"
+            style={{ top: 'calc(64px + env(safe-area-inset-top))' }}
+          >
             {/* Dashboard */}
             <NavLink
               to="/admin"
@@ -293,7 +296,10 @@ export function AdminLayout() {
 
         {/* Mobile Menu */}
         {mobileMenuOpen && (
-          <div className="fixed inset-x-0 top-[100px] bottom-0 z-[50] bg-background md:hidden animate-fade-in overflow-y-auto">
+          <div 
+            className="fixed inset-x-0 bottom-0 z-[50] bg-background md:hidden animate-fade-in overflow-y-auto"
+            style={{ top: 'calc(64px + env(safe-area-inset-top))' }}
+          >
             <nav className="flex flex-col gap-1 p-4 pb-safe">
               <div className="mb-4">
                 <TenantSelector />
