@@ -10,6 +10,7 @@ import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMont
 import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
+import { MyShiftStatsChart } from './MyShiftStatsChart';
 
 interface Sector {
   id: string;
@@ -754,6 +755,11 @@ export default function UserCalendar() {
           </div>
         )}
 
+      </div>
+
+      {/* My Shift Stats Chart Widget */}
+      <div className="px-4 py-4 bg-background">
+        <MyShiftStatsChart />
       </div>
     </div>
   );
