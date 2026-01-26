@@ -59,11 +59,11 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">
-      {/* Header - Fixed position for reliable mobile behavior */}
-      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm">
+      {/* Header - Fixed with safe-area support */}
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm pt-safe">
         {/* Trial Banner dentro do header para não interferir */}
         <TrialBanner />
-        <div className="flex h-14 items-center justify-between px-4">
+        <div className="flex min-h-[56px] items-center justify-between px-4">
           {/* Left: Menu button */}
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
             <SheetTrigger asChild>
@@ -183,7 +183,7 @@ export function UserLayout() {
       </header>
 
       {/* Main Content - Offset by header height */}
-      <main className="pt-[calc(56px+env(safe-area-inset-top))] min-h-[100dvh] overflow-y-auto overflow-x-hidden pb-safe">
+      <main className="min-h-[100dvh] overflow-y-auto overflow-x-hidden pb-safe" style={{ paddingTop: 'calc(56px + env(safe-area-inset-top))' }}>
         <div className="w-full max-w-7xl mx-auto px-3 py-4 sm:px-6 lg:px-8">
           <Outlet />
         </div>

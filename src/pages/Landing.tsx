@@ -6,9 +6,9 @@ import { ArrowRight, Calendar, Users, Clock, Shield, ChartBar, Bell } from 'luci
 const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
   return (
     <div ref={ref} className="min-h-screen bg-background">
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-[100] glass border-b border-border/50">
-        <div className="container mx-auto px-4 py-4 min-h-[72px] flex items-center">
+      {/* Header - Fixed with safe-area support */}
+      <header className="fixed top-0 left-0 right-0 z-[100] glass border-b border-border/50 pt-safe">
+        <div className="container mx-auto px-4 py-4 min-h-[56px] flex items-center">
           <nav className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center">
@@ -52,7 +52,11 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
       </header>
 
       {/* Hero Section */}
-      <section id="home" className="relative min-h-screen flex items-center overflow-hidden pt-[72px]">
+      <section 
+        id="home" 
+        className="relative min-h-screen flex items-center overflow-hidden" 
+        style={{ paddingTop: 'calc(56px + env(safe-area-inset-top))' }}
+      >
         {/* Background with overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/95 via-primary/90 to-primary/85">
           <div 
