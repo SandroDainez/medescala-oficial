@@ -3452,8 +3452,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               {/* Navigation */}
               <div className="flex items-center gap-2">
-                <Button variant="outline" size="icon" onClick={navigatePrev}>
-                  <ChevronLeft className="h-4 w-4" />
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-11 w-11 touch-manipulation active:scale-95 transition-transform"
+                  onClick={navigatePrev}
+                >
+                  <ChevronLeft className="h-5 w-5" />
                 </Button>
                 <h2 className="text-lg font-bold min-w-[180px] text-center">
                   {viewMode === 'month' 
@@ -3461,8 +3466,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })} - ${format(endOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM/yyyy", { locale: ptBR })}`
                   }
                 </h2>
-                <Button variant="outline" size="icon" onClick={navigateNext}>
-                  <ChevronRight className="h-4 w-4" />
+                <Button 
+                  variant="outline" 
+                  size="icon" 
+                  className="h-11 w-11 touch-manipulation active:scale-95 transition-transform"
+                  onClick={navigateNext}
+                >
+                  <ChevronRight className="h-5 w-5" />
                 </Button>
               </div>
 
