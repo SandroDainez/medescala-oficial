@@ -132,9 +132,8 @@ export function MyShiftStatsChart() {
     return aggregated;
   }, [shiftData, mySectors, selectedYear]);
 
-  // Predefined color palette for sectors without custom colors
+  // Predefined color palette - always use distinct colors for each sector
   const colorPalette = [
-    '#10b981', // emerald
     '#3b82f6', // blue
     '#f59e0b', // amber
     '#ef4444', // red
@@ -144,17 +143,23 @@ export function MyShiftStatsChart() {
     '#84cc16', // lime
     '#f97316', // orange
     '#6366f1', // indigo
+    '#10b981', // emerald
+    '#14b8a6', // teal
+    '#a855f7', // purple
+    '#f43f5e', // rose
+    '#0ea5e9', // sky
+    '#eab308', // yellow
   ];
 
-  // Get sectors for the legend with distinct colors
+  // Get sectors for the legend with distinct colors - always use palette for distinct visualization
   const sectorsForChart = useMemo(() => {
     if (!mySectors) return [];
     return mySectors
       .filter(s => s !== null)
       .map((s, index) => ({
         ...s,
-        // Use sector's own color if set, otherwise use palette color
-        color: s.color || colorPalette[index % colorPalette.length],
+        // Always use palette color based on index for distinct visualization
+        color: colorPalette[index % colorPalette.length],
       })) as Sector[];
   }, [mySectors]);
 
