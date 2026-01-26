@@ -7,12 +7,12 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
   return (
     <div ref={ref} className="min-h-screen bg-background">
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-border/50">
-        <div className="container mx-auto px-4 py-4">
+      <header className="fixed top-0 left-0 right-0 z-[100] glass border-b border-border/50">
+        <div className="container mx-auto px-4 py-4 min-h-[72px] flex items-center">
           <nav className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-lg">M</span>
+              <div className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center">
+                <span className="text-primary-foreground font-bold text-xl">M</span>
               </div>
               <span className="font-bold text-xl text-foreground">MedEscala</span>
             </div>
@@ -32,14 +32,17 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
               </a>
             </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Link to="/auth">
-                <Button variant="ghost" className="text-muted-foreground hover:text-foreground">
+                <Button 
+                  variant="ghost" 
+                  className="h-11 px-4 text-muted-foreground hover:text-foreground touch-manipulation active:scale-95 transition-transform"
+                >
                   Login
                 </Button>
               </Link>
               <Link to="/auth">
-                <Button className="btn-glow">
+                <Button className="btn-glow h-11 px-5 touch-manipulation active:scale-95 transition-transform">
                   Experimente
                 </Button>
               </Link>
@@ -49,7 +52,7 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
       </header>
 
       {/* Hero Section */}
-      <section id="home" className="relative min-h-screen flex items-center overflow-hidden">
+      <section id="home" className="relative min-h-screen flex items-center overflow-hidden pt-[72px]">
         {/* Background with overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/95 via-primary/90 to-primary/85">
           <div 
