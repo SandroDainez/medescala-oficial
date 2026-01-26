@@ -222,7 +222,7 @@ export function MyShiftStatsChart() {
                   key={sector.id}
                   dataKey={sector.name}
                   stackId="a"
-                  fill={sector.color || '#22c55e'}
+                  fill={sector.color || 'hsl(var(--primary))'}
                   radius={[2, 2, 0, 0]}
                 />
               ))}
