@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { parseDateOnly } from '@/lib/utils';
+import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 import { 
   Clock, 
   LogIn, 
@@ -559,6 +560,11 @@ export default function UserShifts() {
         <h1 className="text-xl sm:text-2xl font-bold text-foreground">Minha Agenda</h1>
         <p className="text-sm text-muted-foreground">Escolha o mês e veja seus plantões</p>
       </header>
+
+      {/* My Shift Stats Chart Widget */}
+      <section aria-label="Meus plantões por setor">
+        <MyShiftStatsChart />
+      </section>
 
       {/* Today's Shifts - Quick Check-in Section */}
       {todayShifts.length > 0 && (
