@@ -87,9 +87,21 @@ export default function ResetPassword() {
     setLoading(false);
 
     if (error) {
+      // Handle specific error cases
+      let errorMessage = 'Não foi possível alterar a senha. Tente novamente.';
+      
+      if (error.message?.toLowerCase().includes('same password') || 
+          error.message?.toLowerCase().includes('should be different')) {
+        errorMessage = 'A nova senha deve ser diferente da senha atual.';
+      } else if (error.message?.toLowerCase().includes('weak password')) {
+        errorMessage = 'A senha é muito fraca. Use uma senha mais forte.';
+      } else if (error.message?.toLowerCase().includes('session')) {
+        errorMessage = 'Sessão expirada. Solicite um novo link de recuperação.';
+      }
+      
       toast({
         title: 'Erro',
-        description: 'Não foi possível alterar a senha. Tente novamente.',
+        description: errorMessage,
         variant: 'destructive',
       });
       return;
