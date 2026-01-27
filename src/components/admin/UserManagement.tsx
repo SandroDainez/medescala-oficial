@@ -1397,7 +1397,7 @@ export default function UserManagement() {
                                     <div className="p-3 pb-2">
                                       <div className="font-medium text-sm">Selecione os setores</div>
                                     </div>
-                                    <ScrollArea className="max-h-64">
+                                    <ScrollArea className="h-[280px] max-h-[50vh]">
                                       <div className="px-3 pb-2 space-y-1">
                                         {sectors.length === 0 ? (
                                           <p className="text-sm text-muted-foreground">Nenhum setor cadastrado</p>
