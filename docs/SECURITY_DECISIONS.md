@@ -160,7 +160,7 @@ Necessário para auditoria trabalhista e compliance com legislação de ponto.
 - Se a política de negócio mudar, revise as permissões e registre uma nova decisão aqui.
 - Ao rodar o scanner de segurança, ignore os findings listados acima ou marque-os como "risco aceito" com referência a este documento.
 
-## Resumo de Segurança (2026-01-25)
+## Resumo de Segurança (2026-01-27)
 
 | Categoria | Status |
 |-----------|--------|
@@ -168,8 +168,37 @@ Necessário para auditoria trabalhista e compliance com legislação de ponto.
 | RLS habilitada + forçada | ✅ Todas as tabelas |
 | Isolamento de tenant | ✅ Via `is_tenant_member()` e `is_tenant_admin()` |
 | GPS auditing | ✅ `gps_access_logs` + view segura |
-| PII isolado | ✅ `profiles_private` com criptografia + `pii_access_permissions` |
+| PII isolado | ✅ `profiles_private` com SELECT bloqueado + criptografia + edge function |
 | Financeiro isolado | ✅ `payment_access_permissions` + RLS |
+| profiles_private SELECTs | ✅ Bloqueados via policy USING(false) - acesso via edge function |
+
+---
+
+## 15) Bloqueio de SELECT Direto em profiles_private
+
+**Data de implementação:** 2026-01-27
+
+**Política adicionada:**
+```sql
+CREATE POLICY "Deny direct selects on profiles_private"
+ON public.profiles_private
+FOR SELECT
+TO authenticated
+USING (false);
+```
+
+**Motivo:**  
+Garantir que dados PII criptografados só sejam acessíveis via caminhos controlados (edge functions) que implementam verificação adicional de autorização e auditoria.
+
+**Caminhos de acesso válidos:**
+1. Edge function `pii-crypto` (verifica admin + tenant membership)
+2. RPC `get_profile_private_with_audit` (audita todo acesso)
+
+**Controles existentes:**
+- Criptografia AES-256-GCM de todos os campos sensíveis
+- Edge function valida: autenticação → admin do tenant → usuário pertence ao tenant
+- Grants temporais via `pii_access_permissions` com `expires_at` obrigatório
+- Auditoria completa em `pii_audit_logs`
 
 ---
 
