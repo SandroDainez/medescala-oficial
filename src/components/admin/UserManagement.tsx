@@ -1393,10 +1393,12 @@ export default function UserManagement() {
                                       }
                                     </Button>
                                   </PopoverTrigger>
-                                  <PopoverContent className="w-64 p-3" align="start">
-                                    <div className="space-y-3">
+                                  <PopoverContent className="w-64 p-0" align="start">
+                                    <div className="p-3 pb-2">
                                       <div className="font-medium text-sm">Selecione os setores</div>
-                                      <div className="space-y-2">
+                                    </div>
+                                    <ScrollArea className="max-h-64">
+                                      <div className="px-3 pb-2 space-y-1">
                                         {sectors.length === 0 ? (
                                           <p className="text-sm text-muted-foreground">Nenhum setor cadastrado</p>
                                         ) : (
@@ -1407,7 +1409,7 @@ export default function UserManagement() {
                                               <button
                                                 type="button"
                                                 key={sector.id}
-                                                className="flex w-full items-center gap-2 rounded-sm p-1 text-left hover:bg-accent"
+                                                className="flex w-full items-center gap-2 rounded-sm p-1.5 text-left hover:bg-accent"
                                                 onClick={() => toggleSectorMembership(member.user_id, sector.id)}
                                               >
                                                 <span
@@ -1442,14 +1444,14 @@ export default function UserManagement() {
                                           })
                                         )}
                                       </div>
-                                      {userSectorsNames.length > 0 && (
-                                        <div className="pt-2 border-t">
-                                          <p className="text-xs text-muted-foreground">
-                                            Selecionados: {userSectorsNames.join(', ')}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
+                                    </ScrollArea>
+                                    {userSectorsNames.length > 0 && (
+                                      <div className="px-3 py-2 border-t">
+                                        <p className="text-xs text-muted-foreground">
+                                          Selecionados: {userSectorsNames.join(', ')}
+                                        </p>
+                                      </div>
+                                    )}
                                   </PopoverContent>
                                 </Popover>
                               )}
