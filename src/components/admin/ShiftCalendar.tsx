@@ -4396,7 +4396,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               <SelectTrigger className="h-8">
                                 <SelectValue placeholder="Selecionar" />
                               </SelectTrigger>
-                              <SelectContent>
+                              <SelectContent className="max-h-[280px] overflow-y-auto">
                                 <SelectItem value="vago">
                                   <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-gray-400" />
@@ -4435,7 +4435,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <SelectTrigger>
                       <SelectValue placeholder="Selecionar tipo" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="max-h-[280px] overflow-y-auto">
                       <SelectItem value="vago">
                         <span className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-gray-400" />
@@ -4570,7 +4570,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um plantonista" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[280px] overflow-y-auto">
                   {sortMembersAlphabetically(members).map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
                       {m.profile?.name || 'Sem nome'}
@@ -5036,7 +5036,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   <SelectTrigger>
                     <SelectValue placeholder="Selecionar tipo" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-[280px] overflow-y-auto">
                     <SelectItem value="vago">
                       <span className="flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-gray-400" />
@@ -5265,7 +5265,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <SelectTrigger>
                   <SelectValue placeholder="Manter como está" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[280px] overflow-y-auto">
                   <SelectItem value="__keep__">Manter como está</SelectItem>
                   <SelectItem value="__clear__">Remover plantonista (vago)</SelectItem>
                   {sortMembersAlphabetically(members).map((m) => (
@@ -5476,7 +5476,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             <SelectTrigger>
                               <SelectValue placeholder="Selecionar" />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="max-h-[280px] overflow-y-auto">
                               <SelectItem value="vago">
                                 <span className="flex items-center gap-2">
                                   <span className="w-2 h-2 rounded-full bg-gray-400" />
