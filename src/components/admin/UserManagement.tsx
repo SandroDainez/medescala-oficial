@@ -631,6 +631,16 @@ export default function UserManagement() {
           email: nextEmail || undefined,
           resetPassword: resetPasswordOnSave,
           sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
+          // Private profile fields
+          phone: editPhone || undefined,
+          cpf: editCpf || undefined,
+          crm: editCrm || undefined,
+          rqe: editRqe || undefined,
+          address: editAddress || undefined,
+          bankName: editBankName || undefined,
+          bankAgency: editBankAgency || undefined,
+          bankAccount: editBankAccount || undefined,
+          pixKey: editPixKey || undefined,
         },
       });
 
