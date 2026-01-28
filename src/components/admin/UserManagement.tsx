@@ -637,15 +637,16 @@ export default function UserManagement() {
           resetPassword: resetPasswordOnSave,
           sendInviteEmail: sendEmailOnSave || resetPasswordOnSave,
           // Private profile fields
-          phone: editPhone || undefined,
-          cpf: editCpf || undefined,
-          crm: editCrm || undefined,
-          rqe: editRqe || undefined,
-          address: editAddress || undefined,
-          bankName: editBankName || undefined,
-          bankAgency: editBankAgency || undefined,
-          bankAccount: editBankAccount || undefined,
-          pixKey: editPixKey || undefined,
+          // Send ALL fields always; empty string means "clear".
+          phone: editPhone.trim(),
+          cpf: editCpf.trim(),
+          crm: editCrm.trim(),
+          rqe: editRqe.trim(),
+          address: editAddress.trim(),
+          bankName: editBankName.trim(),
+          bankAgency: editBankAgency.trim(),
+          bankAccount: editBankAccount.trim(),
+          pixKey: editPixKey.trim(),
         },
         headers: {
           Authorization: `Bearer ${sessionData.session.access_token}`,
@@ -857,41 +858,38 @@ export default function UserManagement() {
         throw new Error('Sessão expirada. Por favor, faça login novamente.');
       }
 
-      // Call edge function to create user (this won't affect current session)
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-          },
-          body: JSON.stringify({
-            email: userEmail,
-            password: userPassword,
-            name: inviteName,
-            tenantId: currentTenantId,
-            role: inviteRole,
-            profileType: inviteProfileType,
-            phone: invitePhone || null,
-            cpf: inviteCpf || null,
-            crm: inviteCrm || null,
-            rqe: inviteRqe || null,
-            address: inviteAddress || null,
-            bankName: inviteBankName || null,
-            bankAgency: inviteBankAgency || null,
-            bankAccount: inviteBankAccount || null,
-            pixKey: invitePixKey || null,
-            sendInviteEmail: inviteEmail.trim() && !inviteEmail.includes('@interno.hospital'),
-          }),
-        }
-      );
+      // Create user via backend function (consistent auth/CORS and better error handling)
+      const { data: result, error } = await supabase.functions.invoke('create-user', {
+        body: {
+          email: userEmail,
+          password: userPassword,
+          name: inviteName,
+          tenantId: currentTenantId,
+          role: inviteRole,
+          profileType: inviteProfileType,
+          // Send ALL optional fields always; empty string means "not provided".
+          phone: invitePhone.trim(),
+          cpf: inviteCpf.trim(),
+          crm: inviteCrm.trim(),
+          rqe: inviteRqe.trim(),
+          address: inviteAddress.trim(),
+          bankName: inviteBankName.trim(),
+          bankAgency: inviteBankAgency.trim(),
+          bankAccount: inviteBankAccount.trim(),
+          pixKey: invitePixKey.trim(),
+          sendInviteEmail: !!inviteEmail.trim() && !inviteEmail.includes('@interno.hospital'),
+        },
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-      const result = await response.json();
+      if (error) {
+        throw new Error(error.message || 'Erro ao criar usuário');
+      }
 
-      if (!response.ok) {
-        throw new Error(result.error || 'Erro ao criar usuário');
+      if ((result as any)?.error) {
+        throw new Error((result as any).error);
       }
 
       // Show credentials dialog
@@ -911,15 +909,15 @@ export default function UserManagement() {
       fetchTenantInfo();
 
       // Show appropriate toast based on email status
-      if (result.emailSent) {
+      if ((result as any)?.emailSent) {
         toast({ 
           title: 'Usuário criado com sucesso!',
           description: 'Email de convite enviado para o usuário.'
         });
-      } else if (result.emailError) {
+      } else if ((result as any)?.emailError) {
         toast({ 
           title: 'Usuário criado!',
-          description: `Email não enviado: ${result.emailError}. Compartilhe as credenciais manualmente.`,
+          description: `Email não enviado: ${(result as any).emailError}. Compartilhe as credenciais manualmente.`,
           variant: 'default'
         });
       } else {
