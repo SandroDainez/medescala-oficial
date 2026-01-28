@@ -18,6 +18,42 @@ function escapeHtml(text: string): string {
   return text.replace(/[&<>"']/g, (char) => htmlEscapes[char] || char);
 }
 
+// Derive a CryptoKey from the encryption key string
+async function deriveKey(keyString: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  
+  const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
+  
+  return await crypto.subtle.importKey(
+    'raw',
+    hashBuffer,
+    { name: 'AES-GCM' },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+
+// Encrypt plaintext using AES-GCM
+async function encryptValue(plaintext: string, key: CryptoKey): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plaintext);
+  
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    data
+  );
+  
+  const combined = new Uint8Array(iv.length + encrypted.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encrypted), iv.length);
+  
+  return btoa(String.fromCharCode(...combined));
+}
+
 Deno.serve(async (req) => {
   console.log("update-user function called");
 
@@ -64,6 +100,16 @@ Deno.serve(async (req) => {
       email,
       sendInviteEmail,
       resetPassword,
+      // Private profile fields
+      phone,
+      cpf,
+      crm,
+      rqe,
+      address,
+      bankName,
+      bankAgency,
+      bankAccount,
+      pixKey,
     } = await req.json()
 
     console.log(`Updating user ${userId} in tenant ${tenantId}`);
@@ -113,7 +159,95 @@ Deno.serve(async (req) => {
       profileUpdated = true
     }
 
-    // Get tenant info for email
+    // Update private profile fields (encrypted PII data)
+    const hasPrivateFields = phone !== undefined || cpf !== undefined || crm !== undefined || 
+                             rqe !== undefined || address !== undefined || bankName !== undefined || 
+                             bankAgency !== undefined || bankAccount !== undefined || pixKey !== undefined;
+    
+    let privateProfileUpdated = false
+    if (hasPrivateFields) {
+      const encryptionKey = Deno.env.get('PII_ENCRYPTION_KEY')
+      
+      if (!encryptionKey) {
+        console.error('PII_ENCRYPTION_KEY not configured')
+        throw new Error('Configuração de criptografia não encontrada')
+      }
+
+      try {
+        const cryptoKey = await deriveKey(encryptionKey)
+        const privatePayload: Record<string, unknown> = {}
+        
+        const fieldsToEncrypt = [
+          { key: 'phone', value: phone },
+          { key: 'cpf', value: cpf },
+          { key: 'crm', value: crm },
+          { key: 'rqe', value: rqe },
+          { key: 'address', value: address },
+          { key: 'bank_name', value: bankName },
+          { key: 'bank_agency', value: bankAgency },
+          { key: 'bank_account', value: bankAccount },
+          { key: 'pix_key', value: pixKey },
+        ]
+
+        for (const { key, value } of fieldsToEncrypt) {
+          // Only include fields that were explicitly sent (not undefined)
+          if (value !== undefined) {
+            if (value) {
+              privatePayload[`${key}_enc`] = await encryptValue(value, cryptoKey)
+            } else {
+              privatePayload[`${key}_enc`] = null
+            }
+          }
+        }
+
+        // Only update if there are fields to update
+        if (Object.keys(privatePayload).length > 0) {
+          // Check if private profile exists
+          const { data: existingPrivate } = await supabaseAdmin
+            .from('profiles_private')
+            .select('user_id')
+            .eq('user_id', userId)
+            .maybeSingle()
+
+          if (existingPrivate) {
+            // Update existing record
+            const { error: updatePrivateError } = await supabaseAdmin
+              .from('profiles_private')
+              .update(privatePayload)
+              .eq('user_id', userId)
+
+            if (updatePrivateError) {
+              console.error('Error updating private profile:', updatePrivateError)
+              throw new Error(`Erro ao atualizar dados privados: ${updatePrivateError.message}`)
+            }
+          } else {
+            // Insert new record with tenant_id
+            const { error: insertPrivateError } = await supabaseAdmin
+              .from('profiles_private')
+              .insert({
+                user_id: userId,
+                tenant_id: tenantId,
+                ...privatePayload
+              })
+
+            if (insertPrivateError) {
+              console.error('Error inserting private profile:', insertPrivateError)
+              throw new Error(`Erro ao criar dados privados: ${insertPrivateError.message}`)
+            }
+          }
+
+          privateProfileUpdated = true
+          console.log('Private profile updated successfully')
+        }
+      } catch (err) {
+        console.error('Encryption/update error:', err)
+        if (err instanceof Error && err.message.startsWith('Erro ao')) {
+          throw err
+        }
+        throw new Error('Erro ao processar dados criptografados')
+      }
+    }
+
     const { data: tenant } = await supabaseAdmin
       .from('tenants')
       .select('name')
@@ -331,6 +465,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         profileUpdated,
+        privateProfileUpdated,
         emailUpdated,
         currentAuthEmail,
         passwordReset,
