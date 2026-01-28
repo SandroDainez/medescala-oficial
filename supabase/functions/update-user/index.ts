@@ -2,7 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
 // HTML escape function to prevent XSS in email templates
@@ -52,6 +53,16 @@ async function encryptValue(plaintext: string, key: CryptoKey): Promise<string> 
   combined.set(new Uint8Array(encrypted), iv.length);
   
   return btoa(String.fromCharCode(...combined));
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 Deno.serve(async (req) => {
@@ -192,11 +203,15 @@ Deno.serve(async (req) => {
         for (const { key, value } of fieldsToEncrypt) {
           // Only include fields that were explicitly sent (not undefined)
           if (value !== undefined) {
-            if (value) {
-              privatePayload[`${key}_enc`] = await encryptValue(value, cryptoKey)
-            } else {
-              privatePayload[`${key}_enc`] = null
-            }
+             if (value) {
+               const encryptedB64 = await encryptValue(value, cryptoKey)
+               const encryptedBytes = base64ToBytes(encryptedB64)
+               const hex = bytesToHex(encryptedBytes)
+               // profiles_private.*_enc are bytea
+               privatePayload[`${key}_enc`] = `\\x${hex}`
+             } else {
+               privatePayload[`${key}_enc`] = null
+             }
           }
         }
 
