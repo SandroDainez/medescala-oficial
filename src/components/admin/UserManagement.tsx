@@ -622,6 +622,11 @@ export default function UserManagement() {
         }
       }
 
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        throw new Error('Sessão inválida. Faça login novamente e tente de novo.');
+      }
+
       const { data, error } = await supabase.functions.invoke('update-user', {
         body: {
           userId: editingMember.user_id,
@@ -641,6 +646,9 @@ export default function UserManagement() {
           bankAgency: editBankAgency || undefined,
           bankAccount: editBankAccount || undefined,
           pixKey: editPixKey || undefined,
+        },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
         },
       });
 
@@ -704,8 +712,16 @@ export default function UserManagement() {
 
     try {
       // Get user's current email
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) {
+        throw new Error('Sessão inválida. Faça login novamente e tente de novo.');
+      }
+
       const { data: emailData, error: emailError } = await supabase.functions.invoke('get-user-email', {
         body: { userId: member.user_id, tenantId: currentTenantId },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
+        },
       });
       
       if (emailError) throw emailError;
@@ -725,6 +741,9 @@ export default function UserManagement() {
           resetPassword: true,
           // Send credentials by email as well (so the user can access without admin copy/paste)
           sendInviteEmail: true,
+        },
+        headers: {
+          Authorization: `Bearer ${sessionData.session.access_token}`,
         },
       });
 
