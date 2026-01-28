@@ -168,8 +168,16 @@ export default function UserManagement() {
       
       if (userIds.length > 0) {
         try {
+          const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+          if (sessionError || !sessionData.session?.access_token) {
+            throw new Error('Sessão inválida para descriptografar dados. Faça login novamente.');
+          }
+
           const { data: decryptResult, error: decryptError } = await supabase.functions.invoke('pii-crypto', {
-            body: { action: 'decrypt_batch', userIds }
+            body: { action: 'decrypt_batch', userIds },
+            headers: {
+              Authorization: `Bearer ${sessionData.session.access_token}`,
+            },
           });
           
           if (!decryptError && decryptResult?.data) {
