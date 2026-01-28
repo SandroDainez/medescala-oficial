@@ -163,10 +163,26 @@ Deno.serve(async (req) => {
       // Don't throw, the user is created, profile can be updated later
     }
 
+    // Create membership FIRST so profiles_private can reference it
+    const { error: membershipInsertError } = await supabaseAdmin
+      .from('memberships')
+      .insert({
+        tenant_id: tenantId,
+        user_id: newUser.user.id,
+        role: role || 'user',
+        active: true,
+        created_by: requestingUser.id
+      })
+
+    if (membershipInsertError) {
+      throw membershipInsertError
+    }
+
     // Save private profile data with encryption (only encrypted columns exist)
     const encryptionKey = Deno.env.get('PII_ENCRYPTION_KEY')
     const privatePayload: Record<string, unknown> = {
       user_id: newUser.user.id,
+      tenant_id: tenantId, // Explicitly set tenant_id
     }
 
     if (encryptionKey) {
@@ -207,21 +223,6 @@ Deno.serve(async (req) => {
     if (privateProfileError) {
       console.error('Private profile error:', privateProfileError)
       // Don't throw, the user is created, profile can be updated later
-    }
-
-    // Create membership for the new user
-    const { error: membershipInsertError } = await supabaseAdmin
-      .from('memberships')
-      .insert({
-        tenant_id: tenantId,
-        user_id: newUser.user.id,
-        role: role || 'user',
-        active: true,
-        created_by: requestingUser.id
-      })
-
-    if (membershipInsertError) {
-      throw membershipInsertError
     }
 
     // Also add the role to user_roles table
