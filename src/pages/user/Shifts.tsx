@@ -27,7 +27,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
-import { format, isToday, isTomorrow, isPast, parseISO, startOfMonth, endOfMonth } from 'date-fns';
+import { format, isToday, isTomorrow, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Collapsible,
@@ -62,16 +62,6 @@ interface Assignment {
   };
 }
 
-interface VisibleShift {
-  id: string;
-  title: string;
-  hospital: string;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  sector_id: string | null;
-}
-
 interface Sector {
   id: string;
   name: string;
@@ -89,7 +79,6 @@ export default function UserShifts() {
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [visibleShifts, setVisibleShifts] = useState<VisibleShift[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());
@@ -112,13 +101,6 @@ export default function UserShifts() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
-
-  useEffect(() => {
-    if (user && currentTenantId) {
-      fetchVisibleShiftsForMonth(effectiveYear, effectiveMonth);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, currentTenantId, effectiveYear, effectiveMonth]);
 
   async function fetchData() {
     if (!currentTenantId || !user) return;
@@ -187,57 +169,6 @@ export default function UserShifts() {
     }
 
     setLoading(false);
-  }
-
-  async function fetchVisibleShiftsForMonth(year: number, monthIndex: number) {
-    if (!currentTenantId || !user) return;
-
-    const start = startOfMonth(new Date(year, monthIndex, 1));
-    const end = endOfMonth(new Date(year, monthIndex, 1));
-    const startStr = format(start, 'yyyy-MM-dd');
-    const endStr = format(end, 'yyyy-MM-dd');
-
-    try {
-      const [mySectorsRes, shiftsRes] = await Promise.all([
-        supabase
-          .from('sector_memberships')
-          .select('sector_id')
-          .eq('tenant_id', currentTenantId)
-          .eq('user_id', user.id),
-        supabase
-          .from('shifts')
-          .select('id, title, hospital, shift_date, start_time, end_time, sector_id')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', startStr)
-          .lte('shift_date', endStr)
-          .order('shift_date', { ascending: true })
-          .order('start_time', { ascending: true }),
-      ]);
-
-      if (mySectorsRes.error) throw mySectorsRes.error;
-      if (shiftsRes.error) throw shiftsRes.error;
-
-      const mySectorIds = new Set((mySectorsRes.data ?? []).map((r: any) => r.sector_id));
-      const myAssignedShiftIds = new Set((assignments ?? []).map((a) => a.shift_id).filter(Boolean) as string[]);
-
-      const filtered = ((shiftsRes.data ?? []) as VisibleShift[]).filter((s) => {
-        // Mostra todos os plantões dos setores do usuário.
-        if (s.sector_id && mySectorIds.has(s.sector_id)) return true;
-        // E também qualquer plantão explicitamente atribuído ao usuário (mesmo se setor_id for null/antigo).
-        if (myAssignedShiftIds.has(s.id)) return true;
-        return false;
-      });
-
-      setVisibleShifts(filtered);
-    } catch (error: any) {
-      console.error('[UserShifts] Error fetching sector shifts:', error);
-      toast({
-        title: 'Erro ao carregar escalas do setor',
-        description: error?.message || 'Erro desconhecido',
-        variant: 'destructive',
-      });
-      // Não zera o estado aqui para evitar “piscar”/sumir em falhas transitórias.
-    }
   }
 
   async function getCurrentPosition(): Promise<GeolocationPosition> {
@@ -556,41 +487,6 @@ export default function UserShifts() {
     });
   }, [assignments, effectiveMonth, effectiveYear]);
 
-  const visibleShiftsInMonth = useMemo(() => {
-    // `visibleShifts` já vem filtrado por mês/ano no fetch, mas mantemos o guard defensivo.
-    return visibleShifts.filter((s) => {
-      const y = Number(s.shift_date.slice(0, 4));
-      const m = Number(s.shift_date.slice(5, 7)) - 1;
-      return y === effectiveYear && m === effectiveMonth;
-    });
-  }, [visibleShifts, effectiveMonth, effectiveYear]);
-
-  const assignmentByShiftId = useMemo(() => {
-    const map = new Map<string, Assignment>();
-    filteredAssignments.forEach((a) => {
-      if (a.shift_id) map.set(a.shift_id, a);
-    });
-    return map;
-  }, [filteredAssignments]);
-
-  const groupedVisibleShifts = useMemo(() => {
-    const acc: Record<string, VisibleShift[]> = {};
-    visibleShiftsInMonth.forEach((s) => {
-      const sectorId = s.sector_id || 'sem-setor';
-      if (!acc[sectorId]) acc[sectorId] = [];
-      acc[sectorId].push(s);
-    });
-    // ordena por data/hora
-    Object.values(acc).forEach((list) => {
-      list.sort((a, b) => {
-        const ad = `${a.shift_date}T${a.start_time}`;
-        const bd = `${b.shift_date}T${b.start_time}`;
-        return ad.localeCompare(bd);
-      });
-    });
-    return acc;
-  }, [visibleShiftsInMonth]);
-
   const groupedAssignments = filteredAssignments.reduce((acc, assignment) => {
     const sectorId = assignment.shift.sector_id || 'sem-setor';
     if (!acc[sectorId]) {
@@ -823,15 +719,15 @@ export default function UserShifts() {
         </div>
       </section>
 
-      {visibleShiftsInMonth.length === 0 ? (
+      {filteredAssignments.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Nenhum plantão nos seus setores neste mês</p>
+            <p className="text-muted-foreground">Nenhum plantão seu neste mês</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.entries(groupedVisibleShifts).map(([sectorId, sectorShifts]) => {
+          {Object.entries(groupedAssignments).map(([sectorId, sectorAssignments]) => {
             const sectorInfo = getSectorInfo(sectorId);
             const isOpen = openSectors.has(sectorId);
 
@@ -844,7 +740,7 @@ export default function UserShifts() {
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectorInfo.color }} />
                         <span className="font-semibold text-foreground">{sectorInfo.name}</span>
                         <Badge variant="secondary" className="ml-2">
-                          {sectorShifts.length} plantão{sectorShifts.length !== 1 ? 'ões' : ''}
+                          {sectorAssignments.length} plantão{sectorAssignments.length !== 1 ? 'ões' : ''}
                         </Badge>
                         {sectorInfo.require_gps_checkin && (
                           <MapPin className="h-4 w-4 text-blue-500" />
@@ -861,26 +757,24 @@ export default function UserShifts() {
                   <CollapsibleContent>
                     <CardContent className="pt-0 pb-4">
                       <div className="space-y-3">
-                        {sectorShifts.map((s) => {
-                          const myAssignment = assignmentByShiftId.get(s.id);
+                        {sectorAssignments.map((myAssignment) => {
+                          const s = myAssignment.shift;
                           const shiftDate = parseDateOnly(s.shift_date);
                           const isShiftToday = isToday(shiftDate);
                           const isShiftTomorrow = isTomorrow(shiftDate);
                           const isShiftPast = isPast(shiftDate) && !isShiftToday;
-                          const isProcessing = myAssignment ? processingId === myAssignment.id : false;
+                          const isProcessing = processingId === myAssignment.id;
                           const needsCheckin =
-                            Boolean(myAssignment) &&
                             !myAssignment?.checkin_at &&
                             myAssignment?.status !== 'completed' &&
                             myAssignment?.status !== 'cancelled';
                           const needsCheckout =
-                            Boolean(myAssignment) &&
                             !myAssignment?.checkout_at &&
                             (Boolean(myAssignment?.checkin_at) || myAssignment?.status === 'confirmed');
 
                           return (
                             <div 
-                              key={s.id} 
+                              key={myAssignment.id} 
                               className={`p-4 rounded-lg border bg-card transition-colors ${
                                 isShiftToday ? 'border-primary/50 bg-primary/5' : 
                                 isShiftTomorrow ? 'border-yellow-500/30 bg-yellow-50/50 dark:bg-yellow-950/20' :
@@ -891,16 +785,9 @@ export default function UserShifts() {
                                 <div className="flex-1 space-y-2">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <h4 className="font-medium text-foreground">{s.title}</h4>
-                                    {myAssignment ? (
-                                      <>
-                                        <Badge className={statusColors[myAssignment.status]} variant="outline">
-                                          {statusLabels[myAssignment.status]}
-                                        </Badge>
-                                        <Badge variant="secondary">Meu</Badge>
-                                      </>
-                                    ) : (
-                                      <Badge variant="outline">Sem plantão meu</Badge>
-                                    )}
+                                    <Badge className={statusColors[myAssignment.status]} variant="outline">
+                                      {statusLabels[myAssignment.status]}
+                                    </Badge>
                                     {isShiftToday && (
                                       <Badge variant="default" className="bg-primary">Hoje</Badge>
                                     )}
