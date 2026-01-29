@@ -75,25 +75,59 @@ export default function UserCalendar() {
     const startStr = format(start, 'yyyy-MM-dd');
     const endStr = format(end, 'yyyy-MM-dd');
 
-    const [mySectorsRes, shiftsRes, rosterRes] = await Promise.all([
+    // 1) Descobre setores do usuário e seus próprios plantões (ids) em paralelo
+    const [mySectorsRes, myAssignmentsRes] = await Promise.all([
       supabase
         .from('sector_memberships')
         .select('sector_id, sector:sectors(*)')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id),
       supabase
-        .from('shifts')
-        .select('*, sector:sectors(*)')
+        .from('shift_assignments')
+        .select('shift_id')
         .eq('tenant_id', currentTenantId)
-        .gte('shift_date', startStr)
-        .lte('shift_date', endStr)
-        .order('shift_date', { ascending: true }),
-      // Use RPC to get roster with names (avoids RLS issues on mobile)
-      supabase.rpc('get_shift_roster', {
-        _tenant_id: currentTenantId,
-        _start: startStr,
-        _end: endStr,
-      }),
+        .eq('user_id', user.id)
+        .in('status', ['assigned', 'confirmed', 'completed']),
+    ]);
+
+    const mySectorIds = (mySectorsRes.data ?? []).map((r: any) => r.sector_id).filter(Boolean) as string[];
+    const myShiftIds = (myAssignmentsRes.data ?? []).map((r: any) => r.shift_id).filter(Boolean) as string[];
+
+    // 2) Busca os plantões dos setores do usuário (mesmo sem ele estar escalado)
+    const sectorShiftsPromise = mySectorIds.length
+      ? supabase
+          .from('shifts')
+          .select('*, sector:sectors(*)')
+          .eq('tenant_id', currentTenantId)
+          .in('sector_id', mySectorIds)
+          .gte('shift_date', startStr)
+          .lte('shift_date', endStr)
+          .order('shift_date', { ascending: true })
+          .order('start_time', { ascending: true })
+      : Promise.resolve({ data: [], error: null } as any);
+
+    // 3) Garante que qualquer plantão do usuário apareça, mesmo se tiver setor_id nulo/legado
+    const myShiftsPromise = myShiftIds.length
+      ? supabase
+          .from('shifts')
+          .select('*, sector:sectors(*)')
+          .eq('tenant_id', currentTenantId)
+          .in('id', myShiftIds)
+          .gte('shift_date', startStr)
+          .lte('shift_date', endStr)
+      : Promise.resolve({ data: [], error: null } as any);
+
+    // Use RPC to get roster with names (avoids RLS issues on mobile)
+    const rosterPromise = supabase.rpc('get_shift_roster', {
+      _tenant_id: currentTenantId,
+      _start: startStr,
+      _end: endStr,
+    });
+
+    const [sectorShiftsRes, myShiftsRes, rosterRes] = await Promise.all([
+      sectorShiftsPromise,
+      myShiftsPromise,
+      rosterPromise,
     ]);
 
     if (rosterRes.error) {
@@ -114,12 +148,32 @@ export default function UserCalendar() {
       });
     }
 
-    if (mySectorsRes.data) {
-      setMySectors(mySectorsRes.data as unknown as MySector[]);
+    if (mySectorsRes.error) {
+      console.error('sector_memberships error:', mySectorsRes.error);
+    }
+    if (myAssignmentsRes.error) {
+      console.error('shift_assignments (mine) error:', myAssignmentsRes.error);
     }
 
-    if (shiftsRes.data) {
-      setShifts(shiftsRes.data as unknown as Shift[]);
+    if (mySectorsRes.data) setMySectors(mySectorsRes.data as unknown as MySector[]);
+
+    if (sectorShiftsRes.error) {
+      console.error('shifts (sector) error:', sectorShiftsRes.error);
+      toast({
+        title: 'Não foi possível carregar as escalas do setor',
+        description: 'Verifique sua conexão e tente novamente.',
+        variant: 'destructive',
+      });
+    }
+
+    const mergedShiftsMap = new Map<string, Shift>();
+    (sectorShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
+    (myShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
+    const mergedShifts = Array.from(mergedShiftsMap.values())
+      .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`));
+
+    if (mergedShifts) {
+      setShifts(mergedShifts as unknown as Shift[]);
 
       // Build assignments from roster data
       const enrichedAssignments: ShiftAssignment[] = [];
