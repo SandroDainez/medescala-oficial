@@ -441,57 +441,58 @@ export default function UserFinancial() {
             </Card>
           ))}
 
-          {/* Summary by Sector */}
-          <Card className="bg-primary/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
+          {/* Summary by Sector - mobile optimized */}
+          <Card className="bg-primary/5 overflow-hidden">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
                 <MapPin className="h-5 w-5" />
                 Resumo por Setor
               </CardTitle>
             </CardHeader>
-            <CardContent className="p-0 overflow-x-auto">
-              <div className="min-w-[400px] sm:min-w-0">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/30">
-                      <TableHead className="whitespace-nowrap">Setor</TableHead>
-                      <TableHead className="text-center whitespace-nowrap">Plantões</TableHead>
-                      <TableHead className="text-center whitespace-nowrap">Horas</TableHead>
-                      <TableHead className="text-right whitespace-nowrap">Valor</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
+            <CardContent className="p-0">
+              {/* Scrollable wrapper for mobile */}
+              <div className="w-full overflow-x-auto">
+                <table className="w-full min-w-[360px] text-sm">
+                  <thead className="bg-muted/30">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium text-muted-foreground whitespace-nowrap">Setor</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground whitespace-nowrap">Plantões</th>
+                      <th className="px-3 py-2 text-center font-medium text-muted-foreground whitespace-nowrap">Horas</th>
+                      <th className="px-3 py-2 text-right font-medium text-muted-foreground whitespace-nowrap">Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
                     {sectorSummaries.map(sector => (
-                      <TableRow key={sector.sector_id}>
-                        <TableCell className="font-medium">
+                      <tr key={sector.sector_id}>
+                        <td className="px-3 py-2.5">
                           <div className="flex items-center gap-2">
                             <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            <span className="truncate max-w-[120px] sm:max-w-none">{sector.sector_name}</span>
+                            <span className="truncate max-w-[100px] sm:max-w-none font-medium">{sector.sector_name}</span>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="secondary">{sector.total_shifts}</Badge>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <Badge variant="outline">{sector.total_hours.toFixed(1)}h</Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold text-green-600 whitespace-nowrap">
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <Badge variant="secondary" className="text-xs">{sector.total_shifts}</Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          <Badge variant="outline" className="text-xs">{sector.total_hours.toFixed(1)}h</Badge>
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-semibold text-green-600 whitespace-nowrap">
                           R$ {sector.total_value.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
+                        </td>
+                      </tr>
                     ))}
-                  </TableBody>
+                  </tbody>
                   <tfoot>
                     <tr className="bg-primary/10 font-bold text-foreground">
-                      <td className="p-3 whitespace-nowrap">TOTAL GERAL</td>
-                      <td className="p-3 text-center whitespace-nowrap">{summary.totalShifts}</td>
-                      <td className="p-3 text-center whitespace-nowrap">{summary.totalHours.toFixed(1)}h</td>
-                      <td className="p-3 text-right text-green-600 text-lg whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">TOTAL</td>
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">{summary.totalShifts}</td>
+                      <td className="px-3 py-2.5 text-center whitespace-nowrap">{summary.totalHours.toFixed(1)}h</td>
+                      <td className="px-3 py-2.5 text-right text-green-600 whitespace-nowrap">
                         R$ {summary.totalValue.toFixed(2)}
                       </td>
                     </tr>
                   </tfoot>
-                </Table>
+                </table>
               </div>
             </CardContent>
           </Card>
