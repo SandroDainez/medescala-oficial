@@ -10,7 +10,6 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AdminLayout } from "@/components/layouts/AdminLayout";
 import { UserLayout } from "@/components/layouts/UserLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { forwardRef } from "react";
 
 import Auth from "./pages/Auth";
 import Landing from "./pages/Landing";
@@ -80,14 +79,6 @@ function RoleRedirect() {
   return <Navigate to="/app" replace />;
 }
 
-// Wrapper component that accepts refs to prevent React warnings
-// when BrowserRouter with future flags tries to pass refs to children
-const AppContent = forwardRef<HTMLDivElement, { children: React.ReactNode }>(
-  function AppContent({ children }, ref) {
-    return <div ref={ref}>{children}</div>;
-  }
-);
-
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -100,7 +91,7 @@ const App = () => (
             v7_relativeSplatPath: true,
           }}
         >
-          <AppContent>
+          <div>
             <AuthProvider>
               <TenantProvider>
                 <ErrorBoundary>
@@ -167,7 +158,7 @@ const App = () => (
                 </ErrorBoundary>
               </TenantProvider>
             </AuthProvider>
-          </AppContent>
+          </div>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
