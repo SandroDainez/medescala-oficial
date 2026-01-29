@@ -230,9 +230,9 @@ public.has_gabs_bypass(_user_id)
 
 ---
 
-## 12) Grants Temporais (PII, Financeiro, GPS)
+## 12) Grants Temporais (PII, Financeiro, GPS) - HARDENED v2
 
-**Data de atualização:** 2026-01-25 (HARDENED)
+**Data de atualização:** 2026-01-29 (DOUBLE-CHECK: Role + Grant)
 
 **Tabelas de grants:**
 - `pii_access_permissions` - Acesso a dados pessoais criptografados
@@ -245,19 +245,20 @@ public.has_gabs_bypass(_user_id)
 - `tenant_id` - Isolamento por tenant
 - `granted_by` - Quem concedeu
 
-**Comportamento HARDENED (2026-01-25):**
+**Comportamento HARDENED v2 (2026-01-29):**
 - ❌ Grant SEM `expires_at` = **REJEITADO** (constraint CHECK no banco)
 - ❌ Grant com `expires_at` no passado = **IGNORADO**
 - ❌ Super admins **NÃO TÊM BYPASS** - precisam de grant explícito
 - ❌ has_gabs_bypass **NÃO FUNCIONA** para PII/pagamentos/GPS
-- ❌ is_super_admin **NÃO FUNCIONA** para PII/pagamentos/GPS
-- ✅ Apenas grants temporais válidos com expiração futura são aceitos
+- ❌ is_super_admin sozinho **NÃO FUNCIONA** para PII/pagamentos/GPS
+- ✅ Usuários comuns **NUNCA** conseguem acesso mesmo com grant
+- ✅ **REQUER AMBOS**: (admin OR super_admin) **E** grant temporal válido
 
-**Funções de acesso (SEM BYPASS):**
+**Funções de acesso (DUAL-AUTH):**
 ```sql
-has_pii_access(_tenant_id) -- EXIGE grant com expires_at > now()
-has_payment_access(_tenant_id) -- EXIGE grant com expires_at > now()
-has_gps_access(_tenant_id) -- EXIGE grant com expires_at > now()
+has_pii_access(_tenant_id) -- EXIGE (admin OR super_admin) E grant expires_at > now()
+has_payment_access(_tenant_id) -- EXIGE (admin OR super_admin) E grant expires_at > now()
+has_gps_access(_tenant_id) -- EXIGE (admin OR super_admin) E grant expires_at > now()
 ```
 
 **Triggers de auditoria:**
@@ -325,6 +326,6 @@ log_gps_grant_trigger AFTER INSERT ON gps_access_grants
 | `can_view_profile(profile_id)` | Próprio OU admin OU bypass |
 | `can_view_shift(shift_id, tenant_id)` | Escalado OU setor OU admin |
 | `is_assigned_to_shift(shift_id, user_id)` | Verifica assignment |
-| `has_pii_access(user_id, tenant_id)` | Grant temporal válido (SEM bypass) |
-| `has_payment_access(user_id, tenant_id)` | Grant temporal válido (SEM bypass) |
-| `has_gps_access(user_id, tenant_id)` | Grant temporal válido (NOVA, SEM bypass) |
+| `has_pii_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
+| `has_payment_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
+| `has_gps_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
