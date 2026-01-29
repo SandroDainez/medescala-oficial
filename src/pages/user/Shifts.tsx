@@ -27,7 +27,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
-import { format, isToday, isTomorrow, isPast, parseISO } from 'date-fns';
+import { format, isToday, isTomorrow, isPast, parseISO, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
   Collapsible,
@@ -47,6 +47,7 @@ import {
 
 interface Assignment {
   id: string;
+  shift_id?: string;
   assigned_value: number;
   checkin_at: string | null;
   checkout_at: string | null;
@@ -59,6 +60,16 @@ interface Assignment {
     end_time: string;
     sector_id: string | null;
   };
+}
+
+interface VisibleShift {
+  id: string;
+  title: string;
+  hospital: string;
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  sector_id: string | null;
 }
 
 interface Sector {
@@ -78,6 +89,7 @@ export default function UserShifts() {
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [visibleShifts, setVisibleShifts] = useState<VisibleShift[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
   const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());
@@ -90,6 +102,9 @@ export default function UserShifts() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [didAutoSelect, setDidAutoSelect] = useState(false);
 
+  const effectiveMonth = selectedMonth ?? now.getMonth();
+  const effectiveYear = selectedYear ?? now.getFullYear();
+
   useEffect(() => {
     if (user && currentTenantId) {
       setDidAutoSelect(false);
@@ -97,6 +112,13 @@ export default function UserShifts() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
+
+  useEffect(() => {
+    if (user && currentTenantId) {
+      fetchVisibleShiftsForMonth(effectiveYear, effectiveMonth);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, currentTenantId, effectiveYear, effectiveMonth]);
 
   async function fetchData() {
     if (!currentTenantId || !user) return;
@@ -107,7 +129,7 @@ export default function UserShifts() {
       supabase
         .from('shift_assignments')
         .select(
-          'id, assigned_value, checkin_at, checkout_at, status, shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
+          'id, shift_id, assigned_value, checkin_at, checkout_at, status, shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
         )
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id)
@@ -165,6 +187,57 @@ export default function UserShifts() {
     }
 
     setLoading(false);
+  }
+
+  async function fetchVisibleShiftsForMonth(year: number, monthIndex: number) {
+    if (!currentTenantId || !user) return;
+
+    const start = startOfMonth(new Date(year, monthIndex, 1));
+    const end = endOfMonth(new Date(year, monthIndex, 1));
+    const startStr = format(start, 'yyyy-MM-dd');
+    const endStr = format(end, 'yyyy-MM-dd');
+
+    try {
+      const [mySectorsRes, shiftsRes] = await Promise.all([
+        supabase
+          .from('sector_memberships')
+          .select('sector_id')
+          .eq('tenant_id', currentTenantId)
+          .eq('user_id', user.id),
+        supabase
+          .from('shifts')
+          .select('id, title, hospital, shift_date, start_time, end_time, sector_id')
+          .eq('tenant_id', currentTenantId)
+          .gte('shift_date', startStr)
+          .lte('shift_date', endStr)
+          .order('shift_date', { ascending: true })
+          .order('start_time', { ascending: true }),
+      ]);
+
+      if (mySectorsRes.error) throw mySectorsRes.error;
+      if (shiftsRes.error) throw shiftsRes.error;
+
+      const mySectorIds = new Set((mySectorsRes.data ?? []).map((r: any) => r.sector_id));
+      const myAssignedShiftIds = new Set((assignments ?? []).map((a) => a.shift_id).filter(Boolean) as string[]);
+
+      const filtered = ((shiftsRes.data ?? []) as VisibleShift[]).filter((s) => {
+        // Mostra todos os plantões dos setores do usuário.
+        if (s.sector_id && mySectorIds.has(s.sector_id)) return true;
+        // E também qualquer plantão explicitamente atribuído ao usuário (mesmo se setor_id for null/antigo).
+        if (myAssignedShiftIds.has(s.id)) return true;
+        return false;
+      });
+
+      setVisibleShifts(filtered);
+    } catch (error: any) {
+      console.error('[UserShifts] Error fetching sector shifts:', error);
+      toast({
+        title: 'Erro ao carregar escalas do setor',
+        description: error?.message || 'Erro desconhecido',
+        variant: 'destructive',
+      });
+      // Não zera o estado aqui para evitar “piscar”/sumir em falhas transitórias.
+    }
   }
 
   async function getCurrentPosition(): Promise<GeolocationPosition> {
@@ -460,9 +533,6 @@ export default function UserShifts() {
     }
   }, [assignments, didAutoSelect]);
 
-  const effectiveMonth = selectedMonth ?? now.getMonth();
-  const effectiveYear = selectedYear ?? now.getFullYear();
-
   // Today's shifts that need check-in
   const todayShifts = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -485,6 +555,41 @@ export default function UserShifts() {
       return ad.localeCompare(bd);
     });
   }, [assignments, effectiveMonth, effectiveYear]);
+
+  const visibleShiftsInMonth = useMemo(() => {
+    // `visibleShifts` já vem filtrado por mês/ano no fetch, mas mantemos o guard defensivo.
+    return visibleShifts.filter((s) => {
+      const y = Number(s.shift_date.slice(0, 4));
+      const m = Number(s.shift_date.slice(5, 7)) - 1;
+      return y === effectiveYear && m === effectiveMonth;
+    });
+  }, [visibleShifts, effectiveMonth, effectiveYear]);
+
+  const assignmentByShiftId = useMemo(() => {
+    const map = new Map<string, Assignment>();
+    filteredAssignments.forEach((a) => {
+      if (a.shift_id) map.set(a.shift_id, a);
+    });
+    return map;
+  }, [filteredAssignments]);
+
+  const groupedVisibleShifts = useMemo(() => {
+    const acc: Record<string, VisibleShift[]> = {};
+    visibleShiftsInMonth.forEach((s) => {
+      const sectorId = s.sector_id || 'sem-setor';
+      if (!acc[sectorId]) acc[sectorId] = [];
+      acc[sectorId].push(s);
+    });
+    // ordena por data/hora
+    Object.values(acc).forEach((list) => {
+      list.sort((a, b) => {
+        const ad = `${a.shift_date}T${a.start_time}`;
+        const bd = `${b.shift_date}T${b.start_time}`;
+        return ad.localeCompare(bd);
+      });
+    });
+    return acc;
+  }, [visibleShiftsInMonth]);
 
   const groupedAssignments = filteredAssignments.reduce((acc, assignment) => {
     const sectorId = assignment.shift.sector_id || 'sem-setor';
@@ -718,15 +823,15 @@ export default function UserShifts() {
         </div>
       </section>
 
-      {filteredAssignments.length === 0 ? (
+      {visibleShiftsInMonth.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <p className="text-muted-foreground">Nenhum plantão neste mês</p>
+            <p className="text-muted-foreground">Nenhum plantão nos seus setores neste mês</p>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-4">
-          {Object.entries(groupedAssignments).map(([sectorId, sectorAssignments]) => {
+          {Object.entries(groupedVisibleShifts).map(([sectorId, sectorShifts]) => {
             const sectorInfo = getSectorInfo(sectorId);
             const isOpen = openSectors.has(sectorId);
 
@@ -739,7 +844,7 @@ export default function UserShifts() {
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectorInfo.color }} />
                         <span className="font-semibold text-foreground">{sectorInfo.name}</span>
                         <Badge variant="secondary" className="ml-2">
-                          {sectorAssignments.length} plantão{sectorAssignments.length !== 1 ? 'ões' : ''}
+                          {sectorShifts.length} plantão{sectorShifts.length !== 1 ? 'ões' : ''}
                         </Badge>
                         {sectorInfo.require_gps_checkin && (
                           <MapPin className="h-4 w-4 text-blue-500" />
@@ -756,19 +861,26 @@ export default function UserShifts() {
                   <CollapsibleContent>
                     <CardContent className="pt-0 pb-4">
                       <div className="space-y-3">
-                        {sectorAssignments.map((a) => {
-                          const shiftDate = parseDateOnly(a.shift.shift_date);
+                        {sectorShifts.map((s) => {
+                          const myAssignment = assignmentByShiftId.get(s.id);
+                          const shiftDate = parseDateOnly(s.shift_date);
                           const isShiftToday = isToday(shiftDate);
                           const isShiftTomorrow = isTomorrow(shiftDate);
                           const isShiftPast = isPast(shiftDate) && !isShiftToday;
-                          const isProcessing = processingId === a.id;
+                          const isProcessing = myAssignment ? processingId === myAssignment.id : false;
                           const needsCheckin =
-                            !a.checkin_at && a.status !== 'completed' && a.status !== 'cancelled';
-                          const needsCheckout = !a.checkout_at && (Boolean(a.checkin_at) || a.status === 'confirmed');
+                            Boolean(myAssignment) &&
+                            !myAssignment?.checkin_at &&
+                            myAssignment?.status !== 'completed' &&
+                            myAssignment?.status !== 'cancelled';
+                          const needsCheckout =
+                            Boolean(myAssignment) &&
+                            !myAssignment?.checkout_at &&
+                            (Boolean(myAssignment?.checkin_at) || myAssignment?.status === 'confirmed');
 
                           return (
                             <div 
-                              key={a.id} 
+                              key={s.id} 
                               className={`p-4 rounded-lg border bg-card transition-colors ${
                                 isShiftToday ? 'border-primary/50 bg-primary/5' : 
                                 isShiftTomorrow ? 'border-yellow-500/30 bg-yellow-50/50 dark:bg-yellow-950/20' :
@@ -778,10 +890,17 @@ export default function UserShifts() {
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div className="flex-1 space-y-2">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <h4 className="font-medium text-foreground">{a.shift.title}</h4>
-                                    <Badge className={statusColors[a.status]} variant="outline">
-                                      {statusLabels[a.status]}
-                                    </Badge>
+                                    <h4 className="font-medium text-foreground">{s.title}</h4>
+                                    {myAssignment ? (
+                                      <>
+                                        <Badge className={statusColors[myAssignment.status]} variant="outline">
+                                          {statusLabels[myAssignment.status]}
+                                        </Badge>
+                                        <Badge variant="secondary">Meu</Badge>
+                                      </>
+                                    ) : (
+                                      <Badge variant="outline">Sem plantão meu</Badge>
+                                    )}
                                     {isShiftToday && (
                                       <Badge variant="default" className="bg-primary">Hoje</Badge>
                                     )}
@@ -797,7 +916,7 @@ export default function UserShifts() {
                                     </div>
                                     <div className="flex items-center gap-1">
                                       <Clock className="h-4 w-4" />
-                                      {a.shift.start_time.slice(0, 5)} - {a.shift.end_time.slice(0, 5)}
+                                      {s.start_time.slice(0, 5)} - {s.end_time.slice(0, 5)}
                                     </div>
                                     <div className="flex items-center gap-1">
                                       <MapPin className="h-4 w-4" />
@@ -805,15 +924,15 @@ export default function UserShifts() {
                                     </div>
                                   </div>
 
-                                  {a.assigned_value > 0 && (
-                                    <p className="text-sm font-medium text-primary">R$ {Number(a.assigned_value).toFixed(2)}</p>
+                                  {myAssignment?.assigned_value && myAssignment.assigned_value > 0 && (
+                                    <p className="text-sm font-medium text-primary">R$ {Number(myAssignment.assigned_value).toFixed(2)}</p>
                                   )}
 
-                                  {a.checkin_at && (
+                                  {myAssignment?.checkin_at && (
                                     <div className="flex items-center gap-1 text-xs text-green-600">
                                       <CheckCircle2 className="h-3 w-3" />
-                                      Check-in: {format(new Date(a.checkin_at), 'HH:mm')}
-                                      {a.checkout_at && ` | Check-out: ${format(new Date(a.checkout_at), 'HH:mm')}`}
+                                      Check-in: {format(new Date(myAssignment.checkin_at), 'HH:mm')}
+                                      {myAssignment.checkout_at && ` | Check-out: ${format(new Date(myAssignment.checkout_at), 'HH:mm')}`}
                                     </div>
                                   )}
                                 </div>
@@ -824,12 +943,12 @@ export default function UserShifts() {
                                   - Check-out deve aparecer sempre que houver check-in pendente,
                                     mesmo se o setor tiver sido desativado depois.
                                 */}
-                                {(sectorInfo.checkin_enabled || needsCheckout) && (
+                                {(Boolean(myAssignment) && (sectorInfo.checkin_enabled || needsCheckout)) && (
                                   <div className="flex gap-2 flex-shrink-0">
                                     {sectorInfo.checkin_enabled && needsCheckin && (
                                       <Button
                                         size="sm"
-                                        onClick={() => handleCheckin(a)}
+                                        onClick={() => myAssignment && handleCheckin(myAssignment)}
                                         disabled={isProcessing || isShiftPast}
                                         title={isShiftPast ? 'Plantão passado' : undefined}
                                       >
@@ -846,10 +965,10 @@ export default function UserShifts() {
                                       <Button
                                         size="sm"
                                         variant="outline"
-                                        onClick={() => handleCheckout(a)}
+                                        onClick={() => myAssignment && handleCheckout(myAssignment)}
                                         // Permitir check-out mesmo em plantões passados se já houve check-in.
-                                        disabled={isProcessing || (isShiftPast && !a.checkin_at)}
-                                        title={isShiftPast && !a.checkin_at ? 'Plantão passado' : undefined}
+                                        disabled={isProcessing || (isShiftPast && !myAssignment?.checkin_at)}
+                                        title={isShiftPast && !myAssignment?.checkin_at ? 'Plantão passado' : undefined}
                                       >
                                         {isProcessing ? (
                                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
