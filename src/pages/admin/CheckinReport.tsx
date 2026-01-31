@@ -275,7 +275,7 @@ export default function CheckinReport() {
         </Card>
       </div>
 
-      {/* Table */}
+      {/* Table grouped by Sector */}
       <Card>
         <CardHeader>
           <CardTitle>Registros de Check-in/Check-out</CardTitle>
@@ -296,78 +296,96 @@ export default function CheckinReport() {
               <p>Nenhum registro encontrado para o período selecionado</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Plantonista</TableHead>
-                    <TableHead>Setor</TableHead>
-                    <TableHead>Horário</TableHead>
-                    <TableHead>Check-in</TableHead>
-                    <TableHead>Check-out</TableHead>
-                    <TableHead>GPS</TableHead>
-                    <TableHead>Status</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {records.map(record => {
-                    const statusInfo = getCheckinStatus(record);
-                    const StatusIcon = statusInfo.icon;
-                    return (
-                      <TableRow key={record.id}>
-                        <TableCell className="font-medium">
-                          {format(new Date(record.shift_date), 'dd/MM/yyyy')}
-                        </TableCell>
-                        <TableCell>{record.user_name}</TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div 
-                              className="w-3 h-3 rounded-full" 
-                              style={{ backgroundColor: record.sector_color || '#6b7280' }}
-                            />
-                            {record.sector_name}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {record.start_time.slice(0, 5)} - {record.end_time.slice(0, 5)}
-                        </TableCell>
-                        <TableCell>
-                          {record.checkin_at ? (
-                            <span className="text-green-600 font-medium">
-                              {formatTime(record.checkin_at)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {record.checkout_at ? (
-                            <span className="text-green-600 font-medium">
-                              {formatTime(record.checkout_at)}
-                            </span>
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {record.has_gps ? (
-                            <MapPin className="h-4 w-4 text-blue-500" />
-                          ) : (
-                            <span className="text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className={statusInfo.color}>
-                            <StatusIcon className="h-3 w-3 mr-1" />
-                            {statusInfo.label}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <div className="space-y-8">
+              {(() => {
+                // Group records by sector
+                const grouped: Record<string, { sectorName: string; sectorColor: string | null; items: CheckinRecord[] }> = {};
+                records.forEach(r => {
+                  const key = r.sector_name;
+                  if (!grouped[key]) {
+                    grouped[key] = { sectorName: r.sector_name, sectorColor: r.sector_color, items: [] };
+                  }
+                  grouped[key].items.push(r);
+                });
+                // Sort groups alphabetically
+                const sortedGroups = Object.values(grouped).sort((a, b) => a.sectorName.localeCompare(b.sectorName));
+
+                return sortedGroups.map(group => (
+                  <div key={group.sectorName} className="space-y-3">
+                    <div className="flex items-center gap-2 border-b pb-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: group.sectorColor || '#6b7280' }}
+                      />
+                      <h3 className="font-semibold text-lg">{group.sectorName}</h3>
+                      <Badge variant="secondary" className="ml-auto">{group.items.length} plantões</Badge>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Data</TableHead>
+                            <TableHead>Plantonista</TableHead>
+                            <TableHead>Horário</TableHead>
+                            <TableHead>Check-in</TableHead>
+                            <TableHead>Check-out</TableHead>
+                            <TableHead>GPS</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {group.items.map(record => {
+                            const statusInfo = getCheckinStatus(record);
+                            const StatusIcon = statusInfo.icon;
+                            return (
+                              <TableRow key={record.id}>
+                                <TableCell className="font-medium">
+                                  {format(new Date(record.shift_date), 'dd/MM/yyyy')}
+                                </TableCell>
+                                <TableCell>{record.user_name}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                  {record.start_time.slice(0, 5)} - {record.end_time.slice(0, 5)}
+                                </TableCell>
+                                <TableCell>
+                                  {record.checkin_at ? (
+                                    <span className="text-green-600 font-medium">
+                                      {formatTime(record.checkin_at)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {record.checkout_at ? (
+                                    <span className="text-green-600 font-medium">
+                                      {formatTime(record.checkout_at)}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  {record.has_gps ? (
+                                    <MapPin className="h-4 w-4 text-blue-500" />
+                                  ) : (
+                                    <span className="text-muted-foreground">-</span>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className={statusInfo.color}>
+                                    <StatusIcon className="h-3 w-3 mr-1" />
+                                    {statusInfo.label}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ));
+              })()}
             </div>
           )}
         </CardContent>
