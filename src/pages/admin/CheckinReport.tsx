@@ -40,11 +40,17 @@ interface Sector {
   color: string | null;
 }
 
+interface MonthOption {
+  value: string;
+  label: string;
+}
+
 export default function CheckinReport() {
   const { currentTenantId } = useTenant();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<CheckinRecord[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
+  const [monthOptions, setMonthOptions] = useState<MonthOption[]>([]);
   const [selectedSector, setSelectedSector] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date();
@@ -54,6 +60,7 @@ export default function CheckinReport() {
   useEffect(() => {
     if (currentTenantId) {
       fetchSectors();
+      fetchAvailableMonths();
     }
   }, [currentTenantId]);
 
@@ -62,6 +69,40 @@ export default function CheckinReport() {
       fetchRecords();
     }
   }, [currentTenantId, selectedSector, selectedMonth]);
+
+  async function fetchAvailableMonths() {
+    if (!currentTenantId) return;
+    
+    // Get distinct months from shifts table
+    const { data } = await supabase
+      .from('shifts')
+      .select('shift_date')
+      .eq('tenant_id', currentTenantId)
+      .order('shift_date', { ascending: false });
+    
+    if (data) {
+      const monthSet = new Set<string>();
+      data.forEach(row => {
+        const date = new Date(row.shift_date + 'T00:00:00');
+        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        monthSet.add(key);
+      });
+      
+      const options: MonthOption[] = Array.from(monthSet)
+        .sort((a, b) => b.localeCompare(a)) // Descending order
+        .map(value => ({
+          value,
+          label: format(new Date(value + '-01'), 'MMMM yyyy', { locale: ptBR }),
+        }));
+      
+      setMonthOptions(options);
+      
+      // If current selected month is not in options, select the first available
+      if (options.length > 0 && !options.find(o => o.value === selectedMonth)) {
+        setSelectedMonth(options[0].value);
+      }
+    }
+  }
 
   async function fetchSectors() {
     if (!currentTenantId) return;
@@ -179,15 +220,6 @@ export default function CheckinReport() {
     link.click();
   }
 
-  // Generate month options (3 months ahead + 12 months back)
-  const monthOptions = Array.from({ length: 16 }, (_, i) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() + 3 - i); // Start 3 months ahead
-    return {
-      value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
-      label: format(date, 'MMMM yyyy', { locale: ptBR }),
-    };
-  });
 
   // Stats
   const totalRecords = records.length;
