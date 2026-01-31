@@ -179,10 +179,10 @@ export default function CheckinReport() {
     link.click();
   }
 
-  // Generate month options (last 12 months)
-  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+  // Generate month options (3 months ahead + 12 months back)
+  const monthOptions = Array.from({ length: 16 }, (_, i) => {
     const date = new Date();
-    date.setMonth(date.getMonth() - i);
+    date.setMonth(date.getMonth() + 3 - i); // Start 3 months ahead
     return {
       value: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
       label: format(date, 'MMMM yyyy', { locale: ptBR }),
