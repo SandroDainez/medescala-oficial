@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { MonthYearPicker } from '@/components/MonthYearPicker';
 import { 
   MapPin, 
   Clock, 
@@ -16,8 +17,7 @@ import {
   XCircle, 
   AlertCircle,
   Download,
-  Filter,
-  CalendarDays
+  Filter
 } from 'lucide-react';
 
 interface CheckinRecord {
@@ -40,27 +40,21 @@ interface Sector {
   color: string | null;
 }
 
-interface MonthOption {
-  value: string;
-  label: string;
-}
-
 export default function CheckinReport() {
   const { currentTenantId } = useTenant();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<CheckinRecord[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
-  const [monthOptions, setMonthOptions] = useState<MonthOption[]>([]);
   const [selectedSector, setSelectedSector] = useState<string>('all');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-  });
+  
+  // Month/Year state - allows any month/year selection
+  const now = new Date();
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
 
   useEffect(() => {
     if (currentTenantId) {
       fetchSectors();
-      fetchAvailableMonths();
     }
   }, [currentTenantId]);
 
@@ -68,41 +62,7 @@ export default function CheckinReport() {
     if (currentTenantId) {
       fetchRecords();
     }
-  }, [currentTenantId, selectedSector, selectedMonth]);
-
-  async function fetchAvailableMonths() {
-    if (!currentTenantId) return;
-    
-    // Get distinct months from shifts table
-    const { data } = await supabase
-      .from('shifts')
-      .select('shift_date')
-      .eq('tenant_id', currentTenantId)
-      .order('shift_date', { ascending: false });
-    
-    if (data) {
-      const monthSet = new Set<string>();
-      data.forEach(row => {
-        const date = new Date(row.shift_date + 'T00:00:00');
-        const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-        monthSet.add(key);
-      });
-      
-      const options: MonthOption[] = Array.from(monthSet)
-        .sort((a, b) => b.localeCompare(a)) // Descending order
-        .map(value => ({
-          value,
-          label: format(new Date(value + '-01'), 'MMMM yyyy', { locale: ptBR }),
-        }));
-      
-      setMonthOptions(options);
-      
-      // If current selected month is not in options, select the first available
-      if (options.length > 0 && !options.find(o => o.value === selectedMonth)) {
-        setSelectedMonth(options[0].value);
-      }
-    }
-  }
+  }, [currentTenantId, selectedSector, selectedMonth, selectedYear]);
 
   async function fetchSectors() {
     if (!currentTenantId) return;
@@ -119,9 +79,8 @@ export default function CheckinReport() {
     if (!currentTenantId) return;
     setLoading(true);
 
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const startDate = format(startOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
-    const endDate = format(endOfMonth(new Date(year, month - 1)), 'yyyy-MM-dd');
+    const startDate = format(startOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd');
+    const endDate = format(endOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd');
 
     let query = supabase
       .from('shift_assignments')
@@ -216,7 +175,7 @@ export default function CheckinReport() {
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `checkins_${selectedMonth}.csv`;
+    link.download = `checkins_${selectedYear}-${String(selectedMonth).padStart(2, '0')}.csv`;
     link.click();
   }
 
@@ -255,20 +214,13 @@ export default function CheckinReport() {
         </CardHeader>
         <CardContent className="flex flex-col gap-4 sm:flex-row">
           <div className="flex-1">
-            <label className="text-sm font-medium mb-1.5 block">Mês</label>
-            <Select value={selectedMonth} onValueChange={setSelectedMonth}>
-              <SelectTrigger>
-                <CalendarDays className="h-4 w-4 mr-2" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {monthOptions.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <label className="text-sm font-medium mb-1.5 block">Período</label>
+            <MonthYearPicker
+              selectedMonth={selectedMonth}
+              selectedYear={selectedYear}
+              onMonthChange={setSelectedMonth}
+              onYearChange={setSelectedYear}
+            />
           </div>
           <div className="flex-1">
             <label className="text-sm font-medium mb-1.5 block">Setor</label>
@@ -328,7 +280,7 @@ export default function CheckinReport() {
         <CardHeader>
           <CardTitle>Registros de Check-in/Check-out</CardTitle>
           <CardDescription>
-            {format(new Date(selectedMonth + '-01'), 'MMMM yyyy', { locale: ptBR })}
+            {format(new Date(selectedYear, selectedMonth - 1, 1), 'MMMM yyyy', { locale: ptBR })}
           </CardDescription>
         </CardHeader>
         <CardContent>
