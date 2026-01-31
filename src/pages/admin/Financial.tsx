@@ -1054,7 +1054,7 @@ export default function AdminFinancial() {
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os setores" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[280px]">
                   <SelectItem value="all">Todos os setores</SelectItem>
                   {sectors.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
                 </SelectContent>
@@ -1066,7 +1066,7 @@ export default function AdminFinancial() {
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os plantonistas" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-h-[280px]">
                   <SelectItem value="all">Todos os plantonistas</SelectItem>
                   {plantonistas.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
                 </SelectContent>
