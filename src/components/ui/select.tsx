@@ -80,7 +80,9 @@ const SelectContent = React.forwardRef<
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
         className={cn(
-          "p-1",
+          // Ensure long lists are always scrollable (esp. on trackpads where wheel events can
+          // otherwise scroll the page behind the portal).
+          "p-1 max-h-[var(--radix-select-content-available-height)] overflow-y-auto",
           position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)]",
         )}
       >
