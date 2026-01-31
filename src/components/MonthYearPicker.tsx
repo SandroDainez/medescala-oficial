@@ -1,15 +1,18 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 
 interface MonthYearPickerProps {
   selectedMonth: number; // 1-12
   selectedYear: number;
   onMonthChange: (month: number) => void;
   onYearChange: (year: number) => void;
-  /** Range of years to show (default: 10 years before/after current year) */
-  yearRange?: { start: number; end: number };
+  /**
+   * Optional boundaries for the year input (defaults: 1900..2100).
+   * Note: users can still type any year if you omit these.
+   */
+  yearMin?: number;
+  yearMax?: number;
   className?: string;
 }
 
@@ -33,20 +36,20 @@ export function MonthYearPicker({
   selectedYear,
   onMonthChange,
   onYearChange,
-  yearRange,
+  yearMin = 1900,
+  yearMax = 2100,
   className = '',
 }: MonthYearPickerProps) {
-  const currentYear = new Date().getFullYear();
-  
-  const years = useMemo(() => {
-    const start = yearRange?.start ?? currentYear - 10;
-    const end = yearRange?.end ?? currentYear + 10;
-    const result: number[] = [];
-    for (let y = end; y >= start; y--) {
-      result.push(y);
-    }
-    return result;
-  }, [yearRange, currentYear]);
+  const safeYear = useMemo(() => {
+    // Keep UI stable even if selectedYear is somehow NaN
+    return Number.isFinite(selectedYear) ? selectedYear : new Date().getFullYear();
+  }, [selectedYear]);
+
+  const handleYearInput = (raw: string) => {
+    const next = parseInt(raw, 10);
+    if (!Number.isFinite(next)) return;
+    onYearChange(next);
+  };
 
   return (
     <div className={`flex gap-2 ${className}`}>
@@ -62,19 +65,17 @@ export function MonthYearPicker({
           ))}
         </SelectContent>
       </Select>
-      
-      <Select value={String(selectedYear)} onValueChange={(v) => onYearChange(Number(v))}>
-        <SelectTrigger className="w-[100px]">
-          <SelectValue placeholder="Ano" />
-        </SelectTrigger>
-        <SelectContent className="max-h-[280px]">
-          {years.map((y) => (
-            <SelectItem key={y} value={String(y)}>
-              {y}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+
+      <Input
+        inputMode="numeric"
+        type="number"
+        min={yearMin}
+        max={yearMax}
+        value={String(safeYear)}
+        onChange={(e) => handleYearInput(e.target.value)}
+        className="w-[110px]"
+        aria-label="Ano"
+      />
     </div>
   );
 }
@@ -83,14 +84,16 @@ export function MonthYearPicker({
 interface CombinedMonthYearPickerProps {
   value: string; // YYYY-MM format
   onChange: (value: string) => void;
-  yearRange?: { start: number; end: number };
+  yearMin?: number;
+  yearMax?: number;
   className?: string;
 }
 
 export function CombinedMonthYearPicker({
   value,
   onChange,
-  yearRange,
+  yearMin,
+  yearMax,
   className = '',
 }: CombinedMonthYearPickerProps) {
   const [year, month] = value.split('-').map(Number);
@@ -109,7 +112,8 @@ export function CombinedMonthYearPicker({
       selectedYear={year}
       onMonthChange={handleMonthChange}
       onYearChange={handleYearChange}
-      yearRange={yearRange}
+      yearMin={yearMin}
+      yearMax={yearMax}
       className={className}
     />
   );
