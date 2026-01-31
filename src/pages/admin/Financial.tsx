@@ -54,6 +54,7 @@ export default function AdminFinancial() {
   
   // Raw data from DB
   const [rawEntries, setRawEntries] = useState<RawShiftEntry[]>([]);
+  const [allSectors, setAllSectors] = useState<SectorLookup[]>([]);
   const [tenantSlug, setTenantSlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [selfTestResult, setSelfTestResult] = useState<{ ok: boolean; errors: string[] } | null>(null);
@@ -215,14 +216,12 @@ export default function AdminFinancial() {
       };
     }
   }
-  // Unique sectors and plantonistas for filters
+
+  // Lista de setores para o filtro deve vir da tabela de setores (não do período carregado).
+  // Assim nenhum setor “some” do dropdown só porque não teve plantão no intervalo.
   const sectors = useMemo(() => {
-    const map = new Map<string, string>();
-    rawEntries.forEach(e => {
-      if (e.sector_id) map.set(e.sector_id, e.sector_name);
-    });
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [rawEntries]);
+    return (allSectors ?? []).slice().sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  }, [allSectors]);
 
   // Plantonistas filtrados pelo setor selecionado
   const plantonistas = useMemo(() => {
@@ -256,6 +255,49 @@ export default function AdminFinancial() {
     if (currentTenantId) fetchData();
   }, [currentTenantId, startDate, endDate, filterSetor]);
 
+  // Se um setor foi deletado/desativado e não existe mais na lista, volta para “Todos”.
+  useEffect(() => {
+    if (filterSetor === 'all') return;
+    if (!sectors.some((s) => s.id === filterSetor)) {
+      setFilterSetor('all');
+      setFilterPlantonista('all');
+    }
+  }, [filterSetor, sectors]);
+
+  async function fetchAllSectors(tenantId: string) {
+    const pageSize = 1000;
+    let from = 0;
+    const out: SectorLookup[] = [];
+
+    // Pagina para evitar limite padrão de 1000 linhas.
+    while (true) {
+      const { data, error } = await supabase
+        .from('sectors')
+        .select('id, name, default_day_value, default_night_value, active')
+        .eq('tenant_id', tenantId)
+        .order('name', { ascending: true })
+        .range(from, from + pageSize - 1);
+
+      if (error) return { data: out, error } as const;
+      const rows = (data ?? []) as SectorLookup[];
+      out.push(...rows);
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+
+    return { data: out, error: null } as const;
+  }
+
+  async function refreshSectorsList() {
+    if (!currentTenantId) return;
+    const res = await fetchAllSectors(currentTenantId);
+    if (res.error) {
+      console.error('[AdminFinancial] Refresh sectors error:', res.error);
+      return;
+    }
+    setAllSectors(res.data ?? []);
+  }
+
   async function fetchData() {
     if (!currentTenantId) return;
     setLoading(true);
@@ -276,7 +318,7 @@ export default function AdminFinancial() {
         shiftsQuery.eq('sector_id', filterSetor);
       }
 
-      // Fetch shifts, assignments via RPC, sectors, user overrides, and tenant info in parallel
+      // Fetch shifts, assignments via RPC, sectors (paginado), user overrides, and tenant info in parallel
       const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
         shiftsQuery,
         // Use RPC to avoid URL length limit with .in(...ids...)
@@ -285,11 +327,7 @@ export default function AdminFinancial() {
           _start: startDate,
           _end: endDate,
         }),
-        supabase
-          .from('sectors')
-          .select('id, name, default_day_value, default_night_value')
-          .eq('tenant_id', currentTenantId)
-          .eq('active', true),
+        fetchAllSectors(currentTenantId),
         supabase
           .from('user_sector_values')
           .select('sector_id, user_id, day_value, night_value')
@@ -320,6 +358,8 @@ export default function AdminFinancial() {
       if (sectorsRes.error) {
         console.error('[AdminFinancial] Fetch sectors error:', sectorsRes.error);
         // proceed without sector names
+      } else {
+        setAllSectors(sectorsRes.data ?? []);
       }
 
       // Get tenant slug for GABS-specific rules
@@ -1046,11 +1086,17 @@ export default function AdminFinancial() {
           <div className="flex flex-wrap gap-4">
             <div className="space-y-1.5 min-w-[200px]">
               <Label>Setor</Label>
-              <Select value={filterSetor} onValueChange={(value) => {
+              <Select
+                value={filterSetor}
+                onValueChange={(value) => {
                 setFilterSetor(value);
                 // Reset plantonista filter when sector changes (plantonista may not exist in new sector)
                 setFilterPlantonista('all');
-              }}>
+                }}
+                onOpenChange={(open) => {
+                  if (open) refreshSectorsList();
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Todos os setores" />
                 </SelectTrigger>
