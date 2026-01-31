@@ -100,7 +100,7 @@ export default function CheckinReport() {
       .eq('tenant_id', currentTenantId)
       .gte('shift.shift_date', startDate)
       .lte('shift.shift_date', endDate)
-      .order('shift(shift_date)', { ascending: false });
+      .order('shift(shift_date)', { ascending: true });
 
     const { data, error } = await query;
 
