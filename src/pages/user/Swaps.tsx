@@ -109,8 +109,14 @@ export default function UserSwaps() {
   const yearOptions = useMemo(() => {
     const baseYear = new Date().getFullYear();
     const assignmentYears = myAssignments.map((a) => Number(a.shift.shift_date.slice(0, 4)));
-    const allYears = new Set([baseYear, baseYear + 1, baseYear + 2, ...assignmentYears]);
-    return Array.from(allYears).sort((a, b) => a - b);
+    const allYears = new Set<number>();
+    // Range fixo de 10 anos antes e depois
+    for (let y = baseYear - 10; y <= baseYear + 10; y++) {
+      allYears.add(y);
+    }
+    // Adiciona anos com dados (caso haja fora do range)
+    assignmentYears.forEach(y => allYears.add(y));
+    return Array.from(allYears).sort((a, b) => b - a); // Ordem decrescente
   }, [myAssignments]);
 
   const effectiveMonth = selectedMonth ?? now.getMonth();
