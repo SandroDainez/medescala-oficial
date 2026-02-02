@@ -238,24 +238,41 @@ export default function UserSwaps() {
   // Fetch members of a specific sector for swap filtering
   async function fetchSectorMembers(sectorId: string): Promise<TenantMember[]> {
     if (!currentTenantId || !user || !sectorId) return [];
-    
-    const { data, error } = await supabase
+
+    // 1) Get user_ids that belong to the sector
+    const { data: membershipsData, error: membershipsError } = await supabase
       .from('sector_memberships')
-      .select('user_id, profiles:user_id(name)')
+      .select('user_id')
       .eq('tenant_id', currentTenantId)
       .eq('sector_id', sectorId);
-    
-    if (error) {
-      console.error('[UserSwaps] fetchSectorMembers error:', error);
+
+    if (membershipsError) {
+      console.error('[UserSwaps] fetchSectorMembers sector_memberships error:', membershipsError);
       return [];
     }
-    
-    if (data) {
-      return (data as any[])
-        .filter((m) => m.user_id !== user.id && m.profiles?.name)
-        .map((m) => ({ user_id: m.user_id, name: m.profiles.name }));
+
+    const sectorUserIds = Array.from(
+      new Set((membershipsData ?? []).map((m: any) => m.user_id).filter(Boolean))
+    ) as string[];
+    if (sectorUserIds.length === 0) return [];
+
+    // 2) Cross with tenantMembers (RPC) to ensure we only show ACTIVE tenant members
+    //    and avoid leaking names through joins that can behave differently under restrictive RLS.
+    let activeTenantMembers = tenantMembers;
+    if (activeTenantMembers.length === 0) {
+      // In case the user clicks before fetchTenantMembers finished.
+      const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+      if (!error && data) {
+        activeTenantMembers = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
+        setTenantMembers(activeTenantMembers);
+      }
     }
-    return [];
+
+    const allowedIds = new Set(sectorUserIds);
+    return activeTenantMembers
+      .filter((m) => m.user_id !== user.id)
+      .filter((m) => allowedIds.has(m.user_id))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }
 
   async function fetchMySwapRequests() {
