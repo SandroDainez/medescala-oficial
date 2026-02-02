@@ -737,7 +737,7 @@ export type Database = {
           phone_enc: string | null
           pix_key_enc: string | null
           rqe_enc: string | null
-          tenant_id: string | null
+          tenant_id: string
           updated_at: string
           user_id: string
         }
@@ -752,7 +752,7 @@ export type Database = {
           phone_enc?: string | null
           pix_key_enc?: string | null
           rqe_enc?: string | null
-          tenant_id?: string | null
+          tenant_id: string
           updated_at?: string
           user_id: string
         }
@@ -767,7 +767,7 @@ export type Database = {
           phone_enc?: string | null
           pix_key_enc?: string | null
           rqe_enc?: string | null
-          tenant_id?: string | null
+          tenant_id?: string
           updated_at?: string
           user_id?: string
         }
