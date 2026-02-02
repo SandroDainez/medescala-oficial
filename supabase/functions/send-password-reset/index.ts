@@ -205,49 +205,32 @@ Deno.serve(async (req: Request): Promise<Response> => {
 </html>
         `;
 
-    const sendEmail = async (from: string) => {
-      const res = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${resendApiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          from,
-          to: [email],
-          subject,
-          html,
-        }),
-      });
+    // Remetente fixo — sem fallback para resend.dev
+    const fromAddress = "MedEscala <noreply@medescalas.com.br>";
+    console.log(`[send-password-reset] Enviando email com from="${fromAddress}" para "${email}"`);
 
-      const body = await res.json().catch(() => ({}));
-      return { res, body };
-    };
+    const emailResponse = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: fromAddress,
+        to: [email],
+        subject,
+        html,
+      }),
+    });
 
-    // Attempt with custom domain first. If it's not verified on Resend yet, fallback to a permitted sender.
-    const primaryFrom = "MedEscala <noreply@medescala.com>";
-    const fallbackFrom = "MedEscala <onboarding@resend.dev>";
-
-    let { res: emailResponse, body: emailResult } = await sendEmail(primaryFrom);
+    const emailResult = await emailResponse.json().catch(() => ({}));
 
     if (!emailResponse.ok) {
-      const msg = String((emailResult as any)?.message || "");
-      const isDomainNotVerified = emailResponse.status === 403 && msg.toLowerCase().includes("domain") && msg.toLowerCase().includes("not verified");
-
-      if (isDomainNotVerified) {
-        console.warn(
-          "Resend domain not verified for medescala.com. Falling back to onboarding@resend.dev sender.",
-        );
-        ({ res: emailResponse, body: emailResult } = await sendEmail(fallbackFrom));
-      }
-    }
-
-    if (!emailResponse.ok) {
-      console.error("Resend API error:", emailResult);
+      console.error("[send-password-reset] Resend API error:", emailResponse.status, emailResult);
       throw new Error((emailResult as any)?.message || "Erro ao enviar email");
     }
 
-    console.log("Email sent successfully:", emailResult);
+    console.log("[send-password-reset] Email enviado com sucesso:", emailResult);
 
     return new Response(JSON.stringify({ success: true }), {
       status: 200,

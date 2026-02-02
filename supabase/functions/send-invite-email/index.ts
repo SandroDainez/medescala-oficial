@@ -92,6 +92,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       </html>
     `;
 
+    // Remetente fixo — sem fallback para resend.dev
+    const fromAddress = "MedEscala <noreply@medescalas.com.br>";
+    console.log(`[send-invite-email] Enviando email com from="${fromAddress}" para "${email}"`);
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -99,7 +103,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "Authorization": `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: "MedEscala <onboarding@resend.dev>",
+        from: fromAddress,
         to: [email],
         subject: `Bem-vindo ao ${escapeHtml(hospitalName)} - MedEscala`,
         html: htmlContent,
