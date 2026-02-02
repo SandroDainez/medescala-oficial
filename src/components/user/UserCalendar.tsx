@@ -317,6 +317,11 @@ export default function UserCalendar() {
     fetchTenantMembers();
   }
 
+  function handleMyShiftActivate(shift: Shift) {
+    // Mobile: sometimes onClick is skipped during/after scroll; pointerUp is more reliable.
+    handleMyShiftClick(shift);
+  }
+
   // Handle user select from sheet
   function handleSelectColleague(member: TenantMember) {
     setSelectedTargetUser(member);
@@ -717,7 +722,8 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={() => handleMyShiftClick(shift)}
+                                onClick={() => handleMyShiftActivate(shift)}
+                                onPointerUp={() => handleMyShiftActivate(shift)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -771,7 +777,8 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={() => handleMyShiftClick(shift)}
+                                onClick={() => handleMyShiftActivate(shift)}
+                                onPointerUp={() => handleMyShiftActivate(shift)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -854,21 +861,20 @@ export default function UserCalendar() {
                         {dayShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
-                          
-                          const ShiftWrapper = isMine ? 'button' : 'div';
-                          const wrapperProps = isMine ? {
-                            type: 'button' as const,
-                            onClick: () => handleMyShiftClick(shift),
-                          } : {};
 
                           return (
-                            <ShiftWrapper
+                            <button
                               key={shift.id}
-                              {...wrapperProps}
+                              type="button"
+                              disabled={!isMine}
+                              onClick={() => isMine && handleMyShiftActivate(shift)}
+                              onPointerUp={() => isMine && handleMyShiftActivate(shift)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-warning/5 hover:bg-warning/10 border-l-warning",
-                                isMine && "cursor-pointer active:scale-[0.99] active:bg-warning/20 ring-1 ring-primary/20 touch-manipulation"
+                                isMine
+                                  ? "cursor-pointer active:scale-[0.99] active:bg-warning/20 ring-1 ring-primary/20 touch-manipulation"
+                                  : "cursor-default opacity-75"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -917,7 +923,7 @@ export default function UserCalendar() {
                               <div className="text-right">
                                 <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
                               </div>
-                            </ShiftWrapper>
+                            </button>
                           );
                         })}
                       </div>
@@ -936,21 +942,20 @@ export default function UserCalendar() {
                         {nightShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
-                          
-                          const ShiftWrapper = isMine ? 'button' : 'div';
-                          const wrapperProps = isMine ? {
-                            type: 'button' as const,
-                            onClick: () => handleMyShiftClick(shift),
-                          } : {};
 
                           return (
-                            <ShiftWrapper
+                            <button
                               key={shift.id}
-                              {...wrapperProps}
+                              type="button"
+                              disabled={!isMine}
+                              onClick={() => isMine && handleMyShiftActivate(shift)}
+                              onPointerUp={() => isMine && handleMyShiftActivate(shift)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-info/5 hover:bg-info/10 border-l-info",
-                                isMine && "cursor-pointer active:scale-[0.99] active:bg-info/20 ring-1 ring-primary/20 touch-manipulation"
+                                isMine
+                                  ? "cursor-pointer active:scale-[0.99] active:bg-info/20 ring-1 ring-primary/20 touch-manipulation"
+                                  : "cursor-default opacity-75"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -999,7 +1004,7 @@ export default function UserCalendar() {
                               <div className="text-right">
                                 <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
                               </div>
-                            </ShiftWrapper>
+                            </button>
                           );
                         })}
                       </div>
