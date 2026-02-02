@@ -1,16 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Filter, Moon, Sun, CalendarPlus } from 'lucide-react';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, getDay, startOfWeek, addDays } from 'date-fns';
+import { ChevronLeft, ChevronRight, Moon, Sun, CalendarPlus, ArrowRightLeft, User, Send, X } from 'lucide-react';
+import { format, startOfMonth, endOfMonth, isSameDay, addMonths, subMonths, isToday, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
 import { MyShiftStatsChart } from './MyShiftStatsChart';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 interface Sector {
   id: string;
@@ -45,6 +62,11 @@ interface MySector {
   sector: Sector;
 }
 
+interface TenantMember {
+  user_id: string;
+  name: string;
+}
+
 type FilterTab = 'todos' | 'meus';
 
 export default function UserCalendar() {
@@ -59,6 +81,16 @@ export default function UserCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [panelExpanded, setPanelExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>('todos');
+
+  // Swap request states
+  const [swapSheetOpen, setSwapSheetOpen] = useState(false);
+  const [selectedShiftForSwap, setSelectedShiftForSwap] = useState<Shift | null>(null);
+  const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [selectedTargetUser, setSelectedTargetUser] = useState<TenantMember | null>(null);
+  const [swapReason, setSwapReason] = useState('');
+  const [submittingSwap, setSubmittingSwap] = useState(false);
 
   useEffect(() => {
     if (currentTenantId && user) {
@@ -231,6 +263,137 @@ export default function UserCalendar() {
   function isNightShift(startTime: string) {
     const [hour] = startTime.split(':').map(Number);
     return hour >= 18 || hour < 6;
+  }
+
+  // ====== SWAP REQUEST FUNCTIONS ======
+
+  // Fetch tenant members when opening swap sheet
+  async function fetchTenantMembers() {
+    if (!currentTenantId || !user) return;
+    setLoadingMembers(true);
+    
+    const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+    
+    if (error) {
+      console.error('[UserCalendar] get_tenant_member_names error:', error);
+      toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
+      setTenantMembers([]);
+    } else if (data) {
+      // Filter out current user
+      setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
+    }
+    setLoadingMembers(false);
+  }
+
+  // Get assignment ID for a shift (needed for swap request)
+  async function getMyAssignmentIdForShift(shiftId: string): Promise<string | null> {
+    if (!currentTenantId || !user) return null;
+    
+    const { data, error } = await supabase
+      .from('shift_assignments')
+      .select('id')
+      .eq('tenant_id', currentTenantId)
+      .eq('shift_id', shiftId)
+      .eq('user_id', user.id)
+      .in('status', ['assigned', 'confirmed'])
+      .single();
+    
+    if (error || !data) {
+      console.error('[UserCalendar] Error getting assignment:', error);
+      return null;
+    }
+    return data.id;
+  }
+
+  // Handle shift click - open swap sheet
+  function handleMyShiftClick(shift: Shift) {
+    setSelectedShiftForSwap(shift);
+    setSwapSheetOpen(true);
+    fetchTenantMembers();
+  }
+
+  // Handle user select from sheet
+  function handleSelectColleague(member: TenantMember) {
+    setSelectedTargetUser(member);
+    setSwapSheetOpen(false);
+    setConfirmDialogOpen(true);
+  }
+
+  // Submit swap request
+  async function handleSubmitSwapRequest() {
+    if (!selectedShiftForSwap || !selectedTargetUser || !currentTenantId || !user) return;
+
+    setSubmittingSwap(true);
+
+    // Get the assignment ID
+    const assignmentId = await getMyAssignmentIdForShift(selectedShiftForSwap.id);
+    if (!assignmentId) {
+      toast({ 
+        title: 'Erro', 
+        description: 'Não foi possível encontrar sua atribuição para este plantão.', 
+        variant: 'destructive' 
+      });
+      setSubmittingSwap(false);
+      return;
+    }
+
+    // Create swap request
+    const { error: swapError } = await supabase
+      .from('swap_requests')
+      .insert({
+        tenant_id: currentTenantId,
+        origin_assignment_id: assignmentId,
+        requester_id: user.id,
+        target_user_id: selectedTargetUser.user_id,
+        reason: swapReason || null,
+      })
+      .select()
+      .single();
+
+    if (swapError) {
+      toast({ title: 'Erro', description: swapError.message, variant: 'destructive' });
+      setSubmittingSwap(false);
+      return;
+    }
+
+    // Send notification to target user
+    const { error: notifyError } = await supabase
+      .from('notifications')
+      .insert({
+        tenant_id: currentTenantId,
+        user_id: selectedTargetUser.user_id,
+        type: 'swap_request',
+        title: 'Solicitação de Troca de Plantão',
+        message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
+      });
+
+    if (notifyError) {
+      console.error('[UserCalendar] Error sending notification:', notifyError);
+    }
+
+    toast({ 
+      title: 'Solicitação enviada!', 
+      description: `Aguardando ${selectedTargetUser.name} aceitar.` 
+    });
+
+    // Reset state
+    setConfirmDialogOpen(false);
+    setSelectedShiftForSwap(null);
+    setSelectedTargetUser(null);
+    setSwapReason('');
+    setSubmittingSwap(false);
+  }
+
+  // Close swap dialog
+  function handleCloseSwapSheet() {
+    setSwapSheetOpen(false);
+    setSelectedShiftForSwap(null);
+  }
+
+  function handleCloseConfirmDialog() {
+    setConfirmDialogOpen(false);
+    setSelectedTargetUser(null);
+    setSwapReason('');
   }
 
   // Calendar setup
@@ -548,7 +711,8 @@ export default function UserCalendar() {
                             return (
                               <div
                                 key={shift.id}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 border-l-warning"
+                                onClick={() => handleMyShiftClick(shift)}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 border-l-warning cursor-pointer active:scale-[0.99]"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -567,7 +731,7 @@ export default function UserCalendar() {
                                 </div>
 
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <Sun className="h-3.5 w-3.5 text-warning" />
                                     <span className="text-sm font-medium text-foreground">
                                       {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
@@ -575,6 +739,10 @@ export default function UserCalendar() {
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
                                       Diurno
                                     </span>
+                                    <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                      Meu Plantão
+                                    </Badge>
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {shift.hospital} {shift.location && `• ${shift.location}`}
@@ -596,7 +764,8 @@ export default function UserCalendar() {
                             return (
                               <div
                                 key={shift.id}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 border-l-info"
+                                onClick={() => handleMyShiftClick(shift)}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 border-l-info cursor-pointer active:scale-[0.99]"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -615,7 +784,7 @@ export default function UserCalendar() {
                                 </div>
 
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <Moon className="h-3.5 w-3.5 text-info" />
                                     <span className="text-sm font-medium text-foreground">
                                       {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
@@ -623,6 +792,10 @@ export default function UserCalendar() {
                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-info/15 text-info">
                                       Noturno
                                     </span>
+                                    <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                      Meu Plantão
+                                    </Badge>
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {shift.hospital} {shift.location && `• ${shift.location}`}
@@ -678,9 +851,11 @@ export default function UserCalendar() {
                           return (
                             <div
                               key={shift.id}
+                              onClick={isMine ? () => handleMyShiftClick(shift) : undefined}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
-                                "bg-warning/5 hover:bg-warning/10 border-l-warning"
+                                "bg-warning/5 hover:bg-warning/10 border-l-warning",
+                                isMine && "cursor-pointer active:scale-[0.99] ring-1 ring-primary/20"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -705,7 +880,7 @@ export default function UserCalendar() {
                               </div>
 
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <Sun className="h-3.5 w-3.5 text-warning" />
                                   <span className="text-sm text-muted-foreground">{shift.start_time.slice(0, 5)}</span>
                                   <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
@@ -715,7 +890,10 @@ export default function UserCalendar() {
                                     {shiftAssignments[0]?.profile?.name || shift.title}
                                   </span>
                                   {isMine && (
-                                    <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">EU</span>
+                                    <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                      Meu Plantão
+                                    </Badge>
                                   )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
@@ -749,9 +927,11 @@ export default function UserCalendar() {
                           return (
                             <div
                               key={shift.id}
+                              onClick={isMine ? () => handleMyShiftClick(shift) : undefined}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2",
-                                "bg-info/5 hover:bg-info/10 border-l-info"
+                                "bg-info/5 hover:bg-info/10 border-l-info",
+                                isMine && "cursor-pointer active:scale-[0.99] ring-1 ring-primary/20"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -776,7 +956,7 @@ export default function UserCalendar() {
                               </div>
 
                               <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <Moon className="h-3.5 w-3.5 text-info" />
                                   <span className="text-sm text-info">{shift.start_time.slice(0, 5)}</span>
                                   <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-info/15 text-info">
@@ -786,7 +966,10 @@ export default function UserCalendar() {
                                     {shiftAssignments[0]?.profile?.name || shift.title}
                                   </span>
                                   {isMine && (
-                                    <span className="text-xs bg-primary/20 text-primary px-1.5 py-0.5 rounded font-medium">EU</span>
+                                    <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                      Meu Plantão
+                                    </Badge>
                                   )}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
@@ -815,6 +998,120 @@ export default function UserCalendar() {
       <div className="px-4 py-4 bg-background">
         <MyShiftStatsChart />
       </div>
+
+      {/* Swap Request Sheet */}
+      <Sheet open={swapSheetOpen} onOpenChange={setSwapSheetOpen}>
+        <SheetContent side="bottom" className="h-[70vh] rounded-t-2xl">
+          <SheetHeader className="text-left pb-4">
+            <SheetTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-5 w-5 text-primary" />
+              Solicitar Troca de Plantão
+            </SheetTitle>
+            <SheetDescription>
+              {selectedShiftForSwap && (
+                <div className="space-y-1 mt-2">
+                  <div className="font-medium text-foreground">{selectedShiftForSwap.title}</div>
+                  <div className="text-sm">
+                    {format(parseDateOnly(selectedShiftForSwap.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+                  </div>
+                  <div className="text-sm">
+                    {selectedShiftForSwap.start_time.slice(0, 5)} - {selectedShiftForSwap.end_time.slice(0, 5)} • {selectedShiftForSwap.hospital}
+                  </div>
+                  {selectedShiftForSwap.sector && (
+                    <Badge variant="outline" className="mt-1">{selectedShiftForSwap.sector.name}</Badge>
+                  )}
+                </div>
+              )}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-4 overflow-y-auto flex-1">
+            <div>
+              <Label className="text-sm font-medium">Escolha um colega para passar o plantão:</Label>
+            </div>
+
+            {loadingMembers ? (
+              <div className="text-center py-8 text-muted-foreground">Carregando colegas...</div>
+            ) : tenantMembers.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">Nenhum colega disponível.</div>
+            ) : (
+              <div className="grid gap-2">
+                {tenantMembers.map((member) => (
+                  <button
+                    key={member.user_id}
+                    onClick={() => handleSelectColleague(member)}
+                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left w-full"
+                  >
+                    <Avatar className="h-10 w-10 border-2 border-card">
+                      <AvatarFallback className="bg-muted text-muted-foreground text-xs">
+                        {member.name?.slice(0, 2).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                      <div className="font-medium text-foreground">{member.name}</div>
+                    </div>
+                    <User className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="pt-4 border-t mt-auto">
+            <Button variant="outline" onClick={handleCloseSwapSheet} className="w-full">
+              <X className="h-4 w-4 mr-2" />
+              Cancelar
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Confirm Swap Dialog */}
+      <Dialog open={confirmDialogOpen} onOpenChange={setConfirmDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-primary" />
+              Confirmar Solicitação
+            </DialogTitle>
+            <DialogDescription>
+              Você está solicitando passar seu plantão para <strong>{selectedTargetUser?.name}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedShiftForSwap && (
+            <div className="p-3 bg-muted rounded-lg space-y-1">
+              <div className="font-medium text-foreground">{selectedShiftForSwap.title}</div>
+              <div className="text-sm text-muted-foreground">
+                {format(parseDateOnly(selectedShiftForSwap.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
+              </div>
+              <div className="text-sm text-muted-foreground">
+                {selectedShiftForSwap.start_time.slice(0, 5)} - {selectedShiftForSwap.end_time.slice(0, 5)}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="swap-reason">Motivo (opcional)</Label>
+            <Textarea
+              id="swap-reason"
+              placeholder="Ex: Compromisso familiar, viagem, etc."
+              value={swapReason}
+              onChange={(e) => setSwapReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-4">
+            <Button variant="outline" onClick={handleCloseConfirmDialog} className="flex-1" disabled={submittingSwap}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSubmitSwapRequest} className="flex-1" disabled={submittingSwap}>
+              {submittingSwap ? 'Enviando...' : 'Enviar Solicitação'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
