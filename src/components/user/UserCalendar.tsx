@@ -76,6 +76,8 @@ export default function UserCalendar() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
+  // Source of truth for “meus plantões” (não depende do roster/nome)
+  const [myShiftIds, setMyShiftIds] = useState<string[]>([]);
   const [mySectors, setMySectors] = useState<MySector[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -123,7 +125,8 @@ export default function UserCalendar() {
     ]);
 
     const mySectorIds = (mySectorsRes.data ?? []).map((r: any) => r.sector_id).filter(Boolean) as string[];
-    const myShiftIds = (myAssignmentsRes.data ?? []).map((r: any) => r.shift_id).filter(Boolean) as string[];
+    const myShiftIdsLocal = (myAssignmentsRes.data ?? []).map((r: any) => r.shift_id).filter(Boolean) as string[];
+    setMyShiftIds(myShiftIdsLocal);
 
     // 2) Busca os plantões dos setores do usuário (mesmo sem ele estar escalado)
     const sectorShiftsPromise = mySectorIds.length
@@ -139,12 +142,12 @@ export default function UserCalendar() {
       : Promise.resolve({ data: [], error: null } as any);
 
     // 3) Garante que qualquer plantão do usuário apareça, mesmo se tiver setor_id nulo/legado
-    const myShiftsPromise = myShiftIds.length
+    const myShiftsPromise = myShiftIdsLocal.length
       ? supabase
           .from('shifts')
           .select('*, sector:sectors(*)')
           .eq('tenant_id', currentTenantId)
-          .in('id', myShiftIds)
+          .in('id', myShiftIdsLocal)
           .gte('shift_date', startStr)
           .lte('shift_date', endStr)
       : Promise.resolve({ data: [], error: null } as any);
@@ -239,7 +242,7 @@ export default function UserCalendar() {
   }
 
   function isMyShift(shiftId: string) {
-    return assignments.some(a => a.shift_id === shiftId && a.user_id === user?.id);
+    return myShiftIds.includes(shiftId);
   }
 
   function hasShiftsOnDate(date: Date) {
