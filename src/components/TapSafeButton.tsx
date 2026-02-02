@@ -50,6 +50,10 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
     const wasValidPressRef = useRef<boolean>(false);
     const movedRef = useRef(false);
     const pointerTypeRef = useRef<string | null>(null);
+    // Alguns browsers (principalmente iOS) podem disparar touch/click sem PointerEvents consistentes.
+    // Se detectarmos touchstart, tratamos como touch e bloqueamos qualquer click derivado.
+    const hadTouchRef = useRef(false);
+    const touchResetTimerRef = useRef<number | null>(null);
     const cleanupScrollListenerRef = useRef<(() => void) | null>(null);
     const [isPressed, setIsPressed] = useState(false);
 
@@ -63,6 +67,10 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
       return () => {
         cleanupScrollListenerRef.current?.();
         cleanupScrollListenerRef.current = null;
+        if (touchResetTimerRef.current) {
+          window.clearTimeout(touchResetTimerRef.current);
+          touchResetTimerRef.current = null;
+        }
       };
     }, []);
 
@@ -142,6 +150,83 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
 
           onPointerDown?.(e);
         }}
+        onTouchStart={(e) => {
+          // Fallback: garante que sabemos que é touch, mesmo se PointerEvents falharem.
+          hadTouchRef.current = true;
+          if (touchResetTimerRef.current) window.clearTimeout(touchResetTimerRef.current);
+          touchResetTimerRef.current = window.setTimeout(() => {
+            hadTouchRef.current = false;
+          }, 1200);
+
+          movedRef.current = false;
+          wasValidPressRef.current = false;
+          endTimeRef.current = null;
+          pointerTypeRef.current = "touch";
+
+          const t = e.touches[0];
+          if (t) {
+            startRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
+          } else {
+            startRef.current = { x: 0, y: 0, time: Date.now() };
+          }
+
+          attachScrollGuard();
+
+          const pressTimer = window.setTimeout(() => {
+            if (!movedRef.current) setIsPressed(true);
+          }, 50);
+          (startRef.current as any).pressTimer = pressTimer;
+
+          // Não chama props.onTouchStart (não existe no tipo base), mas respeita onPointerDown se o app usar.
+        }}
+        onTouchMove={(e) => {
+          if (!startRef.current) return;
+          const t = e.touches[0];
+          if (!t) return;
+
+          const threshold = moveThresholdPx ?? 40;
+          const dx = Math.abs(t.clientX - startRef.current.x);
+          const dy = Math.abs(t.clientY - startRef.current.y);
+          if (dx > threshold || dy > threshold) {
+            movedRef.current = true;
+            setIsPressed(false);
+            if ((startRef.current as any).pressTimer) {
+              window.clearTimeout((startRef.current as any).pressTimer);
+            }
+          }
+        }}
+        onTouchEnd={(e) => {
+          detachScrollGuard();
+          setIsPressed(false);
+
+          endTimeRef.current = Date.now();
+
+          if (startRef.current && (startRef.current as any).pressTimer) {
+            window.clearTimeout((startRef.current as any).pressTimer);
+          }
+
+          if (startRef.current) {
+            const pressDuration = endTimeRef.current - startRef.current.time;
+            const threshold = moveThresholdPx ?? 40;
+            // Se houve touchmove suficiente, movedRef já estará true.
+            // Se não houve, ainda exigimos o tempo mínimo.
+            wasValidPressRef.current = !movedRef.current && pressDuration >= minPressTime;
+            // (extra) se o browser não entregou touchmove, mas o usuário rolou, o scroll-guard marca movedRef.
+            if (wasValidPressRef.current) {
+              wasValidPressRef.current = false;
+              onClickRef.current?.(e as any);
+            }
+          }
+        }}
+        onTouchCancel={() => {
+          movedRef.current = true;
+          wasValidPressRef.current = false;
+          detachScrollGuard();
+          setIsPressed(false);
+          if (startRef.current && (startRef.current as any).pressTimer) {
+            window.clearTimeout((startRef.current as any).pressTimer);
+          }
+        }}
         onPointerMove={(e) => {
           if (!startRef.current) {
             onPointerMove?.(e);
@@ -206,9 +291,9 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
           onPointerCancel?.(e);
         }}
         onClickCapture={(e) => {
-          // Para TOUCH: bloqueia SEMPRE o click nativo (ghost click).
-          // A execução já ocorreu (ou não) no onPointerUp, após validação.
-          if (pointerTypeRef.current === "touch") {
+          // Para TOUCH (incluindo fallback iOS): bloqueia SEMPRE o click nativo (ghost click).
+          // A execução já ocorreu (ou não) no onPointerUp/onTouchEnd, após validação.
+          if (pointerTypeRef.current === "touch" || hadTouchRef.current) {
             e.preventDefault();
             e.stopPropagation();
           }
