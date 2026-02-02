@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import type { SyntheticEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -317,7 +318,22 @@ export default function UserCalendar() {
     fetchTenantMembers();
   }
 
-  function handleMyShiftActivate(shift: Shift) {
+  function handleMyShiftActivate(shift: Shift, e?: SyntheticEvent) {
+    // Evita que o toque “vaze” para handlers de wrappers/scroll.
+    e?.stopPropagation?.();
+
+    // IMPORTANT: não usar `disabled` como gate, porque isso bloqueia totalmente o evento no mobile
+    // quando a detecção de "meu plantão" falha por timing/estado. Em vez disso, validamos aqui.
+    const isMineNow = isMyShift(shift.id);
+    if (!isMineNow) {
+      toast({
+        title: 'Apenas seus plantões',
+        description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Mobile: sometimes onClick is skipped during/after scroll; pointerUp is more reliable.
     handleMyShiftClick(shift);
   }
@@ -722,8 +738,8 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={() => handleMyShiftActivate(shift)}
-                                onPointerUp={() => handleMyShiftActivate(shift)}
+                                onClick={(e) => handleMyShiftActivate(shift, e)}
+                                onPointerUp={(e) => handleMyShiftActivate(shift, e)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -777,8 +793,8 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={() => handleMyShiftActivate(shift)}
-                                onPointerUp={() => handleMyShiftActivate(shift)}
+                                onClick={(e) => handleMyShiftActivate(shift, e)}
+                                onPointerUp={(e) => handleMyShiftActivate(shift, e)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -866,9 +882,9 @@ export default function UserCalendar() {
                             <button
                               key={shift.id}
                               type="button"
-                              disabled={!isMine}
-                              onClick={() => isMine && handleMyShiftActivate(shift)}
-                              onPointerUp={() => isMine && handleMyShiftActivate(shift)}
+                              aria-disabled={!isMine}
+                              onClick={(e) => handleMyShiftActivate(shift, e)}
+                              onPointerUp={(e) => handleMyShiftActivate(shift, e)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-warning/5 hover:bg-warning/10 border-l-warning",
@@ -947,9 +963,9 @@ export default function UserCalendar() {
                             <button
                               key={shift.id}
                               type="button"
-                              disabled={!isMine}
-                              onClick={() => isMine && handleMyShiftActivate(shift)}
-                              onPointerUp={() => isMine && handleMyShiftActivate(shift)}
+                              aria-disabled={!isMine}
+                              onClick={(e) => handleMyShiftActivate(shift, e)}
+                              onPointerUp={(e) => handleMyShiftActivate(shift, e)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-info/5 hover:bg-info/10 border-l-info",
