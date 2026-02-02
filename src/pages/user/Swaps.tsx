@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import type { SyntheticEvent } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -271,9 +272,61 @@ export default function UserSwaps() {
     if (data) setIncomingSwapRequests(data as unknown as SwapRequest[]);
   }
 
+  async function notifyTenantAdmins(params: {
+    type: string;
+    title: string;
+    message: string;
+    shiftAssignmentId?: string | null;
+    excludeUserIds?: string[];
+  }) {
+    if (!currentTenantId) return;
+    const exclude = new Set(params.excludeUserIds ?? []);
+
+    try {
+      const { data: adminsData, error: adminsError } = await supabase
+        .from('memberships')
+        .select('user_id')
+        .eq('tenant_id', currentTenantId)
+        .eq('role', 'admin')
+        .eq('active', true);
+
+      if (adminsError) {
+        console.error('[UserSwaps] Error fetching tenant admins:', adminsError);
+        return;
+      }
+
+      const adminUserIds = (adminsData ?? [])
+        .map((a: any) => a.user_id as string)
+        .filter(Boolean)
+        .filter((id: string) => !exclude.has(id));
+
+      if (!adminUserIds.length) return;
+
+      const payload = adminUserIds.map((adminUserId) => ({
+        tenant_id: currentTenantId,
+        user_id: adminUserId,
+        shift_assignment_id: params.shiftAssignmentId ?? null,
+        type: params.type,
+        title: params.title,
+        message: params.message,
+      }));
+
+      const { error } = await supabase.from('notifications').insert(payload);
+      if (error) console.error('[UserSwaps] Error notifying admins:', error);
+    } catch (err) {
+      console.error('[UserSwaps] notifyTenantAdmins catch:', err);
+    }
+  }
+
   function handleShiftClick(assignment: Assignment) {
     setSelectedAssignment(assignment);
     setSelectUserDialogOpen(true);
+  }
+
+  function handleAssignmentActivate(assignment: Assignment, e?: SyntheticEvent) {
+    e?.stopPropagation?.();
+    (e as any)?.preventDefault?.();
+    handleShiftClick(assignment);
   }
 
   function handleUserSelect(member: TenantMember) {
@@ -282,12 +335,18 @@ export default function UserSwaps() {
     setConfirmDialogOpen(true);
   }
 
+  function handleMemberActivate(member: TenantMember, e?: SyntheticEvent) {
+    e?.stopPropagation?.();
+    (e as any)?.preventDefault?.();
+    handleUserSelect(member);
+  }
+
   async function handleSubmitSwapRequest() {
     if (!selectedAssignment || !selectedTargetUser || !currentTenantId || !user) return;
 
     setProcessing(true);
 
-    const { error: swapError } = await supabase
+    const { data: createdSwap, error: swapError } = await supabase
       .from('swap_requests')
       .insert({
         tenant_id: currentTenantId,
@@ -310,6 +369,7 @@ export default function UserSwaps() {
       .insert({
         tenant_id: currentTenantId,
         user_id: selectedTargetUser.user_id,
+        shift_assignment_id: selectedAssignment.id,
         type: 'swap_request',
         title: 'Solicitação de Troca de Plantão',
         message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
@@ -318,6 +378,15 @@ export default function UserSwaps() {
     if (notifyError) {
       console.error('[UserSwaps] Error sending notification:', notifyError);
     }
+
+    // Notifica admins do tenant (visibilidade/auditoria)
+    await notifyTenantAdmins({
+      type: 'swap_request_admin',
+      title: 'Troca de plantão solicitada',
+      message: `${user.user_metadata?.name || 'Um usuário'} solicitou passar o plantão "${selectedAssignment.shift.title}" (${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}) para ${selectedTargetUser.name}.`,
+      shiftAssignmentId: selectedAssignment.id,
+      excludeUserIds: [user.id],
+    });
 
     toast({ title: 'Solicitação enviada!', description: `Aguardando ${selectedTargetUser.name} aceitar.` });
 
@@ -347,6 +416,25 @@ export default function UserSwaps() {
     }
 
     toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
+
+    // Notifica solicitante e admins
+    await supabase.from('notifications').insert({
+      tenant_id: currentTenantId,
+      user_id: swap.requester_id,
+      shift_assignment_id: swap.origin_assignment_id,
+      type: 'swap_request_update',
+      title: 'Troca aceita',
+      message: `Seu pedido para passar o plantão "${swap.origin_assignment?.shift?.title}" (${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi aceito.`,
+    });
+
+    await notifyTenantAdmins({
+      type: 'swap_request_update_admin',
+      title: 'Troca aceita',
+      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi aceita por ${user.user_metadata?.name || 'um usuário'}.`,
+      shiftAssignmentId: swap.origin_assignment_id,
+      excludeUserIds: [user.id],
+    });
+
     setProcessing(false);
     fetchData();
   }
@@ -368,6 +456,25 @@ export default function UserSwaps() {
     }
 
     toast({ title: 'Troca recusada.' });
+
+    // Notifica solicitante e admins
+    await supabase.from('notifications').insert({
+      tenant_id: currentTenantId,
+      user_id: swap.requester_id,
+      shift_assignment_id: swap.origin_assignment_id,
+      type: 'swap_request_update',
+      title: 'Troca recusada',
+      message: `Seu pedido para passar o plantão "${swap.origin_assignment?.shift?.title}" (${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi recusado.`,
+    });
+
+    await notifyTenantAdmins({
+      type: 'swap_request_update_admin',
+      title: 'Troca recusada',
+      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi recusada por ${user.user_metadata?.name || 'um usuário'}.`,
+      shiftAssignmentId: swap.origin_assignment_id,
+      excludeUserIds: [user.id],
+    });
+
     setProcessing(false);
     fetchData();
   }
@@ -497,10 +604,13 @@ export default function UserSwaps() {
               ) : (
                 <div className="grid gap-3">
                   {visibleAssignments.map((assignment) => (
-                    <div
+                    <button
                       key={assignment.id}
-                      onClick={() => handleShiftClick(assignment)}
-                      className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors"
+                      type="button"
+                      onClick={(e) => handleAssignmentActivate(assignment, e)}
+                      onPointerUp={(e) => handleAssignmentActivate(assignment, e)}
+                      onTouchEnd={(e) => handleAssignmentActivate(assignment, e)}
+                      className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors w-full text-left touch-manipulation"
                     >
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
@@ -521,7 +631,7 @@ export default function UserSwaps() {
                         </div>
                         <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -663,16 +773,19 @@ export default function UserSwaps() {
               <p className="text-center text-muted-foreground py-4">Nenhum colega disponível.</p>
             ) : (
               tenantMembers.map((member) => (
-                <div
+                <button
                   key={member.user_id}
-                  onClick={() => handleUserSelect(member)}
-                  className="p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors flex items-center gap-3"
+                  type="button"
+                  onClick={(e) => handleMemberActivate(member, e)}
+                  onPointerUp={(e) => handleMemberActivate(member, e)}
+                  onTouchEnd={(e) => handleMemberActivate(member, e)}
+                  className="p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors flex items-center gap-3 w-full text-left touch-manipulation"
                 >
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <User className="h-5 w-5 text-primary" />
                   </div>
                   <span className="font-medium">{member.name}</span>
-                </div>
+                </button>
               ))
             )}
           </div>

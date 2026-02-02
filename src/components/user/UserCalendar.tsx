@@ -322,6 +322,9 @@ export default function UserCalendar() {
     // Evita que o toque “vaze” para handlers de wrappers/scroll.
     e?.stopPropagation?.();
 
+    // Em webviews (app instalado), às vezes o evento vem como touch — prevenir comportamento padrão ajuda.
+    (e as any)?.preventDefault?.();
+
     // IMPORTANT: não usar `disabled` como gate, porque isso bloqueia totalmente o evento no mobile
     // quando a detecção de "meu plantão" falha por timing/estado. Em vez disso, validamos aqui.
     const isMineNow = isMyShift(shift.id);
@@ -388,6 +391,7 @@ export default function UserCalendar() {
       .insert({
         tenant_id: currentTenantId,
         user_id: selectedTargetUser.user_id,
+        shift_assignment_id: assignmentId,
         type: 'swap_request',
         title: 'Solicitação de Troca de Plantão',
         message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
@@ -395,6 +399,41 @@ export default function UserCalendar() {
 
     if (notifyError) {
       console.error('[UserCalendar] Error sending notification:', notifyError);
+    }
+
+    // Notifica admins do tenant (visibilidade/auditoria)
+    try {
+      const { data: adminsData, error: adminsError } = await supabase
+        .from('memberships')
+        .select('user_id')
+        .eq('tenant_id', currentTenantId)
+        .eq('role', 'admin')
+        .eq('active', true);
+
+      if (adminsError) {
+        console.error('[UserCalendar] Error fetching tenant admins:', adminsError);
+      } else if (adminsData?.length) {
+        const adminNotifications = adminsData
+          .map((a: any) => a.user_id)
+          .filter((id: string) => id && id !== user.id)
+          .map((adminUserId: string) => ({
+            tenant_id: currentTenantId,
+            user_id: adminUserId,
+            shift_assignment_id: assignmentId,
+            type: 'swap_request_admin',
+            title: 'Troca de plantão solicitada',
+            message: `${user.user_metadata?.name || 'Um usuário'} solicitou passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para ${selectedTargetUser.name}.`,
+          }));
+
+        if (adminNotifications.length) {
+          const { error: adminNotifyError } = await supabase.from('notifications').insert(adminNotifications);
+          if (adminNotifyError) {
+            console.error('[UserCalendar] Error notifying admins:', adminNotifyError);
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[UserCalendar] Admin notify catch:', err);
     }
 
     toast({ 
@@ -740,6 +779,7 @@ export default function UserCalendar() {
                                 type="button"
                                 onClick={(e) => handleMyShiftActivate(shift, e)}
                                 onPointerUp={(e) => handleMyShiftActivate(shift, e)}
+                                onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -795,6 +835,7 @@ export default function UserCalendar() {
                                 type="button"
                                 onClick={(e) => handleMyShiftActivate(shift, e)}
                                 onPointerUp={(e) => handleMyShiftActivate(shift, e)}
+                                onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
                                 className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
@@ -885,6 +926,7 @@ export default function UserCalendar() {
                               aria-disabled={!isMine}
                               onClick={(e) => handleMyShiftActivate(shift, e)}
                               onPointerUp={(e) => handleMyShiftActivate(shift, e)}
+                              onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-warning/5 hover:bg-warning/10 border-l-warning",
@@ -966,6 +1008,7 @@ export default function UserCalendar() {
                               aria-disabled={!isMine}
                               onClick={(e) => handleMyShiftActivate(shift, e)}
                               onPointerUp={(e) => handleMyShiftActivate(shift, e)}
+                              onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
                                 "bg-info/5 hover:bg-info/10 border-l-info",
