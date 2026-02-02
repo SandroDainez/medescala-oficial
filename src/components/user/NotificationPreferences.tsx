@@ -4,7 +4,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
-import { Bell, Calendar, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Bell, Calendar, Loader2, CheckCircle2, AlertCircle, Download, Share2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { supabase } from '@/integrations/supabase/client';
@@ -19,6 +19,13 @@ import {
   requestCalendarPermissions,
   syncAllShiftsToCalendar
 } from '@/lib/nativeCalendar';
+import {
+  isNotificationSupported,
+  getNotificationPermission,
+  requestNotificationPermission,
+  scheduleShiftReminders,
+} from '@/lib/webPushNotifications';
+import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
 
 interface NotificationPrefs {
   push_enabled: boolean;
@@ -49,6 +56,17 @@ export default function NotificationPreferences() {
   const [syncing, setSyncing] = useState(false);
 
   const isNative = isNativePlatform();
+  const isWebPushSupported = !isNative && isNotificationSupported();
+  
+  // Web calendar sync hook
+  const { 
+    shifts: webShifts, 
+    hasShifts: hasWebShifts, 
+    exportToCalendar, 
+    downloadCalendar,
+    shiftsChanged: webShiftsChanged,
+    lastExportedAt: webLastExportedAt
+  } = useWebCalendarSync();
 
   useEffect(() => {
     if (user?.id) {
@@ -71,17 +89,20 @@ export default function NotificationPreferences() {
   };
 
   const checkPermissions = async () => {
-    if (!isNative) return;
+    // Check web push permission
+    if (isWebPushSupported) {
+      const permission = getNotificationPermission();
+      setPushPermissionGranted(permission === 'granted');
+    }
 
-    try {
-      // Check calendar permission by attempting to request it
-      const calendarPerm = await requestCalendarPermissions();
-      setCalendarPermissionGranted(calendarPerm);
-      
-      // Push permission check would need Capacitor
-      // For now, we'll track it when they try to enable
-    } catch (error) {
-      console.error('Error checking permissions:', error);
+    // Check native calendar permission
+    if (isNative) {
+      try {
+        const calendarPerm = await requestCalendarPermissions();
+        setCalendarPermissionGranted(calendarPerm);
+      } catch (error) {
+        console.error('Error checking calendar permissions:', error);
+      }
     }
   };
 
@@ -93,7 +114,7 @@ export default function NotificationPreferences() {
     setSaving(true);
 
     try {
-      // Special handling for push_enabled toggle
+      // Special handling for push_enabled toggle on native
       if (key === 'push_enabled' && value && isNative) {
         const success = await initializePushNotifications(user.id, currentTenantId);
         if (!success) {
@@ -105,7 +126,31 @@ export default function NotificationPreferences() {
         setPushPermissionGranted(true);
       }
 
-      // Special handling for calendar_sync_enabled toggle
+      // Special handling for push_enabled toggle on web
+      if (key === 'push_enabled' && value && isWebPushSupported) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          toast.error('Permissão de notificações negada. Ative nas configurações do navegador.');
+          setPrefs(prefs); // Revert
+          setSaving(false);
+          return;
+        }
+        setPushPermissionGranted(true);
+        
+        // Schedule web notifications for existing shifts
+        if (webShifts.length > 0) {
+          const scheduledCount = scheduleShiftReminders(webShifts, {
+            reminder_24h_enabled: newPrefs.reminder_24h_enabled,
+            reminder_2h_enabled: newPrefs.reminder_2h_enabled,
+            shift_start_enabled: newPrefs.shift_start_enabled,
+          });
+          if (scheduledCount > 0) {
+            toast.success(`${scheduledCount} lembretes agendados!`);
+          }
+        }
+      }
+
+      // Special handling for calendar_sync_enabled toggle on native
       if (key === 'calendar_sync_enabled' && value && isNative) {
         const hasPermission = await requestCalendarPermissions();
         if (!hasPermission) {
@@ -204,6 +249,20 @@ export default function NotificationPreferences() {
     );
   }
 
+  const handleWebCalendarExport = async () => {
+    const shared = await exportToCalendar();
+    if (shared) {
+      toast.success('Arquivo de calendário compartilhado!');
+    } else {
+      toast.success('Arquivo de calendário baixado!');
+    }
+  };
+
+  const handleWebCalendarDownload = () => {
+    downloadCalendar();
+    toast.success('Arquivo baixado! Abra-o para adicionar ao seu calendário.');
+  };
+
   return (
     <div className="space-y-4">
       {/* Push Notifications */}
@@ -211,12 +270,14 @@ export default function NotificationPreferences() {
         <CardHeader className="pb-3">
           <CardTitle className="text-lg flex items-center gap-2">
             <Bell className="h-5 w-5" />
-            Notificações Push
+            Notificações
           </CardTitle>
           <CardDescription>
             {isNative 
               ? 'Receba alertas mesmo com o app fechado' 
-              : 'Disponível apenas no app móvel'}
+              : isWebPushSupported
+                ? 'Receba lembretes sobre seus plantões'
+                : 'Notificações não suportadas neste navegador'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -224,22 +285,29 @@ export default function NotificationPreferences() {
             <div>
               <Label>Ativar notificações</Label>
               <p className="text-sm text-muted-foreground">
-                {pushPermissionGranted === false && 'Permissão negada'}
+                {pushPermissionGranted === false && (
+                  <span className="flex items-center gap-1 text-yellow-600">
+                    <AlertCircle className="h-3 w-3" /> Permissão negada
+                  </span>
+                )}
                 {pushPermissionGranted === true && (
                   <span className="flex items-center gap-1 text-green-600">
                     <CheckCircle2 className="h-3 w-3" /> Ativo
                   </span>
                 )}
+                {pushPermissionGranted === null && !isNative && isWebPushSupported && 
+                  'Clique para permitir notificações'
+                }
               </p>
             </div>
             <Switch 
               checked={prefs.push_enabled} 
               onCheckedChange={(v) => handlePrefChange('push_enabled', v)}
-              disabled={!isNative || saving}
+              disabled={(!isNative && !isWebPushSupported) || saving}
             />
           </div>
 
-          {prefs.push_enabled && (
+          {prefs.push_enabled && (isNative || isWebPushSupported) && (
             <>
               <Separator />
               <div className="flex items-center justify-between">
@@ -289,6 +357,16 @@ export default function NotificationPreferences() {
                   disabled={saving}
                 />
               </div>
+              
+              {!isNative && isWebPushSupported && (
+                <>
+                  <Separator />
+                  <p className="text-xs text-muted-foreground">
+                    ⚠️ Lembretes funcionam apenas com o navegador aberto. Para lembretes mesmo com o app fechado, 
+                    instale o app ou adicione os plantões ao seu calendário.
+                  </p>
+                </>
+              )}
             </>
           )}
         </CardContent>
@@ -304,59 +382,121 @@ export default function NotificationPreferences() {
           <CardDescription>
             {isNative 
               ? 'Adicione seus plantões ao calendário do celular' 
-              : 'Disponível apenas no app móvel'}
+              : 'Exporte seus plantões para o calendário do celular'}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <Label>Sincronização automática</Label>
-              <p className="text-sm text-muted-foreground">
-                {calendarPermissionGranted === false && (
-                  <span className="flex items-center gap-1 text-yellow-600">
-                    <AlertCircle className="h-3 w-3" /> Permissão necessária
-                  </span>
-                )}
-                {calendarPermissionGranted === true && (
-                  <span className="flex items-center gap-1 text-green-600">
-                    <CheckCircle2 className="h-3 w-3" /> Calendário conectado
-                  </span>
-                )}
-                {calendarPermissionGranted === null && 'Sincronize plantões automaticamente'}
-              </p>
-            </div>
-            <Switch 
-              checked={prefs.calendar_sync_enabled} 
-              onCheckedChange={(v) => handlePrefChange('calendar_sync_enabled', v)}
-              disabled={!isNative || saving}
-            />
-          </div>
-
-          {prefs.calendar_sync_enabled && isNative && (
+          {/* Native calendar sync */}
+          {isNative && (
             <>
-              <Separator />
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleSyncCalendar}
-                disabled={syncing}
-                className="w-full"
-              >
-                {syncing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Sincronizando...
-                  </>
-                ) : (
-                  <>
-                    <Calendar className="h-4 w-4 mr-2" />
-                    Sincronizar agora
-                  </>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Sincronização automática</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {calendarPermissionGranted === false && (
+                      <span className="flex items-center gap-1 text-yellow-600">
+                        <AlertCircle className="h-3 w-3" /> Permissão necessária
+                      </span>
+                    )}
+                    {calendarPermissionGranted === true && (
+                      <span className="flex items-center gap-1 text-green-600">
+                        <CheckCircle2 className="h-3 w-3" /> Calendário conectado
+                      </span>
+                    )}
+                    {calendarPermissionGranted === null && 'Sincronize plantões automaticamente'}
+                  </p>
+                </div>
+                <Switch 
+                  checked={prefs.calendar_sync_enabled} 
+                  onCheckedChange={(v) => handlePrefChange('calendar_sync_enabled', v)}
+                  disabled={saving}
+                />
+              </div>
+
+              {prefs.calendar_sync_enabled && (
+                <>
+                  <Separator />
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={handleSyncCalendar}
+                    disabled={syncing}
+                    className="w-full"
+                  >
+                    {syncing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Sincronizando...
+                      </>
+                    ) : (
+                      <>
+                        <Calendar className="h-4 w-4 mr-2" />
+                        Sincronizar agora
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Plantões futuros serão adicionados ao seu calendário
+                  </p>
+                </>
+              )}
+            </>
+          )}
+
+          {/* Web calendar export */}
+          {!isNative && (
+            <>
+              <div className="space-y-3">
+                <div>
+                  <Label>Exportar para calendário</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {hasWebShifts 
+                      ? `${webShifts.length} plantão(ões) disponível(is) para exportar`
+                      : 'Nenhum plantão futuro para exportar'
+                    }
+                    {webShiftsChanged && webLastExportedAt && (
+                      <span className="flex items-center gap-1 text-yellow-600 mt-1">
+                        <AlertCircle className="h-3 w-3" /> Há atualizações desde a última exportação
+                      </span>
+                    )}
+                  </p>
+                </div>
+                
+                {hasWebShifts && (
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="default" 
+                      size="sm" 
+                      onClick={handleWebCalendarExport}
+                      className="flex-1"
+                    >
+                      <Share2 className="h-4 w-4 mr-2" />
+                      Compartilhar
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleWebCalendarDownload}
+                      className="flex-1"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Baixar
+                    </Button>
+                  </div>
                 )}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                Plantões futuros serão adicionados ao seu calendário
-              </p>
+              </div>
+              
+              <div className="p-3 rounded-lg bg-muted/50 space-y-1">
+                <p className="text-sm font-medium">Como usar?</p>
+                <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                  <li>Clique em "Compartilhar" ou "Baixar"</li>
+                  <li>Abra o arquivo .ics no seu celular</li>
+                  <li>Adicione os eventos ao seu calendário</li>
+                </ol>
+                <p className="text-xs text-muted-foreground mt-2">
+                  💡 Isso adiciona lembretes automáticos do seu celular!
+                </p>
+              </div>
             </>
           )}
         </CardContent>
