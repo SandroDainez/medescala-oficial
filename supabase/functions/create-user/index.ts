@@ -313,6 +313,16 @@ Deno.serve(async (req) => {
             </html>
           `
 
+          // Remetente fixo — sem fallback para resend.dev
+          const fromAddress = "MedEscala <noreply@medescalas.com.br>";
+          const toAddress = email;
+          const emailSubject = `Bem-vindo ao ${escapeHtml(tenant?.name || 'Hospital')} - MedEscala`;
+          
+          console.log(`[create-user] Enviando email de convite:`);
+          console.log(`[create-user]   from: ${fromAddress}`);
+          console.log(`[create-user]   to: ${toAddress}`);
+          console.log(`[create-user]   subject: ${emailSubject}`);
+
           const emailResponse = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -320,28 +330,33 @@ Deno.serve(async (req) => {
               "Authorization": `Bearer ${RESEND_API_KEY}`,
             },
             body: JSON.stringify({
-              from: "MedEscala <onboarding@resend.dev>",
-              to: [email],
-              subject: `Bem-vindo ao ${escapeHtml(tenant?.name || 'Hospital')} - MedEscala`,
+              from: fromAddress,
+              to: [toAddress],
+              subject: emailSubject,
               html: htmlContent,
             }),
           })
 
+          const responseData = await emailResponse.json().catch(() => ({}));
+          const resendId = responseData?.id || responseData?.data?.id || 'N/A';
+          
+          console.log(`[create-user] Resend response status: ${emailResponse.status}`);
+          console.log(`[create-user] Resend response id: ${resendId}`);
+          
           if (emailResponse.ok) {
             emailSent = true
-            console.log('Invite email sent successfully')
+            console.log(`[create-user] Email enviado com sucesso! ID: ${resendId}`)
           } else {
-            const errorData = await emailResponse.json()
-            console.error('Failed to send invite email:', errorData)
+            console.error(`[create-user] Resend API error:`, responseData)
             // Common Resend sandbox error: can only send to verified emails
-            if (errorData?.message?.includes('verify a domain') || errorData?.statusCode === 403) {
+            if (responseData?.message?.includes('verify a domain') || responseData?.statusCode === 403) {
               emailError = 'Domínio de email não verificado. Configure um domínio no Resend para enviar para qualquer email.'
             } else {
-              emailError = errorData?.message || 'Falha ao enviar email'
+              emailError = responseData?.message || 'Falha ao enviar email'
             }
           }
         } catch (err) {
-          console.error('Error sending invite email:', err)
+          console.error('[create-user] Error sending invite email:', err)
           emailError = err instanceof Error ? err.message : 'Erro ao enviar email'
         }
       }
