@@ -12,6 +12,7 @@ import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
 import { MyShiftStatsChart } from './MyShiftStatsChart';
+import { TapSafeButton } from '@/components/TapSafeButton';
 import {
   Sheet,
   SheetContent,
@@ -795,8 +796,8 @@ export default function UserCalendar() {
                           {/* Day shifts */}
                           {dayShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
-                            return (
-                              <button
+                             return (
+                               <TapSafeButton
                                 key={shift.id}
                                 type="button"
                                 onClick={(e) => {
@@ -845,15 +846,15 @@ export default function UserCalendar() {
                                     {calculateHours(shift.start_time, shift.end_time)}
                                   </span>
                                 </div>
-                              </button>
+                               </TapSafeButton>
                             );
                           })}
 
                           {/* Night shifts */}
                           {nightShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
-                            return (
-                              <button
+                             return (
+                               <TapSafeButton
                                 key={shift.id}
                                 type="button"
                                 onClick={(e) => {
@@ -902,7 +903,7 @@ export default function UserCalendar() {
                                     {calculateHours(shift.start_time, shift.end_time)}
                                   </span>
                                 </div>
-                              </button>
+                               </TapSafeButton>
                             );
                           })}
                         </div>
@@ -944,7 +945,7 @@ export default function UserCalendar() {
                           const isMine = isMyShift(shift.id);
 
                           return (
-                            <button
+                            <TapSafeButton
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
@@ -1014,7 +1015,7 @@ export default function UserCalendar() {
                               <div className="text-right">
                                 <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
                               </div>
-                            </button>
+                            </TapSafeButton>
                           );
                         })}
                       </div>
@@ -1035,7 +1036,7 @@ export default function UserCalendar() {
                           const isMine = isMyShift(shift.id);
 
                           return (
-                            <button
+                            <TapSafeButton
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
@@ -1105,7 +1106,7 @@ export default function UserCalendar() {
                               <div className="text-right">
                                 <span className="text-xs text-muted-foreground truncate max-w-[100px] block">{shift.hospital}</span>
                               </div>
-                            </button>
+                            </TapSafeButton>
                           );
                         })}
                       </div>
@@ -1162,8 +1163,8 @@ export default function UserCalendar() {
                 <div className="text-center py-8 text-muted-foreground">Nenhum colega disponível neste setor.</div>
               ) : (
                 <div className="grid gap-2 pb-4">
-                {tenantMembers.map((member) => (
-                  <button
+                 {tenantMembers.map((member) => (
+                   <TapSafeButton
                     key={member.user_id}
                     type="button"
                     onClick={(e) => {
@@ -1181,7 +1182,7 @@ export default function UserCalendar() {
                       <div className="font-medium text-foreground">{member.name}</div>
                     </div>
                     <User className="h-4 w-4 text-muted-foreground" />
-                  </button>
+                   </TapSafeButton>
                 ))}
                 </div>
               )}
