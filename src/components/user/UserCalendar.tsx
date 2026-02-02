@@ -1151,17 +1151,18 @@ export default function UserCalendar() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="space-y-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-            <div>
-              <Label className="text-sm font-medium">Escolha um colega para passar o plantão:</Label>
-            </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="h-full overflow-y-auto space-y-4 pr-1">
+              <div>
+                <Label className="text-sm font-medium">Escolha um colega para passar o plantão:</Label>
+              </div>
 
-            {loadingMembers ? (
-              <div className="text-center py-8 text-muted-foreground">Carregando colegas...</div>
-            ) : tenantMembers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">Nenhum colega disponível.</div>
-            ) : (
-              <div className="grid gap-2">
+              {loadingMembers ? (
+                <div className="text-center py-8 text-muted-foreground">Carregando colegas do setor...</div>
+              ) : tenantMembers.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">Nenhum colega disponível neste setor.</div>
+              ) : (
+                <div className="grid gap-2 pb-4">
                 {tenantMembers.map((member) => (
                   <button
                     key={member.user_id}
@@ -1194,8 +1195,9 @@ export default function UserCalendar() {
                     <User className="h-4 w-4 text-muted-foreground" />
                   </button>
                 ))}
-              </div>
-            )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="pt-4 border-t mt-auto">
