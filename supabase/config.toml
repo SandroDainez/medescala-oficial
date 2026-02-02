@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.delete-users]
 verify_jwt = false
+
+[functions.absence-document-url]
+verify_jwt = false
