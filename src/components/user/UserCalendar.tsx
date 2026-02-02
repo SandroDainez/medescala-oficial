@@ -1084,7 +1084,7 @@ export default function UserCalendar() {
 
       {/* Swap Request Sheet */}
       <Sheet open={swapSheetOpen} onOpenChange={setSwapSheetOpen}>
-        <SheetContent side="bottom" className="h-[70vh] rounded-t-2xl">
+        <SheetContent side="bottom" className="h-[70vh] rounded-t-2xl flex flex-col">
           <SheetHeader className="text-left pb-4">
             <SheetTitle className="flex items-center gap-2">
               <ArrowRightLeft className="h-5 w-5 text-primary" />
@@ -1108,7 +1108,7 @@ export default function UserCalendar() {
             </SheetDescription>
           </SheetHeader>
 
-          <div className="space-y-4 overflow-y-auto flex-1">
+          <div className="space-y-4 flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
             <div>
               <Label className="text-sm font-medium">Escolha um colega para passar o plantão:</Label>
             </div>
@@ -1122,8 +1122,23 @@ export default function UserCalendar() {
                 {tenantMembers.map((member) => (
                   <button
                     key={member.user_id}
-                    onClick={() => handleSelectColleague(member)}
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left w-full"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      (e as any)?.preventDefault?.();
+                      handleSelectColleague(member);
+                    }}
+                    onPointerUp={(e) => {
+                      e.stopPropagation();
+                      (e as any)?.preventDefault?.();
+                      handleSelectColleague(member);
+                    }}
+                    onTouchEnd={(e) => {
+                      e.stopPropagation();
+                      (e as any)?.preventDefault?.();
+                      handleSelectColleague(member);
+                    }}
+                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left w-full touch-manipulation"
                   >
                     <Avatar className="h-10 w-10 border-2 border-card">
                       <AvatarFallback className="bg-muted text-muted-foreground text-xs">
