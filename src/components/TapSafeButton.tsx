@@ -1,4 +1,4 @@
-import { forwardRef, useRef, type ButtonHTMLAttributes } from "react";
+import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes } from "react";
 
 type TapSafeButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   /**
@@ -19,6 +19,33 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
     const startRef = useRef<{ x: number; y: number } | null>(null);
     const movedRef = useRef(false);
     const pointerTypeRef = useRef<string | null>(null);
+    const cleanupScrollListenerRef = useRef<(() => void) | null>(null);
+
+    useEffect(() => {
+      return () => {
+        cleanupScrollListenerRef.current?.();
+        cleanupScrollListenerRef.current = null;
+      };
+    }, []);
+
+    const attachScrollGuard = () => {
+      // Se já existe, limpa antes de reanexar
+      cleanupScrollListenerRef.current?.();
+      const onAnyScroll = () => {
+        // Qualquer rolagem (inclusive dentro de containers) invalida o clique.
+        movedRef.current = true;
+      };
+      // scroll não “bubbling”, mas pode ser capturado
+      document.addEventListener("scroll", onAnyScroll, { capture: true, passive: true });
+      cleanupScrollListenerRef.current = () => {
+        document.removeEventListener("scroll", onAnyScroll, { capture: true } as any);
+      };
+    };
+
+    const detachScrollGuard = () => {
+      cleanupScrollListenerRef.current?.();
+      cleanupScrollListenerRef.current = null;
+    };
 
     return (
       <button
@@ -27,6 +54,9 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
         onPointerDown={(e) => {
           movedRef.current = false;
           startRef.current = { x: e.clientX, y: e.clientY };
+
+          // Qualquer scroll durante o gesto invalida o clique (cobre casos onde pointermove não chega).
+          attachScrollGuard();
 
           // Importante no mobile: garante que continuaremos recebendo pointermove
           // mesmo quando o browser inicia scroll e o dedo "passa" por outros itens.
@@ -57,14 +87,17 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
           onPointerMove?.(e);
         }}
         onPointerUp={(e) => {
+          detachScrollGuard();
           onPointerUp?.(e);
         }}
         onPointerCancel={(e) => {
           // Qualquer cancelamento de ponteiro (muito comum durante scroll) invalida o clique.
           movedRef.current = true;
+          detachScrollGuard();
           onPointerCancel?.(e);
         }}
         onClick={(e) => {
+          detachScrollGuard();
           // Se o usuário estava rolando/arrastando, não considera como clique.
           if (movedRef.current) {
             e.preventDefault();
