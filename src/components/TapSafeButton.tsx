@@ -43,6 +43,11 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
     ...props 
   }, ref) => {
     const startRef = useRef<{ x: number; y: number; time: number } | null>(null);
+    // IMPORTANT: em mobile, o evento `click` pode atrasar ~300ms.
+    // Portanto, NÃO podemos medir pressDuration com Date.now() dentro do onClick.
+    // Medimos a duração real no pointerup.
+    const endTimeRef = useRef<number | null>(null);
+    const wasValidPressRef = useRef<boolean>(false);
     const movedRef = useRef(false);
     const pointerTypeRef = useRef<string | null>(null);
     const cleanupScrollListenerRef = useRef<(() => void) | null>(null);
@@ -100,6 +105,8 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
         )}
         onPointerDown={(e) => {
           movedRef.current = false;
+          wasValidPressRef.current = false;
+          endTimeRef.current = null;
           startRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
 
           // Qualquer scroll durante o gesto invalida o clique (cobre casos onde pointermove não chega).
@@ -152,15 +159,27 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
         onPointerUp={(e) => {
           detachScrollGuard();
           setIsPressed(false);
+
+          endTimeRef.current = Date.now();
+
           // Limpa o timer de press se existir
           if (startRef.current && (startRef.current as any).pressTimer) {
             clearTimeout((startRef.current as any).pressTimer);
           }
+
+          // Calcula a duração real do gesto (do pointerdown ao pointerup)
+          if (startRef.current) {
+            const pressDuration = endTimeRef.current - startRef.current.time;
+            wasValidPressRef.current = !movedRef.current && pressDuration >= minPressTime;
+          }
+
           onPointerUp?.(e);
         }}
         onPointerCancel={(e) => {
           // Qualquer cancelamento de ponteiro (muito comum durante scroll) invalida o clique.
           movedRef.current = true;
+          wasValidPressRef.current = false;
+          endTimeRef.current = Date.now();
           detachScrollGuard();
           setIsPressed(false);
           // Limpa o timer de press se existir
@@ -184,15 +203,26 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
             e.stopPropagation();
             return;
           }
-          
-          // Verifica tempo mínimo de pressão
-          if (startRef.current) {
-            const pressDuration = Date.now() - startRef.current.time;
-            if (pressDuration < minPressTime) {
-              // Pressão muito rápida - provavelmente scroll passando por cima
+
+          // Para TOUCH: exige gesto intencional confirmado no pointerup.
+          // Isso elimina o problema clássico: click atrasado faz qualquer “encostar” parecer
+          // um press longo quando medimos Date.now() no click.
+          if (pointerTypeRef.current === "touch") {
+            if (!wasValidPressRef.current) {
               e.preventDefault();
               e.stopPropagation();
               return;
+            }
+          } else {
+            // Para mouse/teclado: mantém validação por tempo (quando existir startRef)
+            // sem depender do atraso do click.
+            if (startRef.current && endTimeRef.current) {
+              const pressDuration = endTimeRef.current - startRef.current.time;
+              if (pressDuration < minPressTime) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+              }
             }
           }
           

@@ -801,7 +801,7 @@ export default function UserCalendar() {
                                 key={shift.id}
                                 type="button"
                                 moveThresholdPx={40}
-                                minPressTime={100}
+                                 minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
@@ -860,7 +860,7 @@ export default function UserCalendar() {
                                 key={shift.id}
                                 type="button"
                                 moveThresholdPx={40}
-                                minPressTime={100}
+                                 minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
@@ -954,7 +954,7 @@ export default function UserCalendar() {
                               type="button"
                               aria-disabled={!isMine}
                               moveThresholdPx={40}
-                              minPressTime={100}
+                              minPressTime={160}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!isMine) {
@@ -1047,7 +1047,7 @@ export default function UserCalendar() {
                               type="button"
                               aria-disabled={!isMine}
                               moveThresholdPx={40}
-                              minPressTime={100}
+                              minPressTime={160}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!isMine) {
