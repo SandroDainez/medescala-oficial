@@ -95,21 +95,22 @@ export function useWebCalendarSync(): UseWebCalendarSyncReturn {
         `)
         .eq('user_id', user.id)
         .eq('tenant_id', currentTenantId)
-        .gte('shifts.shift_date', today)
-        .order('shifts(shift_date)', { ascending: true });
+        .gte('shifts.shift_date', today);
 
       if (error) throw error;
 
-      const formattedShifts: ShiftForCalendar[] = (data || []).map((a: any) => ({
-        id: a.shifts.id,
-        title: a.shifts.title,
-        hospital: a.shifts.hospital,
-        location: a.shifts.location,
-        shift_date: a.shifts.shift_date,
-        start_time: a.shifts.start_time,
-        end_time: a.shifts.end_time,
-        sector_name: a.shifts.sectors?.name,
-      }));
+      const formattedShifts: ShiftForCalendar[] = (data || [])
+        .map((a: any) => ({
+          id: a.shifts.id,
+          title: a.shifts.title,
+          hospital: a.shifts.hospital,
+          location: a.shifts.location,
+          shift_date: a.shifts.shift_date,
+          start_time: a.shifts.start_time,
+          end_time: a.shifts.end_time,
+          sector_name: a.shifts.sectors?.name,
+        }))
+        .sort((a, b) => a.shift_date.localeCompare(b.shift_date));
 
       setShifts(formattedShifts);
 
