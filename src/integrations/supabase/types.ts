@@ -1875,6 +1875,10 @@ export type Database = {
         Args: { _shift_id: string; _user_id?: string }
         Returns: boolean
       }
+      is_sector_member_of_shift: {
+        Args: { _shift_id: string; _user_id?: string }
+        Returns: boolean
+      }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
       is_tenant_access_active: {
         Args: { _tenant_id: string }
