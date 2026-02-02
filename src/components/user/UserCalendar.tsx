@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react';
-import type { SyntheticEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -361,28 +360,8 @@ export default function UserCalendar() {
     fetchSectorMembers(shift.sector_id);
   }
 
-  function handleMyShiftActivate(shift: Shift, e?: SyntheticEvent) {
-    // Evita que o toque “vaze” para handlers de wrappers/scroll.
-    e?.stopPropagation?.();
 
-    // Em webviews (app instalado), às vezes o evento vem como touch — prevenir comportamento padrão ajuda.
-    (e as any)?.preventDefault?.();
 
-    // IMPORTANT: não usar `disabled` como gate, porque isso bloqueia totalmente o evento no mobile
-    // quando a detecção de "meu plantão" falha por timing/estado. Em vez disso, validamos aqui.
-    const isMineNow = isMyShift(shift.id);
-    if (!isMineNow) {
-      toast({
-        title: 'Apenas seus plantões',
-        description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    // Mobile: sometimes onClick is skipped during/after scroll; pointerUp is more reliable.
-    handleMyShiftClick(shift);
-  }
 
   // Handle user select from sheet
   function handleSelectColleague(member: TenantMember) {
@@ -820,10 +799,11 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={(e) => handleMyShiftActivate(shift, e)}
-                                onPointerUp={(e) => handleMyShiftActivate(shift, e)}
-                                onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMyShiftClick(shift);
+                                }}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left select-none"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -876,10 +856,11 @@ export default function UserCalendar() {
                               <button
                                 key={shift.id}
                                 type="button"
-                                onClick={(e) => handleMyShiftActivate(shift, e)}
-                                onPointerUp={(e) => handleMyShiftActivate(shift, e)}
-                                onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left touch-manipulation"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleMyShiftClick(shift);
+                                }}
+                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left select-none"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -967,14 +948,23 @@ export default function UserCalendar() {
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
-                              onClick={(e) => handleMyShiftActivate(shift, e)}
-                              onPointerUp={(e) => handleMyShiftActivate(shift, e)}
-                              onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isMine) {
+                                  toast({
+                                    title: 'Apenas seus plantões',
+                                    description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
+                                    variant: 'destructive',
+                                  });
+                                  return;
+                                }
+                                handleMyShiftClick(shift);
+                              }}
                               className={cn(
-                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
+                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left select-none",
                                 "bg-warning/5 hover:bg-warning/10 border-l-warning",
                                 isMine
-                                  ? "cursor-pointer active:scale-[0.99] active:bg-warning/20 ring-1 ring-primary/20 touch-manipulation"
+                                  ? "cursor-pointer active:scale-[0.99] active:bg-warning/20 ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
                               )}
                             >
@@ -1049,14 +1039,23 @@ export default function UserCalendar() {
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
-                              onClick={(e) => handleMyShiftActivate(shift, e)}
-                              onPointerUp={(e) => handleMyShiftActivate(shift, e)}
-                              onTouchEnd={(e) => handleMyShiftActivate(shift, e)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!isMine) {
+                                  toast({
+                                    title: 'Apenas seus plantões',
+                                    description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
+                                    variant: 'destructive',
+                                  });
+                                  return;
+                                }
+                                handleMyShiftClick(shift);
+                              }}
                               className={cn(
-                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left",
+                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left select-none",
                                 "bg-info/5 hover:bg-info/10 border-l-info",
                                 isMine
-                                  ? "cursor-pointer active:scale-[0.99] active:bg-info/20 ring-1 ring-primary/20 touch-manipulation"
+                                  ? "cursor-pointer active:scale-[0.99] active:bg-info/20 ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
                               )}
                             >
@@ -1169,20 +1168,9 @@ export default function UserCalendar() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      (e as any)?.preventDefault?.();
                       handleSelectColleague(member);
                     }}
-                    onPointerUp={(e) => {
-                      e.stopPropagation();
-                      (e as any)?.preventDefault?.();
-                      handleSelectColleague(member);
-                    }}
-                    onTouchEnd={(e) => {
-                      e.stopPropagation();
-                      (e as any)?.preventDefault?.();
-                      handleSelectColleague(member);
-                    }}
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent transition-colors text-left w-full touch-manipulation"
+                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent active:bg-accent/80 transition-colors text-left w-full select-none"
                   >
                     <Avatar className="h-10 w-10 border-2 border-card">
                       <AvatarFallback className="bg-muted text-muted-foreground text-xs">
