@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { SyntheticEvent } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -380,22 +379,10 @@ export default function UserSwaps() {
     }
   }
 
-  function handleAssignmentActivate(assignment: Assignment, e?: SyntheticEvent) {
-    e?.stopPropagation?.();
-    (e as any)?.preventDefault?.();
-    handleShiftClick(assignment);
-  }
-
   function handleUserSelect(member: TenantMember) {
     setSelectedTargetUser(member);
     setSelectUserDialogOpen(false);
     setConfirmDialogOpen(true);
-  }
-
-  function handleMemberActivate(member: TenantMember, e?: SyntheticEvent) {
-    e?.stopPropagation?.();
-    (e as any)?.preventDefault?.();
-    handleUserSelect(member);
   }
 
   async function handleSubmitSwapRequest() {
@@ -664,10 +651,11 @@ export default function UserSwaps() {
                     <button
                       key={assignment.id}
                       type="button"
-                      onClick={(e) => handleAssignmentActivate(assignment, e)}
-                      onPointerUp={(e) => handleAssignmentActivate(assignment, e)}
-                      onTouchEnd={(e) => handleAssignmentActivate(assignment, e)}
-                      className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors w-full text-left touch-manipulation"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShiftClick(assignment);
+                      }}
+                      className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors w-full text-left select-none"
                     >
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
@@ -838,10 +826,11 @@ export default function UserSwaps() {
                 <button
                   key={member.user_id}
                   type="button"
-                  onClick={(e) => handleMemberActivate(member, e)}
-                  onPointerUp={(e) => handleMemberActivate(member, e)}
-                  onTouchEnd={(e) => handleMemberActivate(member, e)}
-                  className="p-3 border rounded-lg cursor-pointer hover:bg-accent/50 transition-colors flex items-center gap-3 w-full text-left touch-manipulation"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleUserSelect(member);
+                  }}
+                  className="p-3 border rounded-lg cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors flex items-center gap-3 w-full text-left select-none"
                 >
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <User className="h-5 w-5 text-primary" />
