@@ -329,3 +329,39 @@ log_gps_grant_trigger AFTER INSERT ON gps_access_grants
 | `has_pii_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
 | `has_payment_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
 | `has_gps_access(user_id, tenant_id)` | **DUAL-AUTH**: (admin OR super_admin) E grant temporal válido |
+
+---
+
+## 16) Documentos de Ausência (absence-documents bucket)
+
+**Data de implementação:** 2026-02-02
+
+**Bucket:** `absence-documents` (privado)  
+**Limite:** 10MB  
+**Tipos:** PDF, JPEG, PNG, WEBP
+
+**Arquitetura:**
+- Bucket **privado** (não há URLs públicas)
+- Acesso exclusivo via **signed URLs** gerados pelo backend
+- Tabela `absences.document_url` armazena apenas o **caminho** do arquivo, não URL pública
+- Edge function `absence-document-url` gera URLs temporárias (1h) sob demanda
+
+**Políticas RLS no bucket:**
+1. **Usuários** - CRUD em `{user_id}/*` (própria pasta)
+2. **Tenant Admins** - SELECT em documentos de membros do mesmo tenant
+3. **Super Admins** - SELECT global (auditoria/suporte)
+
+**Validações na edge function:**
+- Autenticação obrigatória
+- Membership ativa no tenant
+- Verificação de posse do arquivo (userId no path)
+- Admin só acessa documentos de membros do mesmo tenant
+
+**Controles existentes:**
+- Usuário só faz upload na própria pasta
+- Download requer validação de acesso
+- Exclusão valida posse ou admin role
+- Caminhos no formato: `{user_id}/{timestamp}_{uuid}`
+
+**Justificativa:**
+Documentos como atestados médicos são dados sensíveis (LGPD). URLs públicas expõem documentos a qualquer pessoa com o link. Signed URLs garantem que apenas usuários autorizados acessem os documentos, com expiração temporal.

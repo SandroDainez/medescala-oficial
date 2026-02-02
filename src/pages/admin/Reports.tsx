@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign } from 'lucide-react';
+import { useAbsenceDocuments } from '@/hooks/useAbsenceDocuments';
+import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign, Upload, Eye, Loader2 } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
@@ -32,6 +33,7 @@ interface Absence {
   reason: string | null;
   status: string;
   notes: string | null;
+  document_url: string | null;
   approved_by: string | null;
   approved_at: string | null;
   created_at: string;
@@ -137,6 +139,8 @@ export default function AdminReports() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
+  const { uploadDocument, downloadDocument, uploading } = useAbsenceDocuments();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [reportType, setReportType] = useState('afastamentos');
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
@@ -179,6 +183,7 @@ export default function AdminReports() {
     reason: '',
     notes: '',
   });
+  const [documentFile, setDocumentFile] = useState<File | null>(null);
   
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
 
@@ -643,6 +648,18 @@ export default function AdminReports() {
       return;
     }
     
+    let documentPath: string | null = null;
+    
+    // Upload document if provided
+    if (documentFile) {
+      const result = await uploadDocument(documentFile);
+      if (!result?.success) {
+        // Upload failed, but error was already shown by the hook
+        return;
+      }
+      documentPath = result.filePath;
+    }
+    
     const { error } = await supabase
       .from('absences')
       .insert({
@@ -653,6 +670,7 @@ export default function AdminReports() {
         end_date: newAbsence.end_date || newAbsence.start_date,
         reason: newAbsence.reason || null,
         notes: newAbsence.notes || null,
+        document_url: documentPath,
         status: 'approved', // Admin creates as approved
         approved_by: user?.id,
         approved_at: new Date().toISOString(),
@@ -674,6 +692,10 @@ export default function AdminReports() {
       reason: '',
       notes: '',
     });
+    setDocumentFile(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
     fetchAbsences();
   }
 
@@ -1711,6 +1733,7 @@ export default function AdminReports() {
                       <TableHead>Tipo</TableHead>
                       <TableHead>Período</TableHead>
                       <TableHead>Motivo</TableHead>
+                      <TableHead>Documento</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Ações</TableHead>
                     </TableRow>
@@ -1718,7 +1741,7 @@ export default function AdminReports() {
                   <TableBody>
                     {absences.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                           Nenhuma ausência registrada
                         </TableCell>
                       </TableRow>
@@ -1750,6 +1773,24 @@ export default function AdminReports() {
                           </TableCell>
                           <TableCell className="max-w-[200px] truncate">{absence.reason || '-'}</TableCell>
                           <TableCell>
+                            {absence.document_url ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadDocument(absence.document_url!, `documento_${absence.id}`);
+                                }}
+                                className="text-primary hover:text-primary/80"
+                                title="Ver documento"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
                             <Badge variant={
                               absence.status === 'approved' ? 'default' :
                               absence.status === 'rejected' ? 'destructive' : 'secondary'
@@ -1758,32 +1799,34 @@ export default function AdminReports() {
                             </Badge>
                           </TableCell>
                           <TableCell>
-                            {absence.status === 'pending' && (
-                              <div className="flex gap-1">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateAbsenceStatus(absence.id, 'approved');
-                                  }}
-                                  className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                                >
-                                  <Check className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleUpdateAbsenceStatus(absence.id, 'rejected');
-                                  }}
-                                  className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                                >
-                                  <X className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            )}
+                            <div className="flex gap-1">
+                              {absence.status === 'pending' && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateAbsenceStatus(absence.id, 'approved');
+                                    }}
+                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUpdateAbsenceStatus(absence.id, 'rejected');
+                                    }}
+                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
@@ -2041,10 +2084,52 @@ export default function AdminReports() {
                 placeholder="Observações adicionais"
               />
             </div>
+            
+            <div className="space-y-2">
+              <Label>Documento Comprobatório</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setDocumentFile(file || null);
+                  }}
+                  className="flex-1"
+                />
+                {documentFile && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setDocumentFile(null);
+                      if (fileInputRef.current) {
+                        fileInputRef.current.value = '';
+                      }
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                PDF, JPEG, PNG ou WEBP (máx. 10MB)
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAbsenceDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleCreateAbsence}>Salvar</Button>
+            <Button onClick={handleCreateAbsence} disabled={uploading}>
+              {uploading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                'Salvar'
+              )}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
