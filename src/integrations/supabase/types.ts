@@ -93,6 +93,77 @@ export type Database = {
           },
         ]
       }
+      calendar_sync_events: {
+        Row: {
+          assignment_id: string | null
+          created_at: string | null
+          id: string
+          last_synced_at: string | null
+          native_event_id: string
+          platform: string
+          shift_hash: string | null
+          shift_id: string
+          tenant_id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          assignment_id?: string | null
+          created_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          native_event_id: string
+          platform: string
+          shift_hash?: string | null
+          shift_id: string
+          tenant_id: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          assignment_id?: string | null
+          created_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          native_event_id?: string
+          platform?: string
+          shift_hash?: string | null
+          shift_id?: string
+          tenant_id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_sync_events_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "shift_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_sync_events_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_sync_events_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_sync_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conflict_resolutions: {
         Row: {
           conflict_date: string
@@ -705,6 +776,136 @@ export type Database = {
             foreignKeyName: "profiles_private_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_device_tokens: {
+        Row: {
+          app_version: string | null
+          created_at: string | null
+          device_model: string | null
+          device_token: string
+          id: string
+          is_active: boolean | null
+          onesignal_player_id: string | null
+          os_version: string | null
+          platform: string
+          tenant_id: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          app_version?: string | null
+          created_at?: string | null
+          device_model?: string | null
+          device_token: string
+          id?: string
+          is_active?: boolean | null
+          onesignal_player_id?: string | null
+          os_version?: string | null
+          platform: string
+          tenant_id: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          app_version?: string | null
+          created_at?: string | null
+          device_model?: string | null
+          device_token?: string
+          id?: string
+          is_active?: boolean | null
+          onesignal_player_id?: string | null
+          os_version?: string | null
+          platform?: string
+          tenant_id?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_device_tokens_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_device_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_notification_queue: {
+        Row: {
+          created_at: string | null
+          data: Json | null
+          error_message: string | null
+          id: string
+          message: string
+          notification_type: string
+          scheduled_for: string
+          sent_at: string | null
+          shift_id: string | null
+          status: string | null
+          tenant_id: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          data?: Json | null
+          error_message?: string | null
+          id?: string
+          message: string
+          notification_type: string
+          scheduled_for: string
+          sent_at?: string | null
+          shift_id?: string | null
+          status?: string | null
+          tenant_id: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          data?: Json | null
+          error_message?: string | null
+          id?: string
+          message?: string
+          notification_type?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          shift_id?: string | null
+          status?: string | null
+          tenant_id?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "push_notification_queue_shift_id_fkey"
+            columns: ["shift_id"]
+            isOneToOne: false
+            referencedRelation: "shifts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_notification_queue_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "push_notification_queue_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1573,6 +1774,63 @@ export type Database = {
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_notification_preferences: {
+        Row: {
+          calendar_id: string | null
+          calendar_sync_enabled: boolean | null
+          created_at: string | null
+          push_enabled: boolean | null
+          reminder_24h_enabled: boolean | null
+          reminder_2h_enabled: boolean | null
+          shift_start_enabled: boolean | null
+          swap_notifications_enabled: boolean | null
+          tenant_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          calendar_id?: string | null
+          calendar_sync_enabled?: boolean | null
+          created_at?: string | null
+          push_enabled?: boolean | null
+          reminder_24h_enabled?: boolean | null
+          reminder_2h_enabled?: boolean | null
+          shift_start_enabled?: boolean | null
+          swap_notifications_enabled?: boolean | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          calendar_id?: string | null
+          calendar_sync_enabled?: boolean | null
+          created_at?: string | null
+          push_enabled?: boolean | null
+          reminder_24h_enabled?: boolean | null
+          reminder_2h_enabled?: boolean | null
+          shift_start_enabled?: boolean | null
+          swap_notifications_enabled?: boolean | null
+          tenant_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_notification_preferences_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_notification_preferences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
