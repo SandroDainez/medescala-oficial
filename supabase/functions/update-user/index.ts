@@ -435,6 +435,18 @@ Deno.serve(async (req) => {
             `
           }
 
+          // Remetente fixo — sem fallback para resend.dev
+          const fromAddress = "MedEscala <noreply@medescalas.com.br>";
+          const toAddress = email;
+          const emailSubject = passwordReset 
+            ? `Sua senha foi resetada - ${escapeHtml(hospitalName)}`
+            : `Seus dados foram atualizados - ${escapeHtml(hospitalName)}`;
+          
+          console.log(`[update-user] Enviando email:`);
+          console.log(`[update-user]   from: ${fromAddress}`);
+          console.log(`[update-user]   to: ${toAddress}`);
+          console.log(`[update-user]   subject: ${emailSubject}`);
+
           const emailResponse = await fetch("https://api.resend.com/emails", {
             method: "POST",
             headers: {
@@ -442,27 +454,30 @@ Deno.serve(async (req) => {
               "Authorization": `Bearer ${RESEND_API_KEY}`,
             },
             body: JSON.stringify({
-              from: "MedEscala <onboarding@resend.dev>",
-              to: [email],
-              subject: passwordReset 
-                ? `Sua senha foi resetada - ${escapeHtml(hospitalName)}`
-                : `Seus dados foram atualizados - ${escapeHtml(hospitalName)}`,
+              from: fromAddress,
+              to: [toAddress],
+              subject: emailSubject,
               html: htmlContent,
             }),
           })
 
+          const responseData = await emailResponse.json().catch(() => ({}));
+          const resendId = responseData?.id || responseData?.data?.id || 'N/A';
+          
+          console.log(`[update-user] Resend response status: ${emailResponse.status}`);
+          console.log(`[update-user] Resend response id: ${resendId}`);
+
           if (emailResponse.ok) {
             emailSent = true
-            console.log('Email sent successfully')
+            console.log(`[update-user] Email enviado com sucesso! ID: ${resendId}`)
           } else {
-            const emailError = await emailResponse.json()
-            console.error('Failed to send email:', emailError)
+            console.error(`[update-user] Resend API error:`, responseData)
           }
         } else {
-          console.warn('RESEND_API_KEY not configured')
+          console.warn('[update-user] RESEND_API_KEY not configured')
         }
       } catch (emailError) {
-        console.error('Error sending email:', emailError)
+        console.error('[update-user] Error sending email:', emailError)
         // Don't throw, update succeeded
       }
     }
