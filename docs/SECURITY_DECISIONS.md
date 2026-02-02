@@ -271,22 +271,33 @@ log_gps_grant_trigger AFTER INSERT ON gps_access_grants
 
 ---
 
-## 13) Visibilidade de GPS (shift_assignment_locations)
+## 13) Visibilidade de GPS (shift_assignment_locations) - HARDENED v2
 
-**Data de implementação:** 2026-01-25
+**Data de atualização:** 2026-02-02
 
-**Quem pode ver GPS:**
-1. Próprio usuário - apenas shifts ativos (12h window)
-2. Usuários com grant explícito em `gps_access_grants`
+**Políticas RLS (SEPARADAS para auditoria):**
 
-**Quem NÃO pode ver (REMOVIDO):**
-- Tenant admins genéricos (removida política ampla)
-- has_gabs_bypass (não funciona mais para GPS)
+1. **"Users can view own recent locations"** (RESTRICTIVE):
+   - Usuário vê APENAS seus próprios dados GPS
+   - Limitado a últimas 12 horas
+   - Expressão: `user_id = auth.uid() AND created_at > (now() - '12h')`
+
+2. **Acesso via grants** (FORÇADO via RPC):
+   - SELECT direto bloqueado para não-donos
+   - Admins/grant-holders DEVEM usar `get_assignment_location_with_audit()`
+   - RPC registra acesso em `gps_access_logs` automaticamente
+
+**Quem NÃO pode fazer SELECT direto:**
+- Tenant admins genéricos
+- Usuários com gps_access_grants (devem usar RPC)
+- has_gabs_bypass (não funciona para GPS)
+- is_super_admin (não funciona para GPS)
 
 **Controles:**
-- `has_gps_access()` valida grant + expires_at + tenant_id
-- Acesso de admin via `get_assignment_location_with_audit()` é auditado
-- Usuário vê próprio GPS apenas de plantões do dia ou com check-in/out nas últimas 12h
+- `has_gps_access()` valida: (admin OR super_admin) E grant temporal válido
+- `get_assignment_location_with_audit()` registra: admin_user_id, target_user_id, assignment_id, tenant_id, ip_address
+- Grants exigem `expires_at` obrigatório (constraint CHECK)
+- Logs armazenados permanentemente em `gps_access_logs`
 
 **Consentimento (requisito LGPD):**
 - Plantonistas são informados sobre coleta de GPS nos Termos de Uso (página /terms)
