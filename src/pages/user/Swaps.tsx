@@ -21,6 +21,7 @@ import { parseDateOnly } from '@/lib/utils';
 import { ArrowRightLeft, Send, Calendar, Clock, Check, X, User, Inbox, History } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { TapSafeButton } from '@/components/TapSafeButton';
 
 interface Assignment {
   id: string;
@@ -647,8 +648,8 @@ export default function UserSwaps() {
                 <p className="text-center text-muted-foreground py-8">Nenhum plantão disponível para passar neste filtro.</p>
               ) : (
                 <div className="grid gap-3">
-                  {visibleAssignments.map((assignment) => (
-                    <button
+                   {visibleAssignments.map((assignment) => (
+                     <TapSafeButton
                       key={assignment.id}
                       type="button"
                       onClick={(e) => {
@@ -656,7 +657,7 @@ export default function UserSwaps() {
                         handleShiftClick(assignment);
                       }}
                       className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors w-full text-left select-none"
-                    >
+                     >
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
                           <div className="font-medium">{assignment.shift.title}</div>
@@ -676,7 +677,7 @@ export default function UserSwaps() {
                         </div>
                         <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
                       </div>
-                    </button>
+                     </TapSafeButton>
                   ))}
                 </div>
               )}
@@ -822,8 +823,8 @@ export default function UserSwaps() {
             ) : sectorMembers.length === 0 ? (
               <p className="text-center text-muted-foreground py-4">Nenhum colega disponível neste setor.</p>
             ) : (
-              sectorMembers.map((member) => (
-                <button
+               sectorMembers.map((member) => (
+                 <TapSafeButton
                   key={member.user_id}
                   type="button"
                   onClick={(e) => {
@@ -831,12 +832,12 @@ export default function UserSwaps() {
                     handleUserSelect(member);
                   }}
                   className="p-3 border rounded-lg cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors flex items-center gap-3 w-full text-left select-none"
-                >
+                 >
                   <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
                     <User className="h-5 w-5 text-primary" />
                   </div>
                   <span className="font-medium">{member.name}</span>
-                </button>
+                 </TapSafeButton>
               ))
             )}
           </div>
