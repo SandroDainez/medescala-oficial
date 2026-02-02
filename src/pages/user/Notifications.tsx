@@ -34,6 +34,34 @@ export default function UserNotifications() {
   useEffect(() => {
     if (user && currentTenantId) {
       fetchNotifications();
+      
+      // Subscribe to DELETE events to sync when admin removes notifications
+      const channel = supabase
+        .channel('user-notifications-sync')
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'notifications',
+          },
+          (payload) => {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+              setSelectedIds((prev) => {
+                const next = new Set(prev);
+                next.delete(deletedId);
+                return next;
+              });
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     }
   }, [user, currentTenantId]);
 

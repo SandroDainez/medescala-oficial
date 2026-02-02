@@ -47,7 +47,7 @@ export function NotificationBell() {
     if (user) {
       fetchNotifications();
       
-      // Subscribe to new notifications
+      // Subscribe to notification changes (INSERT and DELETE)
       const channel = supabase
         .channel('notifications')
         .on(
@@ -61,6 +61,26 @@ export function NotificationBell() {
           (payload) => {
             setNotifications((prev) => [payload.new as Notification, ...prev]);
             setUnreadCount((prev) => prev + 1);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'notifications',
+          },
+          (payload) => {
+            const deletedId = (payload.old as any)?.id;
+            if (deletedId) {
+              setNotifications((prev) => {
+                const deleted = prev.find((n) => n.id === deletedId);
+                if (deleted && !deleted.read_at) {
+                  setUnreadCount((c) => Math.max(0, c - 1));
+                }
+                return prev.filter((n) => n.id !== deletedId);
+              });
+            }
           }
         )
         .subscribe();
