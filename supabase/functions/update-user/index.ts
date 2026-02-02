@@ -279,6 +279,7 @@ Deno.serve(async (req) => {
     let emailUpdated = false
     let passwordReset = false
     let emailSent = false
+    let emailSendError: string | null = null
     let newPassword = ''
 
     // Update email if provided and different
@@ -472,12 +473,17 @@ Deno.serve(async (req) => {
             console.log(`[update-user] Email enviado com sucesso! ID: ${resendId}`)
           } else {
             console.error(`[update-user] Resend API error:`, responseData)
+            emailSendError = (responseData as any)?.message
+              ? String((responseData as any).message)
+              : JSON.stringify(responseData)
           }
         } else {
           console.warn('[update-user] RESEND_API_KEY not configured')
+          emailSendError = 'RESEND_API_KEY not configured'
         }
       } catch (emailError) {
         console.error('[update-user] Error sending email:', emailError)
+        emailSendError = emailError instanceof Error ? emailError.message : 'Unknown email error'
         // Don't throw, update succeeded
       }
     }
@@ -500,6 +506,7 @@ Deno.serve(async (req) => {
         currentAuthEmail,
         passwordReset,
         emailSent,
+        emailSendError,
         newPassword: passwordReset ? newPassword : undefined,
       }),
       { 
