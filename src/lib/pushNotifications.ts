@@ -136,9 +136,22 @@ async function saveDeviceToken(
 
 /**
  * Deactivate device token (on logout)
+ * 
+ * NOTA: Por design, NÃO desativamos o token ao logout para que o usuário
+ * continue recebendo notificações de plantão mesmo deslogado.
+ * O token permanece associado ao user_id no backend.
+ * 
+ * Esta função é mantida apenas para casos onde o usuário explicitamente
+ * deseja parar de receber notificações (ex: desinstalação do app).
  */
-export async function deactivateDeviceToken(userId: string): Promise<void> {
+export async function deactivateDeviceToken(userId: string, forceDeactivate: boolean = false): Promise<void> {
   if (!isNativePlatform()) return;
+
+  // Por padrão, não desativamos o token no logout para continuar recebendo push
+  if (!forceDeactivate) {
+    console.log('[PushNotifications] Token kept active after logout for continued notifications');
+    return;
+  }
 
   try {
     const { PushNotifications } = await import('@capacitor/push-notifications');

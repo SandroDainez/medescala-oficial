@@ -800,11 +800,13 @@ export default function UserCalendar() {
                                <TapSafeButton
                                 key={shift.id}
                                 type="button"
+                                moveThresholdPx={40}
+                                minPressTime={100}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
                                 }}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-warning/5 hover:bg-warning/10 active:bg-warning/20 border-l-warning cursor-pointer active:scale-[0.99] w-full text-left select-none"
+                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 bg-warning/5 hover:bg-warning/10 hover:shadow-md active:bg-warning/20 active:shadow-inner border-l-warning cursor-pointer w-full text-left select-none touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -857,11 +859,13 @@ export default function UserCalendar() {
                                <TapSafeButton
                                 key={shift.id}
                                 type="button"
+                                moveThresholdPx={40}
+                                minPressTime={100}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
                                 }}
-                                className="flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 bg-info/5 hover:bg-info/10 active:bg-info/20 border-l-info cursor-pointer active:scale-[0.99] w-full text-left select-none"
+                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 bg-info/5 hover:bg-info/10 hover:shadow-md active:bg-info/20 active:shadow-inner border-l-info cursor-pointer w-full text-left select-none touch-manipulation"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -949,6 +953,8 @@ export default function UserCalendar() {
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
+                              moveThresholdPx={40}
+                              minPressTime={100}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!isMine) {
@@ -962,10 +968,10 @@ export default function UserCalendar() {
                                 handleMyShiftClick(shift);
                               }}
                               className={cn(
-                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left select-none",
+                                "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
                                 "bg-warning/5 hover:bg-warning/10 border-l-warning",
                                 isMine
-                                  ? "cursor-pointer active:scale-[0.99] active:bg-warning/20 ring-1 ring-primary/20"
+                                  ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
                               )}
                             >
@@ -1040,6 +1046,8 @@ export default function UserCalendar() {
                               key={shift.id}
                               type="button"
                               aria-disabled={!isMine}
+                              moveThresholdPx={40}
+                              minPressTime={100}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (!isMine) {
@@ -1053,10 +1061,10 @@ export default function UserCalendar() {
                                 handleMyShiftClick(shift);
                               }}
                               className={cn(
-                                "flex items-center gap-3 px-4 py-3 border-b transition-colors border-l-2 w-full text-left select-none",
+                                "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
                                 "bg-info/5 hover:bg-info/10 border-l-info",
                                 isMine
-                                  ? "cursor-pointer active:scale-[0.99] active:bg-info/20 ring-1 ring-primary/20"
+                                  ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
                               )}
                             >
@@ -1167,11 +1175,13 @@ export default function UserCalendar() {
                    <TapSafeButton
                     key={member.user_id}
                     type="button"
+                    moveThresholdPx={40}
+                    minPressTime={100}
                     onClick={(e) => {
                       e.stopPropagation();
                       handleSelectColleague(member);
                     }}
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-accent active:bg-accent/80 transition-colors text-left w-full select-none"
+                    className="flex items-center gap-3 p-4 rounded-lg border hover:bg-accent hover:shadow-md active:bg-accent/80 active:shadow-inner transition-all duration-150 text-left w-full select-none touch-manipulation min-h-[56px]"
                   >
                     <Avatar className="h-10 w-10 border-2 border-card">
                       <AvatarFallback className="bg-muted text-muted-foreground text-xs">
