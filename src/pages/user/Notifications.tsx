@@ -44,17 +44,22 @@ export default function UserNotifications() {
             event: 'DELETE',
             schema: 'public',
             table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
             const deletedId = (payload.old as any)?.id;
-            if (deletedId) {
-              setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
-              setSelectedIds((prev) => {
-                const next = new Set(prev);
-                next.delete(deletedId);
-                return next;
-              });
+            if (!deletedId) {
+              // Fallback: garante consistência caso o payload.old venha sem id
+              fetchNotifications();
+              return;
             }
+
+            setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
+            setSelectedIds((prev) => {
+              const next = new Set(prev);
+              next.delete(deletedId);
+              return next;
+            });
           }
         )
         .subscribe();

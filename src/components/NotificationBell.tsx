@@ -69,18 +69,24 @@ export function NotificationBell() {
             event: 'DELETE',
             schema: 'public',
             table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
             const deletedId = (payload.old as any)?.id;
-            if (deletedId) {
-              setNotifications((prev) => {
-                const deleted = prev.find((n) => n.id === deletedId);
-                if (deleted && !deleted.read_at) {
-                  setUnreadCount((c) => Math.max(0, c - 1));
-                }
-                return prev.filter((n) => n.id !== deletedId);
-              });
+            if (!deletedId) {
+              // Fallback: alguns setups podem não enviar o id no payload.old
+              // (ex: replica identity). Faz refetch para manter a UI consistente.
+              fetchNotifications();
+              return;
             }
+
+            setNotifications((prev) => {
+              const deleted = prev.find((n) => n.id === deletedId);
+              if (deleted && !deleted.read_at) {
+                setUnreadCount((c) => Math.max(0, c - 1));
+              }
+              return prev.filter((n) => n.id !== deletedId);
+            });
           }
         )
         .subscribe();
