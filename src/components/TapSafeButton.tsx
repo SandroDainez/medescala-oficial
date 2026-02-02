@@ -37,7 +37,7 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
     onPointerUp, 
     onPointerCancel, 
     moveThresholdPx, 
-    minPressTime = 80,
+    minPressTime = 160,
     disablePressVisual = false,
     className,
     ...props 
@@ -52,6 +52,12 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
     const pointerTypeRef = useRef<string | null>(null);
     const cleanupScrollListenerRef = useRef<(() => void) | null>(null);
     const [isPressed, setIsPressed] = useState(false);
+
+    // Evita stale-closures caso o handler mude.
+    const onClickRef = useRef<typeof onClick>(onClick);
+    useEffect(() => {
+      onClickRef.current = onClick;
+    }, [onClick]);
 
     useEffect(() => {
       return () => {
@@ -96,6 +102,8 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
         className={cn(
           // Área mínima de toque de 44px (acessibilidade)
           "min-h-[44px]",
+          // Permite scroll vertical normalmente e reduz interferência de gestos
+          "touch-pan-y",
           // Transições suaves para feedback visual
           "transition-all duration-100 ease-out",
           // Feedback visual de press (apenas se não desativado)
@@ -173,6 +181,15 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
             wasValidPressRef.current = !movedRef.current && pressDuration >= minPressTime;
           }
 
+          // IMPORTANTÍSSIMO (TOUCH): não depende de `click` (ghost click / atraso),
+          // dispara aqui, somente se o gesto foi validado.
+          if (pointerTypeRef.current === "touch" && wasValidPressRef.current) {
+            // Consome o gesto e evita double-fire.
+            wasValidPressRef.current = false;
+            // Chamamos o handler original (em geral ele não depende do tipo do evento).
+            onClickRef.current?.(e as any);
+          }
+
           onPointerUp?.(e);
         }}
         onPointerCancel={(e) => {
@@ -188,15 +205,26 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
           }
           onPointerCancel?.(e);
         }}
+        onClickCapture={(e) => {
+          // Para TOUCH: bloqueia SEMPRE o click nativo (ghost click).
+          // A execução já ocorreu (ou não) no onPointerUp, após validação.
+          if (pointerTypeRef.current === "touch") {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }}
         onClick={(e) => {
           detachScrollGuard();
           setIsPressed(false);
-          
+
           // Limpa o timer de press se existir
           if (startRef.current && (startRef.current as any).pressTimer) {
             clearTimeout((startRef.current as any).pressTimer);
           }
-          
+
+          // TOUCH nunca executa aqui.
+          if (pointerTypeRef.current === "touch") return;
+
           // Se o usuário estava rolando/arrastando, não considera como clique.
           if (movedRef.current) {
             e.preventDefault();
@@ -204,29 +232,17 @@ export const TapSafeButton = forwardRef<HTMLButtonElement, TapSafeButtonProps>(
             return;
           }
 
-          // Para TOUCH: exige gesto intencional confirmado no pointerup.
-          // Isso elimina o problema clássico: click atrasado faz qualquer “encostar” parecer
-          // um press longo quando medimos Date.now() no click.
-          if (pointerTypeRef.current === "touch") {
-            if (!wasValidPressRef.current) {
+          // Para mouse/teclado: mantém validação por tempo (quando existir startRef)
+          if (startRef.current && endTimeRef.current) {
+            const pressDuration = endTimeRef.current - startRef.current.time;
+            if (pressDuration < minPressTime) {
               e.preventDefault();
               e.stopPropagation();
               return;
             }
-          } else {
-            // Para mouse/teclado: mantém validação por tempo (quando existir startRef)
-            // sem depender do atraso do click.
-            if (startRef.current && endTimeRef.current) {
-              const pressDuration = endTimeRef.current - startRef.current.time;
-              if (pressDuration < minPressTime) {
-                e.preventDefault();
-                e.stopPropagation();
-                return;
-              }
-            }
           }
-          
-          onClick?.(e);
+
+          onClickRef.current?.(e);
         }}
       />
     );
