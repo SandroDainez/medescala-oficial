@@ -652,6 +652,8 @@ export default function UserSwaps() {
                      <TapSafeButton
                       key={assignment.id}
                       type="button"
+                       moveThresholdPx={40}
+                       minPressTime={160}
                       onClick={(e) => {
                         e.stopPropagation();
                         handleShiftClick(assignment);
@@ -827,6 +829,8 @@ export default function UserSwaps() {
                  <TapSafeButton
                   key={member.user_id}
                   type="button"
+                   moveThresholdPx={40}
+                   minPressTime={160}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleUserSelect(member);
