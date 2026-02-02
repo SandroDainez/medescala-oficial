@@ -825,7 +825,10 @@ export default function UserSwaps() {
               </div>
             </div>
           )}
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
+          <div
+            className="space-y-2 max-h-[60dvh] overflow-y-auto overscroll-contain touch-pan-y"
+            style={{ WebkitOverflowScrolling: 'touch' } as any}
+          >
             {loadingSectorMembers ? (
               <p className="text-center text-muted-foreground py-4">Carregando colegas do setor...</p>
             ) : sectorMembers.length === 0 ? (
