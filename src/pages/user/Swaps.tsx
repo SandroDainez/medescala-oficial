@@ -32,6 +32,7 @@ interface Assignment {
     shift_date: string;
     start_time: string;
     end_time: string;
+    sector_id: string | null;
     sector?: { name: string; color: string | null } | null;
   };
 }
@@ -72,9 +73,11 @@ export default function UserSwaps() {
 
   const [myAssignments, setMyAssignments] = useState<Assignment[]>([]);
   const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
+  const [sectorMembers, setSectorMembers] = useState<TenantMember[]>([]);
   const [mySwapRequests, setMySwapRequests] = useState<SwapRequest[]>([]);
   const [incomingSwapRequests, setIncomingSwapRequests] = useState<SwapRequest[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingSectorMembers, setLoadingSectorMembers] = useState(false);
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
@@ -192,7 +195,7 @@ export default function UserSwaps() {
       .select(`
         id, shift_id,
         shift:shifts(
-          id, title, hospital, shift_date, start_time, end_time,
+          id, title, hospital, shift_date, start_time, end_time, sector_id,
           sector:sectors(name, color)
         )
       `)
@@ -218,6 +221,7 @@ export default function UserSwaps() {
   }
 
   async function fetchTenantMembers() {
+    // This function now returns all tenant members - filtering by sector happens in fetchSectorMembers
     if (!currentTenantId || !user) return;
     const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
     if (error) {
@@ -229,6 +233,29 @@ export default function UserSwaps() {
     if (data) {
       setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
     }
+  }
+
+  // Fetch members of a specific sector for swap filtering
+  async function fetchSectorMembers(sectorId: string): Promise<TenantMember[]> {
+    if (!currentTenantId || !user || !sectorId) return [];
+    
+    const { data, error } = await supabase
+      .from('sector_memberships')
+      .select('user_id, profiles:user_id(name)')
+      .eq('tenant_id', currentTenantId)
+      .eq('sector_id', sectorId);
+    
+    if (error) {
+      console.error('[UserSwaps] fetchSectorMembers error:', error);
+      return [];
+    }
+    
+    if (data) {
+      return (data as any[])
+        .filter((m) => m.user_id !== user.id && m.profiles?.name)
+        .map((m) => ({ user_id: m.user_id, name: m.profiles.name }));
+    }
+    return [];
   }
 
   async function fetchMySwapRequests() {
@@ -318,9 +345,22 @@ export default function UserSwaps() {
     }
   }
 
-  function handleShiftClick(assignment: Assignment) {
+  async function handleShiftClick(assignment: Assignment) {
     setSelectedAssignment(assignment);
     setSelectUserDialogOpen(true);
+    
+    // Get sector_id from assignment and fetch sector members
+    const sectorId = assignment.shift.sector_id;
+    
+    if (sectorId) {
+      setLoadingSectorMembers(true);
+      const members = await fetchSectorMembers(sectorId);
+      setSectorMembers(members);
+      setLoadingSectorMembers(false);
+    } else {
+      // If no sector, fallback to all tenant members
+      setSectorMembers(tenantMembers);
+    }
   }
 
   function handleAssignmentActivate(assignment: Assignment, e?: SyntheticEvent) {
@@ -769,10 +809,12 @@ export default function UserSwaps() {
             </div>
           )}
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {tenantMembers.length === 0 ? (
-              <p className="text-center text-muted-foreground py-4">Nenhum colega disponível.</p>
+            {loadingSectorMembers ? (
+              <p className="text-center text-muted-foreground py-4">Carregando colegas do setor...</p>
+            ) : sectorMembers.length === 0 ? (
+              <p className="text-center text-muted-foreground py-4">Nenhum colega disponível neste setor.</p>
             ) : (
-              tenantMembers.map((member) => (
+              sectorMembers.map((member) => (
                 <button
                   key={member.user_id}
                   type="button"
