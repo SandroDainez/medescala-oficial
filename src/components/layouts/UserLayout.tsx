@@ -5,6 +5,7 @@ import { TenantSelector } from '@/components/TenantSelector';
 import { NotificationBell } from '@/components/NotificationBell';
 import { TrialBanner } from '@/components/TrialBanner';
 import { ThemeToggleSimple } from '@/components/ThemeToggle';
+import { CalendarSyncPrompt } from '@/components/CalendarSyncPrompt';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -59,6 +60,9 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">
+      {/* Calendar Sync Prompt - shows on app open if shifts changed */}
+      <CalendarSyncPrompt />
+      
       {/* Header - Fixed below safe area */}
       <header className="fixed left-0 right-0 z-[100] border-b bg-card shadow-sm" style={{ top: 'env(safe-area-inset-top)' }}>
         {/* Trial Banner dentro do header para não interferir */}
