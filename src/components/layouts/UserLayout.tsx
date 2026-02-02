@@ -6,12 +6,13 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { TrialBanner } from '@/components/TrialBanner';
 import { ThemeToggleSimple } from '@/components/ThemeToggle';
 import { CalendarSyncPrompt } from '@/components/CalendarSyncPrompt';
+import { CalendarSyncInitialModal } from '@/components/CalendarSyncInitialModal';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { 
+import {
   CalendarDays,
   ListTodo,
   ArrowLeftRight, 
@@ -60,7 +61,8 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">
-      {/* Calendar Sync Prompt - shows on app open if shifts changed */}
+      {/* Calendar Sync Modals */}
+      <CalendarSyncInitialModal />
       <CalendarSyncPrompt />
       
       {/* Header - Fixed below safe area */}
