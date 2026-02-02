@@ -242,7 +242,9 @@ export default function UserCalendar() {
   }
 
   function isMyShift(shiftId: string) {
-    return myShiftIds.includes(shiftId);
+    // Prefer the direct query (myShiftIds), but fall back to roster-derived assignments
+    // so the UI still works even if the direct SELECT is blocked/empty on some devices.
+    return myShiftIds.includes(shiftId) || assignments.some(a => a.shift_id === shiftId && a.user_id === user?.id);
   }
 
   function hasShiftsOnDate(date: Date) {
