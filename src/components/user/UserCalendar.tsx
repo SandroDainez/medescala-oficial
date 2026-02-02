@@ -273,21 +273,63 @@ export default function UserCalendar() {
 
   // ====== SWAP REQUEST FUNCTIONS ======
 
-  // Fetch tenant members when opening swap sheet
-  async function fetchTenantMembers() {
+  // Fetch sector members for a shift (only users in the same sector)
+  async function fetchSectorMembers(sectorId: string | null) {
     if (!currentTenantId || !user) return;
     setLoadingMembers(true);
-    
-    const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
-    
-    if (error) {
-      console.error('[UserCalendar] get_tenant_member_names error:', error);
-      toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
-      setTenantMembers([]);
-    } else if (data) {
-      // Filter out current user
-      setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
+    setTenantMembers([]);
+
+    // If shift has no sector, fall back to all tenant members
+    if (!sectorId) {
+      const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+      if (error) {
+        console.error('[UserCalendar] get_tenant_member_names error:', error);
+        toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
+      } else if (data) {
+        setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
+      }
+      setLoadingMembers(false);
+      return;
     }
+
+    // Fetch only users who are members of this sector
+    const { data: sectorMembers, error: smError } = await supabase
+      .from('sector_memberships')
+      .select('user_id')
+      .eq('tenant_id', currentTenantId)
+      .eq('sector_id', sectorId);
+
+    if (smError) {
+      console.error('[UserCalendar] sector_memberships error:', smError);
+      toast({ title: 'Erro ao carregar colegas do setor', description: smError.message, variant: 'destructive' });
+      setLoadingMembers(false);
+      return;
+    }
+
+    const sectorUserIds = (sectorMembers ?? []).map((sm: any) => sm.user_id as string).filter(Boolean);
+    
+    if (sectorUserIds.length === 0) {
+      // No members in sector besides current user
+      setTenantMembers([]);
+      setLoadingMembers(false);
+      return;
+    }
+
+    // Now get names for those users
+    const { data: allMembers, error: nmError } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
+
+    if (nmError) {
+      console.error('[UserCalendar] get_tenant_member_names error:', nmError);
+      toast({ title: 'Erro ao carregar colegas', description: nmError.message, variant: 'destructive' });
+      setLoadingMembers(false);
+      return;
+    }
+
+    // Filter to only sector members, excluding current user
+    const filtered = (allMembers as TenantMember[])
+      .filter((m) => sectorUserIds.includes(m.user_id) && m.user_id !== user.id);
+
+    setTenantMembers(filtered);
     setLoadingMembers(false);
   }
 
@@ -315,7 +357,8 @@ export default function UserCalendar() {
   function handleMyShiftClick(shift: Shift) {
     setSelectedShiftForSwap(shift);
     setSwapSheetOpen(true);
-    fetchTenantMembers();
+    // Fetch only users in the same sector as this shift
+    fetchSectorMembers(shift.sector_id);
   }
 
   function handleMyShiftActivate(shift: Shift, e?: SyntheticEvent) {
