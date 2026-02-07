@@ -1,38 +1,50 @@
 -- Create super_admins table for master admin access
-CREATE TABLE public.super_admins (
+CREATE TABLE IF NOT EXISTS public.super_admins (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL UNIQUE,
-  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
   created_by uuid
 );
 
 -- Enable RLS
 ALTER TABLE public.super_admins ENABLE ROW LEVEL SECURITY;
 
--- Only super admins can view the table
-CREATE POLICY "Super admins can view super_admins" 
-ON public.super_admins 
-FOR SELECT 
+-- Drop + recreate policy
+DROP POLICY IF EXISTS "Super admins can view super_admins" ON public.super_admins;
+
+CREATE POLICY "Super admins can view super_admins"
+ON public.super_admins
+FOR SELECT
 USING (
-  EXISTS (SELECT 1 FROM public.super_admins WHERE user_id = auth.uid())
+  EXISTS (
+    SELECT 1
+    FROM public.super_admins
+    WHERE user_id = auth.uid()
+  )
 );
 
--- Create function to check if user is super admin
+-------------------------------------------------------
+-- Is super admin helper
+-------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.is_super_admin(_user_id uuid DEFAULT auth.uid())
 RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO public
 AS $$
   SELECT EXISTS (
     SELECT 1
     FROM public.super_admins
     WHERE user_id = _user_id
-  )
+  );
 $$;
 
--- Create function to list all tenants (for super admins only)
+-------------------------------------------------------
+-- Admin list tenants (SEM max_users AQUI)
+-------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.get_all_tenants_admin()
 RETURNS TABLE(
   id uuid,
@@ -40,18 +52,17 @@ RETURNS TABLE(
   slug text,
   billing_status text,
   is_unlimited boolean,
-  trial_ends_at timestamp with time zone,
+  trial_ends_at timestamptz,
   current_users_count integer,
-  max_users integer,
   plan_name text,
-  created_at timestamp with time zone
+  created_at timestamptz
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO public
 AS $$
-  SELECT 
+  SELECT
     t.id,
     t.name,
     t.slug,
@@ -59,26 +70,28 @@ AS $$
     t.is_unlimited,
     t.trial_ends_at,
     t.current_users_count,
-    t.max_users,
-    p.name as plan_name,
+    p.name AS plan_name,
     t.created_at
   FROM public.tenants t
   LEFT JOIN public.plans p ON p.id = t.plan_id
   WHERE is_super_admin()
-  ORDER BY t.created_at DESC
+  ORDER BY t.created_at DESC;
 $$;
 
--- Create function to update tenant access (for super admins only)
+-------------------------------------------------------
+-- Admin update tenant access
+-------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.update_tenant_access(
   _tenant_id uuid,
   _billing_status text DEFAULT NULL,
   _is_unlimited boolean DEFAULT NULL,
-  _trial_ends_at timestamp with time zone DEFAULT NULL
+  _trial_ends_at timestamptz DEFAULT NULL
 )
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path TO 'public'
+SET search_path TO public
 AS $$
 BEGIN
   IF NOT is_super_admin() THEN
@@ -86,13 +99,14 @@ BEGIN
   END IF;
 
   UPDATE public.tenants
-  SET 
+  SET
     billing_status = COALESCE(_billing_status, billing_status),
-    is_unlimited = COALESCE(_is_unlimited, is_unlimited),
-    trial_ends_at = COALESCE(_trial_ends_at, trial_ends_at),
-    updated_at = now()
+    is_unlimited   = COALESCE(_is_unlimited, is_unlimited),
+    trial_ends_at  = COALESCE(_trial_ends_at, trial_ends_at),
+    updated_at     = now()
   WHERE id = _tenant_id;
 
   RETURN FOUND;
 END;
 $$;
+

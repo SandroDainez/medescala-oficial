@@ -68,13 +68,18 @@ export default function Onboarding() {
       return;
     }
 
-    toast({ title: 'Hospital criado com sucesso!' });
-    await refreshMemberships();
-    setDialogOpen(false);
-    navigate('/admin');
-    setLoading(false);
-  }
+toast({ title: 'Hospital criado com sucesso!' });
 
+await refreshMemberships();
+
+if (tenantId) {
+  setCurrentTenant(tenantId);
+}
+
+setDialogOpen(false);
+navigate('/admin');
+setLoading(false);
+}
   async function handleJoinByInvite(e: React.FormEvent) {
     e.preventDefault();
     if (!user || !inviteCode) return;

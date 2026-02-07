@@ -25,8 +25,10 @@ FOR SELECT
 USING (auth.uid() IS NOT NULL AND user_id = auth.uid());
 
 
--- 2. SHIFT_ASSIGNMENTS: Restringir coordenadas GPS a admins e próprio usuário
--- Criamos uma view pública sem coordenadas para membros normais, e mantemos acesso completo para admins/próprio usuário
+-------------------------------------------------------
+-- SHIFT_ASSIGNMENTS: GPS apenas para admin / próprio user
+-------------------------------------------------------
+
 -- Primeiro, removemos a política atual de SELECT para membros
 DROP POLICY IF EXISTS "Tenant members can view all assignments in tenant" ON public.shift_assignments;
 
@@ -42,10 +44,11 @@ ON public.shift_assignments
 FOR SELECT
 USING (auth.uid() IS NOT NULL AND user_id = auth.uid());
 
--- Outros membros podem ver assignments SEM GPS (precisamos de uma abordagem diferente)
--- Como RLS não filtra colunas, criaremos uma função security definer que retorna dados sem GPS
 
--- Função para obter assignments do tenant sem coordenadas GPS
+-------------------------------------------------------
+-- Função SEM created_by / updated_by (ainda não existem aqui)
+-------------------------------------------------------
+
 CREATE OR REPLACE FUNCTION public.get_shift_assignments_without_gps(_tenant_id uuid)
 RETURNS TABLE (
   id uuid,
@@ -58,16 +61,14 @@ RETURNS TABLE (
   checkin_at timestamptz,
   checkout_at timestamptz,
   created_at timestamptz,
-  updated_at timestamptz,
-  created_by uuid,
-  updated_by uuid
+  updated_at timestamptz
 )
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = public
 AS $$
-  SELECT 
+  SELECT
     sa.id,
     sa.shift_id,
     sa.user_id,
@@ -78,19 +79,17 @@ AS $$
     sa.checkin_at,
     sa.checkout_at,
     sa.created_at,
-    sa.updated_at,
-    sa.created_by,
-    sa.updated_by
+    sa.updated_at
   FROM public.shift_assignments sa
   WHERE sa.tenant_id = _tenant_id
-    AND public.is_tenant_member(auth.uid(), _tenant_id)
+    AND public.is_tenant_member(auth.uid(), _tenant_id);
 $$;
 
--- Para manter compatibilidade, permitimos que membros vejam dados básicos (sem GPS) via tabela
--- Mas os campos GPS só serão visíveis para admin ou próprio usuário
--- Como não podemos filtrar colunas com RLS, a aplicação deve usar a função acima para usuários normais
 
--- Política para membros verem assignments básicas (a app deve ocultar GPS no frontend também)
+-------------------------------------------------------
+-- Política para membros verem assignments básicas
+-------------------------------------------------------
+
 CREATE POLICY "Tenant members can view basic shift assignments"
 ON public.shift_assignments
 FOR SELECT
@@ -101,3 +100,4 @@ USING (
     OR user_id = auth.uid()
   )
 );
+
