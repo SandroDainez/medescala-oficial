@@ -4345,9 +4345,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   <div className="grid gap-3 max-h-[300px] overflow-y-auto pr-2">
                     {Array.from({ length: formData.quantity }, (_, i) => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                      const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
                       const shiftData = multiShifts[i] || { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
-                      
+                      const membersToShow = sortMembersAlphabetically(sectorMembers ?? []);                     
                       return (
                         <div key={i} className="p-3 rounded-lg border bg-background space-y-2">
                           <div className="flex items-center justify-between">
@@ -4462,9 +4461,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       </SelectItem>
                       {(() => {
                         const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                        const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
-                        const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
-                        
+                        const membersToShow = sortMembersAlphabetically(sectorMembers ?? []);
+                        const label = 'Plantonistas do Setor';
                         if (membersToShow.length > 0) {
                           return (
                             <>
