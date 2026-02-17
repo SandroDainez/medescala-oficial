@@ -308,15 +308,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           .order('start_time', { ascending: true }),
         filterSector && filterSector !== 'all'
   ? supabase
-      .from('sector_memberships')
-      .select(`
-        user_id,
-        memberships!inner(tenant_id, active),
-        profile:profiles!memberships_user_id_profiles_fkey(id, name)
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('sector_id', filterSector)
-      .eq('memberships.active', true)
+     .from('sector_memberships')
+.select(`
+  user_id,
+  profile:profiles!sector_memberships_user_id_fkey(id, name)
+`)
+.eq('tenant_id', currentTenantId)
+.eq('sector_id', filterSector)
+
   : supabase
       .from('memberships')
       .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
