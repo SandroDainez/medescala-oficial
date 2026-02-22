@@ -12,7 +12,7 @@ interface PasswordResetRequest {
 }
 
 function normalizeRedirectUrl(input: string | undefined): string {
-  const fallback = 'https://escala-sem-stress.lovable.app/reset-password';
+  const fallback = 'https://medescala.vercel.app/reset-password';
   if (!input) return fallback;
 
   try {

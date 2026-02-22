@@ -1,8 +1,16 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
+import React, {
+  useState,
+  useEffect,
+  createContext,
+  useContext,
+  ReactNode,
+  useCallback,
+  useMemo,
+} from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
-type AppRole = 'admin' | 'user';
+type AppRole = "admin" | "user";
 
 interface Membership {
   tenant_id: string;
@@ -22,17 +30,50 @@ interface TenantContextType {
 
 const TenantContext = createContext<TenantContextType | undefined>(undefined);
 
-const TENANT_STORAGE_KEY = 'medescala_current_tenant';
+const TENANT_STORAGE_KEY = "medescala_current_tenant";
+
+function getStoredTenantIdSafe(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(TENANT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredTenantIdSafe(tenantId: string) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(TENANT_STORAGE_KEY, tenantId);
+  } catch {
+    // ignore
+  }
+}
+
+function clearStoredTenantIdSafe() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(TENANT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
+
   const [currentTenantId, setCurrentTenantId] = useState<string | null>(null);
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const currentMembership = memberships.find(m => m.tenant_id === currentTenantId);
+  const currentMembership = useMemo(
+    () => memberships.find((m) => m.tenant_id === currentTenantId),
+    [memberships, currentTenantId]
+  );
 
-  const fetchMemberships = async () => {
+  const fetchMemberships = useCallback(async () => {
+    setLoading(true);
+
     if (!user) {
       setMemberships([]);
       setCurrentTenantId(null);
@@ -40,45 +81,76 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const { data, error } = await supabase.rpc('get_user_tenants', { _user_id: user.id });
+    const { data, error } = await supabase.rpc("get_user_tenants", {
+      _user_id: user.id,
+    });
 
-    if (!error && data && data.length > 0) {
-      const membershipList = data.map((m: { tenant_id: string; tenant_name: string; role: AppRole }) => ({
+    if (error) {
+      console.warn("TenantProvider: get_user_tenants failed:", error);
+      setMemberships([]);
+      setCurrentTenantId(null);
+      clearStoredTenantIdSafe();
+      setLoading(false);
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      setMemberships([]);
+      setCurrentTenantId(null);
+      clearStoredTenantIdSafe();
+      setLoading(false);
+      return;
+    }
+
+    const membershipList: Membership[] = data.map(
+      (m: { tenant_id: string; tenant_name: string; role: AppRole }) => ({
         tenant_id: m.tenant_id,
         tenant_name: m.tenant_name,
         role: m.role,
-      }));
-      setMemberships(membershipList);
+      })
+    );
 
-      // Restore from localStorage or use first
-      const storedTenantId = localStorage.getItem(TENANT_STORAGE_KEY);
-      const validTenant = membershipList.find((m: Membership) => m.tenant_id === storedTenantId);
-      
-      if (validTenant) {
-        setCurrentTenantId(validTenant.tenant_id);
-      } else {
-        setCurrentTenantId(membershipList[0].tenant_id);
-        localStorage.setItem(TENANT_STORAGE_KEY, membershipList[0].tenant_id);
-      }
-    } else {
-      setMemberships([]);
-      setCurrentTenantId(null);
-    }
+    setMemberships(membershipList);
+
+    // Restore from localStorage or use first
+    const storedTenantId = getStoredTenantIdSafe();
+    const validTenant = storedTenantId
+      ? membershipList.find((m) => m.tenant_id === storedTenantId)
+      : null;
+
+    const nextTenantId = validTenant
+      ? validTenant.tenant_id
+      : membershipList[0].tenant_id;
+
+    setCurrentTenantId(nextTenantId);
+    setStoredTenantIdSafe(nextTenantId);
 
     setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchMemberships();
   }, [user]);
 
-  const setCurrentTenant = (tenantId: string) => {
-    const membership = memberships.find(m => m.tenant_id === tenantId);
-    if (membership) {
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      if (!alive) return;
+      await fetchMemberships();
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [fetchMemberships]);
+
+  const setCurrentTenant = useCallback(
+    (tenantId: string) => {
+      const membership = memberships.find((m) => m.tenant_id === tenantId);
+      if (!membership) return;
+
       setCurrentTenantId(tenantId);
-      localStorage.setItem(TENANT_STORAGE_KEY, tenantId);
-    }
-  };
+      setStoredTenantIdSafe(tenantId);
+    },
+    [memberships]
+  );
 
   return (
     <TenantContext.Provider
@@ -100,7 +172,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 export function useTenant() {
   const context = useContext(TenantContext);
   if (context === undefined) {
-    throw new Error('useTenant must be used within a TenantProvider');
+    throw new Error("useTenant must be used within a TenantProvider");
   }
   return context;
 }

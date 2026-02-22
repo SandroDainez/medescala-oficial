@@ -1,4 +1,4 @@
-project_id = "bzvvdludfwoxiuqslpha"
+project_id = "ppjtcwdbeuhljmfdcxhq"
 
 [functions.create-user]
 verify_jwt = false
@@ -25,4 +25,7 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.absence-document-url]
+verify_jwt = false
+
+[functions.get-user-email]
 verify_jwt = false

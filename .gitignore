@@ -22,3 +22,35 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.vercel
+.env*.local
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+.env.test
+*.backup
+*.backup.*
+.env.local.backup
+
+# Backup
+*.dump
+medescala_backup.dump
+backups/
+
+# Supabase local
+supabase/.temp
+supabase/.branches
+docker-data/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.development
+*.backup
+*.dump
+medescala_backup.dump
+backups/

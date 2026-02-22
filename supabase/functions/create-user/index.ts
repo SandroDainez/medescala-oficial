@@ -1,121 +1,88 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version",
-  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-};
-
-// HTML escape function to prevent XSS in email templates
-function escapeHtml(text: string): string {
-  if (!text) return '';
-  const htmlEscapes: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  };
-  return text.replace(/[&<>"']/g, (char) => htmlEscapes[char] || char);
+function getProjectRef(url: string) {
+  // https://ppjtcwdbeuhljmfdcxhq.supabase.co -> ppjtcwdbeuhljmfdcxhq
+  try {
+    const host = new URL(url).host;
+    return host.split(".")[0];
+  } catch {
+    return "unknown";
+  }
 }
 
 Deno.serve(async (req) => {
-  // 🔥 CORS preflight
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader) {
+    if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
       return new Response(
-        JSON.stringify({ error: "Missing authorization header" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({
+          ok: false,
+          error: "Missing env",
+          details: "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ausentes",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    const {
-      data: { user: requestingUser },
-      error: authError,
-    } = await supabaseAdmin.auth.getUser(
-      authHeader.replace("Bearer ", "")
-    );
+    const projectRef = getProjectRef(SUPABASE_URL);
 
-    if (authError || !requestingUser) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const {
-      email,
-      password,
-      name,
-      tenantId,
-      role,
-      profileType,
-    } = await req.json();
-
-    // Verify admin
-    const { data: membership } = await supabaseAdmin
-      .from("memberships")
-      .select("role")
-      .eq("user_id", requestingUser.id)
-      .eq("tenant_id", tenantId)
-      .eq("active", true)
-      .single();
-
-    if (!membership || membership.role !== "admin") {
-      return new Response(
-        JSON.stringify({ error: "Only tenant admins can create users" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const { data: newUser, error: createError } =
-      await supabaseAdmin.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: { name },
-      });
-
-    if (createError || !newUser?.user) {
-      throw createError;
-    }
-
-    await supabaseAdmin.from("memberships").insert({
-      tenant_id: tenantId,
-      user_id: newUser.user.id,
-      role: role || "user",
-      active: true,
-      created_by: requestingUser.id,
+    const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
+      auth: { persistSession: false },
     });
 
-    return new Response(
-      JSON.stringify({ success: true }),
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (err) {
-    console.error("create-user error:", err);
+    const { userId, name } = await req.json();
+
+    if (!userId || !String(userId).trim()) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "userId obrigatório", projectRef }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    const cleanName = String(name ?? "").trim();
+    if (!cleanName) {
+      return new Response(
+        JSON.stringify({ ok: false, error: "name obrigatório", projectRef }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    // ✅ UPDATE com contagem exata e retorno do registro
+    const { data, error, count } = await admin
+      .from("profiles")
+      .update({ name: cleanName }, { count: "exact" })
+      .eq("id", userId)
+      .select("id, name, updated_at")
+      .maybeSingle();
+
+    if (error) {
+      return new Response(
+        JSON.stringify({ ok: false, error: error.message, projectRef }),
+        { status: 400, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!count || count < 1 || !data) {
+      return new Response(
+        JSON.stringify({
+          ok: false,
+          error: "Nenhuma linha foi atualizada (id não encontrado?)",
+          projectRef,
+        }),
+        { status: 404, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     return new Response(
-      JSON.stringify({ error: String(err) }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      JSON.stringify({ ok: true, profile: data, projectRef }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ ok: false, error: String(err) }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 });
-

@@ -23,7 +23,7 @@ export default function ForgotPassword() {
     const origin = window.location.origin;
     const publicBaseUrl =
       origin.startsWith('capacitor://') || origin.includes('localhost')
-        ? 'https://escala-sem-stress.lovable.app'
+        ? 'https://medescala.vercel.app'
         : origin;
 
     const redirectUrl = `${publicBaseUrl}/reset-password`;

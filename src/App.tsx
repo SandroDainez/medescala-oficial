@@ -24,6 +24,9 @@ import Install from "./pages/Install";
 import Terms from "./pages/Terms";
 import Privacy from "./pages/Privacy";
 
+// ✅ NOVA PÁGINA (você cria/colou ela antes)
+import ForceChangePassword from "./pages/ForceChangePassword";
+
 // Admin pages
 import AdminDashboard from "./pages/admin/Dashboard";
 import AdminCalendar from "./pages/admin/Calendar";
@@ -50,6 +53,54 @@ import UserAvailableShifts from "./pages/user/AvailableShifts";
 
 const queryClient = new QueryClient();
 
+/**
+ * ✅ Gate global para obrigar troca de senha.
+ * Se o usuário estiver logado e tiver must_change_password = true,
+ * ele só pode ficar em /trocar-senha (e rotas públicas tipo /auth).
+ */
+function ForcePasswordGate({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
+
+  // Se não está logado, não bloqueia aqui (deixa a ProtectedRoute cuidar)
+  if (!user) return <>{children}</>;
+
+  const mustChange = !!(user as any)?.user_metadata?.must_change_password;
+
+  if (mustChange) {
+    return <Navigate to="/trocar-senha" replace />;
+  }
+
+  return <>{children}</>;
+}
+
+/**
+ * ✅ Rota protegida simples: exige login.
+ * (Sem depender do ProtectedRoute, porque ele exige role em alguns casos.)
+ */
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/auth" replace />;
+
+  return <>{children}</>;
+}
+
 function RoleRedirect() {
   const { user, loading: authLoading } = useAuth();
   const { currentRole, loading: tenantLoading, memberships } = useTenant();
@@ -66,13 +117,19 @@ function RoleRedirect() {
     return <Navigate to="/auth" replace />;
   }
 
+  // ✅ Se precisa trocar senha, manda direto
+  const mustChange = !!(user as any)?.user_metadata?.must_change_password;
+  if (mustChange) {
+    return <Navigate to="/trocar-senha" replace />;
+  }
+
   // No memberships - go to onboarding
   if (memberships.length === 0) {
     return <Navigate to="/onboarding" replace />;
   }
 
   // Redirect based on role
-  if (currentRole === 'admin') {
+  if (currentRole === "admin") {
     return <Navigate to="/admin" replace />;
   }
 
@@ -109,12 +166,24 @@ const App = () => (
                     <Route path="/terms" element={<Terms />} />
                     <Route path="/privacy" element={<Privacy />} />
 
+                    {/* ✅ NOVA ROTA: troca obrigatória de senha */}
+                    <Route
+                      path="/trocar-senha"
+                      element={
+                        <RequireAuth>
+                          <ForceChangePassword />
+                        </RequireAuth>
+                      }
+                    />
+
                     {/* Admin Routes */}
                     <Route
                       path="/admin"
                       element={
                         <ProtectedRoute requiredRole="admin">
-                          <AdminLayout />
+                          <ForcePasswordGate>
+                            <AdminLayout />
+                          </ForcePasswordGate>
                         </ProtectedRoute>
                       }
                     >
@@ -137,7 +206,9 @@ const App = () => (
                       path="/app"
                       element={
                         <ProtectedRoute requiredRole="user">
-                          <UserLayout />
+                          <ForcePasswordGate>
+                            <UserLayout />
+                          </ForcePasswordGate>
                         </ProtectedRoute>
                       }
                     >
