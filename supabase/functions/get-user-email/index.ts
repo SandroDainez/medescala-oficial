@@ -1,4 +1,5 @@
 // supabase/functions/get-user-email/index.ts
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -28,16 +29,42 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+    const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
     if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-      return json({ error: "Env não configurado" }, 500);
+      return json({ error: "Env não configurado corretamente" }, 500);
     }
 
+    // 🔐 Cliente ADMIN (service role)
     const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+
+    // 🔎 Pega token do header
+    const authHeader = req.headers.get("authorization");
+
+    if (!authHeader) {
+      return json({ error: "Token ausente" }, 401);
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+
+    // 🔐 Cliente temporário para validar o token
+    const userClient = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    const {
+      data: { user },
+      error: authError,
+    } = await userClient.auth.getUser(token);
+
+    if (authError || !user) {
+      return json({ error: "Usuário não autenticado" }, 401);
+    }
+
+    // Aqui você pode checar se é admin se quiser:
+    // (exemplo se tiver tabela profiles com role)
+    // const { data: profile } = await admin.from("profiles").select("role").eq("id", user.id).single()
 
     const body = await req.json();
     const userId = (body.userId || "").trim();

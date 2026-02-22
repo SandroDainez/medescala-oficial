@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useTenant } from "@/hooks/useTenant";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,11 +24,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
-type ProfileRow = {
-  id: string;
+type UserRow = {
+  membership_id: string;
+  user_id: string;
   name: string | null;
+  role: string;
+  active: boolean;
   created_at: string | null;
-  updated_at?: string | null;
 };
 
 function formatDate(iso?: string | null) {
@@ -40,43 +43,58 @@ function formatDate(iso?: string | null) {
 }
 
 export default function UserManagement() {
+  const { currentTenantId } = useTenant();
+
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const [profiles, setProfiles] = useState<ProfileRow[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [query, setQuery] = useState("");
 
-  // Detalhes
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selected, setSelected] = useState<ProfileRow | null>(null);
-
-  // Editar
-  const [editOpen, setEditOpen] = useState(false);
-  const [editName, setEditName] = useState("");
+  const [selected, setSelected] = useState<UserRow | null>(null);
 
   async function loadUsers(showSpinner = true) {
+    if (!currentTenantId) return;
+
     if (showSpinner) setLoading(true);
     else setReloading(true);
 
     try {
-      // OBS: se sua RLS bloquear SELECT em profiles,
-      // a lista vai ficar vazia e vai logar erro aqui.
       const { data, error } = await supabase
-        .from("profiles")
-        .select("id, name, created_at, updated_at")
+        .from("memberships")
+        .select(`
+          id,
+          role,
+          active,
+          profiles (
+            id,
+            name,
+            created_at
+          )
+        `)
+        .eq("tenant_id", currentTenantId)
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Erro SELECT profiles:", error);
-        setProfiles([]);
+        console.error("Erro ao buscar usuários:", error);
+        setUsers([]);
         return;
       }
 
-      setProfiles((data as ProfileRow[]) || []);
+      const formatted =
+        data?.map((m: any) => ({
+          membership_id: m.id,
+          user_id: m.profiles?.id,
+          name: m.profiles?.name,
+          role: m.role,
+          active: m.active,
+          created_at: m.profiles?.created_at,
+        })) || [];
+
+      setUsers(formatted);
     } catch (e) {
-      console.error("Erro inesperado loadUsers:", e);
-      setProfiles([]);
+      console.error("Erro inesperado:", e);
+      setUsers([]);
     } finally {
       setLoading(false);
       setReloading(false);
@@ -85,97 +103,30 @@ export default function UserManagement() {
 
   useEffect(() => {
     loadUsers(true);
-  }, []);
+  }, [currentTenantId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return profiles;
-    return profiles.filter((p) => {
-      const name = (p.name || "").toLowerCase();
-      const id = (p.id || "").toLowerCase();
+    if (!q) return users;
+    return users.filter((u) => {
+      const name = (u.name || "").toLowerCase();
+      const id = (u.user_id || "").toLowerCase();
       return name.includes(q) || id.includes(q);
     });
-  }, [profiles, query]);
+  }, [users, query]);
 
-  function openDetails(p: ProfileRow) {
-    setSelected(p);
+  function openDetails(u: UserRow) {
+    setSelected(u);
     setDetailsOpen(true);
-  }
-
-  function openEdit(p?: ProfileRow) {
-    const target = p ?? selected;
-    if (!target) return;
-    setSelected(target);
-    setEditName(target.name || "");
-    setEditOpen(true);
-  }
-
-  async function saveEdit() {
-    if (!selected) return;
-
-    const name = editName.trim();
-    if (!name) {
-      alert("Nome não pode ficar vazio.");
-      return;
-    }
-console.log("ENVIANDO PARA FUNCTION:", {
-  userId: selected.id,
-  name,
-});
-    setSaving(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("update-user", {
-        body: {
-          userId: selected.id,
-          name,
-        },
-      });
-
-      // MUITO IMPORTANTE: não “fingir” sucesso
-      if (error) {
-        console.error("update-user invoke error:", error);
-        alert(`Falha ao salvar: ${error.message}`);
-        return;
-      }
-
-      // Alguns setups retornam string / formato diferente.
-      // Aqui a regra é: só considero salvo se data.ok === true.
-      if (!data || data.ok !== true) {
-        console.error("update-user response inesperada:", data);
-        alert("Não foi possível confirmar o salvamento. Veja o console.");
-        return;
-      }
-
-      // Atualiza UI local otimista
-      const newName = (data.profile?.name as string | undefined) ?? name;
-
-      setProfiles((prev) =>
-        prev.map((p) => (p.id === selected.id ? { ...p, name: newName } : p))
-      );
-
-      // RECARREGA DO BANCO pra você “ver com certeza” que salvou
-      await loadUsers(false);
-
-      setEditOpen(false);
-      // Mantém detalhes aberto, mas atualiza selected com o dado novo
-      setSelected((prev) => (prev ? { ...prev, name: newName } : prev));
-
-      alert("Salvo com sucesso ✅");
-    } catch (e) {
-      console.error("Erro inesperado saveEdit:", e);
-      alert("Erro inesperado ao salvar. Veja o console.");
-    } finally {
-      setSaving(false);
-    }
   }
 
   return (
     <Card className="rounded-2xl">
       <CardHeader className="flex flex-row items-center justify-between gap-3">
         <div>
-          <CardTitle className="text-xl">Usuários</CardTitle>
+          <CardTitle className="text-xl">Usuários do Hospital</CardTitle>
           <div className="text-sm text-muted-foreground">
-            Clique em um usuário para ver detalhes. Depois edite se precisar.
+            Apenas usuários vinculados ao hospital atual.
           </div>
         </div>
 
@@ -201,54 +152,50 @@ console.log("ENVIANDO PARA FUNCTION:", {
           <div className="text-sm text-muted-foreground">Carregando...</div>
         ) : filtered.length === 0 ? (
           <div className="text-sm text-muted-foreground">
-            Nenhum usuário encontrado.
-            <div className="mt-2 text-xs">
-              Se você esperava ver usuários aqui e não aparece nada, pode ser{" "}
-              <b>RLS bloqueando SELECT em profiles</b> (olhe o console).
-            </div>
+            Nenhum usuário vinculado a este hospital.
           </div>
         ) : (
           <div className="rounded-xl border overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[360px]">Nome</TableHead>
-                  <TableHead>ID</TableHead>
-                  <TableHead className="w-[170px]">Status</TableHead>
+                  <TableHead>Nome</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Criado em</TableHead>
                 </TableRow>
               </TableHeader>
 
               <TableBody>
-                {filtered.map((p) => (
+                {filtered.map((u) => (
                   <TableRow
-                    key={p.id}
+                    key={u.membership_id}
                     className="cursor-pointer"
-                    onClick={() => openDetails(p)}
-                    title="Clique para ver detalhes"
+                    onClick={() => openDetails(u)}
                   >
-                    <TableCell className="font-medium">
-                      {p.name ? (
-                        p.name
-                      ) : (
+                    <TableCell>
+                      {u.name || (
                         <span className="text-muted-foreground italic">
                           sem nome
                         </span>
                       )}
                     </TableCell>
 
-                    <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                    <TableCell>
+                      <Badge variant="secondary">{u.role}</Badge>
+                    </TableCell>
 
                     <TableCell>
-                      {p.name ? (
-                        <Badge variant="secondary" className="rounded-xl">
-                          perfil ok
+                      {u.active ? (
+                        <Badge className="bg-green-600 text-white">
+                          ativo
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="rounded-xl">
-                          incompleto
-                        </Badge>
+                        <Badge variant="outline">inativo</Badge>
                       )}
                     </TableCell>
+
+                    <TableCell>{formatDate(u.created_at)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -256,114 +203,41 @@ console.log("ENVIANDO PARA FUNCTION:", {
           </div>
         )}
 
-        {/* MODAL DETALHES */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent aria-describedby={undefined}>
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Detalhes do usuário</DialogTitle>
             </DialogHeader>
 
-            {!selected ? (
-              <div className="text-sm text-muted-foreground">
-                Nenhum usuário selecionado.
-              </div>
-            ) : (
+            {!selected ? null : (
               <div className="space-y-4">
-                <div className="space-y-2">
+                <div>
                   <Label>Nome</Label>
-                  <div className="rounded-xl border px-3 py-2">
-                    {selected.name || (
-                      <span className="text-muted-foreground italic">
-                        sem nome
-                      </span>
-                    )}
+                  <div className="border rounded-xl px-3 py-2">
+                    {selected.name || "sem nome"}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>ID</Label>
-                  <div className="rounded-xl border px-3 py-2 font-mono text-xs">
-                    {selected.id}
+                <div>
+                  <Label>Role</Label>
+                  <div className="border rounded-xl px-3 py-2">
+                    {selected.role}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      Criado em
-                    </div>
-                    <div className="text-sm">
-                      {formatDate(selected.created_at)}
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-xs text-muted-foreground">
-                      Atualizado em
-                    </div>
-                    <div className="text-sm">
-                      {formatDate(selected.updated_at)}
-                    </div>
+                <div>
+                  <Label>Status</Label>
+                  <div className="border rounded-xl px-3 py-2">
+                    {selected.active ? "Ativo" : "Inativo"}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button variant="outline" onClick={() => setDetailsOpen(false)}>
-                    Fechar
-                  </Button>
-                  <Button onClick={() => openEdit()}>
-                    Editar
-                  </Button>
-                </div>
-
-                <div className="text-xs text-muted-foreground">
-                  Se “salvar” mas não mudar aqui, o problema quase sempre é:
-                  coluna errada (ex: <code>full_name</code> em vez de <code>name</code>)
-                  ou você está olhando outra tabela/coluna.
-                </div>
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* MODAL EDITAR */}
-        <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent aria-describedby={undefined}>
-            <DialogHeader>
-              <DialogTitle>Editar usuário</DialogTitle>
-            </DialogHeader>
-
-            {!selected ? (
-              <div className="text-sm text-muted-foreground">
-                Nenhum usuário selecionado.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>ID</Label>
-                  <Input value={selected.id} readOnly className="font-mono text-xs" />
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Nome</Label>
-                  <Input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    placeholder="Nome do usuário"
-                  />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => setEditOpen(false)}
-                    disabled={saving}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button onClick={saveEdit} disabled={saving}>
-                    {saving ? "Salvando..." : "Salvar"}
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => setDetailsOpen(false)}
+                >
+                  Fechar
+                </Button>
               </div>
             )}
           </DialogContent>
