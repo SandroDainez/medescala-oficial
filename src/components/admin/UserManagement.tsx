@@ -65,20 +65,21 @@ export default function UserManagement() {
     else setReloading(true);
 
     try {
+     
       const { data, error } = await supabase
-        .from("memberships")
-        .select(`
-          id,
-          role,
-          active,
-          profiles (
-            id,
-            name,
-            created_at
-          )
-        `)
-        .eq("tenant_id", currentTenantId)
-        .order("created_at", { ascending: false });
+  .from("memberships")
+  .select(`
+    id,
+    role,
+    active,
+    profiles:profiles!memberships_user_id_profiles_fkey (
+      id,
+      name,
+      created_at
+    )
+  `)
+  .eq("tenant_id", currentTenantId)
+  .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Erro ao buscar usuários:", error);
