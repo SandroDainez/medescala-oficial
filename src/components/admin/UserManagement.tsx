@@ -47,7 +47,6 @@ export default function UserManagement() {
   const [saving, setSaving] = useState(false);
 
   const [query, setQuery] = useState("");
-
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -73,10 +72,10 @@ export default function UserManagement() {
           )
         `)
         .eq("tenant_id", currentTenantId)
-        .order("created_at", { ascending: false });
+        .eq("active", true);
 
       if (error) {
-        console.error(error);
+        console.error("Erro ao buscar usuários:", error);
         setUsers([]);
         return;
       }
@@ -93,7 +92,7 @@ export default function UserManagement() {
 
       setUsers(formatted);
     } catch (err) {
-      console.error(err);
+      console.error("Erro inesperado:", err);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -102,6 +101,7 @@ export default function UserManagement() {
   }
 
   useEffect(() => {
+    if (!currentTenantId) return;
     loadUsers(true);
   }, [currentTenantId]);
 
@@ -115,8 +115,8 @@ export default function UserManagement() {
     );
   }, [users, query]);
 
-  function openDetails(user: UserRow) {
-    setSelected(user);
+  function openDetails(u: UserRow) {
+    setSelected(u);
     setDetailsOpen(true);
   }
 
@@ -173,7 +173,7 @@ export default function UserManagement() {
 
   return (
     <Card className="rounded-2xl">
-      <CardHeader className="flex flex-row items-center justify-between">
+      <CardHeader className="flex justify-between">
         <div>
           <CardTitle>Usuários do Hospital</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -255,7 +255,7 @@ export default function UserManagement() {
 
         {/* MODAL DETALHES */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Detalhes do usuário</DialogTitle>
             </DialogHeader>
@@ -296,7 +296,7 @@ export default function UserManagement() {
 
         {/* MODAL EDITAR */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent className="max-w-lg">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Editar nome do usuário</DialogTitle>
             </DialogHeader>
@@ -324,7 +324,6 @@ export default function UserManagement() {
                   >
                     Cancelar
                   </Button>
-
                   <Button onClick={saveEdit} disabled={saving}>
                     {saving ? "Salvando..." : "Salvar"}
                   </Button>
