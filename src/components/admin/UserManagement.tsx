@@ -47,11 +47,16 @@ export default function UserManagement() {
 
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
   const [users, setUsers] = useState<UserRow[]>([]);
   const [query, setQuery] = useState("");
 
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+
   const [selected, setSelected] = useState<UserRow | null>(null);
+  const [editName, setEditName] = useState("");
 
   async function loadUsers(showSpinner = true) {
     if (!currentTenantId) return;
@@ -118,6 +123,66 @@ export default function UserManagement() {
   function openDetails(u: UserRow) {
     setSelected(u);
     setDetailsOpen(true);
+  }
+
+  function openEdit() {
+    if (!selected) return;
+    setEditName(selected.name || "");
+    setEditOpen(true);
+  }
+
+  async function saveEdit() {
+    if (!selected) return;
+
+    const name = editName.trim();
+    if (!name) {
+      alert("Nome não pode ficar vazio.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("update-user", {
+        body: {
+          userId: selected.user_id,
+          name,
+        },
+      });
+
+      if (error) {
+        console.error("Erro invoke update-user:", error);
+        alert("Erro ao salvar.");
+        return;
+      }
+
+      if (!data || data.ok !== true) {
+        console.error("Resposta inesperada:", data);
+        alert("Não foi possível confirmar salvamento.");
+        return;
+      }
+
+      // Atualização otimista
+      setUsers((prev) =>
+        prev.map((u) =>
+          u.user_id === selected.user_id ? { ...u, name } : u
+        )
+      );
+
+      await loadUsers(false);
+
+      setSelected((prev) =>
+        prev ? { ...prev, name } : prev
+      );
+
+      setEditOpen(false);
+      alert("Salvo com sucesso ✅");
+    } catch (e) {
+      console.error("Erro inesperado:", e);
+      alert("Erro inesperado.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -232,12 +297,52 @@ export default function UserManagement() {
                   </div>
                 </div>
 
-                <Button
-                  variant="outline"
-                  onClick={() => setDetailsOpen(false)}
-                >
-                  Fechar
-                </Button>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" onClick={() => setDetailsOpen(false)}>
+                    Fechar
+                  </Button>
+                  <Button onClick={openEdit}>
+                    Editar Nome
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Editar nome do usuário</DialogTitle>
+            </DialogHeader>
+
+            {!selected ? null : (
+              <div className="space-y-4">
+                <div>
+                  <Label>ID</Label>
+                  <Input value={selected.user_id} readOnly />
+                </div>
+
+                <div>
+                  <Label>Novo Nome</Label>
+                  <Input
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                  />
+                </div>
+
+                <div className="flex gap-2 justify-end">
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditOpen(false)}
+                    disabled={saving}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button onClick={saveEdit} disabled={saving}>
+                    {saving ? "Salvando..." : "Salvar"}
+                  </Button>
+                </div>
               </div>
             )}
           </DialogContent>
