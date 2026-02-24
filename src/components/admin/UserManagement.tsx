@@ -35,27 +35,22 @@ type UserRow = {
 
 function formatDate(iso?: string | null) {
   if (!iso) return "-";
-  try {
-    return new Date(iso).toLocaleString("pt-BR");
-  } catch {
-    return iso;
-  }
+  return new Date(iso).toLocaleString("pt-BR");
 }
 
 export default function UserManagement() {
   const { currentTenantId } = useTenant();
 
+  const [users, setUsers] = useState<UserRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [reloading, setReloading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const [users, setUsers] = useState<UserRow[]>([]);
   const [query, setQuery] = useState("");
 
+  const [selected, setSelected] = useState<UserRow | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-
-  const [selected, setSelected] = useState<UserRow | null>(null);
   const [editName, setEditName] = useState("");
 
   async function loadUsers(showSpinner = true) {
@@ -65,41 +60,40 @@ export default function UserManagement() {
     else setReloading(true);
 
     try {
-     
       const { data, error } = await supabase
-  .from("memberships")
-  .select(`
-    id,
-    role,
-    active,
-    profiles:profiles!memberships_user_id_profiles_fkey (
-      id,
-      name,
-      created_at
-    )
-  `)
-  .eq("tenant_id", currentTenantId)
-  .order("created_at", { ascending: false });
+        .from("memberships")
+        .select(`
+          id,
+          role,
+          active,
+          profiles:profiles!memberships_user_id_profiles_fkey (
+            id,
+            name,
+            created_at
+          )
+        `)
+        .eq("tenant_id", currentTenantId)
+        .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("Erro ao buscar usuários:", error);
+        console.error(error);
         setUsers([]);
         return;
       }
 
-      const formatted =
+      const formatted: UserRow[] =
         data?.map((m: any) => ({
           membership_id: m.id,
-          user_id: m.profiles?.id,
-          name: m.profiles?.name,
+          user_id: m.profiles?.id ?? "",
+          name: m.profiles?.name ?? null,
           role: m.role,
           active: m.active,
-          created_at: m.profiles?.created_at,
-        })) || [];
+          created_at: m.profiles?.created_at ?? null,
+        })) ?? [];
 
       setUsers(formatted);
-    } catch (e) {
-      console.error("Erro inesperado:", e);
+    } catch (err) {
+      console.error(err);
       setUsers([]);
     } finally {
       setLoading(false);
@@ -112,23 +106,23 @@ export default function UserManagement() {
   }, [currentTenantId]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.toLowerCase().trim();
     if (!q) return users;
-    return users.filter((u) => {
-      const name = (u.name || "").toLowerCase();
-      const id = (u.user_id || "").toLowerCase();
-      return name.includes(q) || id.includes(q);
-    });
+
+    return users.filter((u) =>
+      (u.name ?? "").toLowerCase().includes(q) ||
+      (u.user_id ?? "").toLowerCase().includes(q)
+    );
   }, [users, query]);
 
-  function openDetails(u: UserRow) {
-    setSelected(u);
+  function openDetails(user: UserRow) {
+    setSelected(user);
     setDetailsOpen(true);
   }
 
   function openEdit() {
     if (!selected) return;
-    setEditName(selected.name || "");
+    setEditName(selected.name ?? "");
     setEditOpen(true);
   }
 
@@ -151,26 +145,17 @@ export default function UserManagement() {
         },
       });
 
-      if (error) {
-        console.error("Erro invoke update-user:", error);
+      if (error || !data?.ok) {
+        console.error(error);
         alert("Erro ao salvar.");
         return;
       }
 
-      if (!data || data.ok !== true) {
-        console.error("Resposta inesperada:", data);
-        alert("Não foi possível confirmar salvamento.");
-        return;
-      }
-
-      // Atualização otimista
       setUsers((prev) =>
         prev.map((u) =>
           u.user_id === selected.user_id ? { ...u, name } : u
         )
       );
-
-      await loadUsers(false);
 
       setSelected((prev) =>
         prev ? { ...prev, name } : prev
@@ -178,8 +163,8 @@ export default function UserManagement() {
 
       setEditOpen(false);
       alert("Salvo com sucesso ✅");
-    } catch (e) {
-      console.error("Erro inesperado:", e);
+    } catch (err) {
+      console.error(err);
       alert("Erro inesperado.");
     } finally {
       setSaving(false);
@@ -188,20 +173,19 @@ export default function UserManagement() {
 
   return (
     <Card className="rounded-2xl">
-      <CardHeader className="flex flex-row items-center justify-between gap-3">
+      <CardHeader className="flex flex-row items-center justify-between">
         <div>
-          <CardTitle className="text-xl">Usuários do Hospital</CardTitle>
-          <div className="text-sm text-muted-foreground">
+          <CardTitle>Usuários do Hospital</CardTitle>
+          <p className="text-sm text-muted-foreground">
             Apenas usuários vinculados ao hospital atual.
-          </div>
+          </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <Input
+            placeholder="Buscar por nome ou id..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar por nome ou id..."
-            className="w-[260px]"
           />
           <Button
             variant="outline"
@@ -215,13 +199,13 @@ export default function UserManagement() {
 
       <CardContent>
         {loading ? (
-          <div className="text-sm text-muted-foreground">Carregando...</div>
+          <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : filtered.length === 0 ? (
-          <div className="text-sm text-muted-foreground">
-            Nenhum usuário vinculado a este hospital.
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Nenhum usuário encontrado.
+          </p>
         ) : (
-          <div className="rounded-xl border overflow-hidden">
+          <div className="border rounded-xl overflow-hidden">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -240,8 +224,8 @@ export default function UserManagement() {
                     onClick={() => openDetails(u)}
                   >
                     <TableCell>
-                      {u.name || (
-                        <span className="text-muted-foreground italic">
+                      {u.name ?? (
+                        <span className="italic text-muted-foreground">
                           sem nome
                         </span>
                       )}
@@ -269,18 +253,19 @@ export default function UserManagement() {
           </div>
         )}
 
+        {/* MODAL DETALHES */}
         <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Detalhes do usuário</DialogTitle>
             </DialogHeader>
 
-            {!selected ? null : (
+            {selected && (
               <div className="space-y-4">
                 <div>
                   <Label>Nome</Label>
                   <div className="border rounded-xl px-3 py-2">
-                    {selected.name || "sem nome"}
+                    {selected.name ?? "sem nome"}
                   </div>
                 </div>
 
@@ -298,26 +283,25 @@ export default function UserManagement() {
                   </div>
                 </div>
 
-                <div className="flex gap-2 justify-end">
+                <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setDetailsOpen(false)}>
                     Fechar
                   </Button>
-                  <Button onClick={openEdit}>
-                    Editar Nome
-                  </Button>
+                  <Button onClick={openEdit}>Editar Nome</Button>
                 </div>
               </div>
             )}
           </DialogContent>
         </Dialog>
 
+        {/* MODAL EDITAR */}
         <Dialog open={editOpen} onOpenChange={setEditOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Editar nome do usuário</DialogTitle>
             </DialogHeader>
 
-            {!selected ? null : (
+            {selected && (
               <div className="space-y-4">
                 <div>
                   <Label>ID</Label>
@@ -332,7 +316,7 @@ export default function UserManagement() {
                   />
                 </div>
 
-                <div className="flex gap-2 justify-end">
+                <div className="flex justify-end gap-2">
                   <Button
                     variant="outline"
                     onClick={() => setEditOpen(false)}
@@ -340,6 +324,7 @@ export default function UserManagement() {
                   >
                     Cancelar
                   </Button>
+
                   <Button onClick={saveEdit} disabled={saving}>
                     {saving ? "Salvando..." : "Salvar"}
                   </Button>
