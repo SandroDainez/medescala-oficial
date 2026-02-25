@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
@@ -3528,6 +3528,84 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     printWindow.document.close();
   }
 
+  function handleDownloadScheduleCSV() {
+    const periodLabel = viewMode === 'month'
+      ? format(currentDate, 'MM-yyyy', { locale: ptBR })
+      : `${format(startOfWeek(currentDate, { weekStartsOn: 0 }), 'dd-MM-yyyy')}_a_${format(endOfWeek(currentDate, { weekStartsOn: 0 }), 'dd-MM-yyyy')}`;
+    const sectorName = filterSector === 'all'
+      ? 'todos-os-setores'
+      : (sectors.find((s) => s.id === filterSector)?.name || 'setor').replace(/\s+/g, '-').toLowerCase();
+
+    const headers = [
+      'Data',
+      'Setor',
+      'Inicio',
+      'Fim',
+      'Plantonistas',
+      'Status',
+      'Valor base',
+      'Valor atribuido',
+      'Observacoes',
+    ];
+
+    const rows = filteredShifts
+      .slice()
+      .sort((a, b) => {
+        if (a.shift_date !== b.shift_date) return a.shift_date.localeCompare(b.shift_date);
+        return a.start_time.localeCompare(b.start_time);
+      })
+      .map((shift) => {
+        const shiftAssignments = getAssignmentsForShift(shift.id);
+        const names = shiftAssignments.map((a) => getAssignmentName(a)).join(' | ') || '-';
+        const assignedValue = shiftAssignments.length > 0
+          ? shiftAssignments
+              .map((a) => (a.assigned_value != null ? Number(a.assigned_value) : null))
+              .filter((v): v is number => v != null)
+              .map((v) => v.toFixed(2))
+              .join(' | ')
+          : '-';
+
+        const status = shiftAssignments.length > 0
+          ? 'Preenchido'
+          : shift.notes?.includes('[DISPONÍVEL]')
+            ? 'Disponivel'
+            : 'Vago';
+
+        const normalize = (value: string) => `"${value.replace(/"/g, '""')}"`;
+
+        return [
+          normalize(format(parseISO(shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })),
+          normalize(getSectorName(shift.sector_id, shift.hospital)),
+          normalize(shift.start_time.slice(0, 5)),
+          normalize(shift.end_time.slice(0, 5)),
+          normalize(names),
+          normalize(status),
+          normalize(shift.base_value != null ? Number(shift.base_value).toFixed(2) : '-'),
+          normalize(assignedValue),
+          normalize(shift.notes || ''),
+        ].join(';');
+      });
+
+    const csv = [headers.join(';'), ...rows].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `escala-${sectorName}-${periodLabel}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleDownloadSchedulePDF() {
+    handlePrintSchedule();
+    toast({
+      title: 'Exportar PDF',
+      description: 'Na janela que abriu, escolha "Salvar como PDF".',
+    });
+  }
+
   // Stats
   const totalShifts = filteredShifts.length;
   const totalAssignments = assignments.length;
@@ -4191,6 +4269,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <Button variant="outline" onClick={handlePrintSchedule}>
                       <Printer className="mr-2 h-4 w-4" />
                       Imprimir
+                    </Button>
+                    <Button variant="outline" onClick={handleDownloadScheduleCSV}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Baixar CSV
+                    </Button>
+                    <Button variant="outline" onClick={handleDownloadSchedulePDF}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Baixar PDF
                     </Button>
 
                     <Button onClick={() => openCreateShift()}>
