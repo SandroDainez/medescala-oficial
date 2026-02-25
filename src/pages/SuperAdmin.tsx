@@ -32,7 +32,10 @@ import {
   Database,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  UserPlus,
+  UserMinus,
+  Crown
 } from 'lucide-react';
 
 interface Tenant {
@@ -48,6 +51,16 @@ interface Tenant {
   created_at: string;
 }
 
+interface SuperAdminAccess {
+  user_id: string;
+  email: string | null;
+  profile_name: string | null;
+  active: boolean;
+  is_owner: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export default function SuperAdmin() {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -55,7 +68,9 @@ export default function SuperAdmin() {
 
   const [loading, setLoading] = useState(true);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [isAppOwner, setIsAppOwner] = useState(false);
   const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [superAdmins, setSuperAdmins] = useState<SuperAdminAccess[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
@@ -70,6 +85,9 @@ export default function SuperAdmin() {
   const [savingPassword, setSavingPassword] = useState(false);
   const [showPasswordFields, setShowPasswordFields] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
+  const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
+  const [grantEmail, setGrantEmail] = useState('');
+  const [grantAsOwner, setGrantAsOwner] = useState(false);
 
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
@@ -227,6 +245,77 @@ export default function SuperAdmin() {
     setTenants(data || []);
   }, [toast]);
 
+  const fetchSuperAdmins = useCallback(async () => {
+    const { data, error } = await supabase.rpc('list_super_admin_access');
+
+    if (error) {
+      toast({
+        title: 'Erro ao carregar superadministradores',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSuperAdmins((data || []) as SuperAdminAccess[]);
+  }, [toast]);
+
+  const handleGrantSuperAdmin = useCallback(async () => {
+    const email = grantEmail.trim().toLowerCase();
+    if (!email) {
+      toast({
+        title: 'Email obrigatório',
+        description: 'Informe o email do usuário que receberá acesso de superadministrador.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setManagingSuperAdmins(true);
+    const { error } = await supabase.rpc('set_super_admin_access_by_email', {
+      _email: email,
+      _active: true,
+      _is_owner: grantAsOwner,
+    });
+    setManagingSuperAdmins(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao conceder acesso',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Acesso de superadministrador atualizado com sucesso.' });
+    setGrantEmail('');
+    setGrantAsOwner(false);
+    fetchSuperAdmins();
+  }, [fetchSuperAdmins, grantAsOwner, grantEmail, toast]);
+
+  const handleSetSuperAdminAccess = useCallback(async (entry: SuperAdminAccess, nextActive: boolean, nextOwner: boolean) => {
+    setManagingSuperAdmins(true);
+    const { error } = await supabase.rpc('set_super_admin_access', {
+      _target_user_id: entry.user_id,
+      _active: nextActive,
+      _is_owner: nextOwner,
+    });
+    setManagingSuperAdmins(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao atualizar superadministrador',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Permissões de superadministrador atualizadas.' });
+    fetchSuperAdmins();
+  }, [fetchSuperAdmins, toast]);
+
   const checkSuperAdminAndFetch = useCallback(async () => {
     if (!user) {
       setLoading(false);
@@ -242,10 +331,13 @@ export default function SuperAdmin() {
       return;
     }
 
+    const { data: isOwner } = await supabase.rpc('is_app_owner');
+
     setIsSuperAdmin(true);
-    await Promise.all([fetchTenants(), fetchReopenPassword()]);
+    setIsAppOwner(Boolean(isOwner));
+    await Promise.all([fetchTenants(), fetchReopenPassword(), fetchSuperAdmins()]);
     setLoading(false);
-  }, [user, fetchTenants, fetchReopenPassword]);
+  }, [user, fetchTenants, fetchReopenPassword, fetchSuperAdmins]);
 
   useEffect(() => {
     checkSuperAdminAndFetch();
@@ -517,6 +609,129 @@ export default function SuperAdmin() {
           </CardContent>
         </Card>
 
+        {/* Super Admin Access Management */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Controle de Superadministradores
+            </CardTitle>
+            <CardDescription>
+              Acesso super admin é exclusivo do dono do aplicativo e dos usuários autorizados pelo dono.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isAppOwner ? (
+              <>
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="superadmin-email">Email do usuário</Label>
+                      <Input
+                        id="superadmin-email"
+                        placeholder="usuario@dominio.com"
+                        value={grantEmail}
+                        onChange={(e) => setGrantEmail(e.target.value)}
+                      />
+                    </div>
+                    <div className="flex items-end gap-3 pb-1">
+                      <Switch
+                        checked={grantAsOwner}
+                        onCheckedChange={setGrantAsOwner}
+                        id="grant-as-owner"
+                      />
+                      <Label htmlFor="grant-as-owner">Conceder como dono do app</Label>
+                    </div>
+                  </div>
+                  <Button onClick={handleGrantSuperAdmin} disabled={managingSuperAdmins}>
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Conceder acesso
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Somente dono do aplicativo pode conceder, remover ou alterar superadministradores.
+              </p>
+            )}
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Usuário</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Perfil</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    {isAppOwner && <TableHead className="text-right">Ações</TableHead>}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {superAdmins.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={isAppOwner ? 6 : 5} className="text-center text-muted-foreground py-6">
+                        Nenhum superadministrador cadastrado.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    superAdmins.map((entry) => {
+                      const isSelf = entry.user_id === user?.id;
+                      return (
+                        <TableRow key={entry.user_id}>
+                          <TableCell className="font-medium">
+                            {entry.profile_name || 'Sem nome'}
+                          </TableCell>
+                          <TableCell>{entry.email || '-'}</TableCell>
+                          <TableCell>
+                            <code className="text-xs bg-muted px-2 py-1 rounded">{entry.user_id}</code>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={entry.active ? 'default' : 'secondary'}>
+                              {entry.active ? 'Ativo' : 'Inativo'}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {entry.is_owner ? (
+                              <Badge className="bg-amber-500/10 text-amber-600 border-amber-500/20">
+                                <Crown className="h-3 w-3 mr-1" />
+                                Dono
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline">Autorizado</Badge>
+                            )}
+                          </TableCell>
+                          {isAppOwner && (
+                            <TableCell className="text-right space-x-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={managingSuperAdmins || isSelf}
+                                onClick={() => handleSetSuperAdminAccess(entry, !entry.active, entry.is_owner)}
+                              >
+                                <UserMinus className="h-4 w-4 mr-1" />
+                                {entry.active ? 'Desativar' : 'Ativar'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={managingSuperAdmins || isSelf}
+                                onClick={() => handleSetSuperAdminAccess(entry, entry.active, !entry.is_owner)}
+                              >
+                                {entry.is_owner ? 'Remover dono' : 'Tornar dono'}
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Schedule Reopen Password */}
         <Card>
           <CardHeader className="pb-3">
@@ -673,7 +888,7 @@ export default function SuperAdmin() {
                         <TableCell>
                           <span className="flex items-center gap-1">
                             <Users className="h-3 w-3 text-muted-foreground" />
-                            {tenant.current_users_count}/{tenant.max_users}
+                            {tenant.current_users_count}/{tenant.max_users >= 999999 ? '200+' : tenant.max_users}
                           </span>
                         </TableCell>
                         <TableCell>

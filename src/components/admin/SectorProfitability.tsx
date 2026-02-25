@@ -422,6 +422,80 @@ export default function SectorProfitability() {
     URL.revokeObjectURL(url);
   }
 
+  function handlePrint() {
+    const rows = sectors
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((sector) => {
+        const f = calculateSectorFinancials(sector.id);
+        return `
+          <tr>
+            <td>${sector.name}</td>
+            <td class="right">${formatCurrency(f.totalRevenue)}</td>
+            <td class="right">${formatCurrency(f.totalExpenses)}</td>
+            <td class="right">${formatCurrency(f.plantonistaPayment)}</td>
+            <td class="right ${f.profit >= 0 ? 'ok' : 'bad'}">${formatCurrency(f.profit)}</td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>Balanço dos Setores - ${monthName}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #111; }
+          h1 { margin: 0 0 4px; font-size: 20px; }
+          p { margin: 0 0 16px; color: #444; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #ddd; padding: 8px; font-size: 12px; }
+          th { background: #f5f5f5; text-align: left; }
+          .right { text-align: right; }
+          .ok { color: #16a34a; font-weight: 700; }
+          .bad { color: #dc2626; font-weight: 700; }
+          .total-row td { font-weight: 700; background: #ecfdf5; }
+        </style>
+      </head>
+      <body>
+        <h1>Balanço dos Setores</h1>
+        <p>${monthName}</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Setor</th>
+              <th class="right">Receita</th>
+              <th class="right">Despesas</th>
+              <th class="right">Plantonistas</th>
+              <th class="right">Resultado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr class="total-row">
+              <td>TOTAL</td>
+              <td class="right">${formatCurrency(grandTotals.totalRevenue)}</td>
+              <td class="right">${formatCurrency(grandTotals.totalExpenses)}</td>
+              <td class="right">${formatCurrency(grandTotals.totalPlantonistaPayments)}</td>
+              <td class="right ${grandTotals.totalProfit >= 0 ? 'ok' : 'bad'}">${formatCurrency(grandTotals.totalProfit)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.print();
+    };
+  }
+
   const monthName = format(new Date(selectedYear, selectedMonth - 1), 'MMMM yyyy', { locale: ptBR });
 
   // Generate month options
@@ -477,6 +551,10 @@ export default function SectorProfitability() {
           <Button variant="outline" size="sm" onClick={exportCSV}>
             <Download className="h-4 w-4 mr-2" />
             Exportar
+          </Button>
+          <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Printer className="h-4 w-4 mr-2" />
+            Imprimir
           </Button>
         </div>
       </div>

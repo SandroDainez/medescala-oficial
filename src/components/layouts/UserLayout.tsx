@@ -27,7 +27,8 @@ import {
   User,
   Hand
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 const mainNavItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
@@ -50,6 +51,7 @@ export function UserLayout() {
   const { currentTenantName } = useTenant();
   const navigate = useNavigate();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [profileName, setProfileName] = useState<string | null>(null);
 
   const handleSignOut = async () => {
     await signOut();
@@ -57,7 +59,36 @@ export function UserLayout() {
   };
 
   const userInitials = user?.email?.slice(0, 2).toUpperCase() || 'U';
-  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
+  const userName = profileName || user?.email?.split('@')[0] || 'Usuário';
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadProfileName() {
+      if (!user?.id) {
+        setProfileName(null);
+        return;
+      }
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const fullName = (data as any)?.full_name?.trim();
+      const name = (data as any)?.name?.trim();
+      setProfileName(fullName || name || null);
+    }
+
+    loadProfileName();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   return (
     <div className="min-h-[100dvh] bg-background w-full overflow-x-hidden">

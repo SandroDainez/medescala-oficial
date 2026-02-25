@@ -47,6 +47,7 @@ const UserLayout = lazy(() =>
   }))
 );
 const UserCalendar = lazy(() => import("./pages/user/Calendar"));
+const UserHome = lazy(() => import("./pages/user/Home"));
 const UserShifts = lazy(() => import("./pages/user/Shifts"));
 const UserSwaps = lazy(() => import("./pages/user/Swaps"));
 const UserFinancial = lazy(() => import("./pages/user/Financial"));
@@ -249,7 +250,7 @@ const App = () => (
                           </ProtectedRoute>
                         }
                       >
-                        <Route index element={<UserCalendar />} />
+                        <Route index element={<UserHome />} />
                         <Route path="calendar" element={<UserCalendar />} />
                         <Route path="shifts" element={<UserShifts />} />
                         <Route path="available" element={<UserAvailableShifts />} />

@@ -1596,21 +1596,30 @@ export type Database = {
       }
       super_admins: {
         Row: {
+          active: boolean
           created_at: string
           created_by: string | null
           id: string
+          is_owner: boolean
+          updated_at: string
           user_id: string
         }
         Insert: {
+          active?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
+          is_owner?: boolean
+          updated_at?: string
           user_id: string
         }
         Update: {
+          active?: boolean
           created_at?: string
           created_by?: string | null
           id?: string
+          is_owner?: boolean
+          updated_at?: string
           user_id?: string
         }
         Relationships: []
@@ -1987,6 +1996,10 @@ export type Database = {
         Args: { _decision: string; _swap_request_id: string }
         Returns: boolean
       }
+      delete_schedule_movements_with_password: {
+        Args: { _movement_ids: string[]; _password: string; _tenant_id: string }
+        Returns: number
+      }
       get_all_tenants_admin: {
         Args: never
         Returns: {
@@ -2126,6 +2139,10 @@ export type Database = {
           tenant_name: string
         }[]
       }
+      has_schedule_reopen_password: {
+        Args: { _tenant_id: string }
+        Returns: boolean
+      }
       has_gabs_bypass: { Args: { _user_id?: string }; Returns: boolean }
       has_gps_access:
         | { Args: { _tenant_id: string }; Returns: boolean }
@@ -2153,6 +2170,7 @@ export type Database = {
         Returns: boolean
       }
       is_super_admin: { Args: { _user_id?: string }; Returns: boolean }
+      is_app_owner: { Args: { _user_id?: string }; Returns: boolean }
       is_tenant_access_active: {
         Args: { _tenant_id: string }
         Returns: boolean
@@ -2174,12 +2192,40 @@ export type Database = {
         }
         Returns: boolean
       }
+      list_super_admin_access: {
+        Args: never
+        Returns: {
+          active: boolean
+          created_at: string
+          email: string | null
+          is_owner: boolean
+          profile_name: string | null
+          updated_at: string
+          user_id: string
+        }[]
+      }
+      set_super_admin_access: {
+        Args: { _active?: boolean; _is_owner?: boolean; _target_user_id: string }
+        Returns: boolean
+      }
+      set_super_admin_access_by_email: {
+        Args: { _active?: boolean; _email: string; _is_owner?: boolean }
+        Returns: boolean
+      }
+      set_schedule_reopen_password: {
+        Args: {
+          _current_password: string
+          _new_password: string
+          _tenant_id: string
+        }
+        Returns: boolean
+      }
       user_has_active_membership: {
         Args: { _user_id: string }
         Returns: boolean
       }
       verify_schedule_reopen_password: {
-        Args: { _password: string }
+        Args: { _password: string; _tenant_id: string }
         Returns: boolean
       }
     }

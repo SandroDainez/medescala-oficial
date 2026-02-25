@@ -51,6 +51,15 @@ export default function Onboarding() {
     e.preventDefault();
     if (!user || !tenantName || !tenantSlug) return;
 
+    if (tenantSlug.trim().toLowerCase() === 'gabs') {
+      toast({
+        title: 'Código reservado',
+        description: 'Escolha outro código para o hospital/serviço.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setLoading(true);
 
     const { data: tenantId, error } = await supabase.rpc('create_tenant_with_admin', {

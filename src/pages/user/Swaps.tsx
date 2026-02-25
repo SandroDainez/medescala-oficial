@@ -91,6 +91,7 @@ export default function UserSwaps() {
   const [selectedTargetUser, setSelectedTargetUser] = useState<TenantMember | null>(null);
   const [reason, setReason] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [currentUserDisplayName, setCurrentUserDisplayName] = useState('Um usuário');
 
   const monthOptions = useMemo(
     () => [
@@ -172,6 +173,31 @@ export default function UserSwaps() {
   }, [user, currentTenantId]);
 
   useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUserDisplayName() {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const fullName = (data as any)?.full_name?.trim();
+      const shortName = (data as any)?.name?.trim();
+      setCurrentUserDisplayName(fullName || shortName || 'Um usuário');
+    }
+
+    loadCurrentUserDisplayName();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  useEffect(() => {
     setSelectedDay('all');
   }, [effectiveMonth, effectiveYear]);
 
@@ -231,8 +257,52 @@ export default function UserSwaps() {
       return;
     }
     if (data) {
-      setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
+      const baseMembers = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
+      const memberIds = baseMembers.map((m) => m.user_id);
+      let fullNameMap = new Map<string, string>();
+
+      if (memberIds.length) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, full_name, name')
+          .in('id', memberIds);
+
+        fullNameMap = new Map(
+          ((profilesData as any[]) ?? []).map((p: any) => [
+            p.id,
+            (p.full_name?.trim() || p.name?.trim() || '').toString(),
+          ])
+        );
+      }
+
+      const normalizedMembers = baseMembers.map((m) => ({
+        ...m,
+        name: fullNameMap.get(m.user_id) || m.name,
+      }));
+
+      setTenantMembers(normalizedMembers);
     }
+  }
+
+  async function enrichMembersWithFullNames(members: TenantMember[]): Promise<TenantMember[]> {
+    if (!members.length) return members;
+    const memberIds = members.map((m) => m.user_id);
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, full_name, name')
+      .in('id', memberIds);
+
+    const fullNameMap = new Map(
+      ((profilesData as any[]) ?? []).map((p: any) => [
+        p.id,
+        (p.full_name?.trim() || p.name?.trim() || '').toString(),
+      ])
+    );
+
+    return members.map((m) => ({
+      ...m,
+      name: fullNameMap.get(m.user_id) || m.name,
+    }));
   }
 
   // Fetch members of a specific sector for swap filtering
@@ -263,7 +333,9 @@ export default function UserSwaps() {
       // In case the user clicks before fetchTenantMembers finished.
       const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
       if (!error && data) {
-        activeTenantMembers = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
+        activeTenantMembers = await enrichMembersWithFullNames(
+          (data as TenantMember[]).filter((m) => m.user_id !== user.id)
+        );
         setTenantMembers(activeTenantMembers);
       }
     }
@@ -417,7 +489,7 @@ export default function UserSwaps() {
         shift_assignment_id: selectedAssignment.id,
         type: 'swap_request',
         title: 'Solicitação de Troca de Plantão',
-        message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
+        message: `${currentUserDisplayName || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
       });
 
     if (notifyError) {
@@ -428,7 +500,7 @@ export default function UserSwaps() {
     await notifyTenantAdmins({
       type: 'swap_request_admin',
       title: 'Troca de plantão solicitada',
-      message: `${user.user_metadata?.name || 'Um usuário'} solicitou passar o plantão "${selectedAssignment.shift.title}" (${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}) para ${selectedTargetUser.name}.`,
+      message: `${currentUserDisplayName || 'Um usuário'} solicitou passar o plantão "${selectedAssignment.shift.title}" (${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}) para ${selectedTargetUser.name}.`,
       shiftAssignmentId: selectedAssignment.id,
       excludeUserIds: [user.id],
     });
@@ -475,7 +547,7 @@ export default function UserSwaps() {
     await notifyTenantAdmins({
       type: 'swap_request_update_admin',
       title: 'Troca aceita',
-      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi aceita por ${user.user_metadata?.name || 'um usuário'}.`,
+      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi aceita por ${currentUserDisplayName || 'um usuário'}.`,
       shiftAssignmentId: swap.origin_assignment_id,
       excludeUserIds: [user.id],
     });
@@ -515,7 +587,7 @@ export default function UserSwaps() {
     await notifyTenantAdmins({
       type: 'swap_request_update_admin',
       title: 'Troca recusada',
-      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi recusada por ${user.user_metadata?.name || 'um usuário'}.`,
+      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi recusada por ${currentUserDisplayName || 'um usuário'}.`,
       shiftAssignmentId: swap.origin_assignment_id,
       excludeUserIds: [user.id],
     });

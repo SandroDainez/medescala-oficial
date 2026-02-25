@@ -85,6 +85,7 @@ export default function AdminFinancial() {
 
   // Modal de detalhamento (tabela por plantonista)
   const [selectedPlantonista, setSelectedPlantonista] = useState<PlantonistaReport | null>(null);
+  const [selectedSectorReport, setSelectedSectorReport] = useState<SectorReport | null>(null);
 
   // Export plantonista detail to CSV
   function exportPlantonistaCSV(p: PlantonistaReport) {
@@ -442,6 +443,48 @@ export default function AdminFinancial() {
     if (currentTenantId) fetchData();
   }, [currentTenantId, startDate, endDate, filterSetor, fetchData]);
 
+  // Realtime recalculation when schedule/values change
+  useEffect(() => {
+    if (!currentTenantId) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const scheduleRefresh = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        fetchData();
+      }, 350);
+    };
+
+    const channel = supabase
+      .channel(`financial-live-${currentTenantId}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shift_assignments', filter: `tenant_id=eq.${currentTenantId}` },
+        scheduleRefresh,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'shifts', filter: `tenant_id=eq.${currentTenantId}` },
+        scheduleRefresh,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_sector_values', filter: `tenant_id=eq.${currentTenantId}` },
+        scheduleRefresh,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sectors', filter: `tenant_id=eq.${currentTenantId}` },
+        scheduleRefresh,
+      )
+      .subscribe();
+
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      supabase.removeChannel(channel);
+    };
+  }, [currentTenantId, fetchData]);
+
   // Filtered entries
   const filteredEntries = useMemo(() => {
     console.log('[filteredEntries] filterSetor:', filterSetor, 'filterPlantonista:', filterPlantonista);
@@ -584,6 +627,38 @@ export default function AdminFinancial() {
       : 'todos';
     
     a.download = `financeiro-plantonistas-${startDate}-a-${endDate}-${setorName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // Export CSV - Totais por Setor
+  function exportCSVSectores() {
+    const headers = ['Setor', 'Plantões', 'Horas', 'Sem Valor', 'Total'];
+    const rows = sectorReports
+      .slice()
+      .sort((a, b) => a.sector_name.localeCompare(b.sector_name))
+      .map((s) => [
+        s.sector_name,
+        s.total_shifts.toString(),
+        s.total_hours.toFixed(1),
+        s.unpriced_shifts.toString(),
+        s.total_value.toFixed(2),
+      ]);
+
+    rows.push([
+      'TOTAL',
+      grandTotals.totalShifts.toString(),
+      grandTotals.totalHours.toFixed(1),
+      grandTotals.unpricedShifts.toString(),
+      grandTotals.totalValue.toFixed(2),
+    ]);
+
+    const csv = [headers.join(';'), ...rows.map((r) => r.join(';'))].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `financeiro-setores-${startDate}-a-${endDate}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1001,6 +1076,105 @@ export default function AdminFinancial() {
     }
   }
 
+  // Print Setores - summary view
+  function handlePrintSetores() {
+    const sortedReports = sectorReports
+      .slice()
+      .sort((a, b) => a.sector_name.localeCompare(b.sector_name));
+
+    const tableRows = sortedReports.map((s) => `
+      <tr>
+        <td>${s.sector_name}</td>
+        <td class="center">${s.total_shifts}</td>
+        <td class="center">${s.total_hours.toFixed(1)}h</td>
+        <td class="center">${s.unpriced_shifts > 0 ? `<span class="no-value">${s.unpriced_shifts}</span>` : '0'}</td>
+        <td class="right">${s.total_value > 0 ? formatCurrency(s.total_value) : '<span class="no-value">—</span>'}</td>
+      </tr>
+    `).join('');
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Relatório Financeiro - Setores - ${startDate} a ${endDate}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            color: #333;
+            background: #fff;
+            font-size: 12px;
+          }
+          .header { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid #22c55e; }
+          h1 { font-size: 20px; font-weight: 600; color: #1a1a1a; margin-bottom: 5px; }
+          .subtitle { font-size: 14px; color: #666; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { background: #f8f9fa; padding: 10px 8px; text-align: left; font-weight: 600; font-size: 11px; border-bottom: 2px solid #e5e7eb; text-transform: uppercase; color: #555; }
+          td { padding: 8px; border-bottom: 1px solid #e5e7eb; }
+          tr:nth-child(even) { background: #fafafa; }
+          .center { text-align: center; }
+          .right { text-align: right; }
+          .total-row { font-weight: bold; background: #f0fdf4 !important; }
+          .total-row td { border-top: 2px solid #22c55e; padding-top: 12px; }
+          .total-value { font-size: 16px; color: #16a34a; }
+          .no-value { color: #f59e0b; font-size: 10px; }
+          .footer {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #ddd;
+            font-size: 10px;
+            color: #999;
+            display: flex;
+            justify-content: space-between;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Relatório Financeiro — Setores</h1>
+          <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Setor</th>
+              <th class="center">Plantões</th>
+              <th class="center">Horas</th>
+              <th class="center">Sem Valor</th>
+              <th class="right">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+            <tr class="total-row">
+              <td><strong>TOTAL GERAL</strong></td>
+              <td class="center"><strong>${grandTotals.totalShifts}</strong></td>
+              <td class="center"><strong>${grandTotals.totalHours.toFixed(1)}h</strong></td>
+              <td class="center"><strong>${grandTotals.unpricedShifts}</strong></td>
+              <td class="right total-value">${formatCurrency(grandTotals.totalValue)}</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="footer">
+          <span>Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")}</span>
+          <span>${sectorReports.length} setores</span>
+        </div>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  }
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -1053,6 +1227,10 @@ export default function AdminFinancial() {
                 <Users className="h-4 w-4 mr-2" />
                 Totais por Plantonista
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportCSVSectores}>
+                <Building className="h-4 w-4 mr-2" />
+                Totais por Setor
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={exportCSVDiario}>
                 <Table2 className="h-4 w-4 mr-2" />
                 Dia a Dia (Detalhado)
@@ -1071,6 +1249,10 @@ export default function AdminFinancial() {
               <DropdownMenuItem onClick={handlePrintPlantonistas}>
                 <Users className="h-4 w-4 mr-2" />
                 Totais por Plantonista
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handlePrintSetores}>
+                <Building className="h-4 w-4 mr-2" />
+                Totais por Setor
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handlePrintDiario}>
                 <Table2 className="h-4 w-4 mr-2" />
@@ -1279,8 +1461,12 @@ export default function AdminFinancial() {
 
       {/* TABS: Plantonistas | Balanço dos Setores */}
       <Tabs defaultValue="plantonistas_tabela" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
+          <TabsTrigger value="setores_tabela" className="flex items-center gap-1">
+            <Building className="h-3 w-3" />
+            Setores
+          </TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
             <Calculator className="h-3 w-3" />
             Balanço dos Setores
@@ -1418,6 +1604,118 @@ export default function AdminFinancial() {
                           </TableRow>
                         );
                       })}
+                  </TableBody>
+                </Table>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </TabsContent>
+
+        {/* TAB: Setores (tabela) */}
+        <TabsContent value="setores_tabela" className="space-y-4 mt-4">
+          {sectorReports.length === 0 ? (
+            <Card>
+              <CardContent className="p-8 text-center text-muted-foreground">
+                <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                <p>Nenhum dado por setor no período.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Setores — totais do período</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="max-h-[70vh] overflow-y-auto">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background z-10">
+                      <TableRow>
+                        <TableHead>Setor</TableHead>
+                        <TableHead className="text-center">Plantões</TableHead>
+                        <TableHead className="text-center">Horas</TableHead>
+                        <TableHead className="text-center">Sem valor</TableHead>
+                        <TableHead className="text-right">Total</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sectorReports.map((s) => (
+                        <TableRow key={s.sector_id ?? `sem-setor-${s.sector_name}`}>
+                          <TableCell className="font-medium">{s.sector_name}</TableCell>
+                          <TableCell className="text-center">{s.total_shifts}</TableCell>
+                          <TableCell className="text-center">{s.total_hours.toFixed(1)}h</TableCell>
+                          <TableCell className="text-center">
+                            {s.unpriced_shifts > 0 ? (
+                              <Badge variant="outline" className="text-amber-500 border-amber-500">
+                                {s.unpriced_shifts}
+                              </Badge>
+                            ) : (
+                              '0'
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {s.total_value > 0 ? (
+                              <span className="text-green-600 font-medium">{formatCurrency(s.total_value)}</span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="outline" size="sm" onClick={() => setSelectedSectorReport(s)}>
+                              Ver detalhes
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Dialog open={!!selectedSectorReport} onOpenChange={(open) => !open && setSelectedSectorReport(null)}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>{selectedSectorReport?.sector_name}</DialogTitle>
+                <DialogDescription>
+                  Plantonistas e valores deste setor no período selecionado.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="max-h-[70vh] overflow-y-auto border rounded">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background z-10">
+                    <TableRow>
+                      <TableHead>Plantonista</TableHead>
+                      <TableHead className="text-center">Plantões</TableHead>
+                      <TableHead className="text-center">Horas</TableHead>
+                      <TableHead className="text-center">Sem valor</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(selectedSectorReport?.plantonistas ?? []).map((p) => (
+                      <TableRow key={`${selectedSectorReport?.sector_id}-${p.assignee_id}`}>
+                        <TableCell>{p.assignee_name}</TableCell>
+                        <TableCell className="text-center">{p.shifts}</TableCell>
+                        <TableCell className="text-center">{p.hours.toFixed(1)}h</TableCell>
+                        <TableCell className="text-center">{p.unpriced}</TableCell>
+                        <TableCell className="text-right">
+                          {p.value > 0 ? (
+                            <span className="text-green-600 font-medium">{formatCurrency(p.value)}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="font-semibold">
+                      <TableCell>TOTAL</TableCell>
+                      <TableCell className="text-center">{selectedSectorReport?.total_shifts ?? 0}</TableCell>
+                      <TableCell className="text-center">{(selectedSectorReport?.total_hours ?? 0).toFixed(1)}h</TableCell>
+                      <TableCell className="text-center">{selectedSectorReport?.unpriced_shifts ?? 0}</TableCell>
+                      <TableCell className="text-right text-green-600">{formatCurrency(selectedSectorReport?.total_value ?? 0)}</TableCell>
+                    </TableRow>
                   </TableBody>
                 </Table>
               </div>

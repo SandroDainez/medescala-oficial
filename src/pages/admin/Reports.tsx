@@ -88,6 +88,8 @@ interface MovementRecord {
   destination_sector_name: string | null;
   destination_shift_date: string | null;
   destination_shift_time: string | null;
+  performed_by: string;
+  performed_by_name: string;
   performed_at: string;
   reason: string | null;
 }
@@ -186,6 +188,9 @@ export default function AdminReports() {
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [movementDeletePassword, setMovementDeletePassword] = useState('');
+  const [movementDeletePasswordError, setMovementDeletePasswordError] = useState('');
+  const [deletingMovements, setDeletingMovements] = useState(false);
 
   const fetchSectors = useCallback(async () => {
     const { data } = await supabase
@@ -217,7 +222,7 @@ export default function AdminReports() {
     }
   }, [currentTenantId]);
 
-  async function generateReport() {
+  const generateReport = useCallback(async () => {
     if (!currentTenantId) return;
     
     setLoading(true);
@@ -241,7 +246,7 @@ export default function AdminReports() {
       // Muda para a aba de relatório APÓS carregar os dados
       setActiveTab('report');
     }
-  }
+  }, [currentTenantId, reportType, selectedSector, startDate, endDate]);
 
   async function fetchShiftsReport() {
     let query = supabase
@@ -459,6 +464,18 @@ export default function AdminReports() {
       ? filteredByDate 
       : filteredByDate.filter(m => m.source_sector_id === selectedSector || m.destination_sector_id === selectedSector);
     
+    const adminIds = Array.from(new Set(filtered.map((m) => m.performed_by).filter(Boolean)));
+    let adminNameMap = new Map<string, string>();
+    if (adminIds.length > 0) {
+      const { data: adminProfiles } = await supabase
+        .from('profiles')
+        .select('id, full_name, name')
+        .in('id', adminIds);
+      adminNameMap = new Map(
+        ((adminProfiles as any[]) || []).map((p: any) => [p.id, p.full_name || p.name || 'Admin'])
+      );
+    }
+
     const movementRecords: MovementRecord[] = filtered.map(m => ({
       id: m.id,
       movement_type: m.movement_type,
@@ -469,6 +486,8 @@ export default function AdminReports() {
       destination_sector_name: m.destination_sector_name,
       destination_shift_date: m.destination_shift_date,
       destination_shift_time: m.destination_shift_time,
+      performed_by: m.performed_by,
+      performed_by_name: adminNameMap.get(m.performed_by) || 'Admin',
       performed_at: m.performed_at,
       reason: m.reason,
     }));
@@ -835,19 +854,34 @@ export default function AdminReports() {
   // Bulk delete functions
   async function handleDeleteMovements() {
     if (selectedMovements.size === 0) return;
-    const { error } = await supabase
-      .from('schedule_movements')
-      .delete()
-      .in('id', Array.from(selectedMovements));
-    
-    if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
-    } else {
-      toast({ title: `${selectedMovements.size} movimentação(ões) excluída(s)` });
-      setSelectedMovements(new Set());
-      fetchMovements();
+    if (!currentTenantId) return;
+    if (!movementDeletePassword.trim()) {
+      setMovementDeletePasswordError('Informe a senha de reabertura para excluir movimentações.');
+      return;
     }
+
+    setDeletingMovements(true);
+    setMovementDeletePasswordError('');
+
+    const { data, error } = await supabase.rpc('delete_schedule_movements_with_password', {
+      _tenant_id: currentTenantId,
+      _movement_ids: Array.from(selectedMovements),
+      _password: movementDeletePassword.trim(),
+    });
+
+    setDeletingMovements(false);
+    if (error) {
+      setMovementDeletePasswordError(error.message || 'Senha inválida ou sem permissão.');
+      return;
+    }
+
+    const deletedCount = Number(data || 0);
+    toast({ title: `${deletedCount} movimentação(ões) excluída(s)` });
+    setSelectedMovements(new Set());
+    setMovementDeletePassword('');
+    setMovementDeletePasswordError('');
     setDeleteMovementsDialogOpen(false);
+    fetchMovements();
   }
 
   async function handleDeleteConflicts() {
@@ -1005,6 +1039,17 @@ export default function AdminReports() {
     link.download = `relatorio_${reportType}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
   }
+
+  useEffect(() => {
+    if (!currentTenantId) return;
+    fetchSectors();
+    fetchUsers();
+  }, [currentTenantId, fetchSectors, fetchUsers]);
+
+  useEffect(() => {
+    if (!currentTenantId) return;
+    generateReport();
+  }, [currentTenantId, reportType, selectedSector, startDate, endDate, generateReport]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -1453,13 +1498,14 @@ export default function AdminReports() {
                           <TableHead>Plantonista</TableHead>
                           <TableHead>Origem</TableHead>
                           <TableHead>Destino</TableHead>
+                          <TableHead>Movimentado por</TableHead>
                           <TableHead>Motivo</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {movements.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                            <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                               Nenhuma movimentação encontrada no período
                             </TableCell>
                           </TableRow>
@@ -1505,9 +1551,12 @@ export default function AdminReports() {
                                     )}
                                   </div>
                                 ) : (
-                                  <span className="text-muted-foreground">-</span>
+                                  <Badge variant="outline" className="text-red-600 border-red-300">
+                                    Sem destino
+                                  </Badge>
                                 )}
                               </TableCell>
+                              <TableCell className="text-sm">{movement.performed_by_name}</TableCell>
                               <TableCell className="max-w-[200px] truncate">{movement.reason || '-'}</TableCell>
                             </TableRow>
                           ))
@@ -2212,13 +2261,35 @@ export default function AdminReports() {
             <DialogTitle>Excluir Movimentações</DialogTitle>
             <DialogDescription>
               Tem certeza que deseja excluir {selectedMovements.size} movimentação(ões)? Esta ação não pode ser desfeita.
+              <br />
+              Para excluir movimentações, informe a senha de reabertura.
             </DialogDescription>
           </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="movement-delete-password">Senha de reabertura</Label>
+            <Input
+              id="movement-delete-password"
+              type="password"
+              value={movementDeletePassword}
+              onChange={(e) => {
+                setMovementDeletePassword(e.target.value);
+                setMovementDeletePasswordError('');
+              }}
+              placeholder="Digite a senha..."
+            />
+            {movementDeletePasswordError ? (
+              <p className="text-sm text-destructive">{movementDeletePasswordError}</p>
+            ) : null}
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteMovementsDialogOpen(false)}>Cancelar</Button>
-            <Button variant="destructive" onClick={handleDeleteMovements}>
+            <Button variant="outline" onClick={() => {
+              setDeleteMovementsDialogOpen(false);
+              setMovementDeletePassword('');
+              setMovementDeletePasswordError('');
+            }}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDeleteMovements} disabled={deletingMovements}>
               <Trash2 className="h-4 w-4 mr-2" />
-              Excluir
+              {deletingMovements ? 'Excluindo...' : 'Excluir'}
             </Button>
           </DialogFooter>
         </DialogContent>

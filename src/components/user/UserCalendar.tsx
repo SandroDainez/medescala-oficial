@@ -55,7 +55,7 @@ interface ShiftAssignment {
   user_id: string;
   assigned_value: number;
   status: string;
-  profile: { name: string | null } | null;
+  profile: { name: string | null; full_name?: string | null } | null;
 }
 
 interface MySector {
@@ -94,6 +94,28 @@ export default function UserCalendar() {
   const [selectedTargetUser, setSelectedTargetUser] = useState<TenantMember | null>(null);
   const [swapReason, setSwapReason] = useState('');
   const [submittingSwap, setSubmittingSwap] = useState(false);
+  const [currentUserDisplayName, setCurrentUserDisplayName] = useState('Um usuário');
+
+  const enrichMembersWithFullNames = useCallback(async (members: TenantMember[]) => {
+    if (!members.length) return members;
+    const ids = members.map((m) => m.user_id);
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, full_name, name')
+      .in('id', ids);
+
+    const fullNameMap = new Map(
+      ((profilesData as any[]) ?? []).map((p: any) => [
+        p.id,
+        (p.full_name?.trim() || p.name?.trim() || '').toString(),
+      ])
+    );
+
+    return members.map((m) => ({
+      ...m,
+      name: fullNameMap.get(m.user_id) || m.name,
+    }));
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!currentTenantId || !user) return;
@@ -206,16 +228,40 @@ export default function UserCalendar() {
       setShifts(mergedShifts as unknown as Shift[]);
 
       // Build assignments from roster data
+      const rosterUserIds = Array.from(
+        new Set(
+          Array.from(rosterMap.values())
+            .flat()
+            .map((r) => r.user_id)
+            .filter(Boolean)
+        )
+      );
+      let fullNameByUserId = new Map<string, string>();
+      if (rosterUserIds.length) {
+        const { data: profilesData } = await supabase
+          .from('profiles')
+          .select('id, full_name, name')
+          .in('id', rosterUserIds);
+
+        fullNameByUserId = new Map(
+          ((profilesData as any[]) ?? []).map((p: any) => [
+            p.id,
+            (p.full_name?.trim() || p.name?.trim() || '').toString(),
+          ])
+        );
+      }
+
       const enrichedAssignments: ShiftAssignment[] = [];
       rosterMap.forEach((roster, shiftId) => {
         roster.forEach((r, idx) => {
+          const resolvedName = fullNameByUserId.get(r.user_id) || r.name || null;
           enrichedAssignments.push({
             id: `${shiftId}-${idx}`,
             shift_id: shiftId,
             user_id: r.user_id,
             assigned_value: 0, // Not needed for display
             status: r.status,
-            profile: { name: r.name },
+            profile: { name: resolvedName, full_name: resolvedName },
           });
         });
       });
@@ -230,6 +276,31 @@ export default function UserCalendar() {
       fetchData();
     }
   }, [currentTenantId, user, currentDate, fetchData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCurrentUserDisplayName() {
+      if (!user?.id) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name, name')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+
+      const fullName = (data as any)?.full_name?.trim();
+      const shortName = (data as any)?.name?.trim();
+      setCurrentUserDisplayName(fullName || shortName || 'Um usuário');
+    }
+
+    loadCurrentUserDisplayName();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
 
   // Filter shifts
   const mySectorIds = mySectors.map(ms => ms.sector_id);
@@ -286,7 +357,8 @@ export default function UserCalendar() {
         console.error('[UserCalendar] get_tenant_member_names error:', error);
         toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
       } else if (data) {
-        setTenantMembers((data as TenantMember[]).filter((m) => m.user_id !== user.id));
+        const members = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
+        setTenantMembers(await enrichMembersWithFullNames(members));
       }
       setLoadingMembers(false);
       return;
@@ -329,7 +401,7 @@ export default function UserCalendar() {
     const filtered = (allMembers as TenantMember[])
       .filter((m) => sectorUserIds.includes(m.user_id) && m.user_id !== user.id);
 
-    setTenantMembers(filtered);
+    setTenantMembers(await enrichMembersWithFullNames(filtered));
     setLoadingMembers(false);
   }
 
@@ -417,7 +489,7 @@ export default function UserCalendar() {
         shift_assignment_id: assignmentId,
         type: 'swap_request',
         title: 'Solicitação de Troca de Plantão',
-        message: `${user.user_metadata?.name || 'Um colega'} quer passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
+        message: `${currentUserDisplayName || 'Um colega'} quer passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
       });
 
     if (notifyError) {
@@ -445,7 +517,7 @@ export default function UserCalendar() {
             shift_assignment_id: assignmentId,
             type: 'swap_request_admin',
             title: 'Troca de plantão solicitada',
-            message: `${user.user_metadata?.name || 'Um usuário'} solicitou passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para ${selectedTargetUser.name}.`,
+            message: `${currentUserDisplayName || 'Um usuário'} solicitou passar o plantão "${selectedShiftForSwap.title}" do dia ${format(parseDateOnly(selectedShiftForSwap.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para ${selectedTargetUser.name}.`,
           }));
 
         if (adminNotifications.length) {

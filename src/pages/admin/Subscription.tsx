@@ -84,6 +84,12 @@ export default function Subscription() {
     ? (subscription.current_users / subscription.max_users) * 100 
     : 0;
 
+  const formatPlanRange = (minUsers: number, maxUsers: number) => {
+    if (maxUsers >= 999999) return `${minUsers}+ usuários`;
+    if (minUsers === maxUsers) return `${maxUsers} usuários`;
+    return `${minUsers} - ${maxUsers} usuários`;
+  };
+
   const getPlanIcon = (name: string) => {
     if (name.toLowerCase().includes('enterprise')) return <Crown className="h-6 w-6" />;
     if (name.toLowerCase().includes('profissional')) return <Zap className="h-6 w-6" />;
@@ -165,15 +171,14 @@ export default function Subscription() {
                     <CardTitle className="text-lg">{plan.name}</CardTitle>
                   </div>
                   <CardDescription>
-                    {plan.min_users === plan.max_users 
-                      ? `${plan.max_users} usuários`
-                      : `${plan.min_users} - ${plan.max_users} usuários`
-                    }
+                    {formatPlanRange(plan.min_users, plan.max_users)}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div>
-                    <span className="text-3xl font-bold">{plan.max_users}</span>
+                    <span className="text-3xl font-bold">
+                      {plan.max_users >= 999999 ? `${plan.min_users}+` : plan.max_users}
+                    </span>
                     <span className="text-muted-foreground ml-1">usuários</span>
                   </div>
 
