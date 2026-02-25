@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -25,7 +26,8 @@ import {
   Calendar,
   Loader2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { format, isToday, isTomorrow, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -78,6 +80,7 @@ export default function UserShifts() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
@@ -737,6 +740,8 @@ export default function UserShifts() {
                           const needsCheckout =
                             !myAssignment?.checkout_at &&
                             (Boolean(myAssignment?.checkin_at) || myAssignment?.status === 'confirmed');
+                          const canRequestSwap =
+                            !isShiftPast && (myAssignment.status === 'assigned' || myAssignment.status === 'confirmed');
 
                           return (
                             <div 
@@ -831,6 +836,19 @@ export default function UserShifts() {
                                         Check-out
                                       </Button>
                                     )}
+                                  </div>
+                                )}
+
+                                {canRequestSwap && (
+                                  <div className="flex-shrink-0">
+                                    <Button
+                                      size="sm"
+                                      variant="secondary"
+                                      onClick={() => navigate(`/app/swaps?assignment=${encodeURIComponent(myAssignment.id)}`)}
+                                    >
+                                      <ArrowRightLeft className="mr-2 h-4 w-4" />
+                                      Passar plantão
+                                    </Button>
                                   </div>
                                 )}
                               </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -86,6 +87,7 @@ export default function UserSwaps() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [selectedDay, setSelectedDay] = useState<string>('all');
   const [didAutoSelect, setDidAutoSelect] = useState(false);
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [selectUserDialogOpen, setSelectUserDialogOpen] = useState(false);
@@ -148,13 +150,37 @@ export default function UserSwaps() {
     const sortedDates = myAssignments
       .map((a) => parseDateOnly(a.shift.shift_date))
       .sort((a, b) => a.getTime() - b.getTime());
-    const firstShift = sortedDates[0];
-    if (firstShift) {
-      setSelectedMonth(firstShift.getMonth());
-      setSelectedYear(firstShift.getFullYear());
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const nearestFutureShift = sortedDates.find((d) => d >= today) || sortedDates[sortedDates.length - 1];
+
+    if (nearestFutureShift) {
+      setSelectedMonth(nearestFutureShift.getMonth());
+      setSelectedYear(nearestFutureShift.getFullYear());
       setDidAutoSelect(true);
     }
   }, [myAssignments, didAutoSelect]);
+
+  useEffect(() => {
+    const assignmentId = searchParams.get('assignment');
+    if (!assignmentId || myAssignments.length === 0) return;
+
+    const assignment = myAssignments.find((a) => a.id === assignmentId);
+    if (!assignment) {
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
+    const shiftDate = parseDateOnly(assignment.shift.shift_date);
+    setSelectedMonth(shiftDate.getMonth());
+    setSelectedYear(shiftDate.getFullYear());
+    setSelectedDay(assignment.shift.shift_date);
+    handleShiftClick(assignment);
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myAssignments, searchParams, setSearchParams]);
 
   const availableDays = useMemo(() => {
     const unique = Array.from(new Set(monthAssignments.map((a) => a.shift.shift_date))).sort();
