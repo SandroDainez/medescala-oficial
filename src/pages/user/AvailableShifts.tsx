@@ -176,7 +176,7 @@ export default function UserAvailableShifts() {
       return;
     }
 
-    const { error } = await supabase.rpc('claim_open_shift', {
+    const { error } = await (supabase as any).rpc('claim_open_shift', {
       _shift_id: selectedShift.id,
       _message: offerMessage.trim() || null,
     });

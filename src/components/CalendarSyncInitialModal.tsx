@@ -135,7 +135,7 @@ export function CalendarSyncInitialModal() {
       }
       
       // Marca como perguntado
-      localStorage.setItem(INITIAL_SYNC_ASKED_KEY, 'true');
+      localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
       
       // Fecha após mostrar sucesso
       setTimeout(() => {
@@ -153,7 +153,7 @@ export function CalendarSyncInitialModal() {
 
   const handleDismiss = () => {
     // Marca como perguntado mas não ativado
-    localStorage.setItem(INITIAL_SYNC_ASKED_KEY, 'true');
+    localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
     setOpen(false);
   };
 

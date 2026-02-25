@@ -270,7 +270,7 @@ export default function UserShifts() {
     }
 
     // Perform check-in with server-side validation (time window + GPS/radius rules)
-    const { error: rpcError } = await supabase.rpc('perform_shift_checkin', {
+    const { error: rpcError } = await (supabase as any).rpc('perform_shift_checkin', {
       _assignment_id: assignment.id,
       _latitude: latitude,
       _longitude: longitude,
@@ -334,7 +334,7 @@ export default function UserShifts() {
     }
 
     // Perform check-out with server-side validation (time window + GPS/radius rules)
-    const { error: rpcError } = await supabase.rpc('perform_shift_checkout', {
+    const { error: rpcError } = await (supabase as any).rpc('perform_shift_checkout', {
       _assignment_id: assignment.id,
       _latitude: latitude,
       _longitude: longitude,

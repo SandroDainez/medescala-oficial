@@ -67,13 +67,14 @@ export default function Subscription() {
   }, [currentTenantId, fetchSubscription, fetchPlans]);
 
   const handleUpgrade = async (planId: string) => {
-    const { error } = await supabase
-      .from('tenants')
-      .update({ plan_id: planId })
-      .eq('id', currentTenantId);
+    if (!currentTenantId) return;
+    const { error } = await (supabase as any).rpc('upgrade_tenant_plan', {
+      _tenant_id: currentTenantId,
+      _plan_id: planId,
+    });
 
     if (error) {
-      toast.error('Erro ao atualizar plano');
+      toast.error(error.message || 'Erro ao atualizar plano');
     } else {
       toast.success('Plano atualizado com sucesso!');
       fetchSubscription();

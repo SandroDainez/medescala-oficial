@@ -115,6 +115,13 @@ interface TenantReopenPasswordStatus {
   updated_by: string | null;
 }
 
+interface PlanOption {
+  id: string;
+  name: string;
+  min_users: number;
+  max_users: number;
+}
+
 export default function SuperAdmin() {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -142,6 +149,7 @@ export default function SuperAdmin() {
   const [tenantAdminContacts, setTenantAdminContacts] = useState<TenantAdminContact[]>([]);
   const [tenantBillingEvents, setTenantBillingEvents] = useState<TenantBillingEvent[]>([]);
   const [tenantReopenPasswordStatus, setTenantReopenPasswordStatus] = useState<TenantReopenPasswordStatus | null>(null);
+  const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
   const [billingFormAmount, setBillingFormAmount] = useState('');
   const [billingFormStatus, setBillingFormStatus] = useState('pending');
   const [billingFormReferenceDate, setBillingFormReferenceDate] = useState('');
@@ -157,6 +165,7 @@ export default function SuperAdmin() {
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
   const [editIsUnlimited, setEditIsUnlimited] = useState(false);
+  const [editPlanId, setEditPlanId] = useState('');
   const [editTrialMonths, setEditTrialMonths] = useState(1);
   const [editTrialEndsAtDate, setEditTrialEndsAtDate] = useState('');
 
@@ -242,6 +251,25 @@ export default function SuperAdmin() {
     }
 
     setSuperAdmins((data || []) as SuperAdminAccess[]);
+  }, [toast]);
+
+  const fetchPlanOptions = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('plans')
+      .select('id, name, min_users, max_users')
+      .eq('active', true)
+      .order('max_users', { ascending: true });
+
+    if (error) {
+      toast({
+        title: 'Erro ao carregar planos',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setPlanOptions((data || []) as PlanOption[]);
   }, [toast]);
 
   const handleGrantSuperAdmin = useCallback(async () => {
@@ -509,24 +537,32 @@ export default function SuperAdmin() {
 
     setIsSuperAdmin(true);
     setIsAppOwner(Boolean(isOwner));
-    await Promise.all([fetchTenants(), fetchSuperAdmins()]);
+    await Promise.all([fetchTenants(), fetchSuperAdmins(), fetchPlanOptions()]);
     setLoading(false);
-  }, [user, fetchTenants, fetchSuperAdmins]);
+  }, [user, fetchTenants, fetchSuperAdmins, fetchPlanOptions]);
 
   useEffect(() => {
     checkSuperAdminAndFetch();
   }, [checkSuperAdminAndFetch]);
 
   function openEditDialog(tenant: Tenant) {
+    const matchedPlan = planOptions.find((p) => p.name === tenant.plan_name);
     setSelectedTenant(tenant);
     setEditBillingStatus(tenant.billing_status);
     setEditIsUnlimited(tenant.is_unlimited);
+    setEditPlanId(matchedPlan?.id || '');
     setEditTrialMonths(1);
     setEditTrialEndsAtDate(
       tenant.trial_ends_at ? format(new Date(tenant.trial_ends_at), 'yyyy-MM-dd') : ''
     );
     setEditDialogOpen(true);
   }
+
+  useEffect(() => {
+    if (!editDialogOpen || !selectedTenant || editPlanId || planOptions.length === 0) return;
+    const matchedPlan = planOptions.find((p) => p.name === selectedTenant.plan_name);
+    if (matchedPlan) setEditPlanId(matchedPlan.id);
+  }, [editDialogOpen, selectedTenant, editPlanId, planOptions]);
 
   async function handleSaveChanges() {
     if (!selectedTenant) return;
@@ -553,6 +589,23 @@ export default function SuperAdmin() {
       _trial_ends_at: newTrialEndsAt,
       _clear_trial_ends_at: clearTrialEndsAt,
     });
+
+    if (!error && editPlanId) {
+      const { error: planError } = await (supabase as any).rpc('super_admin_set_tenant_plan', {
+        _tenant_id: selectedTenant.id,
+        _plan_id: editPlanId,
+      });
+
+      if (planError) {
+        setSaving(false);
+        toast({
+          title: 'Erro ao atualizar plano',
+          description: planError.message,
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
 
     setSaving(false);
 
@@ -1104,6 +1157,22 @@ export default function SuperAdmin() {
 
             {!editIsUnlimited && (
               <>
+                <div className="space-y-2">
+                  <Label>Plano</Label>
+                  <Select value={editPlanId} onValueChange={setEditPlanId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione um plano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {planOptions.map((plan) => (
+                        <SelectItem key={plan.id} value={plan.id}>
+                          {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '200+' : plan.max_users})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <Select value={editBillingStatus} onValueChange={setEditBillingStatus}>

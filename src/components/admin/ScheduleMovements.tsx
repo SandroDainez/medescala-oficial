@@ -253,7 +253,7 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
             altMessage.includes('schema cache');
           if (!canUseLegacy) throw altError;
 
-          const { data: legacyValid, error: legacyError } = await supabase
+          const { data: legacyValid, error: legacyError } = await (supabase as any)
             // Legacy signature used in older databases.
             .rpc('verify_schedule_reopen_password', { _password: password });
 
