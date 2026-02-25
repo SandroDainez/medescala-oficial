@@ -1084,7 +1084,7 @@ export default function SuperAdmin() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar Acesso - {selectedTenant?.name}</DialogTitle>
           </DialogHeader>
@@ -1168,7 +1168,7 @@ export default function SuperAdmin() {
       </Dialog>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent>
+        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Adicionar Hospital/Serviço</DialogTitle>
           </DialogHeader>
@@ -1216,16 +1216,18 @@ export default function SuperAdmin() {
       </Dialog>
 
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle>
-              Painel do Hospital - {selectedTenant?.name || 'Hospital'}
-            </DialogTitle>
-          </DialogHeader>
-          {detailsLoading ? (
-            <div className="py-10 text-center text-muted-foreground">Carregando detalhes...</div>
-          ) : (
-            <div className="space-y-5">
+        <DialogContent className="w-[96vw] max-w-5xl h-[88vh] p-0">
+          <div className="flex h-full flex-col">
+            <DialogHeader className="shrink-0">
+              <DialogTitle>
+                Painel do Hospital - {selectedTenant?.name || 'Hospital'}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              {detailsLoading ? (
+                <div className="py-10 text-center text-muted-foreground">Carregando detalhes...</div>
+              ) : (
+                <div className="space-y-5">
               <div className="grid gap-3 md:grid-cols-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -1427,8 +1429,10 @@ export default function SuperAdmin() {
                   )}
                 </CardContent>
               </Card>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
