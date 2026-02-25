@@ -105,7 +105,7 @@ export default function UserSectorValuesDialog({
       // 3) Get memberships to check profile_type (only for sector members)
       const { data: membershipsWithProfiles, error: membershipsError } = await supabase
         .from('memberships')
-        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type)')
+        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type, full_name, name)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
         .in('user_id', sectorUserIds);
@@ -116,9 +116,15 @@ export default function UserSectorValuesDialog({
 
       // Build a set of plantonista user_ids (or fall back to all sector members if profiles failed)
       const plantonistaIds = new Set<string>();
+      const profileNameMap = new Map<string, string>();
       if (membershipsWithProfiles && membershipsWithProfiles.length > 0) {
         membershipsWithProfiles.forEach((m: any) => {
           const profile = m.profiles;
+          const fullName = profile?.full_name?.trim();
+          const shortName = profile?.name?.trim();
+          if (fullName || shortName) {
+            profileNameMap.set(m.user_id, fullName || shortName);
+          }
           // If profile is visible, enforce profile_type.
           // If profile comes back null (common with restrictive RLS), don't hide the user here;
           // otherwise the dialog incorrectly shows "Nenhum plantonista" even when sector has members.
@@ -137,7 +143,7 @@ export default function UserSectorValuesDialog({
         .filter(userId => plantonistaIds.has(userId))
         .map(userId => ({
           user_id: userId,
-          user_name: memberNameMap.get(userId) || 'Sem nome',
+          user_name: profileNameMap.get(userId) || memberNameMap.get(userId) || 'Sem nome',
         }))
         .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
       
