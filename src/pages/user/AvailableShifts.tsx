@@ -104,7 +104,11 @@ export default function UserAvailableShifts() {
       });
     }
 
-    const takenShiftIds = new Set((rosterData || []).map((r: { shift_id: string }) => r.shift_id));
+    const takenShiftIds = new Set(
+      (rosterData || [])
+        .filter((r: { shift_id: string; status?: string | null }) => r.status !== 'cancelled')
+        .map((r: { shift_id: string }) => r.shift_id)
+    );
 
     // Check which of those are mine (for badge display purposes)
     const { data: myAssignmentsData } = await supabase
