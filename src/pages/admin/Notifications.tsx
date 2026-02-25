@@ -112,14 +112,15 @@ export default function AdminNotifications() {
     // Fetch members
     const { data: membersData } = await supabase
       .from('memberships')
-      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name, profile_type)')
+      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
 
     if (membersData) {
       setMembers(membersData.map(m => ({
+        // Sempre prioriza nome completo quando existir
         user_id: m.user_id,
-        name: (m.profile as any)?.name || 'Sem nome',
+        name: (m.profile as any)?.full_name?.trim() || (m.profile as any)?.name || 'Sem nome',
         role: m.role,
         profile_type: (m.profile as any)?.profile_type ?? null,
       })));
@@ -162,10 +163,12 @@ export default function AdminNotifications() {
       const userIds = [...new Set(notifsData.map(n => n.user_id))];
       const { data: profilesData } = await supabase
         .from('profiles')
-        .select('id, name')
+        .select('id, full_name, name')
         .in('id', userIds);
 
-      const profileMap = new Map(profilesData?.map(p => [p.id, p.name]) || []);
+      const profileMap = new Map(
+        (profilesData || []).map((p: any) => [p.id, p.full_name?.trim() || p.name || 'Desconhecido'])
+      );
       
       setSentNotifications(notifsData.map(n => ({
         ...n,
