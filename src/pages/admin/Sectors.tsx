@@ -39,6 +39,7 @@ interface Member {
   profile: {
     id: string;
     name: string | null;
+    full_name: string | null;
     profile_type: string | null;
   } | null;
 }
@@ -68,6 +69,7 @@ export default function AdminSectors() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
   const [selectedSectorForCheckin, setSelectedSectorForCheckin] = useState<Sector | null>(null);
+  const [selectedConfigSectorId, setSelectedConfigSectorId] = useState<string>('');
   
   // Month/Year for individual values dialog
   const [userValuesMonth, setUserValuesMonth] = useState<number>(new Date().getMonth() + 1);
@@ -101,7 +103,7 @@ export default function AdminSectors() {
         .order('name'),
       supabase
         .from('memberships')
-        .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, profile_type)')
+        .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
         .eq('tenant_id', currentTenantId)
         .eq('active', true),
       supabase
@@ -122,6 +124,12 @@ export default function AdminSectors() {
       fetchData();
     }
   }, [currentTenantId, fetchData]);
+
+  useEffect(() => {
+    if (!selectedConfigSectorId && sectors.length > 0) {
+      setSelectedConfigSectorId(sectors[0].id);
+    }
+  }, [sectors, selectedConfigSectorId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -395,10 +403,7 @@ export default function AdminSectors() {
     );
   }
 
-  const formatCurrency = (value: number | null | undefined) => {
-    if (value === null || value === undefined) return '-';
-    return `R$ ${value.toFixed(2).replace('.', ',')}`;
-  };
+  const selectedConfigSector = sectors.find((s) => s.id === selectedConfigSectorId) || null;
 
   if (loading) {
     return (
@@ -524,47 +529,123 @@ export default function AdminSectors() {
         </Card>
       </div>
 
-      {/* Month/Year Selector for Individual Values */}
-      <Card className="p-4 border-border/60">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm font-medium">Mês/Ano para Valores Individuais:</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <select
-              value={userValuesMonth}
-              onChange={(e) => setUserValuesMonth(Number(e.target.value))}
-              className="px-3 py-1.5 text-sm border rounded-md bg-background"
-            >
-              <option value={1}>Janeiro</option>
-              <option value={2}>Fevereiro</option>
-              <option value={3}>Março</option>
-              <option value={4}>Abril</option>
-              <option value={5}>Maio</option>
-              <option value={6}>Junho</option>
-              <option value={7}>Julho</option>
-              <option value={8}>Agosto</option>
-              <option value={9}>Setembro</option>
-              <option value={10}>Outubro</option>
-              <option value={11}>Novembro</option>
-              <option value={12}>Dezembro</option>
-            </select>
-            <select
-              value={userValuesYear}
-              onChange={(e) => setUserValuesYear(Number(e.target.value))}
-              className="px-3 py-1.5 text-sm border rounded-md bg-background"
-            >
-              {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
-          </div>
-          <span className="text-xs text-muted-foreground">
-            Os valores individuais editados valem apenas para o mês/ano selecionado.
-          </span>
-        </div>
-      </Card>
+      {/* Dedicated cards for Values and GPS Check-ins */}
+      <div className="grid gap-5 lg:grid-cols-2">
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <DollarSign className="h-5 w-5 text-primary" />
+              Valores de Plantões
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Configure valores padrão e individuais por setor em um bloco dedicado.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Setor</Label>
+              <select
+                value={selectedConfigSectorId}
+                onChange={(e) => setSelectedConfigSectorId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+              >
+                {sectors.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => selectedConfigSector && openValuesDialog(selectedConfigSector)}
+                disabled={!selectedConfigSector}
+              >
+                <DollarSign className="mr-1 h-4 w-4" />
+                Valores Padrão
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => selectedConfigSector && openUserValuesDialog(selectedConfigSector)}
+                disabled={!selectedConfigSector}
+              >
+                <UserCog className="mr-1 h-4 w-4" />
+                Valores Individuais
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">Mês/Ano dos individuais:</span>
+              <select
+                value={userValuesMonth}
+                onChange={(e) => setUserValuesMonth(Number(e.target.value))}
+                className="px-2 py-1 text-xs border rounded-md bg-background"
+              >
+                <option value={1}>Jan</option>
+                <option value={2}>Fev</option>
+                <option value={3}>Mar</option>
+                <option value={4}>Abr</option>
+                <option value={5}>Mai</option>
+                <option value={6}>Jun</option>
+                <option value={7}>Jul</option>
+                <option value={8}>Ago</option>
+                <option value={9}>Set</option>
+                <option value={10}>Out</option>
+                <option value={11}>Nov</option>
+                <option value={12}>Dez</option>
+              </select>
+              <select
+                value={userValuesYear}
+                onChange={(e) => setUserValuesYear(Number(e.target.value))}
+                className="px-2 py-1 text-xs border rounded-md bg-background"
+              >
+                {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-border/60">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              Check-ins GPS
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Ative/desative e ajuste raio, tolerância e coordenadas por setor.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Setor</Label>
+              <select
+                value={selectedConfigSectorId}
+                onChange={(e) => setSelectedConfigSectorId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+              >
+                {sectors.map((s) => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => selectedConfigSector && openCheckinDialog(selectedConfigSector)}
+                disabled={!selectedConfigSector}
+              >
+                <MapPin className="mr-1 h-4 w-4" />
+                Configurar GPS
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => navigate('/admin/checkins')}>
+                Ver relatórios
+                <ExternalLink className="ml-1 h-4 w-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Sectors Table */}
       <Card className="overflow-hidden border-border/60">
@@ -581,8 +662,6 @@ export default function AdminSectors() {
                 <TableHead className="w-16">Cor</TableHead>
                 <TableHead>Nome</TableHead>
                 <TableHead className="hidden md:table-cell">Descrição</TableHead>
-                <TableHead>Valores</TableHead>
-                <TableHead>Check-in</TableHead>
                 <TableHead>Membros</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -591,7 +670,7 @@ export default function AdminSectors() {
             <TableBody>
               {sectors.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="h-32">
+                  <TableCell colSpan={6} className="h-32">
                     <div className="flex flex-col items-center justify-center text-muted-foreground">
                       <Building2 className="h-10 w-10 mb-2 opacity-40" />
                       <p>Nenhum setor cadastrado.</p>
@@ -615,37 +694,6 @@ export default function AdminSectors() {
                       {sector.description || '-'}
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <span className="w-4 h-4 rounded bg-warning-light flex items-center justify-center text-warning font-bold">D</span>
-                          <span className="font-medium">{formatCurrency(sector.default_day_value)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-xs">
-                          <span className="w-4 h-4 rounded bg-info-light flex items-center justify-center text-info font-bold">N</span>
-                          <span className="font-medium">{formatCurrency(sector.default_night_value)}</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <button
-                        onClick={() => openCheckinDialog(sector)}
-                        className="flex flex-col gap-1 hover:opacity-80 transition-opacity cursor-pointer"
-                        title="Clique para configurar check-in e GPS"
-                      >
-                        <Badge 
-                          variant={sector.checkin_enabled ? 'success' : 'secondary'}
-                        >
-                          {sector.checkin_enabled ? 'Ativo' : 'Inativo'}
-                        </Badge>
-                        {sector.checkin_enabled && sector.require_gps_checkin && (
-                          <Badge variant="info" className="text-xs">
-                            <MapPin className="mr-1 h-3 w-3" />
-                            {sector.allowed_checkin_radius_meters || 500}m
-                          </Badge>
-                        )}
-                      </button>
-                    </TableCell>
-                    <TableCell>
                       <Badge variant="secondary" className="font-semibold">
                         <Users className="mr-1.5 h-3 w-3" />
                         {getMemberCount(sector.id)}
@@ -658,24 +706,6 @@ export default function AdminSectors() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openValuesDialog(sector)}
-                          title="Configurar valores"
-                        >
-                          <DollarSign className="mr-1 h-4 w-4" />
-                          Valores
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openUserValuesDialog(sector)}
-                          title="Valores individuais por plantonista"
-                        >
-                          <UserCog className="mr-1 h-4 w-4" />
-                          Individual
-                        </Button>
                         <Button
                           variant="outline"
                           size="sm"
@@ -792,9 +822,13 @@ export default function AdminSectors() {
             <div className="space-y-2 max-h-[300px] overflow-y-auto border rounded-lg p-2">
               {members
                 .filter(m => (m.profile?.profile_type || '') === 'plantonista')
-                .sort((a, b) => (a.profile?.name || '').localeCompare(b.profile?.name || '', 'pt-BR'))
+                .sort((a, b) => {
+                  const nameA = (a.profile?.full_name || a.profile?.name || '').trim();
+                  const nameB = (b.profile?.full_name || b.profile?.name || '').trim();
+                  return nameA.localeCompare(nameB, 'pt-BR');
+                })
                 .map((member) => {
-                  const displayName = member.profile?.name || 'Sem nome';
+                  const displayName = (member.profile?.full_name || member.profile?.name || 'Sem nome').trim();
 
                   return (
                     <div

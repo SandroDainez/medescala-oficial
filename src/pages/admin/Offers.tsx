@@ -251,9 +251,9 @@ export default function AdminOffers() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Hand className="h-6 w-6 text-primary" />
-            Ofertas de Plantão
+            Candidaturas de Plantão
           </h1>
-          <p className="text-muted-foreground">Gerencie solicitações dos plantonistas para ofertas</p>
+          <p className="text-muted-foreground">Gerencie solicitações dos plantonistas para plantões disponíveis</p>
         </div>
         {pendingOffers.length > 0 && (
           <Badge variant="destructive" className="text-lg px-4 py-2">
@@ -278,7 +278,7 @@ export default function AdminOffers() {
         <TabsContent value="pending">
           <Card>
             <CardHeader>
-              <CardTitle>Ofertas Pendentes</CardTitle>
+              <CardTitle>Candidaturas Pendentes</CardTitle>
               <CardDescription>Aceite ou recuse as solicitações</CardDescription>
             </CardHeader>
             <CardContent>
@@ -393,7 +393,7 @@ export default function AdminOffers() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Histórico de Ofertas</CardTitle>
+                <CardTitle>Histórico de Candidaturas</CardTitle>
                 <CardDescription>Solicitações já processadas</CardDescription>
               </div>
               <Button 

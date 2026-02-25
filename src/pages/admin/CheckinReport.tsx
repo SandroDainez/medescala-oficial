@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useNavigate } from 'react-router-dom';
 import { useTenant } from '@/hooks/useTenant';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -56,6 +57,7 @@ function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number)
 }
 
 export default function CheckinReport() {
+  const navigate = useNavigate();
   const { currentTenantId } = useTenant();
   const [loading, setLoading] = useState(true);
   const [records, setRecords] = useState<CheckinRecord[]>([]);
@@ -239,10 +241,16 @@ export default function CheckinReport() {
             Acompanhe os registros de entrada e saída dos plantonistas por setor
           </p>
         </div>
-        <Button onClick={exportToCSV} variant="outline" className="gap-2">
-          <Download className="h-4 w-4" />
-          Exportar CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => navigate('/admin/sectors')} variant="outline" className="gap-2">
+            <MapPin className="h-4 w-4" />
+            Configurar por setor
+          </Button>
+          <Button onClick={exportToCSV} variant="outline" className="gap-2">
+            <Download className="h-4 w-4" />
+            Exportar CSV
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

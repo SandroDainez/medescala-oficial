@@ -355,15 +355,15 @@ export default function AdminSwaps() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-2xl font-bold text-foreground">Trocas e Ofertas</h2>
-        <p className="text-muted-foreground">Gerencie solicitações de troca e ofertas para plantões disponíveis</p>
+        <h2 className="text-2xl font-bold text-foreground">Trocas e Candidaturas</h2>
+        <p className="text-muted-foreground">Gerencie solicitações de troca e candidaturas para plantões disponíveis</p>
       </div>
 
-      <Tabs defaultValue="offers" className="space-y-4">
+      <Tabs defaultValue="swaps" className="space-y-4">
         <TabsList>
           <TabsTrigger value="offers" className="flex items-center gap-2">
             <Hand className="h-4 w-4" />
-            Ofertas
+            Candidaturas
             {pendingOffers.length > 0 && (
               <Badge variant="destructive" className="ml-1 h-5 px-1.5">
                 {pendingOffers.length}
