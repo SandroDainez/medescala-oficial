@@ -156,6 +156,13 @@
     --shadow-card-hover: 0 10px 20px -5px hsl(220 30% 12% / 0.1), 0 4px 6px -4px hsl(220 30% 12% / 0.04);
     --shadow-inset: inset 0 2px 4px 0 hsl(220 30% 12% / 0.05);
     --shadow-glow: 0 0 20px hsl(160 84% 32% / 0.2);
+
+    --gradient-header: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 97%) 100%);
+    --gradient-sidebar: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 18% 96%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
+    --gradient-glow:
+      radial-gradient(ellipse at top, hsl(160 84% 32% / 0.08) 0%, transparent 60%),
+      radial-gradient(ellipse at 20% 80%, hsl(200 100% 50% / 0.05) 0%, transparent 50%);
   }
 }
 
@@ -170,10 +177,18 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-    color-scheme: dark;
+    color-scheme: light dark;
     /* Prevent text size adjustment on orientation change */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  .light {
+    color-scheme: light;
   }
 
   body {
