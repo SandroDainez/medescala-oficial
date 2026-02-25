@@ -150,6 +150,7 @@ export default function SuperAdmin() {
   const [tenantBillingEvents, setTenantBillingEvents] = useState<TenantBillingEvent[]>([]);
   const [tenantReopenPasswordStatus, setTenantReopenPasswordStatus] = useState<TenantReopenPasswordStatus | null>(null);
   const [planOptions, setPlanOptions] = useState<PlanOption[]>([]);
+  const [detailsPlanId, setDetailsPlanId] = useState('');
   const [billingFormAmount, setBillingFormAmount] = useState('');
   const [billingFormStatus, setBillingFormStatus] = useState('pending');
   const [billingFormReferenceDate, setBillingFormReferenceDate] = useState('');
@@ -157,6 +158,7 @@ export default function SuperAdmin() {
   const [billingFormNotes, setBillingFormNotes] = useState('');
   const [savingBillingEvent, setSavingBillingEvent] = useState(false);
   const [deletingBillingEventId, setDeletingBillingEventId] = useState<string | null>(null);
+  const [savingDetailsPlan, setSavingDetailsPlan] = useState(false);
   
   const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
   const [grantEmail, setGrantEmail] = useState('');
@@ -367,12 +369,37 @@ export default function SuperAdmin() {
   }, [toast]);
 
   const handleOpenDetails = useCallback(async (tenant: Tenant) => {
+    const matchedPlan = planOptions.find((p) => p.name === tenant.plan_name);
+    setDetailsPlanId(matchedPlan?.id || '');
     setSelectedTenant(tenant);
     setDetailsDialogOpen(true);
     resetBillingForm();
     setTenantReopenPasswordStatus(null);
     await fetchTenantDetails(tenant.id);
-  }, [fetchTenantDetails, resetBillingForm]);
+  }, [fetchTenantDetails, resetBillingForm, planOptions]);
+
+  async function handleSaveDetailsPlan() {
+    if (!selectedTenant?.id || !detailsPlanId) return;
+    setSavingDetailsPlan(true);
+    const { error } = await (supabase as any).rpc('super_admin_set_tenant_plan', {
+      _tenant_id: selectedTenant.id,
+      _plan_id: detailsPlanId,
+    });
+    setSavingDetailsPlan(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao atualizar plano',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Plano do hospital atualizado' });
+    await fetchTenants();
+    await fetchTenantDetails(selectedTenant.id);
+  }
 
   const handleCreateTenant = useCallback(async () => {
     const name = createName.trim();
@@ -1288,9 +1315,9 @@ export default function SuperAdmin() {
       </Dialog>
 
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="w-[96vw] max-w-5xl h-[88vh] p-0">
+        <DialogContent className="w-[96vw] max-w-5xl h-[88vh] max-h-[88vh] overflow-hidden p-0">
           <div className="flex h-full flex-col">
-            <DialogHeader className="shrink-0">
+            <DialogHeader className="shrink-0 px-4 pt-4 sm:px-6">
               <DialogTitle>
                 Painel do Hospital - {selectedTenant?.name || 'Hospital'}
               </DialogTitle>
@@ -1300,6 +1327,31 @@ export default function SuperAdmin() {
                 <div className="py-10 text-center text-muted-foreground">Carregando detalhes...</div>
               ) : (
                 <div className="space-y-5">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Plano de Assinatura</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                    <Select value={detailsPlanId} onValueChange={setDetailsPlanId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um plano" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {planOptions.map((plan) => (
+                          <SelectItem key={plan.id} value={plan.id}>
+                            {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '201+' : plan.max_users})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={handleSaveDetailsPlan} disabled={!detailsPlanId || savingDetailsPlan}>
+                      {savingDetailsPlan ? 'Salvando...' : 'Salvar plano'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
               <div className="grid gap-3 md:grid-cols-4">
                 <Card>
                   <CardHeader className="pb-2">
