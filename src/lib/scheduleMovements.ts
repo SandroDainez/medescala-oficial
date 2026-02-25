@@ -25,23 +25,42 @@ export async function recordScheduleMovement(params: {
   performed_by: string;
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    // Check if schedule is finalized for the relevant sector
-    // For removals, check the source sector; for additions, check the destination sector
-    const sectorIdToCheck = params.movement_type === 'removed'
-      ? params.source_sector_id
-      : params.destination_sector_id;
+    const isSectorFinalized = async (sectorId?: string | null): Promise<boolean> => {
+      let query = supabase
+        .from('schedule_finalizations')
+        .select('id')
+        .eq('tenant_id', params.tenant_id)
+        .eq('month', params.month)
+        .eq('year', params.year);
 
-    const { data: finalization } = await supabase
-      .from('schedule_finalizations')
-      .select('id')
-      .eq('tenant_id', params.tenant_id)
-      .eq('month', params.month)
-      .eq('year', params.year)
-      .eq('sector_id', sectorIdToCheck || '')
-      .maybeSingle();
+      if (sectorId) {
+        query = query.eq('sector_id', sectorId);
+      } else {
+        query = query.is('sector_id', null);
+      }
 
-    // Only record if schedule is finalized for this sector
-    if (!finalization) {
+      const { data } = await query.maybeSingle();
+      return !!data;
+    };
+
+    // Only record movement when there is finalization in the relevant scope:
+    // - removed: source sector finalized
+    // - added: destination sector finalized
+    // - transferred: source OR destination sector finalized
+    let shouldRecord = false;
+    if (params.movement_type === 'removed') {
+      shouldRecord = await isSectorFinalized(params.source_sector_id);
+    } else if (params.movement_type === 'added') {
+      shouldRecord = await isSectorFinalized(params.destination_sector_id);
+    } else {
+      const [sourceFinalized, destinationFinalized] = await Promise.all([
+        isSectorFinalized(params.source_sector_id),
+        isSectorFinalized(params.destination_sector_id),
+      ]);
+      shouldRecord = sourceFinalized || destinationFinalized;
+    }
+
+    if (!shouldRecord) {
       return { success: true }; // Not an error, just don't record
     }
 

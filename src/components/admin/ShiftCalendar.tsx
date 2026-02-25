@@ -1,9 +1,9 @@
-import react, { useState, useEffect, useRef, useCallback } from 'react';
+import react, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
@@ -108,6 +108,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Dialogs
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
+  const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
 
@@ -305,6 +306,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     user_id: '',
     assigned_value: '',
   });
+  const [transferAssignment, setTransferAssignment] = useState<ShiftAssignment | null>(null);
+  const [transferSourceShift, setTransferSourceShift] = useState<Shift | null>(null);
+  const [transferTargetShiftId, setTransferTargetShiftId] = useState('');
+  const [transferring, setTransferring] = useState(false);
 
   // Update filter when initialSectorId changes (from URL)
   useEffect(() => {
@@ -865,6 +870,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const member = members.find((m) => m.user_id === offer.user_id);
     return getMemberDisplayName(member);
   }
+
+  function getUserSectorIds(userId: string): string[] {
+    return sectorMemberships.filter((sm) => sm.user_id === userId).map((sm) => sm.sector_id);
+  }
+
+  function openTransferDialog(assignment: ShiftAssignment, sourceShift: Shift) {
+    setTransferAssignment(assignment);
+    setTransferSourceShift(sourceShift);
+    setTransferTargetShiftId('');
+    setTransferDialogOpen(true);
+  }
+
+  const transferTargetCandidates = useMemo(() => {
+    if (!transferAssignment || !transferSourceShift) return [];
+    const userId = transferAssignment.user_id;
+    const memberSectors = new Set(getUserSectorIds(userId));
+
+    return shifts
+      .filter((s) => s.id !== transferSourceShift.id)
+      .filter((s) => !!s.sector_id)
+      .filter((s) => s.sector_id !== transferSourceShift.sector_id)
+      .filter((s) => (s.sector_id ? memberSectors.has(s.sector_id) : false))
+      .filter((s) => !assignments.some((a) => a.shift_id === s.id && a.user_id === userId))
+      .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`));
+  }, [transferAssignment, transferSourceShift, shifts, assignments, sectorMemberships]);
 
   // Get pending offers for a shift
   function getOffersForShift(shiftId: string) {
@@ -2023,6 +2053,135 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
       toast({ title: 'Usuário removido do plantão!' });
       fetchData();
+    }
+  }
+
+  async function handleTransferAssignment() {
+    if (!currentTenantId || !user?.id || !transferAssignment || !transferSourceShift || !transferTargetShiftId) return;
+
+    const targetShift = shifts.find((s) => s.id === transferTargetShiftId);
+    if (!targetShift) {
+      toast({ title: 'Plantão de destino inválido', variant: 'destructive' });
+      return;
+    }
+
+    const userId = transferAssignment.user_id;
+    if (!isUserAllowedInSector(userId, transferSourceShift.sector_id || null)) {
+      toast({
+        title: 'Transferência bloqueada',
+        description: 'O plantonista não pertence ao setor de origem.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (!isUserAllowedInSector(userId, targetShift.sector_id || null)) {
+      toast({
+        title: 'Transferência bloqueada',
+        description: 'Só é permitido migrar para setores dos quais o plantonista faz parte.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (targetShift.sector_id === transferSourceShift.sector_id) {
+      toast({
+        title: 'Selecione outro setor',
+        description: 'A migração deve ser para um plantão de outro setor.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    if (assignments.some((a) => a.shift_id === targetShift.id && a.user_id === userId)) {
+      toast({
+        title: 'Plantonista já está no destino',
+        description: 'Escolha outro plantão de destino.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setTransferring(true);
+    try {
+      const assignedValueForTarget =
+        transferAssignment.assigned_value !== null
+          ? transferAssignment.assigned_value
+          : resolveValue({
+              raw: '',
+              sector_id: targetShift.sector_id || null,
+              start_time: targetShift.start_time,
+              end_time: targetShift.end_time,
+              user_id: userId,
+              useSectorDefault: true,
+              applyProRata: true,
+            });
+
+      const { data: inserted, error: insertError } = await supabase
+        .from('shift_assignments')
+        .upsert(
+          {
+            tenant_id: currentTenantId,
+            shift_id: targetShift.id,
+            user_id: userId,
+            assigned_value: assignedValueForTarget,
+            updated_by: user.id,
+          },
+          { onConflict: 'shift_id,user_id' }
+        )
+        .select('id')
+        .single();
+
+      if (insertError || !inserted?.id) throw insertError || new Error('Falha ao criar atribuição no destino');
+
+      const { data: deletedRows, error: deleteError } = await supabase
+        .from('shift_assignments')
+        .delete()
+        .eq('id', transferAssignment.id)
+        .select('id');
+
+      if (deleteError) throw deleteError;
+      if (!deletedRows || deletedRows.length === 0) {
+        throw new Error('Não foi possível remover a atribuição de origem.');
+      }
+
+      const userName = getAssignmentName(transferAssignment);
+      const shiftDate = parseISO(transferSourceShift.shift_date);
+      await recordScheduleMovement({
+        tenant_id: currentTenantId,
+        month: shiftDate.getMonth() + 1,
+        year: shiftDate.getFullYear(),
+        user_id: userId,
+        user_name: userName,
+        movement_type: 'transferred',
+        source_sector_id: transferSourceShift.sector_id || null,
+        source_sector_name: getSectorName(transferSourceShift.sector_id, transferSourceShift.hospital),
+        source_shift_date: transferSourceShift.shift_date,
+        source_shift_time: `${transferSourceShift.start_time.slice(0, 5)}-${transferSourceShift.end_time.slice(0, 5)}`,
+        source_assignment_id: transferAssignment.id,
+        destination_sector_id: targetShift.sector_id || null,
+        destination_sector_name: getSectorName(targetShift.sector_id, targetShift.hospital),
+        destination_shift_date: targetShift.shift_date,
+        destination_shift_time: `${targetShift.start_time.slice(0, 5)}-${targetShift.end_time.slice(0, 5)}`,
+        destination_assignment_id: inserted.id,
+        reason: 'Transferência manual entre setores (admin)',
+        performed_by: user.id,
+      });
+
+      toast({ title: 'Plantonista transferido com sucesso!' });
+      setTransferDialogOpen(false);
+      setTransferAssignment(null);
+      setTransferSourceShift(null);
+      setTransferTargetShiftId('');
+      await fetchData();
+    } catch (error: any) {
+      toast({
+        title: 'Erro na transferência',
+        description: error?.message || 'Falha ao transferir plantonista.',
+        variant: 'destructive',
+      });
+    } finally {
+      setTransferring(false);
     }
   }
 
@@ -4390,6 +4549,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                   </div>
                                   <Button
                                     variant="ghost"
+                                    size="sm"
+                                    className="h-8 px-2"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openTransferDialog(assignment, shift);
+                                    }}
+                                  >
+                                    <ArrowRightLeft className="h-3.5 w-3.5 mr-1" />
+                                    Transferir
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
                                     size="icon"
                                     className="h-8 w-8"
                                     onClick={(e) => {
@@ -4458,6 +4629,54 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 );
               })
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Transfer Assignment Dialog */}
+      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transferir Plantonista</DialogTitle>
+            <DialogDescription>
+              Migre o plantonista para outro plantão de setor permitido.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm text-muted-foreground">
+              {transferAssignment && transferSourceShift ? (
+                <>
+                  <strong>{getAssignmentName(transferAssignment)}</strong> sairá de{' '}
+                  <strong>{getSectorName(transferSourceShift.sector_id, transferSourceShift.hospital)}</strong>{' '}
+                  ({format(parseISO(transferSourceShift.shift_date), 'dd/MM/yyyy')} • {transferSourceShift.start_time.slice(0, 5)}-{transferSourceShift.end_time.slice(0, 5)}).
+                </>
+              ) : null}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Plantão de destino (outro setor permitido)</Label>
+              <Select value={transferTargetShiftId} onValueChange={setTransferTargetShiftId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o plantão destino" />
+                </SelectTrigger>
+                <SelectContent className="max-h-[300px] overflow-y-auto">
+                  {transferTargetCandidates.map((target) => (
+                    <SelectItem key={target.id} value={target.id}>
+                      {format(parseISO(target.shift_date), 'dd/MM/yyyy')} • {target.start_time.slice(0, 5)}-{target.end_time.slice(0, 5)} • {getSectorName(target.sector_id, target.hospital)}
+                    </SelectItem>
+                  ))}
+                  {transferTargetCandidates.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Nenhum plantão elegível encontrado para transferência.
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button className="w-full" disabled={!transferTargetShiftId || transferring} onClick={handleTransferAssignment}>
+              {transferring ? 'Transferindo...' : 'Confirmar Transferência'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
