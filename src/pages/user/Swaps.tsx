@@ -27,6 +27,7 @@ import { TapSafeButton } from '@/components/TapSafeButton';
 interface Assignment {
   id: string;
   shift_id: string;
+  status?: string;
   shift: {
     title: string;
     hospital: string;
@@ -341,7 +342,7 @@ export default function UserSwaps() {
     const { data, error } = await supabase
       .from('shift_assignments')
       .select(`
-        id, shift_id,
+        id, shift_id, status,
         shift:shifts(
           id, title, hospital, shift_date, start_time, end_time, sector_id,
           sector:sectors(name, color)
@@ -360,7 +361,11 @@ export default function UserSwaps() {
 
     if (data) {
       const validAssignments = (data as any[])
-        .filter((a) => a.shift !== null && a.shift.shift_date >= today)
+        .filter((a) =>
+          a.shift !== null &&
+          a.shift.shift_date >= today &&
+          a.status !== 'cancelled'
+        )
         .sort((a, b) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
       setMyAssignments(validAssignments);
     } else {
