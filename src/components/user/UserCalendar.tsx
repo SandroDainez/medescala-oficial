@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -95,13 +95,7 @@ export default function UserCalendar() {
   const [swapReason, setSwapReason] = useState('');
   const [submittingSwap, setSubmittingSwap] = useState(false);
 
-  useEffect(() => {
-    if (currentTenantId && user) {
-      fetchData();
-    }
-  }, [currentTenantId, user, currentDate]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId || !user) return;
     setLoading(true);
 
@@ -229,7 +223,13 @@ export default function UserCalendar() {
     }
 
     setLoading(false);
-  }
+  }, [currentTenantId, user, currentDate, toast]);
+
+  useEffect(() => {
+    if (currentTenantId && user) {
+      fetchData();
+    }
+  }, [currentTenantId, user, currentDate, fetchData]);
 
   // Filter shifts
   const mySectorIds = mySectors.map(ms => ms.sector_id);

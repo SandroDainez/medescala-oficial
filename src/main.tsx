@@ -3,8 +3,6 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { registerSW } from "virtual:pwa-register";
-console.log('ENV URL:', import.meta.env.VITE_SUPABASE_URL)
-console.log('ENV KEY:', import.meta.env.VITE_SUPABASE_ANON_KEY)
 
 // Ensure installed PWA/mobile app picks up new builds
 const updateSW = registerSW({
@@ -20,4 +18,3 @@ createRoot(document.getElementById("root")!).render(
     <App />
   </StrictMode>
 );
-

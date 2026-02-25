@@ -133,7 +133,7 @@ export function MyShiftStatsChart() {
   }, [shiftData, mySectors, selectedYear]);
 
   // Predefined color palette - always use distinct colors for each sector
-  const colorPalette = [
+  const colorPalette = useMemo(() => [
     '#3b82f6', // blue
     '#f59e0b', // amber
     '#ef4444', // red
@@ -149,7 +149,7 @@ export function MyShiftStatsChart() {
     '#f43f5e', // rose
     '#0ea5e9', // sky
     '#eab308', // yellow
-  ];
+  ], []);
 
   // Get sectors for the legend with distinct colors - always use palette for distinct visualization
   const sectorsForChart = useMemo(() => {
@@ -161,7 +161,7 @@ export function MyShiftStatsChart() {
         // Always use palette color based on index for distinct visualization
         color: colorPalette[index % colorPalette.length],
       })) as Sector[];
-  }, [mySectors]);
+  }, [mySectors, colorPalette]);
 
   // Generate year options (current year and 2 previous years)
   const yearOptions = useMemo(() => {

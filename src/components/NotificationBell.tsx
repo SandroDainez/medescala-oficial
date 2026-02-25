@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -42,6 +42,21 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    if (data) {
+      setNotifications(data);
+      setUnreadCount(data.filter((n) => !n.read_at).length);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -95,21 +110,7 @@ export function NotificationBell() {
         supabase.removeChannel(channel);
       };
     }
-  }, [user]);
-
-  async function fetchNotifications() {
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user?.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
-
-    if (data) {
-      setNotifications(data);
-      setUnreadCount(data.filter((n) => !n.read_at).length);
-    }
-  }
+  }, [user, fetchNotifications]);
 
   async function markAsRead(id: string) {
     await supabase

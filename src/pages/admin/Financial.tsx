@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -250,11 +250,6 @@ export default function AdminFinancial() {
     setEndDate(format(endOfMonth(lastMonth), 'yyyy-MM-dd'));
   }
 
-  // Fetch data
-  useEffect(() => {
-    if (currentTenantId) fetchData();
-  }, [currentTenantId, startDate, endDate, filterSetor]);
-
   // Se um setor foi deletado/desativado e não existe mais na lista, volta para “Todos”.
   useEffect(() => {
     if (filterSetor === 'all') return;
@@ -298,7 +293,7 @@ export default function AdminFinancial() {
     setAllSectors(res.data ?? []);
   }
 
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
@@ -424,7 +419,12 @@ export default function AdminFinancial() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentTenantId, startDate, endDate, filterSetor]);
+
+  // Fetch data
+  useEffect(() => {
+    if (currentTenantId) fetchData();
+  }, [currentTenantId, startDate, endDate, filterSetor, fetchData]);
 
   // Filtered entries
   const filteredEntries = useMemo(() => {

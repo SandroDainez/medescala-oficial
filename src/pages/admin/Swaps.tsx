@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -62,14 +62,7 @@ export default function AdminSwaps() {
   const [deleteSwapsDialogOpen, setDeleteSwapsDialogOpen] = useState(false);
   const [deleteOffersDialogOpen, setDeleteOffersDialogOpen] = useState(false);
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchSwaps();
-      fetchOffers();
-    }
-  }, [currentTenantId]);
-
-  async function fetchSwaps() {
+  const fetchSwaps = useCallback(async () => {
     if (!currentTenantId) return;
     const { data } = await supabase
       .from('swap_requests')
@@ -85,9 +78,9 @@ export default function AdminSwaps() {
       .order('created_at', { ascending: false });
     if (data) setSwaps(data as unknown as SwapRequest[]);
     setLoading(false);
-  }
+  }, [currentTenantId]);
 
-  async function fetchOffers() {
+  const fetchOffers = useCallback(async () => {
     if (!currentTenantId) return;
     const { data } = await supabase
       .from('shift_offers')
@@ -102,7 +95,14 @@ export default function AdminSwaps() {
       .eq('tenant_id', currentTenantId)
       .order('created_at', { ascending: false });
     if (data) setOffers(data as unknown as ShiftOffer[]);
-  }
+  }, [currentTenantId]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchSwaps();
+      fetchOffers();
+    }
+  }, [currentTenantId, fetchSwaps, fetchOffers]);
 
   async function handleSwapAction(action: 'approved' | 'rejected') {
     if (!selectedSwap) return;

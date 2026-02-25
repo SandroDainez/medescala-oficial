@@ -7,12 +7,41 @@ const corsHeaders = {
 };
 
 interface PasswordResetRequest {
-  email: string;
+  email?: string;
+  cpf?: string;
   redirectUrl: string;
 }
 
+function formatCpf(value: string): string {
+  return value.replace(/\D/g, '');
+}
+
+async function deriveKey(keyString: string): Promise<CryptoKey> {
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(keyString);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', keyData);
+  return crypto.subtle.importKey('raw', hashBuffer, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+
+async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string> {
+  const combined = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
+  const iv = combined.slice(0, 12);
+  const data = combined.slice(12);
+
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, data);
+  return new TextDecoder().decode(decrypted);
+}
+
 function normalizeRedirectUrl(input: string | undefined): string {
-  const fallback = 'https://medescala.vercel.app/reset-password';
+  const canonicalBaseUrl = (Deno.env.get("APP_PUBLIC_URL") || "https://medescala-oficial.vercel.app").trim();
+  const canonicalOrigin = (() => {
+    try {
+      return new URL(canonicalBaseUrl).origin;
+    } catch {
+      return "https://medescala-oficial.vercel.app";
+    }
+  })();
+  const fallback = `${canonicalOrigin}/reset-password`;
   if (!input) return fallback;
 
   try {
@@ -22,11 +51,30 @@ function normalizeRedirectUrl(input: string | undefined): string {
       return fallback;
     }
 
-    // Force path to reset-password for safety/consistency
-    return `${url.origin}/reset-password`;
+    // Always use canonical public origin to avoid stale/deleted deployment links.
+    return fallback;
   } catch {
     return fallback;
   }
+}
+
+function enforceRedirectInActionLink(actionLink: string, redirectTo: string): string {
+  try {
+    const url = new URL(actionLink);
+    // Keep Supabase verify endpoint untouched and only force redirect_to.
+    url.searchParams.set("redirect_to", redirectTo);
+    return url.toString();
+  } catch {
+    return actionLink;
+  }
+}
+
+function buildAppResetLink(redirectTo: string, tokenHash: string): string {
+  const base = new URL(redirectTo);
+  const appUrl = new URL("/reset-password", base.origin);
+  appUrl.searchParams.set("token_hash", tokenHash);
+  appUrl.searchParams.set("type", "recovery");
+  return appUrl.toString();
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -38,13 +86,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { email, redirectUrl }: PasswordResetRequest = await req.json();
+    const { email, cpf, redirectUrl }: PasswordResetRequest = await req.json();
+    const normalizedEmail = email?.trim().toLowerCase();
+    const normalizedCpf = cpf ? formatCpf(cpf) : "";
 
-    if (!email) {
-      throw new Error("Email é obrigatório");
+    if (!normalizedEmail && !normalizedCpf) {
+      throw new Error("Email ou CPF é obrigatório");
     }
 
-    console.log(`Processing password reset for: ${email}`);
+    console.log(`Processing password reset for email=${normalizedEmail ?? '-'} cpf=${normalizedCpf ? '[provided]' : '-'}`);
     const safeRedirectUrl = normalizeRedirectUrl(redirectUrl);
     console.log(`Redirect URL (raw): ${redirectUrl}`);
     console.log(`Redirect URL (safe): ${safeRedirectUrl}`);
@@ -59,31 +109,63 @@ Deno.serve(async (req: Request): Promise<Response> => {
       },
     });
 
-    // Check if user exists
-    const { data: userData, error: userError } = await supabase.auth.admin.listUsers();
-    
-    if (userError) {
-      console.error("Error listing users:", userError);
-      throw new Error("Erro ao verificar usuário");
+    let targetEmail = normalizedEmail ?? null;
+
+    if (!targetEmail && normalizedCpf) {
+      const encryptionKey = Deno.env.get("PII_ENCRYPTION_KEY");
+      if (!encryptionKey) {
+        throw new Error("PII_ENCRYPTION_KEY not configured");
+      }
+
+      const cryptoKey = await deriveKey(encryptionKey);
+
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles_private")
+        .select("user_id, cpf_enc")
+        .not("cpf_enc", "is", null);
+
+      if (profilesError) {
+        console.error("Error fetching profiles_private:", profilesError);
+        throw new Error("Erro ao verificar usuário");
+      }
+
+      let matchedUserId: string | null = null;
+
+      for (const profile of profiles ?? []) {
+        if (!profile.cpf_enc) continue;
+
+        try {
+          const decryptedCpf = await decryptValue(String(profile.cpf_enc), cryptoKey);
+          if (formatCpf(decryptedCpf) === normalizedCpf) {
+            matchedUserId = profile.user_id;
+          }
+        } catch (_err) {
+          // ignore invalid rows
+        }
+      }
+
+      if (matchedUserId) {
+        const { data: authUserData, error: authUserError } = await supabase.auth.admin.getUserById(matchedUserId);
+        if (!authUserError && authUserData?.user?.email) {
+          targetEmail = authUserData.user.email.toLowerCase();
+        }
+      }
     }
 
-    const user = userData.users.find(u => u.email?.toLowerCase() === email.toLowerCase());
-    
-    if (!user) {
+    if (!targetEmail) {
       console.log("User not found, returning success anyway for security");
-      // Return success even if user doesn't exist (security best practice)
       return new Response(JSON.stringify({ success: true }), {
         status: 200,
         headers: { "Content-Type": "application/json", ...corsHeaders },
       });
     }
 
-    console.log(`User found: ${user.id}`);
+    console.log(`Target email resolved: ${targetEmail}`);
 
     // Generate password reset link using admin API
     const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
       type: 'recovery',
-      email: email,
+      email: targetEmail,
       options: {
         redirectTo: safeRedirectUrl,
       },
@@ -97,12 +179,16 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.log("Reset link generated successfully");
 
     // Get the action link from the response
-    const resetLink = linkData.properties?.action_link;
-    
-    if (!resetLink) {
-      console.error("No action link in response:", linkData);
+    const rawResetLink = linkData.properties?.action_link;
+    const tokenHash = (linkData.properties as any)?.hashed_token as string | undefined;
+
+    if (!rawResetLink && !tokenHash) {
+      console.error("No recovery link/token in response:", linkData);
       throw new Error("Link de recuperação não gerado");
     }
+    const resetLink = tokenHash
+      ? buildAppResetLink(safeRedirectUrl, tokenHash)
+      : enforceRedirectInActionLink(rawResetLink as string, safeRedirectUrl);
 
     console.log("Sending email via Resend...");
 
@@ -208,7 +294,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     // Remetente fixo — sem fallback para resend.dev
     const fromAddress = "MedEscala <noreply@medescalas.com.br>";
-    console.log(`[send-password-reset] Enviando email com from="${fromAddress}" para "${email}"`);
+    console.log(`[send-password-reset] Enviando email com from="${fromAddress}" para "${targetEmail}"`);
 
     const emailResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -218,7 +304,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       },
       body: JSON.stringify({
         from: fromAddress,
-        to: [email],
+        to: [targetEmail],
         subject,
         html,
       }),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -58,13 +58,7 @@ export default function UserAvailableShifts() {
   const [offerMessage, setOfferMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (user && currentTenantId) {
-      fetchData();
-    }
-  }, [user, currentTenantId]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!user || !currentTenantId) return;
     setLoading(true);
 
@@ -136,7 +130,13 @@ export default function UserAvailableShifts() {
     }
 
     setLoading(false);
-  }
+  }, [user, currentTenantId, toast]);
+
+  useEffect(() => {
+    if (user && currentTenantId) {
+      fetchData();
+    }
+  }, [user, currentTenantId, fetchData]);
 
   async function submitOffer() {
     if (!user || !currentTenantId || !selectedShift) return;

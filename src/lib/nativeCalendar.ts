@@ -104,7 +104,7 @@ export async function requestCalendarPermissions(): Promise<boolean> {
  */
 function shiftToCalendarEvent(shift: ShiftData): CalendarEventInput {
   const startDateTime = new Date(`${shift.shift_date}T${shift.start_time}`);
-  let endDateTime = new Date(`${shift.shift_date}T${shift.end_time}`);
+  const endDateTime = new Date(`${shift.shift_date}T${shift.end_time}`);
   
   if (endDateTime <= startDateTime) {
     endDateTime.setDate(endDateTime.getDate() + 1);

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,13 +95,7 @@ export default function AdminNotifications() {
   const [editTitle, setEditTitle] = useState('');
   const [editMessage, setEditMessage] = useState('');
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchData();
-    }
-  }, [currentTenantId]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
@@ -184,7 +178,7 @@ export default function AdminNotifications() {
     }
 
     setLoading(false);
-  }
+  }, [currentTenantId]);
 
   function handleTypeChange(type: string) {
     setNotificationType(type);
@@ -212,6 +206,11 @@ export default function AdminNotifications() {
         setMessage('');
     }
   }
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchData();
+    }
+  }, [currentTenantId, fetchData]);
 
   function handleShiftSelect(shiftId: string) {
     setSelectedShift(shiftId);

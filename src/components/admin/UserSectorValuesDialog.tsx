@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,13 +69,7 @@ export default function UserSectorValuesDialog({
   const [saving, setSaving] = useState(false);
   const [userValues, setUserValues] = useState<UserSectorValue[]>([]);
 
-  useEffect(() => {
-    if (open && sector && tenantId && month && year) {
-      fetchUserValues();
-    }
-  }, [open, sector, tenantId, month, year]);
-
-  async function fetchUserValues() {
+  const fetchUserValues = useCallback(async () => {
     if (!sector || !tenantId || !month || !year) return;
     setLoading(true);
 
@@ -134,9 +128,9 @@ export default function UserSectorValuesDialog({
         // Safety: if we got rows but none qualified (e.g. all profiles hidden), show all sector members.
         if (plantonistaIds.size === 0) sectorUserIds.forEach((id) => plantonistaIds.add(id));
       } else {
-        // Fallback: assume all sector members are plantonistas if profile query failed
-        sectorUserIds.forEach(id => plantonistaIds.add(id));
-      }
+      // Fallback: assume all sector members are plantonistas if profile query failed
+      sectorUserIds.forEach(id => plantonistaIds.add(id));
+    }
 
       // Filter to only plantonistas and map to Member format
       const members: Member[] = sectorUserIds
@@ -189,7 +183,13 @@ export default function UserSectorValuesDialog({
     } finally {
       setLoading(false);
     }
-  }
+  }, [sector, tenantId, month, year, toast]);
+
+  useEffect(() => {
+    if (open && sector && tenantId && month && year) {
+      fetchUserValues();
+    }
+  }, [open, sector, tenantId, month, year, fetchUserValues]);
 
   const formatCurrency = (value: string) => {
     const num = value.replace(/\D/g, '');

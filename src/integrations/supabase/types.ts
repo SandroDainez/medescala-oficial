@@ -505,7 +505,6 @@ export type Database = {
           closed_at: string | null
           closed_by: string | null
           created_at: string
-          created_by: string | null
           id: string
           month: number
           notes: string | null
@@ -515,7 +514,6 @@ export type Database = {
           total_shifts: number
           total_value: number
           updated_at: string
-          updated_by: string | null
           user_id: string
           year: number
         }
@@ -523,7 +521,6 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           month: number
           notes?: string | null
@@ -533,7 +530,6 @@ export type Database = {
           total_shifts?: number
           total_value?: number
           updated_at?: string
-          updated_by?: string | null
           user_id: string
           year: number
         }
@@ -541,7 +537,6 @@ export type Database = {
           closed_at?: string | null
           closed_by?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           month?: number
           notes?: string | null
@@ -551,7 +546,6 @@ export type Database = {
           total_shifts?: number
           total_value?: number
           updated_at?: string
-          updated_by?: string | null
           user_id?: string
           year?: number
         }
@@ -701,26 +695,38 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          email: string | null
+          full_name: string | null
           id: string
           must_change_password: boolean
           name: string | null
+          phone: string | null
           profile_type: string | null
+          status: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
+          email?: string | null
+          full_name?: string | null
           id: string
           must_change_password?: boolean
           name?: string | null
+          phone?: string | null
           profile_type?: string | null
+          status?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          email?: string | null
+          full_name?: string | null
           id?: string
           must_change_password?: boolean
           name?: string | null
+          phone?: string | null
           profile_type?: string | null
+          status?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -734,8 +740,11 @@ export type Database = {
           cpf_enc: string | null
           created_at: string
           crm_enc: string | null
+          last_updated_by: string | null
           phone_enc: string | null
           pix_key_enc: string | null
+          pix_type_enc: string | null
+          rg_enc: string | null
           rqe_enc: string | null
           tenant_id: string
           updated_at: string
@@ -749,8 +758,11 @@ export type Database = {
           cpf_enc?: string | null
           created_at?: string
           crm_enc?: string | null
+          last_updated_by?: string | null
           phone_enc?: string | null
           pix_key_enc?: string | null
+          pix_type_enc?: string | null
+          rg_enc?: string | null
           rqe_enc?: string | null
           tenant_id: string
           updated_at?: string
@@ -764,8 +776,11 @@ export type Database = {
           cpf_enc?: string | null
           created_at?: string
           crm_enc?: string | null
+          last_updated_by?: string | null
           phone_enc?: string | null
           pix_key_enc?: string | null
+          pix_type_enc?: string | null
+          rg_enc?: string | null
           rqe_enc?: string | null
           tenant_id?: string
           updated_at?: string
@@ -1304,7 +1319,6 @@ export type Database = {
           checkin_at: string | null
           checkout_at: string | null
           created_at: string
-          created_by: string | null
           id: string
           notes: string | null
           shift_id: string
@@ -1319,7 +1333,6 @@ export type Database = {
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           notes?: string | null
           shift_id: string
@@ -1334,7 +1347,6 @@ export type Database = {
           checkin_at?: string | null
           checkout_at?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           notes?: string | null
           shift_id?: string
@@ -1607,7 +1619,6 @@ export type Database = {
         Row: {
           admin_notes: string | null
           created_at: string
-          created_by: string | null
           id: string
           origin_assignment_id: string
           reason: string | null
@@ -1618,12 +1629,10 @@ export type Database = {
           target_user_id: string | null
           tenant_id: string | null
           updated_at: string
-          updated_by: string | null
         }
         Insert: {
           admin_notes?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           origin_assignment_id: string
           reason?: string | null
@@ -1634,12 +1643,10 @@ export type Database = {
           target_user_id?: string | null
           tenant_id?: string | null
           updated_at?: string
-          updated_by?: string | null
         }
         Update: {
           admin_notes?: string | null
           created_at?: string
-          created_by?: string | null
           id?: string
           origin_assignment_id?: string
           reason?: string | null
@@ -1650,7 +1657,6 @@ export type Database = {
           target_user_id?: string | null
           tenant_id?: string | null
           updated_at?: string
-          updated_by?: string | null
         }
         Relationships: [
           {
@@ -1722,15 +1728,11 @@ export type Database = {
           id: string
           is_unlimited: boolean
           logo_url: string | null
-          max_shifts_per_month: number
-          max_users: number
           name: string
-          plan: Database["public"]["Enums"]["tenant_plan"]
           plan_id: string
           slug: string
           trial_ends_at: string | null
           updated_at: string
-          updated_by: string | null
         }
         Insert: {
           billing_status?: string
@@ -1740,15 +1742,11 @@ export type Database = {
           id?: string
           is_unlimited?: boolean
           logo_url?: string | null
-          max_shifts_per_month?: number
-          max_users?: number
           name: string
-          plan?: Database["public"]["Enums"]["tenant_plan"]
           plan_id: string
           slug: string
           trial_ends_at?: string | null
           updated_at?: string
-          updated_by?: string | null
         }
         Update: {
           billing_status?: string
@@ -1758,15 +1756,11 @@ export type Database = {
           id?: string
           is_unlimited?: boolean
           logo_url?: string | null
-          max_shifts_per_month?: number
-          max_users?: number
           name?: string
-          plan?: Database["public"]["Enums"]["tenant_plan"]
           plan_id?: string
           slug?: string
           trial_ends_at?: string | null
           updated_at?: string
-          updated_by?: string | null
         }
         Relationships: [
           {
@@ -1925,9 +1919,49 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      memberships_with_users: {
+        Row: {
+          active: boolean | null
+          created_at: string | null
+          email: string | null
+          full_name: string | null
+          id: string | null
+          phone: string | null
+          role: Database["public"]["Enums"]["app_role"] | null
+          tenant_id: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memberships_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memberships_user_id_profiles_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      add_member: {
+        Args: { member_email: string; member_role?: string }
+        Returns: Json
+      }
+      add_member_to_tenant: {
+        Args: { member_email: string; member_role?: string }
+        Returns: Json
+      }
+      add_tenant_member: {
+        Args: { member_email: string; member_role?: string }
+        Returns: Json
+      }
       calculate_trial_end_date: { Args: never; Returns: string }
       can_access_payment: {
         Args: { _payment_tenant_id: string; _payment_user_id: string }
@@ -1943,19 +1977,12 @@ export type Database = {
         Args: { _shift_id: string; _tenant_id: string }
         Returns: boolean
       }
-      check_tenant_shift_limit: {
-        Args: { _tenant_id: string }
-        Returns: boolean
-      }
-      check_tenant_user_limit: {
-        Args: { _tenant_id: string }
-        Returns: boolean
-      }
       cleanup_old_notifications: { Args: never; Returns: number }
       create_tenant_with_admin: {
         Args: { _name: string; _slug: string }
         Returns: string
       }
+      current_user_tenant_ids: { Args: never; Returns: string[] }
       decide_swap_request: {
         Args: { _decision: string; _swap_request_id: string }
         Returns: boolean
@@ -1968,7 +1995,6 @@ export type Database = {
           current_users_count: number
           id: string
           is_unlimited: boolean
-          max_users: number
           name: string
           plan_name: string
           slug: string
@@ -2024,14 +2050,12 @@ export type Database = {
           checkin_at: string
           checkout_at: string
           created_at: string
-          created_by: string
           id: string
           notes: string
           shift_id: string
           status: string
           tenant_id: string
           updated_at: string
-          updated_by: string
           user_id: string
         }[]
       }
@@ -2078,16 +2102,6 @@ export type Database = {
           user_id: string
         }[]
       }
-      get_tenant_plan_info: {
-        Args: { _tenant_id: string }
-        Returns: {
-          current_month_shifts: number
-          current_users: number
-          max_shifts_per_month: number
-          max_users: number
-          plan: Database["public"]["Enums"]["tenant_plan"]
-        }[]
-      }
       get_tenant_subscription: {
         Args: { _tenant_id: string }
         Returns: {
@@ -2129,6 +2143,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_admin: { Args: never; Returns: boolean }
       is_assigned_to_shift: {
         Args: { _shift_id: string; _user_id?: string }
         Returns: boolean
@@ -2169,9 +2184,8 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "user"
+      app_role: "admin" | "user" | "owner"
       swap_status: "pending" | "approved" | "rejected" | "cancelled"
-      tenant_plan: "free" | "pro" | "premium"
       value_status: "COM_VALOR" | "SEM_VALOR"
     }
     CompositeTypes: {
@@ -2300,9 +2314,8 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "user"],
+      app_role: ["admin", "user", "owner"],
       swap_status: ["pending", "approved", "rejected", "cancelled"],
-      tenant_plan: ["free", "pro", "premium"],
       value_status: ["COM_VALOR", "SEM_VALOR"],
     },
   },

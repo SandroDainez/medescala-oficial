@@ -29,7 +29,7 @@ import {
   ChevronRight,
   MapPin
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
@@ -62,16 +62,7 @@ export function AdminLayout() {
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [escalasOpen, setEscalasOpen] = useState(false);
 
-  useEffect(() => {
-    // Always start with Escalas collapsed when the app/layout loads or tenant changes
-    setEscalasOpen(false);
-
-    if (currentTenantId) {
-      fetchSectors();
-    }
-  }, [currentTenantId]);
-
-  async function fetchSectors() {
+  const fetchSectors = useCallback(async () => {
     if (!currentTenantId) return;
     const { data } = await supabase
       .from('sectors')
@@ -80,7 +71,16 @@ export function AdminLayout() {
       .eq('active', true)
       .order('name');
     if (data) setSectors(data);
-  }
+  }, [currentTenantId]);
+
+  useEffect(() => {
+    // Always start with Escalas collapsed when the app/layout loads or tenant changes
+    setEscalasOpen(false);
+
+    if (currentTenantId) {
+      fetchSectors();
+    }
+  }, [currentTenantId, fetchSectors]);
 
   const handleSignOut = async () => {
     await signOut();

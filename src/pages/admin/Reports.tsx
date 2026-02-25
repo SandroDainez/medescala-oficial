@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -187,20 +187,7 @@ export default function AdminReports() {
   
   const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchSectors();
-      fetchUsers();
-    }
-  }, [currentTenantId]);
-
-  useEffect(() => {
-    if (currentTenantId && reportType) {
-      generateReport();
-    }
-  }, [currentTenantId, reportType, startDate, endDate, selectedSector]);
-
-  async function fetchSectors() {
+  const fetchSectors = useCallback(async () => {
     const { data } = await supabase
       .from('sectors')
       .select('id, name, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes')
@@ -208,9 +195,9 @@ export default function AdminReports() {
       .eq('active', true);
     
     if (data) setSectors(data as Sector[]);
-  }
+  }, [currentTenantId]);
 
-  async function fetchUsers() {
+  const fetchUsers = useCallback(async () => {
     const { data: memberships } = await supabase
       .from('memberships')
       .select('user_id')
@@ -228,7 +215,7 @@ export default function AdminReports() {
         setUsers(profiles.map(p => ({ id: p.id, name: p.name || 'Sem nome' })));
       }
     }
-  }
+  }, [currentTenantId]);
 
   async function generateReport() {
     if (!currentTenantId) return;

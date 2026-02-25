@@ -1,4 +1,4 @@
-import react, { useState, useEffect, useRef } from 'react';
+import react, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,7 +12,8 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw } from 'lucide-react';
-import ScheduleMovements, { recordScheduleMovement } from './ScheduleMovements';
+import ScheduleMovements from './ScheduleMovements';
+import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
@@ -46,7 +47,7 @@ interface ShiftAssignment {
   user_id: string;
   assigned_value: number | null;
   status: string;
-  profile: { name: string | null } | null;
+  profile: { name: string | null; full_name?: string | null } | null;
 }
 
 interface ShiftOffer {
@@ -55,12 +56,12 @@ interface ShiftOffer {
   user_id: string;
   status: string;
   message: string | null;
-  profile: { name: string | null } | null;
+  profile: { name: string | null; full_name?: string | null } | null;
 }
 
 interface Member {
   user_id: string;
-  profile: { id: string; name: string | null } | null;
+  profile: { id: string; name: string | null; full_name?: string | null } | null;
 }
 
 interface SectorMembership {
@@ -124,8 +125,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [copyScheduleDialogOpen, setCopyScheduleDialogOpen] = useState(false);
   const [copyTargetMonth, setCopyTargetMonth] = useState<Date | null>(null);
   const [copyInProgress, setCopyInProgress] = useState(false);
+  const [replicateDayDialogOpen, setReplicateDayDialogOpen] = useState(false);
+  const [replicateWeeks, setReplicateWeeks] = useState(1);
+  const [replicateLoading, setReplicateLoading] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
+  const [deletingDayShifts, setDeletingDayShifts] = useState(false);
   
   // Conflict resolution states
   const [justificationDialogOpen, setJustificationDialogOpen] = useState(false);
@@ -133,6 +138,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [justificationText, setJustificationText] = useState('');
   const [conflictHistoryDialogOpen, setConflictHistoryDialogOpen] = useState(false);
   const [conflictHistory, setConflictHistory] = useState<any[]>([]);
+  const [selectedConflictHistoryIds, setSelectedConflictHistoryIds] = useState<Set<string>>(new Set());
+  const [deletingConflictHistory, setDeletingConflictHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [removeConfirmDialogOpen, setRemoveConfirmDialogOpen] = useState(false);
   const [pendingRemoval, setPendingRemoval] = useState<{ conflict: ShiftConflict; assignmentToRemove: ShiftConflict['shifts'][0]; assignmentToKeep: ShiftConflict['shifts'][0] } | null>(null);
@@ -210,6 +217,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return { sectorName: 'Não informado', shiftTime: '—' };
   }
 
+  function getAcknowledgedResolutionLocations(
+    resolution: any
+  ): Array<{ sectorName: string; shiftTime: string; assignmentKey: string }> {
+    const details = safeParseConflictDetails(resolution?.conflict_details);
+    const seen = new Set<string>();
+    const rows: Array<{ sectorName: string; shiftTime: string; assignmentKey: string }> = [];
+
+    for (const item of details) {
+      const assignmentId = getNonEmptyString(item?.assignmentId, item?.assignment_id) || '';
+      const sectorName = getNonEmptyString(
+        item?.sectorName,
+        item?.sector_name,
+        item?.sector,
+        item?.hospital,
+        item?.location
+      ) || 'Não informado';
+      const start = getNonEmptyString(item?.startTime, item?.start_time);
+      const end = getNonEmptyString(item?.endTime, item?.end_time);
+      const shiftTime = start && end ? `${start.slice(0, 5)} - ${end.slice(0, 5)}` : '—';
+      const dedupeKey = assignmentId || `${sectorName}|${shiftTime}`;
+
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      rows.push({
+        sectorName,
+        shiftTime,
+        assignmentKey: dedupeKey,
+      });
+    }
+
+    return rows;
+  }
+
   // Bulk edit (apply same changes to selected shifts)
   const [bulkApplyDialogOpen, setBulkApplyDialogOpen] = useState(false);
   const [bulkApplyData, setBulkApplyData] = useState({
@@ -272,15 +313,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }, [initialSectorId]);
 
-  useEffect(() => {
-    // IMPORTANT: wait for authenticated user before calling RPCs that depend on auth.uid().
-    // If we fetch too early, the backend returns empty rows and names "disappear" until a manual refresh.
-    if (currentTenantId && user?.id) {
-      fetchData();
-    }
-  }, [currentTenantId, user?.id, currentDate, viewMode]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId || !user?.id) return;
     setLoading(true);
 
@@ -311,14 +344,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
      .from('sector_memberships')
 .select(`
   user_id,
-  profile:profiles!sector_memberships_user_id_fkey(id, name)
+  profile:profiles!sector_memberships_user_id_fkey(id, name, full_name)
 `)
 .eq('tenant_id', currentTenantId)
 .eq('sector_id', filterSector)
 
   : supabase
       .from('memberships')
-      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name)')
+      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name)')
       .eq('tenant_id', currentTenantId)
       .eq('active', true),
 
@@ -341,7 +374,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       setSectors((sectorsRes.data ?? []) as Sector[]);
       setSectorMemberships(sectorMembershipsRes.data ?? []);
-      setMembers((membersRes.data ?? []) as unknown as Member[]);
+      const loadedMembers = ((membersRes.data ?? []) as unknown as Member[]);
+      setMembers(loadedMembers);
+      const memberDisplayNameByUserId = new Map<string, string>();
+      for (const member of loadedMembers) {
+        const displayName = member.profile?.full_name?.trim() || member.profile?.name?.trim();
+        if (member.user_id && displayName) {
+          memberDisplayNameByUserId.set(member.user_id, displayName);
+        }
+      }
 
       // Fetch user sector values for individual pricing (scoped to current month/year)
       const currentMonth = currentDate.getMonth() + 1; // 1-12
@@ -390,14 +431,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (currentTenantId && user?.id) fetchData();
         }, 1200);
       } else {
-        const mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => ({
+        const mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => {
+          const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
+          const resolvedFullName = row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
+          const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
+          return {
           id: row.id,
           shift_id: row.shift_id,
           user_id: row.user_id,
           assigned_value: row.assigned_value,
           status: row.status,
-          profile: { name: row.name ?? null },
-        }));
+          profile: { name: resolvedName, full_name: resolvedFullName },
+        };
+      });
         setAssignments(mapped as unknown as ShiftAssignment[]);
       }
 
@@ -405,14 +451,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         console.error('[ShiftCalendar] get_shift_offers_pending_range error', offersRes.error);
         // Offers are secondary; keep previous state silently.
       } else {
-        const mapped = ((offersRes.data ?? []) as any[]).map((row) => ({
+        const mapped = ((offersRes.data ?? []) as any[]).map((row) => {
+          const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
+          const resolvedFullName = row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
+          const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
+          return {
           id: row.id,
           shift_id: row.shift_id,
           user_id: row.user_id,
           status: row.status,
           message: row.message,
-          profile: { name: row.name ?? null },
-        }));
+          profile: { name: resolvedName, full_name: resolvedFullName },
+        };
+      });
         setShiftOffers(mapped as unknown as ShiftOffer[]);
       }
     } catch (error: any) {
@@ -425,7 +476,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentTenantId, user?.id, currentDate, viewMode, filterSector, toast]);
+
+  useEffect(() => {
+    // IMPORTANT: wait for authenticated user before calling RPCs that depend on auth.uid().
+    // If we fetch too early, the backend returns empty rows and names "disappear" until a manual refresh.
+    if (currentTenantId && user?.id) {
+      fetchData();
+    }
+  }, [currentTenantId, user?.id, currentDate, viewMode, fetchData]);
 
   // Get members that belong to a specific sector
   function getMembersForSector(sectorId: string): Member[] {
@@ -433,6 +492,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .filter(sm => sm.sector_id === sectorId)
       .map(sm => sm.user_id);
     return members.filter(m => sectorUserIds.includes(m.user_id));
+  }
+
+  function isUserAllowedInSector(userId: string, sectorId: string | null | undefined): boolean {
+    if (!userId || userId === 'vago' || userId === 'disponivel') return true;
+    if (!sectorId) return true;
+    return getMembersForSector(sectorId).some((m) => m.user_id === userId);
   }
 
   // Check if shift is nocturnal (7h-19h = diurno, 19h-7h = noturno)
@@ -476,7 +541,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     let hours = endH - startH;
-    let minutes = endM - startM;
+    const minutes = endM - startM;
     if (hours < 0 || (hours === 0 && minutes < 0)) {
       hours += 24;
     }
@@ -487,6 +552,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (baseValue === null || baseValue === 0) return baseValue;
     if (durationHours === STANDARD_SHIFT_HOURS) return baseValue;
     return Number(((baseValue / STANDARD_SHIFT_HOURS) * durationHours).toFixed(2));
+  }
+
+  function durationToInputValue(hours: number): string {
+    if (!Number.isFinite(hours) || hours <= 0) return '';
+    return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
   }
 
   /**
@@ -611,6 +681,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     const cents = BigInt(intPart) * 100n + BigInt(dec2);
     return Number(cents) / 100;
+  }
+
+  function formatSupabaseError(error: any): string {
+    if (!error) return 'Erro desconhecido';
+    const parts = [error.message, error.details, error.hint, error.code]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+    return parts.join(' | ') || 'Erro desconhecido';
   }
 
   function formatMoneyInput(value: string | number): string {
@@ -759,18 +837,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return assignments.filter(a => a.shift_id === shiftId);
   }
 
+  function getMemberDisplayName(member: Member | null | undefined): string {
+    const fullName = member?.profile?.full_name?.trim();
+    const name = member?.profile?.name?.trim();
+    return fullName || name || 'Sem nome';
+  }
+
   // Helper to resolve assignment name with fallback to members list
   function getAssignmentName(assignment: ShiftAssignment): string {
     // Primary: use profile name from RPC response
-    if (assignment.profile?.name) {
-      return assignment.profile.name;
+    if (assignment.profile?.full_name?.trim()) {
+      return assignment.profile.full_name.trim();
+    }
+    if (assignment.profile?.name?.trim()) {
+      return assignment.profile.name.trim();
     }
     // Fallback: look up in members list by user_id
     const member = members.find(m => m.user_id === assignment.user_id);
-    if (member?.profile?.name) {
-      return member.profile.name;
-    }
-    return 'Sem nome';
+    return getMemberDisplayName(member);
+  }
+
+  function getOfferName(offer: ShiftOffer): string {
+    const fullName = offer.profile?.full_name?.trim();
+    const name = offer.profile?.name?.trim();
+    if (fullName) return fullName;
+    if (name) return name;
+    const member = members.find((m) => m.user_id === offer.user_id);
+    return getMemberDisplayName(member);
   }
 
   // Get pending offers for a shift
@@ -822,7 +915,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!currentTenantId) return;
 
     // Generate title automatically based on time and assignment type
-    let autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+    const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     
     // Add status to notes for tracking
     let shiftNotes = formData.notes || '';
@@ -851,7 +944,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }),
       notes: shiftNotes || null,
       sector_id: formData.sector_id || null,
-      created_by: user?.id,
       updated_by: user?.id,
     };
 
@@ -904,6 +996,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           formData.assigned_user_id !== 'vago' &&
           formData.assigned_user_id !== 'disponivel';
 
+        if (isRealUser && !isUserAllowedInSector(formData.assigned_user_id, formData.sector_id || null)) {
+          toast({
+            title: 'Plantonista inválido para o setor',
+            description: 'Selecione um plantonista cadastrado no setor deste plantão.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
         const assignedValue = resolveValue({
           raw: formData.base_value,
           sector_id: formData.sector_id || null,
@@ -940,7 +1041,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     shift_id: editingShift.id,
                     user_id: formData.assigned_user_id,
                     assigned_value: assignedValue,
-                    created_by: user?.id,
                     updated_by: user?.id,
                   },
                   { onConflict: 'shift_id,user_id' }
@@ -1009,7 +1109,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   shift_id: editingShift.id,
                   user_id: formData.assigned_user_id,
                   assigned_value: assignedValue,
-                  created_by: user?.id,
                   updated_by: user?.id,
                 },
                 { onConflict: 'shift_id,user_id' }
@@ -1123,7 +1222,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   shift_id: duplicatedShiftId,
                   user_id: formData.assigned_user_id,
                   assigned_value: assignedValue,
-                  created_by: user?.id,
                   updated_by: user?.id,
                 },
                 { onConflict: 'shift_id,user_id' }
@@ -1165,7 +1263,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const baseDate = parseISO(formData.shift_date);
 
       // If multiShifts is filled, use it (one entry per shift) otherwise replicate form values
-      const rows = (multiShifts.length > 0 ? multiShifts : Array.from({ length: quantity }).map(() => ({
+      const useMultiRows = quantity > 1 && multiShifts.length > 0;
+      const rows = (useMultiRows ? multiShifts : Array.from({ length: quantity }).map(() => ({
         user_id: formData.assigned_user_id,
         start_time: formData.start_time,
         end_time: formData.end_time,
@@ -1207,6 +1306,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           // Create assignment if a real user was selected for THIS row
           if (isRealUserId(rowAssigned)) {
+            if (!isUserAllowedInSector(rowAssigned, formData.sector_id || null)) {
+              console.warn('[ShiftCalendar] assignment skipped: user is not sector member', {
+                userId: rowAssigned,
+                sectorId: formData.sector_id || null,
+              });
+              errorsCount++;
+              continue;
+            }
+
             // Calculate assigned_value per row (using row's start_time, end_time, and user_id for individual pricing)
             const rowAssignedValue = resolveValue({
               raw: formData.base_value,
@@ -1226,7 +1334,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   shift_id: createdShiftId,
                   user_id: rowAssigned,
                   assigned_value: rowAssignedValue,
-                  created_by: user?.id,
                   updated_by: user?.id,
                 },
                 { onConflict: 'shift_id,user_id' }
@@ -1260,8 +1367,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Helper to sort members alphabetically by name
   function sortMembersAlphabetically(membersList: Member[]): Member[] {
     return [...membersList].sort((a, b) => {
-      const nameA = (a.profile?.name || 'Sem nome').toLowerCase();
-      const nameB = (b.profile?.name || 'Sem nome').toLowerCase();
+      const nameA = getMemberDisplayName(a).toLowerCase();
+      const nameB = getMemberDisplayName(b).toLowerCase();
       return nameA.localeCompare(nameB, 'pt-BR');
     });
   }
@@ -1351,7 +1458,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     e.preventDefault();
     if (!currentTenantId || selectedDates.size === 0) return;
 
-    let autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
+    const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     let shiftNotes = formData.notes || '';
     if (formData.assigned_user_id === 'disponivel') {
       shiftNotes = `[DISPONÍVEL] ${shiftNotes}`.trim();
@@ -1382,7 +1489,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }),
         notes: shiftNotes || null,
         sector_id: formData.sector_id || null,
-        created_by: user?.id,
         updated_by: user?.id,
       };
 
@@ -1403,6 +1509,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           formData.assigned_user_id !== 'vago' && 
           formData.assigned_user_id !== 'disponivel' && 
           newShift) {
+        if (!isUserAllowedInSector(formData.assigned_user_id, formData.sector_id || null)) {
+          errorCount++;
+          continue;
+        }
+
         const assignedValue = resolveValue({
           raw: formData.base_value,
           sector_id: formData.sector_id || null,
@@ -1418,7 +1529,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           shift_id: newShift.id,
           user_id: formData.assigned_user_id,
           assigned_value: assignedValue,
-          created_by: user?.id,
           updated_by: user?.id,
         }, { onConflict: 'shift_id,user_id' });
       }
@@ -1449,8 +1559,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       // If same time, sort by plantonista name alphabetically
       const assignmentA = assignments.find(asg => asg.shift_id === a.id);
       const assignmentB = assignments.find(asg => asg.shift_id === b.id);
-      const nameA = (assignmentA?.profile?.name || 'ZZZZZ').toLowerCase(); // Put unassigned at end
-      const nameB = (assignmentB?.profile?.name || 'ZZZZZ').toLowerCase();
+      const nameA = assignmentA ? getAssignmentName(assignmentA).toLowerCase() : 'zzzzz'; // Put unassigned at end
+      const nameB = assignmentB ? getAssignmentName(assignmentB).toLowerCase() : 'zzzzz';
       return nameA.localeCompare(nameB, 'pt-BR');
     });
   }
@@ -1465,6 +1575,182 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       toast({ title: 'Plantão excluído!' });
       fetchData();
       setDayDialogOpen(false);
+    }
+  }
+
+  async function handleDeleteDayShifts() {
+    if (!selectedDate || deletingDayShifts) return;
+    const dayShifts = getShiftsForDayDialog(selectedDate);
+    if (dayShifts.length === 0) {
+      toast({ title: 'Nenhum plantão neste dia', variant: 'destructive' });
+      return;
+    }
+
+    const dateLabel = format(selectedDate, 'dd/MM/yyyy');
+    if (!confirm(`Deseja excluir todos os ${dayShifts.length} plantão(ões) de ${dateLabel}? Esta ação não pode ser desfeita.`)) {
+      return;
+    }
+
+    setDeletingDayShifts(true);
+    const ids = dayShifts.map((s) => s.id);
+
+    try {
+      // Primary path: single bulk delete for better performance.
+      const { error: bulkError } = await supabase.from('shifts').delete().in('id', ids);
+
+      if (!bulkError) {
+        toast({ title: `${dayShifts.length} plantão(ões) excluído(s) do dia` });
+      } else {
+        // Fallback path: delete one by one to avoid transient/batch-specific failures.
+        console.warn('[ShiftCalendar] bulk day delete failed, trying per-shift fallback:', bulkError);
+
+        let deletedCount = 0;
+        const failures: string[] = [];
+
+        for (const shiftId of ids) {
+          const { error: singleError } = await supabase.from('shifts').delete().eq('id', shiftId);
+          if (singleError) {
+            failures.push(singleError.message || 'Falha desconhecida');
+          } else {
+            deletedCount += 1;
+          }
+        }
+
+        if (deletedCount === 0) {
+          toast({
+            title: 'Erro ao excluir plantões do dia',
+            description: bulkError.message || failures[0] || 'Falha ao excluir plantões.',
+            variant: 'destructive',
+          });
+          return;
+        }
+
+        if (failures.length > 0) {
+          toast({
+            title: `Exclusão parcial (${deletedCount}/${ids.length})`,
+            description: failures[0],
+            variant: 'destructive',
+          });
+        } else {
+          toast({ title: `${deletedCount} plantão(ões) excluído(s) do dia` });
+        }
+      }
+
+      setSelectedShiftIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      await fetchData();
+      setDayDialogOpen(false);
+      setDayDialogSectorId(null);
+      setSelectedDate(null);
+    } finally {
+      setDeletingDayShifts(false);
+    }
+  }
+
+  async function handleReplicateDayShifts() {
+    if (!currentTenantId || !selectedDate || !user?.id) return;
+
+    const dayShifts = getShiftsForDayDialog(selectedDate);
+    if (dayShifts.length === 0) {
+      toast({ title: 'Nenhum plantão para replicar', variant: 'destructive' });
+      return;
+    }
+
+    setReplicateLoading(true);
+    try {
+      let createdShiftsCount = 0;
+      let shiftErrorsCount = 0;
+      let createdAssignmentsCount = 0;
+      let assignmentErrorsCount = 0;
+      let skippedAssignmentsCount = 0;
+
+      for (let week = 1; week <= replicateWeeks; week++) {
+        const targetDate = addWeeks(selectedDate, week);
+        const targetDateStr = format(targetDate, 'yyyy-MM-dd');
+
+        for (const sourceShift of dayShifts) {
+          const { data: newShift, error: shiftError } = await supabase
+            .from('shifts')
+            .insert({
+              tenant_id: currentTenantId,
+              title: sourceShift.title,
+              hospital: sourceShift.hospital,
+              location: sourceShift.location,
+              shift_date: targetDateStr,
+              start_time: sourceShift.start_time,
+              end_time: sourceShift.end_time,
+              base_value: sourceShift.base_value,
+              notes: sourceShift.notes,
+              sector_id: sourceShift.sector_id,
+              updated_by: user.id,
+            })
+            .select('id')
+            .single();
+
+          if (shiftError || !newShift?.id) {
+            shiftErrorsCount++;
+            continue;
+          }
+
+          createdShiftsCount++;
+
+          const sourceAssignments = assignments.filter((a) => a.shift_id === sourceShift.id);
+          for (const assignment of sourceAssignments) {
+            if (!isUserAllowedInSector(assignment.user_id, sourceShift.sector_id || null)) {
+              skippedAssignmentsCount++;
+              continue;
+            }
+
+            const { error: assignmentError } = await supabase
+              .from('shift_assignments')
+              .upsert(
+                {
+                  tenant_id: currentTenantId,
+                  shift_id: newShift.id,
+                  user_id: assignment.user_id,
+                  assigned_value: assignment.assigned_value,
+                  status: assignment.status || 'assigned',
+                  updated_by: user.id,
+                },
+                { onConflict: 'shift_id,user_id' }
+              );
+
+            if (assignmentError) {
+              assignmentErrorsCount++;
+            } else {
+              createdAssignmentsCount++;
+            }
+          }
+        }
+      }
+
+      if (shiftErrorsCount > 0 || assignmentErrorsCount > 0) {
+        toast({
+          title: 'Replicação concluída com pendências',
+          description: `Plantões: ${createdShiftsCount} criados, ${shiftErrorsCount} erro(s). Atribuições: ${createdAssignmentsCount} criadas, ${assignmentErrorsCount} erro(s), ${skippedAssignmentsCount} ignorada(s).`,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Dia replicado com sucesso',
+          description: `Criados ${createdShiftsCount} plantão(ões) nas próximas ${replicateWeeks} semana(s).`,
+        });
+      }
+
+      setReplicateDayDialogOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      console.error('[ShiftCalendar] replicate day failed', error);
+      toast({
+        title: 'Erro ao replicar dia',
+        description: error?.message || 'Ocorreu um erro ao replicar os plantões.',
+        variant: 'destructive',
+      });
+    } finally {
+      setReplicateLoading(false);
     }
   }
 
@@ -1590,7 +1876,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 base_value: shift.base_value,
                 notes: shift.notes,
                 sector_id: shift.sector_id,
-                created_by: user?.id,
                 updated_by: user?.id,
               })
               .select()
@@ -1611,7 +1896,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 user_id: assignment.user_id,
                 assigned_value: assignment.assigned_value,
                 status: 'assigned',
-                created_by: user?.id,
                 updated_by: user?.id,
               }, { onConflict: 'shift_id,user_id' });
             }
@@ -1654,6 +1938,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       useSectorDefault: raw.length === 0,
       applyProRata: true,
     });
+
+    if (!isUserAllowedInSector(assignData.user_id, selectedShift.sector_id || null)) {
+      toast({
+        title: 'Plantonista inválido para o setor',
+        description: 'Atribua somente plantonistas cadastrados no setor deste plantão.',
+        variant: 'destructive',
+      });
+      return;
+    }
     
     // Check if there's already an assignment (to determine if this is an add or update)
     const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
@@ -1663,7 +1956,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       shift_id: selectedShift.id,
       user_id: assignData.user_id,
       assigned_value: assignedValue,
-      created_by: user?.id,
       updated_by: user?.id,
     }, { onConflict: 'shift_id,user_id' });
 
@@ -1746,7 +2038,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         user_id: offer.user_id,
         // Keep null so the value is always derived consistently (individual/base/sector) with pro-rata.
         assigned_value: null,
-        created_by: user.id,
         updated_by: user.id,
       }, { onConflict: 'shift_id,user_id' });
 
@@ -1784,7 +2075,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         .update({ notes: updatedNotes || null, updated_by: user.id })
         .eq('id', shift.id);
 
-      toast({ title: 'Oferta aceita!', description: `${offer.profile?.name} foi atribuído ao plantão.` });
+      toast({ title: 'Oferta aceita!', description: `${getOfferName(offer)} foi atribuído ao plantão.` });
       fetchData();
     } catch (error) {
       console.error('Error accepting offer:', error);
@@ -1969,6 +2260,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       quantity: 1,
       use_sector_default: true,
     });
+    setMultiShifts([]);
     setShiftDialogOpen(true);
   }
 
@@ -2196,6 +2488,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           const { error } = await supabase.from('shift_assignments').delete().in('shift_id', shiftIds);
           if (error) throw error;
         } else {
+          const invalidShift = shiftIds
+            .map((shiftId) => shifts.find((x) => x.id === shiftId))
+            .find((s) => s && !isUserAllowedInSector(bulkApplyData.assigned_user_id, s.sector_id || null));
+
+          if (invalidShift) {
+            throw new Error('Selecione um plantonista que pertença ao setor de todos os plantões selecionados.');
+          }
+
           await Promise.all(
             shiftIds.map(async (shiftId) => {
               const s = shifts.find((x) => x.id === shiftId);
@@ -2231,13 +2531,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 shift_id: shiftId,
                 user_id: bulkApplyData.assigned_user_id,
                 assigned_value: valueToApplyFinal ?? null,
-                created_by: user.id,
                 updated_by: user.id,
               };
 
               const { error: upErr } = await supabase
                 .from('shift_assignments')
-                .upsert(upsertPayload, { onConflict: 'shift_id,user_id' });
+                .insert(upsertPayload);
               if (upErr) throw upErr;
             })
           );
@@ -2266,6 +2565,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       for (const editData of bulkEditData) {
         const originalShift = bulkEditShifts.find(s => s.id === editData.id);
         if (!originalShift) continue;
+
+        if (
+          editData.assigned_user_id &&
+          editData.assigned_user_id !== 'vago' &&
+          editData.assigned_user_id !== 'disponivel' &&
+          !isUserAllowedInSector(editData.assigned_user_id, editData.sector_id || null)
+        ) {
+          toast({
+            title: 'Plantonista inválido para o setor',
+            description: 'No modo "Editar todos", selecione apenas plantonistas do setor.',
+            variant: 'destructive',
+          });
+          continue;
+        }
 
         // Update the shift
         const { error: shiftError } = await supabase
@@ -2327,16 +2640,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 
                 const { error: upErr } = await supabase
                   .from('shift_assignments')
-                  .upsert(
+                  .insert(
                     {
                       tenant_id: currentTenantId,
                       shift_id: editData.id,
                       user_id: editData.assigned_user_id,
                       assigned_value: assignedValue,
-                      created_by: user.id,
                       updated_by: user.id,
-                    },
-                    { onConflict: 'shift_id,user_id' }
+                    }
                   );
                 if (upErr) throw upErr;
 
@@ -2384,16 +2695,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               // No previous assignment - this is an ADD
               const { error: upErr } = await supabase
                 .from('shift_assignments')
-                .upsert(
+                .insert(
                   {
                     tenant_id: currentTenantId,
                     shift_id: editData.id,
                     user_id: editData.assigned_user_id,
                     assigned_value: assignedValue,
-                    created_by: user.id,
                     updated_by: user.id,
-                  },
-                  { onConflict: 'shift_id,user_id' }
+                  }
                 );
               if (upErr) throw upErr;
 
@@ -2497,10 +2806,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             }
           }
         } catch (assignmentError: any) {
-          console.error('[ShiftCalendar] bulk edit assignment failed:', assignmentError);
+          const errorMessage = formatSupabaseError(assignmentError);
+          console.error('[ShiftCalendar] bulk edit assignment failed:', assignmentError, errorMessage);
           toast({
             title: 'Erro ao salvar plantão',
-            description: assignmentError?.message || 'Falha ao atualizar o plantonista.',
+            description: errorMessage || 'Falha ao atualizar o plantonista.',
             variant: 'destructive',
           });
         }
@@ -2522,7 +2832,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   function openAssignDialog(shift: Shift) {
     setSelectedShift(shift);
-    setAssignData({ user_id: '', assigned_value: shift.base_value.toString() });
+    setAssignData({ user_id: '', assigned_value: shift.base_value?.toString() ?? '' });
     setAssignDialogOpen(true);
   }
 
@@ -2688,7 +2998,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                       key={offer.id} 
                                       className="flex items-center gap-1 px-1 py-0.5 rounded text-[10px] bg-green-100 text-green-700 font-medium"
                                     >
-                                      ✋ {offer.profile?.name || 'Plantonista'}
+                                      ✋ {getOfferName(offer)}
                                     </div>
                                   ))
                                 )}
@@ -3080,7 +3390,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       if (!userDateAssignments[key]) {
         userDateAssignments[key] = {
           userId: assignment.user_id,
-          userName: assignment.profile?.name || 'Sem nome',
+          userName: getAssignmentName(assignment),
           date: shift.shift_date,
           shifts: []
         };
@@ -3266,8 +3576,74 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function openConflictHistory() {
+    setSelectedConflictHistoryIds(new Set());
     fetchConflictHistory();
     setConflictHistoryDialogOpen(true);
+  }
+
+  function toggleConflictHistorySelection(resolutionId: string, checked: boolean) {
+    setSelectedConflictHistoryIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(resolutionId);
+      else next.delete(resolutionId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllConflictHistory(checked: boolean) {
+    if (!checked) {
+      setSelectedConflictHistoryIds(new Set());
+      return;
+    }
+    setSelectedConflictHistoryIds(new Set(conflictHistory.map((item) => item.id)));
+  }
+
+  async function deleteSelectedConflictHistory() {
+    if (!currentTenantId || selectedConflictHistoryIds.size === 0 || deletingConflictHistory) return;
+
+    const ids = Array.from(selectedConflictHistoryIds);
+    if (!confirm(`Deseja excluir ${ids.length} evento(s) do histórico de conflitos?`)) return;
+
+    setDeletingConflictHistory(true);
+    const { error } = await supabase
+      .from('conflict_resolutions')
+      .delete()
+      .eq('tenant_id', currentTenantId)
+      .in('id', ids);
+
+    if (error) {
+      toast({ title: 'Erro ao excluir histórico', description: error.message, variant: 'destructive' });
+      setDeletingConflictHistory(false);
+      return;
+    }
+
+    toast({ title: `${ids.length} evento(s) excluído(s) do histórico` });
+    setSelectedConflictHistoryIds(new Set());
+    await fetchConflictHistory();
+    setDeletingConflictHistory(false);
+  }
+
+  async function deleteAllConflictHistory() {
+    if (!currentTenantId || conflictHistory.length === 0 || deletingConflictHistory) return;
+
+    if (!confirm(`Deseja excluir TODO o histórico de conflitos (${conflictHistory.length} evento(s))?`)) return;
+
+    setDeletingConflictHistory(true);
+    const { error } = await supabase
+      .from('conflict_resolutions')
+      .delete()
+      .eq('tenant_id', currentTenantId);
+
+    if (error) {
+      toast({ title: 'Erro ao limpar histórico', description: error.message, variant: 'destructive' });
+      setDeletingConflictHistory(false);
+      return;
+    }
+
+    toast({ title: 'Histórico de conflitos limpo' });
+    setSelectedConflictHistoryIds(new Set());
+    await fetchConflictHistory();
+    setDeletingConflictHistory(false);
   }
 
   async function handleRemoveConflictAssignment(assignmentId: string) {
@@ -3397,6 +3773,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       )}
 
       {/* Conflict Alert */}
+      <div className="flex items-center justify-end gap-2">
+        <Button variant="outline" size="sm" onClick={openConflictHistory}>
+          <History className="h-4 w-4 mr-1" />
+          Histórico de Conflitos
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => setConflictDialogOpen(true)}>
+          <AlertTriangle className="h-4 w-4 mr-1" />
+          Conflitos ({conflicts.length})
+        </Button>
+      </div>
+
       {unresolvedConflicts.length > 0 && (
         <Card className="border-red-500 bg-red-50 dark:bg-red-950/20">
           <CardContent className="p-4">
@@ -3805,6 +4192,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   <Button
                     variant="outline"
                     size="sm"
+                    onClick={() => {
+                      setReplicateWeeks(1);
+                      setReplicateDayDialogOpen(true);
+                    }}
+                  >
+                    <Repeat className="mr-2 h-4 w-4" />
+                    Replicar Dia
+                  </Button>
+                )}
+                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
                     disabled={bulkEditTriggerDisabled}
                     onClick={() => {
                       if (bulkEditTriggerDisabled) return;
@@ -3815,6 +4215,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   >
                     <Edit className="mr-2 h-4 w-4" />
                     Editar Todos ({getShiftsForDayDialog(selectedDate).length})
+                  </Button>
+                )}
+                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    disabled={deletingDayShifts}
+                    onClick={handleDeleteDayShifts}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    {deletingDayShifts
+                      ? 'Excluindo...'
+                      : `Excluir Dia (${getShiftsForDayDialog(selectedDate).length})`}
                   </Button>
                 )}
                 <Button
@@ -4007,7 +4420,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                 >
                                   <div>
                                     <div className="font-medium text-sm text-blue-800">
-                                      {offer.profile?.name || 'Plantonista'}
+                                      {getOfferName(offer)}
                                     </div>
                                     {offer.message && (
                                       <div className="text-xs text-blue-600 mt-1">
@@ -4164,7 +4577,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   id="start_time"
                   type="time"
                   value={formData.start_time}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                  onChange={(e) => {
+                    const nextStart = e.target.value;
+                    setFormData((prev) => {
+                      const nextDuration = prev.end_time
+                        ? durationToInputValue(calculateDurationHours(nextStart, prev.end_time))
+                        : prev.duration_hours;
+                      return { ...prev, start_time: nextStart, duration_hours: nextDuration };
+                    });
+                  }}
                   required
                 />
               </div>
@@ -4227,7 +4648,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     const endMinutes = (startMinutes + hours * 60) % (24 * 60);
                     const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
                     const endM = (endMinutes % 60).toString().padStart(2, '0');
-                    setFormData({ ...formData, end_time: `${endH}:${endM}`, duration_hours: v });
+                    setFormData((prev) => ({ ...prev, end_time: `${endH}:${endM}`, duration_hours: v }));
                   }}
                 >
                   <SelectTrigger>
@@ -4251,7 +4672,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   value={formData.duration_hours}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setFormData({ ...formData, duration_hours: value });
+                    setFormData((prev) => ({ ...prev, duration_hours: value }));
                     
                     if (!formData.start_time || !value) return;
                     const hours = parseInt(value, 10);
@@ -4271,7 +4692,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   id="end_time"
                   type="time"
                   value={formData.end_time}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                  onChange={(e) => {
+                    const nextEnd = e.target.value;
+                    setFormData((prev) => {
+                      const nextDuration = prev.start_time
+                        ? durationToInputValue(calculateDurationHours(prev.start_time, nextEnd))
+                        : prev.duration_hours;
+                      return { ...prev, end_time: nextEnd, duration_hours: nextDuration };
+                    });
+                  }}
                   required
                 />
               </div>
@@ -4403,7 +4832,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                 });
                               }}
                             >
-                              <SelectTrigger className="h-8">
+                              <SelectTrigger className="h-auto min-h-8 py-1 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                                 <SelectValue placeholder="Selecionar" />
                               </SelectTrigger>
                               <SelectContent className="max-h-[280px] overflow-y-auto">
@@ -4423,7 +4852,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                   <SelectItem key={m.user_id} value={m.user_id}>
                                     <span className="flex items-center gap-2">
                                       <span className="w-2 h-2 rounded-full bg-primary" />
-                                      {m.profile?.name || 'Sem nome'}
+                                      {getMemberDisplayName(m)}
                                     </span>
                                   </SelectItem>
                                 ))}
@@ -4442,7 +4871,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     value={formData.assigned_user_id || 'vago'} 
                     onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-auto min-h-10 py-2 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                       <SelectValue placeholder="Selecionar tipo" />
                     </SelectTrigger>
                     <SelectContent className="max-h-[280px] overflow-y-auto">
@@ -4472,7 +4901,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                 <SelectItem key={m.user_id} value={m.user_id}>
                                   <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-primary" />
-                                    {m.profile?.name || 'Sem nome'}
+                                    {getMemberDisplayName(m)}
                                   </span>
                                 </SelectItem>
                               ))}
@@ -4576,15 +5005,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="space-y-2">
               <Label>Plantonista</Label>
               <Select value={assignData.user_id} onValueChange={(v) => setAssignData({ ...assignData, user_id: v })}>
-                <SelectTrigger>
+                <SelectTrigger className="h-auto min-h-10 py-2 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                   <SelectValue placeholder="Selecione um plantonista" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[280px] overflow-y-auto">
-                  {sortMembersAlphabetically(members).map((m) => (
+                  {sortMembersAlphabetically(
+                    selectedShift?.sector_id ? getMembersForSector(selectedShift.sector_id) : []
+                  ).map((m) => (
                     <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.profile?.name || 'Sem nome'}
+                      {getMemberDisplayName(m)}
                     </SelectItem>
                   ))}
+                  {selectedShift?.sector_id &&
+                    sortMembersAlphabetically(getMembersForSector(selectedShift.sector_id)).length === 0 && (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        Nenhum plantonista cadastrado neste setor
+                      </div>
+                    )}
                 </SelectContent>
               </Select>
             </div>
@@ -4740,7 +5177,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Justification Dialog for Acknowledging Conflict */}
       <Dialog open={justificationDialogOpen} onOpenChange={setJustificationDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-600">
               <FileText className="h-5 w-5" />
@@ -4861,15 +5298,58 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             </div>
           ) : (
             <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-md border border-border bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    id="select-all-conflict-history"
+                    checked={conflictHistory.length > 0 && selectedConflictHistoryIds.size === conflictHistory.length}
+                    onCheckedChange={(checked) => toggleSelectAllConflictHistory(Boolean(checked))}
+                    disabled={deletingConflictHistory}
+                  />
+                  <Label htmlFor="select-all-conflict-history" className="text-sm cursor-pointer">
+                    Selecionar todos
+                  </Label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {selectedConflictHistoryIds.size} selecionado(s)
+                  </span>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={deleteSelectedConflictHistory}
+                    disabled={deletingConflictHistory || selectedConflictHistoryIds.size === 0}
+                  >
+                    {deletingConflictHistory ? 'Excluindo...' : `Excluir selecionados (${selectedConflictHistoryIds.size})`}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={deleteAllConflictHistory}
+                    disabled={deletingConflictHistory || conflictHistory.length === 0}
+                    className="text-destructive border-destructive/40 hover:bg-destructive/10"
+                  >
+                    Excluir tudo
+                  </Button>
+                </div>
+              </div>
               {conflictHistory.map((resolution) => (
                 <Card key={resolution.id} className={`border ${resolution.resolution_type === 'acknowledged' ? 'border-yellow-300' : 'border-blue-300'}`}>
                   <CardContent className="p-4">
                     <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                      <div>
+                      <div className="flex items-start gap-2">
+                        <Checkbox
+                          id={`resolution-${resolution.id}`}
+                          checked={selectedConflictHistoryIds.has(resolution.id)}
+                          onCheckedChange={(checked) => toggleConflictHistorySelection(resolution.id, Boolean(checked))}
+                          disabled={deletingConflictHistory}
+                        />
+                        <div>
                         <p className="font-medium">{resolution.plantonista_name}</p>
                         <p className="text-sm text-muted-foreground">
                           {format(parseISO(resolution.conflict_date), "dd/MM/yyyy", { locale: ptBR })}
                         </p>
+                        </div>
                       </div>
                       <Badge variant={resolution.resolution_type === 'acknowledged' ? 'secondary' : 'outline'}>
                         {resolution.resolution_type === 'acknowledged' ? '✅ Conflito Mantido' : '🔄 Remoção'}
@@ -4877,9 +5357,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     </div>
                     
                     {resolution.resolution_type === 'acknowledged' ? (
-                      <div className="mt-2 p-2 rounded bg-yellow-50 dark:bg-yellow-950/20">
-                        <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Justificativa:</p>
-                        <p className="text-sm">{resolution.justification}</p>
+                      <div className="mt-2 space-y-2">
+                        {getAcknowledgedResolutionLocations(resolution).length > 0 && (
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {getAcknowledgedResolutionLocations(resolution).map((location) => (
+                              <div key={location.assignmentKey} className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                                <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
+                                <p className="text-sm font-medium">{location.sectorName}</p>
+                                <p className="text-xs text-muted-foreground">{location.shiftTime}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/20">
+                          <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Justificativa:</p>
+                          <p className="text-sm whitespace-pre-wrap break-words">{resolution.justification}</p>
+                        </div>
                       </div>
                     ) : (
                       <div className="mt-2 grid grid-cols-2 gap-2">
@@ -5042,7 +5535,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   value={formData.assigned_user_id || 'vago'} 
                   onValueChange={(v) => setFormData({ ...formData, assigned_user_id: v })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-auto min-h-10 py-2 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                     <SelectValue placeholder="Selecionar tipo" />
                   </SelectTrigger>
                   <SelectContent className="max-h-[280px] overflow-y-auto">
@@ -5060,8 +5553,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     </SelectItem>
                     {(() => {
                       const sectorMembers = formData.sector_id ? getMembersForSector(formData.sector_id) : [];
-                      const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
-                      const label = sectorMembers.length > 0 ? 'Plantonistas do Setor' : 'Todos os Plantonistas';
+                      const membersToShow = sortMembersAlphabetically(sectorMembers);
+                      const label = 'Plantonistas do Setor';
                       
                       if (membersToShow.length > 0) {
                         return (
@@ -5073,14 +5566,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               <SelectItem key={m.user_id} value={m.user_id}>
                                 <span className="flex items-center gap-2">
                                   <span className="w-2 h-2 rounded-full bg-primary" />
-                                  {m.profile?.name || 'Sem nome'}
+                                  {getMemberDisplayName(m)}
                                 </span>
                               </SelectItem>
                             ))}
                           </>
                         );
                       }
-                      return null;
+                      return (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                          Nenhum plantonista cadastrado neste setor
+                        </div>
+                      );
                     })()}
                   </SelectContent>
                 </Select>
@@ -5202,6 +5699,74 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Replicate Day Dialog */}
+      <Dialog open={replicateDayDialogOpen} onOpenChange={setReplicateDayDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Repeat className="h-5 w-5" />
+              Replicar Escala do Dia
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-muted/50 border">
+              <p className="text-sm text-muted-foreground">Dia base</p>
+              <p className="font-semibold">
+                {selectedDate ? format(selectedDate, "EEEE, dd/MM/yyyy", { locale: ptBR }) : '—'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {selectedDate ? `${getShiftsForDayDialog(selectedDate).length} plantão(ões) serão replicados para o mesmo dia da semana.` : ''}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Quantas semanas replicar?</Label>
+              <Select
+                value={String(replicateWeeks)}
+                onValueChange={(v) => setReplicateWeeks(parseInt(v, 10))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1 semana</SelectItem>
+                  <SelectItem value="2">2 semanas</SelectItem>
+                  <SelectItem value="3">3 semanas</SelectItem>
+                  <SelectItem value="4">4 semanas</SelectItem>
+                  <SelectItem value="5">5 semanas</SelectItem>
+                  <SelectItem value="6">6 semanas</SelectItem>
+                  <SelectItem value="7">7 semanas</SelectItem>
+                  <SelectItem value="8">8 semanas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="p-3 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-700">
+              A réplica copia horários, setor, observações e atribuições atuais para as próximas semanas.
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setReplicateDayDialogOpen(false)}
+                disabled={replicateLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleReplicateDayShifts}
+                disabled={replicateLoading || !selectedDate}
+              >
+                {replicateLoading ? 'Replicando...' : `Replicar ${replicateWeeks}x`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Bulk Edit Selected Shifts (Apply same changes) */}
       <Dialog
         open={bulkApplyDialogOpen}
@@ -5271,17 +5836,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 value={bulkApplyData.assigned_user_id || '__keep__'}
                 onValueChange={(v) => setBulkApplyData((p) => ({ ...p, assigned_user_id: v === '__keep__' ? '' : v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-auto min-h-10 py-2 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                   <SelectValue placeholder="Manter como está" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[280px] overflow-y-auto">
                   <SelectItem value="__keep__">Manter como está</SelectItem>
                   <SelectItem value="__clear__">Remover plantonista (vago)</SelectItem>
-                  {sortMembersAlphabetically(members).map((m) => (
-                    <SelectItem key={m.user_id} value={m.user_id}>
-                      {m.profile?.name || 'Sem nome'}
-                    </SelectItem>
-                  ))}
+                  {(() => {
+                    const selectedShifts = shifts.filter((s) => bulkApplyShiftIds.includes(s.id));
+                    const uniqueSectorIds = Array.from(
+                      new Set(selectedShifts.map((s) => s.sector_id).filter((id): id is string => !!id))
+                    );
+
+                    if (uniqueSectorIds.length !== 1) {
+                      return (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                          Para atribuir plantonista em bloco, selecione plantões de um único setor.
+                        </div>
+                      );
+                    }
+
+                    const membersToShow = sortMembersAlphabetically(getMembersForSector(uniqueSectorIds[0]));
+                    if (membersToShow.length === 0) {
+                      return (
+                        <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                          Nenhum plantonista cadastrado neste setor
+                        </div>
+                      );
+                    }
+
+                    return membersToShow.map((m) => (
+                      <SelectItem key={m.user_id} value={m.user_id}>
+                        {getMemberDisplayName(m)}
+                      </SelectItem>
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
             </div>
@@ -5340,7 +5929,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               {bulkEditData.map((editData, index) => {
                 const originalShift = bulkEditShifts.find(s => s.id === editData.id);
                 const sectorMembers = editData.sector_id ? getMembersForSector(editData.sector_id) : [];
-                const membersToShow = sortMembersAlphabetically(sectorMembers.length > 0 ? sectorMembers : members);
+                const membersToShow = sortMembersAlphabetically(sectorMembers);
                 const sectorColor = getSectorColor(editData.sector_id, editData.hospital);
                 const isNight = isNightShift(editData.start_time, editData.end_time);
 
@@ -5482,7 +6071,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               i === index ? { ...d, assigned_user_id: v } : d
                             ))}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger className="h-auto min-h-10 py-2 [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words">
                               <SelectValue placeholder="Selecionar" />
                             </SelectTrigger>
                             <SelectContent className="max-h-[280px] overflow-y-auto">
@@ -5502,10 +6091,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                                 <SelectItem key={m.user_id} value={m.user_id}>
                                   <span className="flex items-center gap-2">
                                     <span className="w-2 h-2 rounded-full bg-primary" />
-                                    {m.profile?.name || 'Sem nome'}
+                                    {getMemberDisplayName(m)}
                                   </span>
                                 </SelectItem>
                               ))}
+                              {membersToShow.length === 0 && (
+                                <div className="px-2 py-1.5 text-xs text-muted-foreground border-t mt-1">
+                                  Nenhum plantonista cadastrado neste setor
+                                </div>
+                              )}
                             </SelectContent>
                           </Select>
                         </div>

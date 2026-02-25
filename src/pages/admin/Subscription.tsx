@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -29,14 +29,7 @@ export default function Subscription() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchSubscription();
-      fetchPlans();
-    }
-  }, [currentTenantId]);
-
-  const fetchSubscription = async () => {
+  const fetchSubscription = useCallback(async () => {
     const { data, error } = await supabase.rpc('get_tenant_subscription', {
       _tenant_id: currentTenantId
     });
@@ -52,9 +45,9 @@ export default function Subscription() {
       });
     }
     setLoading(false);
-  };
+  }, [currentTenantId]);
 
-  const fetchPlans = async () => {
+  const fetchPlans = useCallback(async () => {
     const { data, error } = await supabase
       .from('plans')
       .select('id, name, min_users, max_users')
@@ -64,7 +57,14 @@ export default function Subscription() {
     if (!error && data) {
       setPlans(data);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchSubscription();
+      fetchPlans();
+    }
+  }, [currentTenantId, fetchSubscription, fetchPlans]);
 
   const handleUpgrade = async (planId: string) => {
     const { error } = await supabase

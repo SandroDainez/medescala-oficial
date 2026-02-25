@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -88,11 +88,7 @@ export default function SectorProfitability() {
   });
 
   // Fetch data
-  useEffect(() => {
-    if (currentTenantId) fetchData();
-  }, [currentTenantId, selectedMonth, selectedYear]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
@@ -172,25 +168,29 @@ export default function SectorProfitability() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentTenantId, selectedMonth, selectedYear, toast]);
+
+  useEffect(() => {
+    if (currentTenantId) fetchData();
+  }, [currentTenantId, fetchData]);
 
   // Get revenue for a sector
-  function getSectorRevenue(sectorId: string): SectorRevenue | undefined {
+  const getSectorRevenue = useCallback((sectorId: string): SectorRevenue | undefined => {
     return revenues.find(r => r.sector_id === sectorId);
-  }
+  }, [revenues]);
 
   // Get expenses for a sector
-  function getSectorExpenses(sectorId: string): SectorExpense[] {
+  const getSectorExpenses = useCallback((sectorId: string): SectorExpense[] => {
     return expenses.filter(e => e.sector_id === sectorId);
-  }
+  }, [expenses]);
 
   // Get plantonista payment for a sector
-  function getPlantonistaPayment(sectorId: string): number {
+  const getPlantonistaPayment = useCallback((sectorId: string): number => {
     return plantonistaPayments.find(p => p.sector_id === sectorId)?.total_value || 0;
-  }
+  }, [plantonistaPayments]);
 
   // Calculate sector financials
-  function calculateSectorFinancials(sectorId: string) {
+  const calculateSectorFinancials = useCallback((sectorId: string) => {
     const revenue = getSectorRevenue(sectorId);
     const sectorExpenses = getSectorExpenses(sectorId);
     const plantonistaPayment = getPlantonistaPayment(sectorId);
@@ -217,7 +217,7 @@ export default function SectorProfitability() {
       plantonistaPayment,
       profit,
     };
-  }
+  }, [getSectorRevenue, getSectorExpenses, getPlantonistaPayment]);
 
   // Grand totals
   const grandTotals = useMemo(() => {
@@ -251,7 +251,7 @@ export default function SectorProfitability() {
       totalPlantonistaPayments,
       totalProfit,
     };
-  }, [sectors, revenues, expenses, plantonistaPayments]);
+  }, [sectors, calculateSectorFinancials]);
 
   // Toggle sector expansion
   function toggleSector(sectorId: string) {

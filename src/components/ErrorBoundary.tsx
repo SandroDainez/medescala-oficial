@@ -1,6 +1,7 @@
 import React from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { clearPwaCacheAndReload } from "@/lib/pwa";
 
 type Props = {
   children: React.ReactNode;
@@ -14,6 +15,16 @@ type State = {
 export class ErrorBoundary extends React.Component<Props, State> {
   state: State = { hasError: false };
 
+  private isChunkLoadError(message: string) {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("failed to fetch dynamically imported module") ||
+      normalized.includes("importing a module script failed") ||
+      normalized.includes("chunkloaderror") ||
+      normalized.includes("loading chunk")
+    );
+  }
+
   static getDerivedStateFromError(error: unknown): State {
     const message = error instanceof Error ? error.message : String(error);
     return { hasError: true, errorMessage: message };
@@ -23,6 +34,13 @@ export class ErrorBoundary extends React.Component<Props, State> {
     // This prevents a full "white screen" and gives us a useful clue in console logs.
     console.error("[ErrorBoundary] Uncaught error:", error);
     console.error("[ErrorBoundary] Component stack:", info);
+
+    const message = error instanceof Error ? error.message : String(error);
+    const alreadyRetried = sessionStorage.getItem("medescala_chunk_retry_done") === "1";
+    if (this.isChunkLoadError(message) && !alreadyRetried) {
+      sessionStorage.setItem("medescala_chunk_retry_done", "1");
+      void clearPwaCacheAndReload();
+    }
   }
 
   render() {
@@ -46,6 +64,9 @@ export class ErrorBoundary extends React.Component<Props, State> {
               )}
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => window.location.reload()}>Recarregar</Button>
+                <Button variant="secondary" onClick={() => void clearPwaCacheAndReload()}>
+                  Atualizar app
+                </Button>
                 <Button variant="outline" onClick={() => (window.location.href = "/home")}
                 >
                   Ir para Início

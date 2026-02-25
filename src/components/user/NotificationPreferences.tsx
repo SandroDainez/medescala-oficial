@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -68,14 +68,7 @@ export default function NotificationPreferences() {
     lastExportedAt: webLastExportedAt
   } = useWebCalendarSync();
 
-  useEffect(() => {
-    if (user?.id) {
-      loadPreferences();
-      checkPermissions();
-    }
-  }, [user?.id]);
-
-  const loadPreferences = async () => {
+  const loadPreferences = useCallback(async () => {
     if (!user?.id) return;
     
     try {
@@ -86,9 +79,9 @@ export default function NotificationPreferences() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.id]);
 
-  const checkPermissions = async () => {
+  const checkPermissions = useCallback(async () => {
     // Check web push permission
     if (isWebPushSupported) {
       const permission = getNotificationPermission();
@@ -104,7 +97,14 @@ export default function NotificationPreferences() {
         console.error('Error checking calendar permissions:', error);
       }
     }
-  };
+  }, [isNative, isWebPushSupported]);
+
+  useEffect(() => {
+    if (user?.id) {
+      loadPreferences();
+      checkPermissions();
+    }
+  }, [user?.id, loadPreferences, checkPermissions]);
 
   const handlePrefChange = async (key: keyof NotificationPrefs, value: boolean) => {
     if (!user?.id || !currentTenantId) return;

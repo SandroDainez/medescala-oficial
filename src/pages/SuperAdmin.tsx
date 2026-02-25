@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import {
   Users, 
   Calendar, 
   Shield, 
-  Infinity, 
+  Infinity as InfinityIcon, 
   Clock,
   AlertTriangle,
   CheckCircle,
@@ -193,11 +193,41 @@ export default function SuperAdmin() {
     }
   }
 
-  useEffect(() => {
-    checkSuperAdminAndFetch();
-  }, [user]);
+  const fetchReopenPassword = useCallback(async () => {
+    setLoadingPassword(true);
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'schedule_reopen_password')
+        .maybeSingle();
+      
+      if (error) throw error;
+      setCurrentReopenPassword(data?.setting_value || '');
+    } catch (error) {
+      console.error('Error fetching reopen password:', error);
+    } finally {
+      setLoadingPassword(false);
+    }
+  }, []);
 
-  async function checkSuperAdminAndFetch() {
+  const fetchTenants = useCallback(async () => {
+    const { data, error } = await supabase.rpc('get_all_tenants_admin');
+
+    if (error) {
+      console.error('Error fetching tenants:', error);
+      toast({
+        title: 'Erro ao carregar hospitais',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setTenants(data || []);
+  }, [toast]);
+
+  const checkSuperAdminAndFetch = useCallback(async () => {
     if (!user) {
       setLoading(false);
       return;
@@ -215,41 +245,11 @@ export default function SuperAdmin() {
     setIsSuperAdmin(true);
     await Promise.all([fetchTenants(), fetchReopenPassword()]);
     setLoading(false);
-  }
+  }, [user, fetchTenants, fetchReopenPassword]);
 
-  async function fetchReopenPassword() {
-    setLoadingPassword(true);
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'schedule_reopen_password')
-        .maybeSingle();
-      
-      if (error) throw error;
-      setCurrentReopenPassword(data?.setting_value || '');
-    } catch (error) {
-      console.error('Error fetching reopen password:', error);
-    } finally {
-      setLoadingPassword(false);
-    }
-  }
-
-  async function fetchTenants() {
-    const { data, error } = await supabase.rpc('get_all_tenants_admin');
-
-    if (error) {
-      console.error('Error fetching tenants:', error);
-      toast({
-        title: 'Erro ao carregar hospitais',
-        description: error.message,
-        variant: 'destructive',
-      });
-      return;
-    }
-
-    setTenants(data || []);
-  }
+  useEffect(() => {
+    checkSuperAdminAndFetch();
+  }, [checkSuperAdminAndFetch]);
 
   function openEditDialog(tenant: Tenant) {
     setSelectedTenant(tenant);
@@ -297,7 +297,7 @@ export default function SuperAdmin() {
     if (tenant.is_unlimited) {
       return (
         <Badge className="bg-purple-500/10 text-purple-600 border-purple-500/20">
-          <Infinity className="h-3 w-3 mr-1" />
+          <InfinityIcon className="h-3 w-3 mr-1" />
           Ilimitado
         </Badge>
       );

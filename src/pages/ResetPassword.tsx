@@ -25,29 +25,79 @@ export default function ResetPassword() {
   useEffect(() => {
     // Check if we have a valid recovery session
     const checkSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      // Check URL for recovery token
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      const accessToken = hashParams.get('access_token');
-      const type = hashParams.get('type');
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
 
-      if (type === 'recovery' && accessToken) {
-        // Set the session with the recovery token
-        const { error } = await supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: hashParams.get('refresh_token') || '',
-        });
+        // 1) Hash format: #access_token=...&refresh_token=...&type=recovery
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const hashAccessToken = hashParams.get('access_token');
+        const hashRefreshToken = hashParams.get('refresh_token');
+        const hashType = hashParams.get('type');
 
-        if (!error) {
-          setIsValidLink(true);
+        if (hashType === 'recovery' && hashAccessToken && hashRefreshToken) {
+          const { error } = await supabase.auth.setSession({
+            access_token: hashAccessToken,
+            refresh_token: hashRefreshToken,
+          });
+
+          if (!error) {
+            setIsValidLink(true);
+            return;
+          }
         }
-      } else if (session) {
-        // User might already be in a recovery flow
-        setIsValidLink(true);
+
+        // 2) PKCE/code format: /reset-password?code=...
+        const queryParams = new URLSearchParams(window.location.search);
+        const token = queryParams.get('token');
+        const queryType = queryParams.get('type') || 'recovery';
+
+        // 2a) Raw token format: /reset-password?token=...&type=recovery
+        // Redirect through Supabase verify endpoint to obtain access_token/refresh_token.
+        if (token && queryType === 'recovery') {
+          const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+          if (supabaseUrl) {
+            const verifyUrl = new URL('/auth/v1/verify', supabaseUrl);
+            verifyUrl.searchParams.set('token', token);
+            verifyUrl.searchParams.set('type', 'recovery');
+            verifyUrl.searchParams.set('redirect_to', `${window.location.origin}/reset-password`);
+            window.location.replace(verifyUrl.toString());
+            return;
+          }
+        }
+
+        const code = queryParams.get('code');
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (!error) {
+            setIsValidLink(true);
+            return;
+          }
+        }
+
+        // 3) Token hash format: /reset-password?token=... or token_hash=...
+        const tokenHash = queryParams.get('token_hash');
+        if (tokenHash && queryType === 'recovery') {
+          const { error } = await supabase.auth.verifyOtp({
+            type: 'recovery',
+            token_hash: tokenHash,
+          });
+
+          if (!error) {
+            setIsValidLink(true);
+            return;
+          }
+        }
+
+        // 4) Already authenticated session
+        if (session) {
+          setIsValidLink(true);
+          return;
+        }
+      } catch (_err) {
+        setIsValidLink(false);
+      } finally {
+        setChecking(false);
       }
-      
-      setChecking(false);
     };
 
     checkSession();

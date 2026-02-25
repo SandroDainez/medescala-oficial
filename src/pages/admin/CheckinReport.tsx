@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useTenant } from '@/hooks/useTenant';
@@ -52,19 +52,7 @@ export default function CheckinReport() {
   const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchSectors();
-    }
-  }, [currentTenantId]);
-
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchRecords();
-    }
-  }, [currentTenantId, selectedSector, selectedMonth, selectedYear]);
-
-  async function fetchSectors() {
+  const fetchSectors = useCallback(async () => {
     if (!currentTenantId) return;
     const { data } = await supabase
       .from('sectors')
@@ -73,16 +61,16 @@ export default function CheckinReport() {
       .eq('active', true)
       .order('name');
     if (data) setSectors(data);
-  }
+  }, [currentTenantId]);
 
-  async function fetchRecords() {
+  const fetchRecords = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
     const startDate = format(startOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd');
     const endDate = format(endOfMonth(new Date(selectedYear, selectedMonth - 1)), 'yyyy-MM-dd');
 
-    let query = supabase
+    const query = supabase
       .from('shift_assignments')
       .select(`
         id,
@@ -138,7 +126,19 @@ export default function CheckinReport() {
 
     setRecords(mapped);
     setLoading(false);
-  }
+  }, [currentTenantId, selectedYear, selectedMonth, selectedSector]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchSectors();
+    }
+  }, [currentTenantId, fetchSectors]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchRecords();
+    }
+  }, [currentTenantId, selectedSector, selectedMonth, selectedYear, fetchRecords]);
 
   function getCheckinStatus(record: CheckinRecord) {
     if (!record.checkin_at && !record.checkout_at) {

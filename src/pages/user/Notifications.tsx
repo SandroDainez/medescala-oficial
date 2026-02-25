@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -30,6 +30,23 @@ export default function UserNotifications() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (!error && data) {
+      setNotifications(data);
+    }
+    setLoading(false);
+  }, [user]);
 
   useEffect(() => {
     if (user && currentTenantId) {
@@ -68,24 +85,7 @@ export default function UserNotifications() {
         supabase.removeChannel(channel);
       };
     }
-  }, [user, currentTenantId]);
-
-  async function fetchNotifications() {
-    if (!user) return;
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (!error && data) {
-      setNotifications(data);
-    }
-    setLoading(false);
-  }
+  }, [user, currentTenantId, fetchNotifications]);
 
   async function markAsRead(id: string) {
     const { error } = await supabase

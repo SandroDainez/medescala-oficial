@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { Mail, ArrowLeft, CheckCircle, Loader2 } from 'lucide-react';
 import { z } from 'zod';
+import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 
 const emailSchema = z.string().email('Email inválido');
 
@@ -18,15 +19,7 @@ export default function ForgotPassword() {
   const [emailSent, setEmailSent] = useState(false);
 
   async function sendPasswordResetEmail(targetEmail: string) {
-    // On mobile (Capacitor) window.location.origin may be `capacitor://localhost`.
-    // The recovery email must contain a publicly reachable URL.
-    const origin = window.location.origin;
-    const publicBaseUrl =
-      origin.startsWith('capacitor://') || origin.includes('localhost')
-        ? 'https://medescala.vercel.app'
-        : origin;
-
-    const redirectUrl = `${publicBaseUrl}/reset-password`;
+    const redirectUrl = buildPublicAppUrl('/reset-password');
 
     // Use the edge function for reliable email delivery
     const { data, error } = await supabase.functions.invoke('send-password-reset', {

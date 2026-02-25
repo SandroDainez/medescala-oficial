@@ -6,7 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// HTML escape function to prevent XSS in email templates
 function escapeHtml(text: string): string {
   if (!text) return '';
   const htmlEscapes: Record<string, string> = {
@@ -22,27 +21,88 @@ function escapeHtml(text: string): string {
 interface InviteEmailRequest {
   name: string;
   email: string;
-  password: string;
+  password?: string;
   hospitalName: string;
   loginUrl: string;
+  tenantId: string;
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
-  console.log("send-invite-email function called");
-
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { name, email, password, hospitalName, loginUrl }: InviteEmailRequest = await req.json();
+    const { name, email, password, hospitalName, loginUrl, tenantId }: InviteEmailRequest = await req.json();
+    const hasPassword = !!password?.trim();
 
-    console.log(`Sending invite email to ${email} for hospital ${hospitalName}`);
+    if (!tenantId) {
+      return new Response(JSON.stringify({ error: 'tenantId é obrigatório' }), {
+        status: 400,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
 
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
     if (!RESEND_API_KEY) {
       throw new Error("RESEND_API_KEY not configured");
+    }
+
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured");
+    }
+
+    const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: missing token' }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice('Bearer '.length)
+      : authHeader;
+
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const {
+      data: { user: requester },
+      error: authError,
+    } = await supabaseAdmin.auth.getUser(token);
+
+    if (authError || !requester) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    const { data: membership, error: membershipError } = await supabaseAdmin
+      .from('memberships')
+      .select('role, active')
+      .eq('tenant_id', tenantId)
+      .eq('user_id', requester.id)
+      .eq('active', true)
+      .maybeSingle();
+
+    if (membershipError) {
+      throw new Error(`Erro ao validar permissões: ${membershipError.message}`);
+    }
+
+    if (!membership || !['admin', 'owner'].includes(membership.role)) {
+      return new Response(
+        JSON.stringify({ error: 'Apenas administradores do hospital/serviço podem enviar convites' }),
+        {
+          status: 403,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        },
+      );
     }
 
     const htmlContent = `
@@ -66,12 +126,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
           <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #374151;">Seus dados de acesso:</h3>
             <p style="margin: 10px 0;"><strong>Email:</strong> ${escapeHtml(email)}</p>
-            <p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${escapeHtml(password)}</code></p>
+            ${hasPassword
+              ? `<p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${escapeHtml(password || "")}</code></p>`
+              : `<p style="margin: 10px 0;">Use a opção <strong>Esqueci minha senha</strong> na tela de login para definir sua senha.</p>`
+            }
           </div>
           
           <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
             <p style="margin: 0; color: #92400e;">
-              <strong>⚠️ Importante:</strong> Por segurança, você deverá alterar sua senha no primeiro acesso.
+              <strong>⚠️ Importante:</strong> Por segurança, altere sua senha no primeiro acesso.
             </p>
           </div>
           
@@ -93,9 +156,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       </html>
     `;
 
-    // Remetente fixo — sem fallback para resend.dev
     const fromAddress = "MedEscala <noreply@medescalas.com.br>";
-    console.log(`[send-invite-email] Enviando email com from="${fromAddress}" para "${email}"`);
 
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -114,18 +175,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Resend API error:", data);
       throw new Error(data.message || "Failed to send email");
     }
-
-    console.log("Email sent successfully:", data);
 
     return new Response(JSON.stringify({ success: true, data }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });
   } catch (error: any) {
-    console.error("Error sending invite email:", error);
     return new Response(
       JSON.stringify({ error: error.message }),
       {

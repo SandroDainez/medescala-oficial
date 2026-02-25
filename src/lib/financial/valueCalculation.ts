@@ -31,7 +31,7 @@ export function calculateDurationHours(startTime: string, endTime: string): numb
   const [endH, endM] = endTime.split(':').map(Number);
 
   let hours = endH - startH;
-  let minutes = endM - startM;
+  const minutes = endM - startM;
   if (hours < 0 || (hours === 0 && minutes < 0)) {
     hours += 24;
   }

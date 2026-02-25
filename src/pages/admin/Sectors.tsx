@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -88,13 +88,7 @@ export default function AdminSectors() {
     color: '#22c55e',
   });
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchData();
-    }
-  }, [currentTenantId]);
-
-  async function fetchData() {
+  const fetchData = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
@@ -120,7 +114,13 @@ export default function AdminSectors() {
     if (membershipRes.data) setSectorMemberships(membershipRes.data);
     
     setLoading(false);
-  }
+  }, [currentTenantId]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchData();
+    }
+  }, [currentTenantId, fetchData]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

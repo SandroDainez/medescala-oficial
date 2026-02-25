@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -24,11 +24,7 @@ export default function ChangePassword() {
   const [mustChange, setMustChange] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
 
-  useEffect(() => {
-    checkMustChangePassword();
-  }, [user]);
-
-  async function checkMustChangePassword() {
+  const checkMustChangePassword = useCallback(async () => {
     if (!user) {
       setCheckingStatus(false);
       return;
@@ -44,7 +40,11 @@ export default function ChangePassword() {
       setMustChange(true);
     }
     setCheckingStatus(false);
-  }
+  }, [user]);
+
+  useEffect(() => {
+    checkMustChangePassword();
+  }, [checkMustChangePassword]);
 
   async function handleChangePassword(e: React.FormEvent) {
     e.preventDefault();

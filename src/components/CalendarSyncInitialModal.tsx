@@ -16,8 +16,7 @@ import { toast } from 'sonner';
 import { isNativePlatform, getNotificationPreferences, saveNotificationPreferences } from '@/lib/pushNotifications';
 import { requestCalendarPermissions, syncAllShiftsToCalendar } from '@/lib/nativeCalendar';
 import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
-
-const INITIAL_SYNC_ASKED_KEY = 'medescala-calendar-initial-asked';
+import { calendarSyncPromptKeys } from '@/lib/calendarSyncPrompts';
 
 /**
  * Modal que aparece na primeira abertura do app perguntando se o usuário
@@ -37,7 +36,7 @@ export function CalendarSyncInitialModal() {
     if (!user?.id || !currentTenantId) return;
     
     // Verifica se já perguntamos antes
-    const alreadyAsked = localStorage.getItem(INITIAL_SYNC_ASKED_KEY);
+    const alreadyAsked = localStorage.getItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY);
     if (alreadyAsked) return;
     
     // Verifica se o usuário já tem preferência de calendário salva
@@ -46,7 +45,7 @@ export function CalendarSyncInitialModal() {
       
       // Se já tem preferência definida (sim ou não), não pergunta de novo
       if (prefs.calendar_sync_enabled !== undefined && prefs.calendar_sync_enabled !== null) {
-        localStorage.setItem(INITIAL_SYNC_ASKED_KEY, 'true');
+        localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
         return;
       }
       
@@ -236,6 +235,3 @@ export function CalendarSyncInitialModal() {
 /**
  * Reseta a flag para mostrar o modal novamente (útil para testes)
  */
-export function resetCalendarInitialPrompt() {
-  localStorage.removeItem(INITIAL_SYNC_ASKED_KEY);
-}

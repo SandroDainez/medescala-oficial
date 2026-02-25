@@ -99,6 +99,11 @@ export function AnimatedNumber({
 }: AnimatedNumberProps) {
   const [displayValue, setDisplayValue] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
+  const displayValueRef = useRef(0);
+
+  useEffect(() => {
+    displayValueRef.current = displayValue;
+  }, [displayValue]);
 
   useEffect(() => {
     if (value === 0) {
@@ -107,7 +112,7 @@ export function AnimatedNumber({
     }
 
     setIsAnimating(true);
-    const startValue = displayValue;
+    const startValue = displayValueRef.current;
     const difference = value - startValue;
     const startTime = performance.now();
 

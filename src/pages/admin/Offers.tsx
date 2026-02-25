@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -48,13 +48,7 @@ export default function AdminOffers() {
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchOffers();
-    }
-  }, [currentTenantId]);
-
-  async function fetchOffers() {
+  const fetchOffers = useCallback(async () => {
     if (!currentTenantId) return;
     setLoading(true);
 
@@ -75,7 +69,13 @@ export default function AdminOffers() {
     }
     
     setLoading(false);
-  }
+  }, [currentTenantId]);
+
+  useEffect(() => {
+    if (currentTenantId) {
+      fetchOffers();
+    }
+  }, [currentTenantId, fetchOffers]);
 
   async function handleApprove(offer: ShiftOffer) {
     if (!user || !currentTenantId) return;

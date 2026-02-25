@@ -11,9 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Calendar, Download, Share2, X, Bell } from 'lucide-react';
 import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
 import { toast } from 'sonner';
-
-const PROMPT_SESSION_KEY = 'medescala-calendar-prompt-shown';
-const PROMPT_DISMISSED_KEY = 'medescala-calendar-prompt-dismissed';
+import { calendarSyncPromptKeys } from '@/lib/calendarSyncPrompts';
 
 interface CalendarSyncPromptProps {
   /** Force show even if dismissed before */
@@ -28,8 +26,8 @@ export function CalendarSyncPrompt({ forceShow = false }: CalendarSyncPromptProp
     if (loading) return;
 
     // Check if we should show the prompt
-    const sessionShown = sessionStorage.getItem(PROMPT_SESSION_KEY);
-    const permanentlyDismissed = localStorage.getItem(PROMPT_DISMISSED_KEY);
+    const sessionShown = sessionStorage.getItem(calendarSyncPromptKeys.PROMPT_SESSION_KEY);
+    const permanentlyDismissed = localStorage.getItem(calendarSyncPromptKeys.PROMPT_DISMISSED_KEY);
 
     // Show prompt if:
     // 1. forceShow is true, OR
@@ -45,7 +43,7 @@ export function CalendarSyncPrompt({ forceShow = false }: CalendarSyncPromptProp
       // Small delay so it doesn't feel abrupt
       const timer = setTimeout(() => {
         setOpen(true);
-        sessionStorage.setItem(PROMPT_SESSION_KEY, 'true');
+        sessionStorage.setItem(calendarSyncPromptKeys.PROMPT_SESSION_KEY, 'true');
       }, 1500);
 
       return () => clearTimeout(timer);
@@ -73,7 +71,7 @@ export function CalendarSyncPrompt({ forceShow = false }: CalendarSyncPromptProp
   };
 
   const handleDontAskAgain = () => {
-    localStorage.setItem(PROMPT_DISMISSED_KEY, 'true');
+    localStorage.setItem(calendarSyncPromptKeys.PROMPT_DISMISSED_KEY, 'true');
     setOpen(false);
   };
 
@@ -139,7 +137,3 @@ export function CalendarSyncPrompt({ forceShow = false }: CalendarSyncPromptProp
 /** 
  * Reset the "don't ask again" preference (useful for settings)
  */
-export function resetCalendarPromptPreference() {
-  localStorage.removeItem(PROMPT_DISMISSED_KEY);
-  sessionStorage.removeItem(PROMPT_SESSION_KEY);
-}
