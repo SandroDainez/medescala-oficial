@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +46,7 @@ interface MyOffer {
 }
 
 export default function UserAvailableShifts() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
@@ -240,6 +242,9 @@ export default function UserAvailableShifts() {
     setSelectedShift(null);
     setOfferMessage('');
     fetchData();
+
+    // Após aceitar, leva direto para a agenda (escala) do usuário.
+    navigate('/app/calendar');
   }
 
   async function cancelOffer(offerId: string) {

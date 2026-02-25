@@ -15,7 +15,6 @@ import { CalendarDays, Bell, ArrowLeftRight, Hand, Wallet, Building2, Clock3, Ch
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
-import { MyGlobalShiftStatsChart } from '@/components/user/MyGlobalShiftStatsChart';
 
 type SectorMember = { sector_id: string; sector: { id: string; name: string; color: string | null } | null };
 type NotificationRow = { id: string };
@@ -388,7 +387,6 @@ export default function UserHome() {
 
       <div className="grid gap-4 xl:grid-cols-2">
         <MyShiftStatsChart />
-        <MyGlobalShiftStatsChart />
       </div>
     </div>
   );
