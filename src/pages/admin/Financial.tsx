@@ -22,6 +22,7 @@ import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
+import { calculateProRata, isNightShift } from '@/lib/financial/valueCalculation';
 import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2, RefreshCw } from 'lucide-react';
 import {
   DropdownMenu,
@@ -44,6 +45,16 @@ type AuditData = ReturnType<typeof buildAuditInfo>;
 function formatCurrency(value: number | null): string {
   if (value === null) return '';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+}
+
+function getSectorDefaultReferenceValue(entry: Pick<FinancialEntry, 'sector_id' | 'start_time' | 'duration_hours'>, sectors: SectorLookup[]): number | null {
+  if (!entry.sector_id || !entry.start_time) return null;
+  const sector = sectors.find((s) => s.id === entry.sector_id);
+  if (!sector) return null;
+
+  const baseReference = isNightShift(entry.start_time) ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
+  if (baseReference === null) return null;
+  return calculateProRata(baseReference, entry.duration_hours);
 }
 
 // ============================================================
@@ -77,22 +88,24 @@ export default function AdminFinancial() {
 
   // Export plantonista detail to CSV
   function exportPlantonistaCSV(p: PlantonistaReport) {
-    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Valor'];
+    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Valor Padrão', 'Valor Real'];
     const sortedEntries = (p.entries ?? [])
       .slice()
       .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
     
     const rows = sortedEntries.map(e => {
-      const val = e.value_source === 'invalid' ? null : e.final_value;
+      const standardVal = getSectorDefaultReferenceValue(e, allSectors);
+      const realVal = e.value_source === 'invalid' ? null : e.final_value;
       return [
         format(parseISO(e.shift_date), 'dd/MM/yyyy'),
         `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
         e.duration_hours.toFixed(1),
         e.sector_name,
-        val !== null ? val.toFixed(2) : 'Sem valor',
+        standardVal !== null ? standardVal.toFixed(2) : 'Sem valor',
+        realVal !== null ? realVal.toFixed(2) : 'Sem valor',
       ];
     });
-    rows.push(['', '', '', 'TOTAL', p.total_to_receive.toFixed(2)]);
+    rows.push(['', '', '', 'TOTAL', '', p.total_to_receive.toFixed(2)]);
 
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -111,14 +124,16 @@ export default function AdminFinancial() {
       .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
 
     const tableRows = sortedEntries.map(e => {
-      const val = e.value_source === 'invalid' ? null : e.final_value;
+      const standardVal = getSectorDefaultReferenceValue(e, allSectors);
+      const realVal = e.value_source === 'invalid' ? null : e.final_value;
       return `
         <tr>
           <td>${format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</td>
           <td>${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}</td>
           <td class="center">${e.duration_hours.toFixed(1)}h</td>
           <td>${e.sector_name}</td>
-          <td class="right">${val !== null ? formatCurrency(val) : '<span class="no-value">Sem valor</span>'}</td>
+          <td class="right">${standardVal !== null ? formatCurrency(standardVal) : '<span class="no-value">Sem valor</span>'}</td>
+          <td class="right">${realVal !== null ? formatCurrency(realVal) : '<span class="no-value">Sem valor</span>'}</td>
         </tr>
       `;
     }).join('');
@@ -188,13 +203,14 @@ export default function AdminFinancial() {
               <th>Horário</th>
               <th class="center">Duração</th>
               <th>Setor</th>
-              <th class="right">Valor</th>
+              <th class="right">Valor Padrão</th>
+              <th class="right">Valor Real</th>
             </tr>
           </thead>
           <tbody>
             ${tableRows}
             <tr class="total-row">
-              <td colspan="4" class="right"><strong>TOTAL</strong></td>
+              <td colspan="5" class="right"><strong>TOTAL</strong></td>
               <td class="right total-value">${formatCurrency(p.total_to_receive)}</td>
             </tr>
           </tbody>
@@ -505,22 +521,24 @@ export default function AdminFinancial() {
   // Export CSV
   // Export CSV - Dia a Dia (detailed)
   function exportCSVDiario() {
-    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor'];
+    const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Plantonista', 'Valor Padrão', 'Valor Real'];
     const rows = filteredEntries
       .slice()
       .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''))
       .map(e => {
-        const val = e.value_source === 'invalid' ? null : e.final_value;
+        const standardVal = getSectorDefaultReferenceValue(e, allSectors);
+        const realVal = e.value_source === 'invalid' ? null : e.final_value;
         return [
           format(parseISO(e.shift_date), 'dd/MM/yyyy'),
           `${e.start_time?.slice(0, 5) || ''} - ${e.end_time?.slice(0, 5) || ''}`,
           e.duration_hours.toFixed(1),
           e.sector_name,
           e.assignee_name,
-          val !== null ? val.toFixed(2) : 'Sem valor',
+          standardVal !== null ? standardVal.toFixed(2) : 'Sem valor',
+          realVal !== null ? realVal.toFixed(2) : 'Sem valor',
         ];
       });
-    rows.push(['', '', '', '', 'TOTAL', grandTotals.totalValue.toFixed(2)]);
+    rows.push(['', '', '', '', 'TOTAL', '', grandTotals.totalValue.toFixed(2)]);
 
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -584,7 +602,8 @@ export default function AdminFinancial() {
       .sort((a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || ''));
 
     const tableRows = sortedEntries.map(e => {
-      const val = e.value_source === 'invalid' ? null : e.final_value;
+      const standardVal = getSectorDefaultReferenceValue(e, allSectors);
+      const realVal = e.value_source === 'invalid' ? null : e.final_value;
       return `
         <tr>
           <td>${format(parseISO(e.shift_date), 'dd/MM/yyyy')}</td>
@@ -592,7 +611,8 @@ export default function AdminFinancial() {
           <td class="center">${e.duration_hours.toFixed(1)}h</td>
           <td>${e.sector_name}</td>
           <td>${e.assignee_name}</td>
-          <td class="right">${val !== null ? formatCurrency(val) : '<span class="no-value">Sem valor</span>'}</td>
+          <td class="right">${standardVal !== null ? formatCurrency(standardVal) : '<span class="no-value">Sem valor</span>'}</td>
+          <td class="right">${realVal !== null ? formatCurrency(realVal) : '<span class="no-value">Sem valor</span>'}</td>
         </tr>
       `;
     }).join('');
@@ -748,13 +768,14 @@ export default function AdminFinancial() {
               <th class="center">Duração</th>
               <th>Setor</th>
               <th>Plantonista</th>
-              <th class="right">Valor</th>
+              <th class="right">Valor Padrão</th>
+              <th class="right">Valor Real</th>
             </tr>
           </thead>
           <tbody>
             ${tableRows}
             <tr class="total-row">
-              <td colspan="5" class="right">TOTAL GERAL</td>
+              <td colspan="6" class="right">TOTAL GERAL</td>
               <td class="right total-value">${formatCurrency(grandTotals.totalValue)}</td>
             </tr>
           </tbody>
@@ -1349,7 +1370,7 @@ export default function AdminFinancial() {
                 </div>
                 <DialogDescription>
                   Total: {selectedPlantonista?.total_shifts ?? 0} plantões · Lista: {(selectedPlantonista?.entries ?? []).length} linhas.
-                  {' '}"Sem valor definido" quando não há valor atribuído.
+                  {' '}Exibe `Valor padrão` (referência do setor, proporcional) e `Valor real` (usado no cálculo do total). "Sem valor definido" quando não há valor atribuído.
                 </DialogDescription>
               </DialogHeader>
 
@@ -1360,7 +1381,8 @@ export default function AdminFinancial() {
                       <TableHead>Data</TableHead>
                       <TableHead>Horário</TableHead>
                       <TableHead>Setor</TableHead>
-                      <TableHead className="text-right">Valor</TableHead>
+                      <TableHead className="text-right">Valor Padrão</TableHead>
+                      <TableHead className="text-right">Valor Real</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1370,7 +1392,8 @@ export default function AdminFinancial() {
                         (a, b) => a.shift_date.localeCompare(b.shift_date) || (a.start_time || '').localeCompare(b.start_time || '')
                       )
                       .map((e) => {
-                        const val = e.value_source === 'invalid' ? null : e.final_value;
+                        const standardVal = getSectorDefaultReferenceValue(e, allSectors);
+                        const realVal = e.value_source === 'invalid' ? null : e.final_value;
                         return (
                           <TableRow key={e.id}>
                             <TableCell>{format(parseISO(e.shift_date), 'dd/MM/yyyy (EEE)', { locale: ptBR })}</TableCell>
@@ -1379,8 +1402,15 @@ export default function AdminFinancial() {
                             </TableCell>
                             <TableCell>{e.sector_name}</TableCell>
                             <TableCell className="text-right">
-                              {val !== null ? (
-                                <span className="text-green-600 font-medium">{formatCurrency(val)}</span>
+                              {standardVal !== null ? (
+                                <span className="text-muted-foreground">{formatCurrency(standardVal)}</span>
+                              ) : (
+                                <span className="text-amber-500 text-sm">Sem valor definido</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {realVal !== null ? (
+                                <span className="text-green-600 font-medium">{formatCurrency(realVal)}</span>
                               ) : (
                                 <span className="text-amber-500 text-sm">Sem valor definido</span>
                               )}

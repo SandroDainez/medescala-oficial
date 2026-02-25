@@ -134,14 +134,14 @@ export default function AdminOffers() {
         tenant_id: currentTenantId,
         user_id: offer.user_id,
         type: 'shift',
-        title: 'Candidatura Aprovada!',
-        message: `Sua candidatura para o plantão "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} foi aprovada!`,
+        title: 'Oferta Aceita!',
+        message: `Sua solicitação para a oferta "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} foi aceita!`,
         shift_assignment_id: null,
       });
 
     setProcessing(false);
     setSelectedOffer(null);
-    toast({ title: 'Candidatura aprovada!', description: 'O plantonista foi atribuído ao plantão.' });
+    toast({ title: 'Oferta aceita!', description: 'O plantonista foi atribuído ao plantão.' });
     fetchOffers();
   }
 
@@ -168,11 +168,11 @@ export default function AdminOffers() {
           tenant_id: currentTenantId,
           user_id: offer.user_id,
           type: 'shift',
-          title: 'Candidatura Não Aprovada',
-          message: `Sua candidatura para o plantão "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} não foi aprovada desta vez.`,
+          title: 'Oferta Recusada',
+          message: `Sua solicitação para a oferta "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} foi recusada.`,
         });
 
-      toast({ title: 'Candidatura rejeitada' });
+      toast({ title: 'Oferta recusada' });
       fetchOffers();
     }
     
@@ -192,7 +192,7 @@ export default function AdminOffers() {
     if (error) {
       toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
     } else {
-      toast({ title: `${selectedForDelete.size} candidatura(s) excluída(s)` });
+      toast({ title: `${selectedForDelete.size} oferta(s) excluída(s)` });
       setSelectedForDelete(new Set());
       fetchOffers();
     }
@@ -251,9 +251,9 @@ export default function AdminOffers() {
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <Hand className="h-6 w-6 text-primary" />
-            Candidaturas a Plantões
+            Ofertas de Plantão
           </h1>
-          <p className="text-muted-foreground">Gerencie as solicitações dos plantonistas</p>
+          <p className="text-muted-foreground">Gerencie solicitações dos plantonistas para ofertas</p>
         </div>
         {pendingOffers.length > 0 && (
           <Badge variant="destructive" className="text-lg px-4 py-2">
@@ -278,14 +278,14 @@ export default function AdminOffers() {
         <TabsContent value="pending">
           <Card>
             <CardHeader>
-              <CardTitle>Candidaturas Pendentes</CardTitle>
-              <CardDescription>Aprove ou rejeite as solicitações</CardDescription>
+              <CardTitle>Ofertas Pendentes</CardTitle>
+              <CardDescription>Aceite ou recuse as solicitações</CardDescription>
             </CardHeader>
             <CardContent>
               {pendingOffers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Nenhuma candidatura pendente</p>
+                  <p>Nenhuma oferta pendente</p>
                 </div>
               ) : (
                 <Table>
@@ -393,15 +393,15 @@ export default function AdminOffers() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Histórico de Candidaturas</CardTitle>
-                <CardDescription>Candidaturas já processadas</CardDescription>
+                <CardTitle>Histórico de Ofertas</CardTitle>
+                <CardDescription>Solicitações já processadas</CardDescription>
               </div>
               <Button 
                 variant="destructive" 
                 size="sm"
                 onClick={() => setDeleteDialogOpen(true)}
                 disabled={selectedForDelete.size === 0}
-                title={selectedForDelete.size === 0 ? 'Selecione uma ou mais candidaturas para excluir' : 'Excluir candidaturas selecionadas'}
+                title={selectedForDelete.size === 0 ? 'Selecione uma ou mais ofertas para excluir' : 'Excluir ofertas selecionadas'}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Excluir{selectedForDelete.size > 0 ? ` (${selectedForDelete.size})` : ''}
@@ -410,7 +410,7 @@ export default function AdminOffers() {
             <CardContent>
               {reviewedOffers.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
-                  <p>Nenhuma candidatura processada ainda</p>
+                  <p>Nenhuma oferta processada ainda</p>
                 </div>
               ) : (
                 <div className="h-[400px] overflow-y-auto">
@@ -474,9 +474,9 @@ export default function AdminOffers() {
       <Dialog open={!!selectedOffer} onOpenChange={(open) => !open && setSelectedOffer(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rejeitar Candidatura</DialogTitle>
+            <DialogTitle>Recusar Oferta</DialogTitle>
             <DialogDescription>
-              Confirma a rejeição da candidatura de {selectedOffer?.user?.name} para o plantão "{selectedOffer?.shift?.title}"?
+              Confirma a recusa da oferta de {selectedOffer?.user?.name} para o plantão "{selectedOffer?.shift?.title}"?
             </DialogDescription>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
@@ -503,10 +503,10 @@ export default function AdminOffers() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <Trash2 className="h-5 w-5" />
-              Excluir Candidaturas
+              Excluir Ofertas
             </DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja excluir {selectedForDelete.size} candidatura(s) do histórico?
+              Tem certeza que deseja excluir {selectedForDelete.size} oferta(s) do histórico?
               Esta ação não pode ser desfeita.
             </DialogDescription>
           </DialogHeader>

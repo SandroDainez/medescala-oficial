@@ -269,37 +269,17 @@ export default function UserShifts() {
       }
     }
 
-    // Update check-in
-    const { error: updateError } = await supabase
-      .from('shift_assignments')
-      .update({ 
-        checkin_at: new Date().toISOString(), 
-        status: 'confirmed', 
-        updated_by: user.id 
-      })
-      .eq('id', assignment.id);
+    // Perform check-in with server-side validation (time window + GPS/radius rules)
+    const { error: rpcError } = await supabase.rpc('perform_shift_checkin', {
+      _assignment_id: assignment.id,
+      _latitude: latitude,
+      _longitude: longitude,
+    });
 
-    if (updateError) {
-      toast({ title: 'Erro', description: updateError.message, variant: 'destructive' });
+    if (rpcError) {
+      toast({ title: 'Erro', description: rpcError.message, variant: 'destructive' });
       setProcessingId(null);
       return;
-    }
-
-    // Save GPS location if available
-    if (latitude !== null && longitude !== null) {
-      const { error: locationError } = await supabase
-        .from('shift_assignment_locations')
-        .upsert({
-          assignment_id: assignment.id,
-          tenant_id: currentTenantId,
-          user_id: user.id,
-          checkin_latitude: latitude,
-          checkin_longitude: longitude,
-        });
-
-      if (locationError) {
-        console.error('Error saving location:', locationError);
-      }
     }
 
     toast({ 
@@ -353,37 +333,17 @@ export default function UserShifts() {
       }
     }
 
-    // Update check-out
-    const { error: updateError } = await supabase
-      .from('shift_assignments')
-      .update({ 
-        checkout_at: new Date().toISOString(), 
-        status: 'completed', 
-        updated_by: user.id 
-      })
-      .eq('id', assignment.id);
+    // Perform check-out with server-side validation (time window + GPS/radius rules)
+    const { error: rpcError } = await supabase.rpc('perform_shift_checkout', {
+      _assignment_id: assignment.id,
+      _latitude: latitude,
+      _longitude: longitude,
+    });
 
-    if (updateError) {
-      toast({ title: 'Erro', description: updateError.message, variant: 'destructive' });
+    if (rpcError) {
+      toast({ title: 'Erro', description: rpcError.message, variant: 'destructive' });
       setProcessingId(null);
       return;
-    }
-
-    // Update GPS location with checkout coordinates
-    if (latitude !== null && longitude !== null) {
-      const { error: locationError } = await supabase
-        .from('shift_assignment_locations')
-        .upsert({
-          assignment_id: assignment.id,
-          tenant_id: currentTenantId,
-          user_id: user.id,
-          checkout_latitude: latitude,
-          checkout_longitude: longitude,
-        });
-
-      if (locationError) {
-        console.error('Error saving checkout location:', locationError);
-      }
     }
 
     toast({ 

@@ -32,6 +32,7 @@ interface Member {
   user_id: string;
   name: string;
   role: string;
+  profile_type?: string | null;
 }
 
 interface SentNotification {
@@ -50,8 +51,14 @@ interface AvailableShift {
   shift_date: string;
   start_time: string;
   end_time: string;
+  sector_id: string | null;
   sector_name: string;
   base_value: number | null;
+}
+
+interface Sector {
+  id: string;
+  name: string;
 }
 
 const notificationTypes = [
@@ -70,8 +77,10 @@ export default function AdminNotifications() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
+  const [sectors, setSectors] = useState<Sector[]>([]);
   const [sentNotifications, setSentNotifications] = useState<SentNotification[]>([]);
   const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
+  const [memberSectorMap, setMemberSectorMap] = useState<Record<string, string[]>>({});
   
   // Multi-select state for history tab
   const [selectionMode, setSelectionMode] = useState(false);
@@ -85,6 +94,7 @@ export default function AdminNotifications() {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [sendToAll, setSendToAll] = useState(true);
   const [selectedShift, setSelectedShift] = useState<string>('');
+  const [selectedSectorFilter, setSelectedSectorFilter] = useState<string>('all');
   
   // Preview dialog
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -102,7 +112,7 @@ export default function AdminNotifications() {
     // Fetch members
     const { data: membersData } = await supabase
       .from('memberships')
-      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name)')
+      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name, profile_type)')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
 
@@ -111,8 +121,33 @@ export default function AdminNotifications() {
         user_id: m.user_id,
         name: (m.profile as any)?.name || 'Sem nome',
         role: m.role,
+        profile_type: (m.profile as any)?.profile_type ?? null,
       })));
     }
+
+    const [{ data: sectorsData }, { data: sectorMembershipsData }] = await Promise.all([
+      supabase
+        .from('sectors')
+        .select('id, name')
+        .eq('tenant_id', currentTenantId)
+        .eq('active', true)
+        .order('name'),
+      supabase
+        .from('sector_memberships')
+        .select('user_id, sector_id')
+        .eq('tenant_id', currentTenantId),
+    ]);
+
+    if (sectorsData) {
+      setSectors(sectorsData);
+    }
+
+    const map: Record<string, string[]> = {};
+    (sectorMembershipsData || []).forEach((row: { user_id: string; sector_id: string }) => {
+      if (!map[row.user_id]) map[row.user_id] = [];
+      map[row.user_id].push(row.sector_id);
+    });
+    setMemberSectorMap(map);
 
     // Fetch recent sent notifications
     const { data: notifsData } = await supabase
@@ -145,7 +180,7 @@ export default function AdminNotifications() {
     const { data: shiftsData } = await supabase
       .from('shifts')
       .select(`
-        id, title, shift_date, start_time, end_time, base_value,
+        id, title, shift_date, start_time, end_time, base_value, sector_id,
         sector:sectors(name)
       `)
       .eq('tenant_id', currentTenantId)
@@ -170,6 +205,7 @@ export default function AdminNotifications() {
           shift_date: s.shift_date,
           start_time: s.start_time,
           end_time: s.end_time,
+          sector_id: (s as any).sector_id ?? null,
           sector_name: (s.sector as any)?.name || 'Sem setor',
           base_value: s.base_value,
         }));
@@ -220,6 +256,9 @@ export default function AdminNotifications() {
       const dateFormatted = format(parseISO(shift.shift_date), "dd/MM (EEEE)", { locale: ptBR });
       const value = shift.base_value ? ` - R$ ${shift.base_value.toFixed(2)}` : '';
       setMessage(`Plantão disponível: ${shift.title}\n📅 ${dateFormatted}\n⏰ ${shift.start_time.slice(0,5)} às ${shift.end_time.slice(0,5)}${value}\n\nAcesse o app para se candidatar!`);
+      if (shift.sector_id) {
+        setSelectedSectorFilter(shift.sector_id);
+      }
     }
   }
 
@@ -243,9 +282,42 @@ export default function AdminNotifications() {
       return;
     }
 
-    const targetUsers = sendToAll 
-      ? members.filter(m => m.role === 'user').map(m => m.user_id)
-      : selectedUsers;
+    const eligibleMembers = members.filter((m) => m.role !== 'admin');
+
+    const filteredMembers =
+      selectedSectorFilter === 'all'
+        ? eligibleMembers
+        : eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedSectorFilter));
+
+    let targetUsers: string[] = [];
+
+    if (notificationType === 'shift') {
+      if (!selectedShift) {
+        toast({
+          title: 'Selecione um plantão',
+          description: 'Para notificação de plantão disponível, escolha o plantão específico.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      const shift = availableShifts.find((s) => s.id === selectedShift);
+      const shiftSectorId = shift?.sector_id ?? null;
+      if (!shift || !shiftSectorId) {
+        toast({
+          title: 'Plantão inválido',
+          description: 'Este plantão não possui setor válido para envio.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      targetUsers = eligibleMembers
+        .filter((m) => (memberSectorMap[m.user_id] || []).includes(shiftSectorId))
+        .map((m) => m.user_id);
+    } else {
+      targetUsers = sendToAll
+        ? filteredMembers.map((m) => m.user_id)
+        : selectedUsers.filter((id) => filteredMembers.some((m) => m.user_id === id));
+    }
 
     if (targetUsers.length === 0) {
       toast({
@@ -293,6 +365,7 @@ export default function AdminNotifications() {
       setMessage('');
       setSelectedUsers([]);
       setSelectedShift('');
+      setSelectedSectorFilter('all');
       setSendToAll(true);
       setNotificationType('general');
       
@@ -414,9 +487,21 @@ export default function AdminNotifications() {
 
   const typeInfo = notificationTypes.find(t => t.value === notificationType);
   const TypeIcon = typeInfo?.icon || Bell;
-  const userCount = sendToAll 
-    ? members.filter(m => m.role === 'user').length 
-    : selectedUsers.length;
+  const eligibleMembers = members.filter((m) => m.role !== 'admin');
+  const filteredMembers =
+    selectedSectorFilter === 'all'
+      ? eligibleMembers
+      : eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedSectorFilter));
+  const selectedShiftData = availableShifts.find((s) => s.id === selectedShift);
+  const shiftScopedCount =
+    notificationType === 'shift' && selectedShiftData?.sector_id
+      ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedShiftData.sector_id as string)).length
+      : 0;
+  const userCount = notificationType === 'shift'
+    ? shiftScopedCount
+    : sendToAll
+      ? filteredMembers.length
+      : selectedUsers.filter((id) => filteredMembers.some((m) => m.user_id === id)).length;
 
   if (loading) {
     return (
@@ -543,6 +628,28 @@ export default function AdminNotifications() {
                 {/* Recipients */}
                 <div className="space-y-3">
                   <Label>Destinatários</Label>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">Filtrar por setor (opcional)</Label>
+                    <Select
+                      value={selectedSectorFilter}
+                      onValueChange={(value) => {
+                        setSelectedSectorFilter(value);
+                        setSelectedUsers([]);
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos os setores" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os setores</SelectItem>
+                        {sectors.map((sector) => (
+                          <SelectItem key={sector.id} value={sector.id}>
+                            {sector.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex items-center gap-2">
                     <Checkbox 
                       id="sendToAll" 
@@ -550,13 +657,15 @@ export default function AdminNotifications() {
                       onCheckedChange={(checked) => setSendToAll(checked === true)}
                     />
                     <label htmlFor="sendToAll" className="text-sm cursor-pointer">
-                      Enviar para todos os plantonistas ({members.filter(m => m.role === 'user').length})
+                      {notificationType === 'shift'
+                        ? `Enviar para plantonistas do setor do plantão selecionado (${shiftScopedCount})`
+                        : `Enviar para todos os plantonistas do filtro (${filteredMembers.length})`}
                     </label>
                   </div>
                   
-                  {!sendToAll && (
+                  {!sendToAll && notificationType !== 'shift' && (
                     <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                      {members.filter(m => m.role === 'user').map(member => (
+                      {filteredMembers.map(member => (
                         <div key={member.user_id} className="flex items-center gap-2">
                           <Checkbox
                             id={member.user_id}
@@ -601,7 +710,7 @@ export default function AdminNotifications() {
                 <CardContent className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Plantonistas</span>
-                    <Badge variant="secondary">{members.filter(m => m.role === 'user').length}</Badge>
+                    <Badge variant="secondary">{eligibleMembers.length}</Badge>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Plantões sem dono</span>

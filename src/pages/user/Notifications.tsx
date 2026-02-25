@@ -58,6 +58,18 @@ export default function UserNotifications() {
         .on(
           'postgres_changes',
           {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `user_id=eq.${user.id}`,
+          },
+          (payload) => {
+            setNotifications((prev) => [payload.new as Notification, ...prev]);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
             event: 'DELETE',
             schema: 'public',
             table: 'notifications',
@@ -175,8 +187,13 @@ export default function UserNotifications() {
     switch (type) {
       case 'shift':
       case 'assignment':
+      case 'offer':
         return <Calendar className="h-5 w-5 text-blue-500" />;
       case 'swap':
+      case 'swap_request':
+      case 'swap_request_update':
+      case 'swap_request_admin':
+      case 'swap_request_update_admin':
         return <ArrowLeftRight className="h-5 w-5 text-purple-500" />;
       case 'payment':
         return <DollarSign className="h-5 w-5 text-green-500" />;

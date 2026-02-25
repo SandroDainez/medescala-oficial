@@ -32,12 +32,27 @@ interface CheckinRecord {
   checkout_at: string | null;
   status: string;
   has_gps: boolean;
+  checkin_distance_meters: number | null;
+  checkout_distance_meters: number | null;
 }
 
 interface Sector {
   id: string;
   name: string;
   color: string | null;
+}
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 export default function CheckinReport() {
@@ -82,7 +97,7 @@ export default function CheckinReport() {
           shift_date,
           start_time,
           end_time,
-          sector:sectors(id, name, color)
+          sector:sectors(id, name, color, reference_latitude, reference_longitude)
         )
       `)
       .eq('tenant_id', currentTenantId)
@@ -102,27 +117,51 @@ export default function CheckinReport() {
     const assignmentIds = data?.map(r => r.id) || [];
     const { data: locations } = await supabase
       .from('shift_assignment_locations')
-      .select('assignment_id')
+      .select('assignment_id, checkin_latitude, checkin_longitude, checkout_latitude, checkout_longitude')
       .in('assignment_id', assignmentIds);
 
-    const locationSet = new Set(locations?.map(l => l.assignment_id) || []);
+    const locationMap = new Map(
+      (locations || []).map((l) => [l.assignment_id, l]),
+    );
 
     const mapped: CheckinRecord[] = (data || [])
       .filter(r => r.shift && r.shift.sector)
       .filter(r => selectedSector === 'all' || r.shift.sector.id === selectedSector)
-      .map(r => ({
-        id: r.id,
-        shift_date: r.shift.shift_date,
-        start_time: r.shift.start_time,
-        end_time: r.shift.end_time,
-        user_name: r.user?.name || 'Usuário não encontrado',
-        sector_name: r.shift.sector.name,
-        sector_color: r.shift.sector.color,
-        checkin_at: r.checkin_at,
-        checkout_at: r.checkout_at,
-        status: r.status,
-        has_gps: locationSet.has(r.id),
-      }));
+      .map(r => {
+        const loc = locationMap.get(r.id);
+        const refLat = r.shift.sector.reference_latitude;
+        const refLon = r.shift.sector.reference_longitude;
+        const checkinDistance =
+          loc?.checkin_latitude != null &&
+          loc?.checkin_longitude != null &&
+          refLat != null &&
+          refLon != null
+            ? Math.round(haversineMeters(loc.checkin_latitude, loc.checkin_longitude, refLat, refLon))
+            : null;
+        const checkoutDistance =
+          loc?.checkout_latitude != null &&
+          loc?.checkout_longitude != null &&
+          refLat != null &&
+          refLon != null
+            ? Math.round(haversineMeters(loc.checkout_latitude, loc.checkout_longitude, refLat, refLon))
+            : null;
+
+        return {
+          id: r.id,
+          shift_date: r.shift.shift_date,
+          start_time: r.shift.start_time,
+          end_time: r.shift.end_time,
+          user_name: r.user?.name || 'Usuário não encontrado',
+          sector_name: r.shift.sector.name,
+          sector_color: r.shift.sector.color,
+          checkin_at: r.checkin_at,
+          checkout_at: r.checkout_at,
+          status: r.status,
+          has_gps: Boolean(loc),
+          checkin_distance_meters: checkinDistance,
+          checkout_distance_meters: checkoutDistance,
+        };
+      });
 
     setRecords(mapped);
     setLoading(false);
@@ -159,7 +198,7 @@ export default function CheckinReport() {
   }
 
   function exportToCSV() {
-    const headers = ['Data', 'Plantonista', 'Setor', 'Horário Plantão', 'Check-in', 'Check-out', 'GPS', 'Status'];
+    const headers = ['Data', 'Plantonista', 'Setor', 'Horário Plantão', 'Check-in', 'Check-out', 'GPS', 'Distância Check-in (m)', 'Distância Check-out (m)', 'Status'];
     const rows = records.map(r => [
       format(new Date(r.shift_date), 'dd/MM/yyyy'),
       r.user_name,
@@ -168,6 +207,8 @@ export default function CheckinReport() {
       r.checkin_at ? format(new Date(r.checkin_at), 'dd/MM/yyyy HH:mm') : '-',
       r.checkout_at ? format(new Date(r.checkout_at), 'dd/MM/yyyy HH:mm') : '-',
       r.has_gps ? 'Sim' : 'Não',
+      r.checkin_distance_meters ?? '-',
+      r.checkout_distance_meters ?? '-',
       getCheckinStatus(r).label,
     ]);
 
@@ -330,6 +371,7 @@ export default function CheckinReport() {
                             <TableHead>Check-in</TableHead>
                             <TableHead>Check-out</TableHead>
                             <TableHead>GPS</TableHead>
+                            <TableHead>Distância</TableHead>
                             <TableHead>Status</TableHead>
                           </TableRow>
                         </TableHeader>
@@ -370,6 +412,11 @@ export default function CheckinReport() {
                                   ) : (
                                     <span className="text-muted-foreground">-</span>
                                   )}
+                                </TableCell>
+                                <TableCell className="text-xs text-muted-foreground">
+                                  {record.checkin_distance_meters === null && record.checkout_distance_meters === null
+                                    ? '-'
+                                    : `${record.checkin_distance_meters ?? '-'}m / ${record.checkout_distance_meters ?? '-'}m`}
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="outline" className={statusInfo.color}>

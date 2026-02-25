@@ -13,7 +13,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw, MapPin, Clock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw, MapPin, Clock, LocateFixed, ExternalLink } from 'lucide-react';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 
@@ -81,6 +81,7 @@ export default function AdminSectors() {
     reference_latitude: null as number | null,
     reference_longitude: null as number | null,
   });
+  const [capturingReferenceLocation, setCapturingReferenceLocation] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -352,6 +353,46 @@ export default function AdminSectors() {
     toast({ title: 'Configurações de check-in salvas!' });
     fetchData();
     setCheckinDialogOpen(false);
+  }
+
+  async function captureCurrentReferenceLocation() {
+    if (!navigator.geolocation) {
+      toast({
+        title: 'GPS indisponível',
+        description: 'Seu navegador não suporta geolocalização.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCapturingReferenceLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setCheckinSettings((prev) => ({
+          ...prev,
+          reference_latitude: Number(position.coords.latitude.toFixed(6)),
+          reference_longitude: Number(position.coords.longitude.toFixed(6)),
+        }));
+        setCapturingReferenceLocation(false);
+        toast({
+          title: 'Localização capturada',
+          description: 'Coordenadas de referência preenchidas com sua posição atual.',
+        });
+      },
+      (error) => {
+        setCapturingReferenceLocation(false);
+        toast({
+          title: 'Erro ao capturar localização',
+          description: error.message || 'Permita acesso à localização e tente novamente.',
+          variant: 'destructive',
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      },
+    );
   }
 
   const formatCurrency = (value: number | null | undefined) => {
@@ -931,6 +972,37 @@ export default function AdminSectors() {
                       <p className="text-xs text-muted-foreground">
                         Coordenadas do local de trabalho (obrigatório para validação GPS)
                       </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={captureCurrentReferenceLocation}
+                          disabled={capturingReferenceLocation}
+                          className="gap-2"
+                        >
+                          <LocateFixed className="h-4 w-4" />
+                          {capturingReferenceLocation ? 'Capturando...' : 'Usar minha localização atual'}
+                        </Button>
+                        {checkinSettings.reference_latitude !== null && checkinSettings.reference_longitude !== null && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="gap-2"
+                            onClick={() =>
+                              window.open(
+                                `https://www.google.com/maps?q=${checkinSettings.reference_latitude},${checkinSettings.reference_longitude}`,
+                                '_blank',
+                                'noopener,noreferrer',
+                              )
+                            }
+                          >
+                            <ExternalLink className="h-4 w-4" />
+                            Ver no mapa
+                          </Button>
+                        )}
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
                           <Label className="text-xs">Latitude</Label>

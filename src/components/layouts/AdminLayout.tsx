@@ -43,7 +43,7 @@ const navItems = [
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
-  { to: '/admin/offers', label: 'Candidaturas', icon: Hand },
+  { to: '/admin/offers', label: 'Ofertas', icon: Hand },
   { to: '/admin/checkins', label: 'Check-ins GPS', icon: MapPin },
   { to: '/admin/notifications', label: 'Notificações', icon: Bell },
   { to: '/admin/financial', label: 'Financeiro', icon: DollarSign },

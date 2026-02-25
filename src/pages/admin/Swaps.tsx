@@ -21,6 +21,9 @@ interface SwapRequest {
   reason: string | null;
   admin_notes: string | null;
   created_at: string;
+  requester_id?: string;
+  target_user_id?: string | null;
+  reviewed_at?: string | null;
   requester: { name: string | null };
   target_user: { name: string | null } | null;
   origin_assignment: { shift: { title: string; hospital: string; shift_date: string; start_time: string; end_time: string } };
@@ -67,7 +70,7 @@ export default function AdminSwaps() {
     const { data } = await supabase
       .from('swap_requests')
       .select(`
-        id, status, reason, admin_notes, created_at, 
+        id, status, reason, admin_notes, created_at, requester_id, target_user_id, reviewed_at,
         requester:profiles!swap_requests_requester_id_profiles_fkey(name), 
         target_user:profiles!swap_requests_target_user_id_profiles_fkey(name), 
         origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
@@ -105,26 +108,60 @@ export default function AdminSwaps() {
   }, [currentTenantId, fetchSwaps, fetchOffers]);
 
   async function handleSwapAction(action: 'approved' | 'rejected') {
-    if (!selectedSwap) return;
-    const { error } = await supabase
+    if (!selectedSwap || !currentTenantId) return;
+    const decision = action === 'approved' ? 'approved' : 'rejected';
+    const { error: decideError } = await supabase.rpc('decide_swap_request', {
+      _swap_request_id: selectedSwap.id,
+      _decision: decision,
+    });
+    
+    if (decideError) {
+      toast({ title: 'Erro', description: decideError.message, variant: 'destructive' });
+      return;
+    }
+
+    const { error: notesError } = await supabase
       .from('swap_requests')
-      .update({ 
-        status: action, 
-        admin_notes: adminNotes || null, 
-        reviewed_by: user?.id, 
-        reviewed_at: new Date().toISOString() 
+      .update({
+        admin_notes: adminNotes || null,
       })
       .eq('id', selectedSwap.id);
-    
-    if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+
+    if (notesError) {
+      toast({ title: 'Aviso', description: `Troca processada, mas não foi possível salvar observações: ${notesError.message}`, variant: 'destructive' });
     } else {
       toast({ title: action === 'approved' ? 'Troca aprovada!' : 'Troca rejeitada!' });
-      fetchSwaps();
-      setSwapDialogOpen(false);
-      setSelectedSwap(null);
-      setAdminNotes('');
     }
+
+    const shiftTitle = selectedSwap.origin_assignment?.shift?.title || 'plantão';
+    const shiftDate = selectedSwap.origin_assignment?.shift?.shift_date
+      ? format(new Date(selectedSwap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })
+      : '';
+
+    const recipients = [
+      selectedSwap.requester_id,
+      selectedSwap.target_user_id,
+    ].filter((id): id is string => Boolean(id));
+
+    if (recipients.length > 0) {
+      await supabase.from('notifications').insert(
+        recipients.map((recipientId) => ({
+          tenant_id: currentTenantId,
+          user_id: recipientId,
+          type: 'swap_request_update',
+          title: action === 'approved' ? 'Troca aprovada pela administração' : 'Troca recusada pela administração',
+          message:
+            action === 'approved'
+              ? `A troca do ${shiftTitle}${shiftDate ? ` (${shiftDate})` : ''} foi aprovada pela administração.`
+              : `A troca do ${shiftTitle}${shiftDate ? ` (${shiftDate})` : ''} foi recusada pela administração.`,
+        })),
+      );
+    }
+
+    fetchSwaps();
+    setSwapDialogOpen(false);
+    setSelectedSwap(null);
+    setAdminNotes('');
   }
 
   async function handleOfferAction(action: 'accepted' | 'rejected') {
@@ -515,7 +552,8 @@ export default function AdminSwaps() {
                       />
                     </TableHead>
                     <TableHead>Data</TableHead>
-                    <TableHead>Solicitante</TableHead>
+                    <TableHead>Passou</TableHead>
+                    <TableHead>Aceitou</TableHead>
                     <TableHead>Plantão</TableHead>
                     <TableHead>Motivo</TableHead>
                     <TableHead>Status</TableHead>
@@ -525,7 +563,7 @@ export default function AdminSwaps() {
                 <TableBody>
                   {swaps.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
                         Nenhuma solicitação de troca
                       </TableCell>
                     </TableRow>
@@ -545,6 +583,9 @@ export default function AdminSwaps() {
                         </TableCell>
                         <TableCell className="font-medium">
                           {swap.requester?.name || 'N/A'}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {swap.target_user?.name || 'N/A'}
                         </TableCell>
                         <TableCell>
                           <div className="space-y-1">
@@ -616,8 +657,12 @@ export default function AdminSwaps() {
             {selectedSwap && (
               <div className="p-4 rounded-lg bg-muted/50 space-y-2">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium">Solicitante:</span>
+                  <span className="font-medium">Quem passou:</span>
                   <span>{selectedSwap.requester?.name}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">Quem aceitou:</span>
+                  <span>{selectedSwap.target_user?.name || 'N/A'}</span>
                 </div>
                 <div className="flex items-center gap-2 text-sm">
                   <span className="font-medium">Plantão:</span>

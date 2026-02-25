@@ -27,8 +27,13 @@ interface Notification {
 
 const typeColors: Record<string, string> = {
   shift: 'bg-blue-500',
+  offer: 'bg-blue-500',
   payment: 'bg-green-500',
   swap: 'bg-purple-500',
+  swap_request: 'bg-purple-500',
+  swap_request_update: 'bg-purple-500',
+  swap_request_admin: 'bg-purple-500',
+  swap_request_update_admin: 'bg-purple-500',
   urgent: 'bg-red-500',
   general: 'bg-gray-500',
   checkin_reminder_15min: 'bg-blue-500',

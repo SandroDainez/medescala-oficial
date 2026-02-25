@@ -22,6 +22,7 @@ interface AvailableShift {
   start_time: string;
   end_time: string;
   base_value: number | null;
+  sector_id?: string | null;
   sector: { id: string; name: string; color: string } | null;
 }
 
@@ -52,6 +53,7 @@ export default function UserAvailableShifts() {
   const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
   const [myOffers, setMyOffers] = useState<MyOffer[]>([]);
   const [myAssignedShiftIds, setMyAssignedShiftIds] = useState<Set<string>>(new Set());
+  const [memberSectorIds, setMemberSectorIds] = useState<Set<string>>(new Set());
   
   // Dialog state
   const [selectedShift, setSelectedShift] = useState<AvailableShift | null>(null);
@@ -68,12 +70,22 @@ export default function UserAvailableShifts() {
     const { data: shiftsData } = await supabase
       .from('shifts')
       .select(`
-        id, title, hospital, location, shift_date, start_time, end_time, base_value,
+        id, title, hospital, location, shift_date, start_time, end_time, base_value, sector_id,
         sector:sectors(id, name, color)
       `)
       .eq('tenant_id', currentTenantId)
       .gte('shift_date', today)
       .order('shift_date', { ascending: true });
+
+    // Load sectors where current user belongs.
+    const { data: membershipData } = await supabase
+      .from('sector_memberships')
+      .select('sector_id')
+      .eq('tenant_id', currentTenantId)
+      .eq('user_id', user.id);
+
+    const allowedSectorIds = new Set((membershipData ?? []).map((m: { sector_id: string }) => m.sector_id));
+    setMemberSectorIds(allowedSectorIds);
 
     // Get taken shifts via security-definer function (works for tenant members)
     const end = format(new Date(new Date().setMonth(new Date().getMonth() + 12)), 'yyyy-MM-dd');
@@ -104,9 +116,10 @@ export default function UserAvailableShifts() {
     const myAssigned = new Set((myAssignmentsData || []).map((a) => a.shift_id));
     setMyAssignedShiftIds(myAssigned);
 
-    // Filter to only available shifts (not taken)
+    // Filter to only available shifts (not taken) and only sectors where the user belongs.
     const available = (shiftsData || [])
       .filter((s) => !takenShiftIds.has(s.id))
+      .filter((s) => !!s.sector_id && allowedSectorIds.has(s.sector_id))
       .map((s) => ({
         ...s,
         sector: s.sector as AvailableShift['sector'],
@@ -152,29 +165,34 @@ export default function UserAvailableShifts() {
     
     const userName = profileData?.name || 'Um plantonista';
 
-    const { error } = await supabase
-      .from('shift_offers')
-      .insert({
-        tenant_id: currentTenantId,
-        shift_id: selectedShift.id,
-        user_id: user.id,
-        message: offerMessage.trim() || null,
-        status: 'pending',
-        created_by: user.id,
-      });
-
-    if (error) {
-      console.error('Error submitting offer:', error);
+    const shiftSectorId = selectedShift.sector?.id ?? selectedShift.sector_id ?? null;
+    if (!shiftSectorId || !memberSectorIds.has(shiftSectorId)) {
       setSubmitting(false);
       toast({
-        title: 'Erro ao enviar candidatura',
+        title: 'Sem permissão',
+        description: 'Você só pode aceitar plantões do setor em que está cadastrado.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const { error } = await supabase.rpc('claim_open_shift', {
+      _shift_id: selectedShift.id,
+      _message: offerMessage.trim() || null,
+    });
+
+    if (error) {
+      console.error('Error claiming shift:', error);
+      setSubmitting(false);
+      toast({
+        title: 'Erro ao aceitar plantão',
         description: error.message,
         variant: 'destructive',
       });
       return;
     }
 
-    // Notify all admins of this tenant about the new offer
+    // Notify admins that a user accepted and was assigned to the shift.
     const { data: admins } = await supabase
       .from('memberships')
       .select('user_id')
@@ -187,14 +205,14 @@ export default function UserAvailableShifts() {
       const shiftTime = `${selectedShift.start_time.slice(0, 5)} - ${selectedShift.end_time.slice(0, 5)}`;
       
       const messageText = offerMessage.trim() 
-        ? `${userName} se candidatou ao plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).\n\nMensagem: "${offerMessage.trim()}"`
-        : `${userName} se candidatou ao plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).`;
+        ? `${userName} aceitou o plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).\n\nMensagem: "${offerMessage.trim()}"`
+        : `${userName} aceitou o plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).`;
 
       const notifications = admins.map(admin => ({
         tenant_id: currentTenantId,
         user_id: admin.user_id,
         type: 'offer',
-        title: 'Nova Candidatura a Plantão',
+        title: 'Plantão aceito por plantonista',
         message: messageText,
       }));
 
@@ -203,8 +221,8 @@ export default function UserAvailableShifts() {
 
     setSubmitting(false);
     toast({
-      title: 'Candidatura enviada!',
-      description: 'O administrador foi notificado e irá avaliar sua solicitação.',
+      title: 'Plantão aceito!',
+      description: 'Seu nome já entrou na escala desse plantão.',
     });
     setSelectedShift(null);
     setOfferMessage('');
@@ -224,7 +242,7 @@ export default function UserAvailableShifts() {
         variant: 'destructive',
       });
     } else {
-      toast({ title: 'Candidatura cancelada' });
+      toast({ title: 'Solicitação cancelada' });
       fetchData();
     }
   }
@@ -241,9 +259,9 @@ export default function UserAvailableShifts() {
   };
 
   const statusLabels: Record<string, string> = {
-    pending: 'Aguardando',
-    accepted: 'Aprovado',
-    rejected: 'Rejeitado',
+    pending: 'Pendente',
+    accepted: 'Aceita',
+    rejected: 'Recusada',
   };
 
   if (loading) {
@@ -260,9 +278,9 @@ export default function UserAvailableShifts() {
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Hand className="h-5 w-5 text-primary" />
-          Plantões Disponíveis
+          Ofertas de Plantão
         </h1>
-        <p className="text-sm text-muted-foreground">Candidate-se para plantões vagos</p>
+        <p className="text-sm text-muted-foreground">Ofertas abertas no seu setor</p>
       </div>
 
       <Tabs defaultValue="available" className="space-y-4">
@@ -271,7 +289,7 @@ export default function UserAvailableShifts() {
             Disponíveis ({availableShifts.length})
           </TabsTrigger>
           <TabsTrigger value="myoffers" className="flex-1">
-            Minhas Candidaturas ({myOffers.length})
+            Meu Histórico de Ofertas ({myOffers.length})
           </TabsTrigger>
         </TabsList>
 
@@ -367,12 +385,12 @@ export default function UserAvailableShifts() {
                                     )}
                                     {isPending ? (
                                       <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
-                                        Candidatura enviada
+                                        Solicitação pendente
                                       </Badge>
                                     ) : (
                                       <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
                                         <Hand className="h-4 w-4 mr-2" />
-                                        Candidatar
+                                        Aceitar
                                       </Button>
                                     )}
                                   </div>
@@ -424,12 +442,12 @@ export default function UserAvailableShifts() {
                                     )}
                                     {isPending ? (
                                       <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
-                                        Candidatura enviada
+                                        Solicitação pendente
                                       </Badge>
                                     ) : (
                                       <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
                                         <Hand className="h-4 w-4 mr-2" />
-                                        Candidatar
+                                        Aceitar
                                       </Button>
                                     )}
                                   </div>
@@ -453,8 +471,8 @@ export default function UserAvailableShifts() {
             <Card>
               <CardContent className="p-8 text-center">
                 <Hand className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground">Nenhuma candidatura enviada</p>
-                <p className="text-sm text-muted-foreground mt-1">Candidate-se a plantões disponíveis!</p>
+                <p className="text-muted-foreground">Nenhuma oferta no histórico</p>
+                <p className="text-sm text-muted-foreground mt-1">Aceite uma oferta para registrar aqui.</p>
               </CardContent>
             </Card>
           ) : (
@@ -497,7 +515,7 @@ export default function UserAvailableShifts() {
                       )}
                       
                       <p className="text-xs text-muted-foreground mt-2">
-                        Enviada em {format(parseISO(offer.created_at), "dd/MM 'às' HH:mm")}
+                        Registrada em {format(parseISO(offer.created_at), "dd/MM 'às' HH:mm")}
                       </p>
                     </div>
 
@@ -532,9 +550,9 @@ export default function UserAvailableShifts() {
       <Dialog open={!!selectedShift} onOpenChange={(open) => !open && setSelectedShift(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Candidatar-se ao Plantão</DialogTitle>
+            <DialogTitle>Aceitar Plantão</DialogTitle>
             <DialogDescription>
-              Envie sua candidatura para este plantão
+              Ao confirmar, seu nome entra imediatamente na escala deste plantão.
             </DialogDescription>
           </DialogHeader>
 
@@ -570,7 +588,7 @@ export default function UserAvailableShifts() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">Mensagem (opcional)</label>
                 <Textarea
-                  placeholder="Deixe uma mensagem para o administrador..."
+                  placeholder="Observação sobre este aceite..."
                   value={offerMessage}
                   onChange={(e) => setOfferMessage(e.target.value)}
                   rows={3}
@@ -592,7 +610,7 @@ export default function UserAvailableShifts() {
               ) : (
                 <>
                   <Hand className="h-4 w-4 mr-2" />
-                  Enviar Candidatura
+                  Confirmar Aceite
                 </>
               )}
             </Button>
