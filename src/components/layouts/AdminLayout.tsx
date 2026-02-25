@@ -91,9 +91,9 @@ export function AdminLayout() {
   const isCalendarRoute = location.pathname.startsWith('/admin/calendar');
 
   return (
-    <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
+    <div className="min-h-[100dvh] bg-background/95 flex flex-col overflow-x-hidden w-full">
       {/* Header - Fixed with safe-area support */}
-      <header className="fixed top-0 left-0 right-0 z-[100] border-b bg-card shadow-sm flex flex-col pt-safe">
+      <header className="fixed top-0 left-0 right-0 z-[100] border-b border-border/70 bg-slate-800/85 backdrop-blur-md shadow-sm flex flex-col pt-safe">
         {/* Trial Banner */}
         <TrialBanner />
         <div className="flex min-h-[64px] items-center justify-between px-4 lg:px-6">
@@ -146,7 +146,7 @@ export function AdminLayout() {
 
       <div className="flex" style={{ paddingTop: 'calc(64px + env(safe-area-inset-top))' }}>
         {/* Sidebar - Desktop */}
-        <aside className="hidden w-64 border-r bg-card md:block">
+        <aside className="hidden w-64 border-r border-border/70 bg-slate-800/65 backdrop-blur-md md:block">
           <nav 
             className="flex flex-col gap-1 p-4 sticky"
             style={{ top: 'calc(64px + env(safe-area-inset-top))' }}
@@ -157,7 +157,7 @@ export function AdminLayout() {
               end
               className={({ isActive }) =>
                 cn(
-                  'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                  'group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
                   isActive
                     ? 'bg-primary text-primary-foreground shadow-primary'
                     : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -173,7 +173,7 @@ export function AdminLayout() {
               <CollapsibleTrigger asChild>
                 <button
                   className={cn(
-                    'group flex items-center justify-between w-full rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                    'group flex items-center justify-between w-full rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
                     isCalendarRoute
                       ? 'bg-primary/10 text-primary'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -197,17 +197,21 @@ export function AdminLayout() {
                   end
                   className={({ isActive }) =>
                     cn(
-                      'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
+                      'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
                       isActive
-                        ? 'bg-primary text-primary-foreground border-primary shadow-md'
-                        : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
+                        ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
+                        : 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-500/30 hover:border-primary/40 hover:shadow-md'
                     )
                   }
                 >
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted/90 to-muted-foreground/20 flex items-center justify-center ring-1 ring-border/60">
+                  <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+                  <div className="w-8 h-8 rounded-md bg-slate-800/80 flex items-center justify-center ring-1 ring-slate-400/30">
                     <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                   </div>
-                  <span className="font-medium">Todos os Setores</span>
+                  <div className="min-w-0">
+                    <span className="block truncate font-semibold">Todos os Setores</span>
+                    <span className="block text-[10px] text-muted-foreground">Visão geral</span>
+                  </div>
                 </NavLink>
                 {/* Individual sectors - card style */}
                 {sectors.map((sector) => (
@@ -216,17 +220,18 @@ export function AdminLayout() {
                     to={`/admin/calendar/${sector.id}`}
                     className={({ isActive }) =>
                       cn(
-                        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
+                        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
                         isActive
-                          ? 'bg-primary text-primary-foreground border-primary shadow-md'
-                          : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
+                          ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
+                          : 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-500/30 hover:border-primary/40 hover:shadow-md'
                       )
                     }
                   >
+                    <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', 'opacity-0 group-hover:opacity-100')} style={{ backgroundColor: sector.color || '#22c55e' }} />
                     <div 
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-border/50"
+                      className="w-8 h-8 rounded-md flex items-center justify-center shadow-sm ring-1 ring-slate-400/30"
                       style={{ 
-                        backgroundColor: `${sector.color || '#6b7280'}20`,
+                        backgroundColor: `${sector.color || '#6b7280'}1f`,
                         border: `2px solid ${sector.color || '#6b7280'}`
                       }}
                     >
@@ -235,7 +240,10 @@ export function AdminLayout() {
                         style={{ backgroundColor: sector.color || '#6b7280' }}
                       />
                     </div>
-                    <span className="truncate font-medium">{sector.name}</span>
+                    <div className="min-w-0">
+                      <span className="block truncate font-semibold">{sector.name}</span>
+                      <span className="block text-[10px] text-muted-foreground">Setor</span>
+                    </div>
                   </NavLink>
                 ))}
               </CollapsibleContent>
@@ -256,7 +264,7 @@ export function AdminLayout() {
                   to={item.to}
                   className={({ isActive }) =>
                     cn(
-                      'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                      'group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
                       isActive
                         ? 'bg-primary text-primary-foreground shadow-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -312,7 +320,7 @@ export function AdminLayout() {
                 onClick={() => setMobileMenuOpen(false)}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                    'flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
                     isActive
                       ? 'bg-primary text-primary-foreground shadow-primary'
                       : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -328,7 +336,7 @@ export function AdminLayout() {
                 <CollapsibleTrigger asChild>
                   <button
                     className={cn(
-                      'flex items-center justify-between w-full rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200',
+                      'flex items-center justify-between w-full rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
                       isCalendarRoute
                         ? 'bg-primary/10 text-primary'
                         : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
@@ -352,17 +360,21 @@ export function AdminLayout() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
+                        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
                         isActive
-                          ? 'bg-primary text-primary-foreground border-primary shadow-md'
-                          : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
+                          ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
+                          : 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-500/30 hover:border-primary/40 hover:shadow-md'
                       )
                     }
                   >
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted/90 to-muted-foreground/20 flex items-center justify-center ring-1 ring-border/60">
+                    <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+                    <div className="w-8 h-8 rounded-md bg-slate-800/80 flex items-center justify-center ring-1 ring-slate-400/30">
                       <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     </div>
-                    <span className="font-medium">Todos os Setores</span>
+                    <div className="min-w-0">
+                      <span className="block truncate font-semibold">Todos os Setores</span>
+                      <span className="block text-[10px] text-muted-foreground">Visão geral</span>
+                    </div>
                   </NavLink>
                   {sectors.map((sector) => (
                     <NavLink
@@ -371,17 +383,18 @@ export function AdminLayout() {
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
                         cn(
-                          'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
+                          'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
                           isActive
-                            ? 'bg-primary text-primary-foreground border-primary shadow-md'
-                            : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
+                            ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
+                            : 'bg-slate-700/30 hover:bg-slate-700/50 border-slate-500/30 hover:border-primary/40 hover:shadow-md'
                         )
                       }
                     >
+                      <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', 'opacity-0 group-hover:opacity-100')} style={{ backgroundColor: sector.color || '#22c55e' }} />
                       <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-border/50"
+                        className="w-8 h-8 rounded-md flex items-center justify-center shadow-sm ring-1 ring-slate-400/30"
                         style={{ 
-                          backgroundColor: `${sector.color || '#6b7280'}20`,
+                          backgroundColor: `${sector.color || '#6b7280'}1f`,
                           border: `2px solid ${sector.color || '#6b7280'}`
                         }}
                       >
@@ -390,7 +403,10 @@ export function AdminLayout() {
                           style={{ backgroundColor: sector.color || '#6b7280' }}
                         />
                       </div>
-                      <span className="truncate font-medium">{sector.name}</span>
+                      <div className="min-w-0">
+                        <span className="block truncate font-semibold">{sector.name}</span>
+                        <span className="block text-[10px] text-muted-foreground">Setor</span>
+                      </div>
                     </NavLink>
                   ))}
                 </CollapsibleContent>
@@ -411,8 +427,8 @@ export function AdminLayout() {
                     to={item.to}
                     onClick={() => setMobileMenuOpen(false)}
                     className={({ isActive }) =>
-                      cn(
-                        'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
+                        cn(
+                          'flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
                         isActive
                           ? 'bg-primary text-primary-foreground shadow-primary'
                           : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'

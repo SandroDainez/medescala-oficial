@@ -3861,9 +3861,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     : null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 rounded-2xl border border-border/60 bg-slate-800/35 p-3 sm:p-4 shadow-sm">
       {/* Page Header */}
-      <Card className="border-border/70 bg-gradient-to-br from-card to-card/70 shadow-sm">
+      <Card className="border-border/70 bg-gradient-to-br from-slate-700/55 to-slate-800/45 shadow-md">
         <CardContent className="p-4 sm:p-5">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -3889,7 +3889,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="border-border/70 bg-gradient-to-br from-slate-700/45 to-slate-800/35 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -3903,7 +3903,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="border-border/70 bg-gradient-to-br from-slate-700/45 to-slate-800/35 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -3917,7 +3917,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="border-border/70 bg-gradient-to-br from-slate-700/45 to-slate-800/35 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -3931,7 +3931,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
+        <Card className="border-border/70 bg-gradient-to-br from-slate-700/45 to-slate-800/35 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
