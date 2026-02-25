@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, TenantProvider, ThemeProvider } from "@/providers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenant } from "@/hooks/useTenant";
+import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -115,6 +116,24 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
+  const { user, loading: authLoading } = useAuth();
+  const { isSuperAdmin, loading: saLoading } = useSuperAdmin();
+
+  if (authLoading || saLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!isSuperAdmin) return <Navigate to="/home" replace />;
+
+  return <>{children}</>;
+}
+
 function RoleRedirect() {
   const { user, loading: authLoading } = useAuth();
   const { currentRole, loading: tenantLoading, memberships } = useTenant();
@@ -199,7 +218,14 @@ const App = () => (
                       <Route path="/reset-password" element={<ResetPassword />} />
                       <Route path="/change-password" element={<ChangePassword />} />
                       <Route path="/trial-expired" element={<TrialExpired />} />
-                      <Route path="/super-admin" element={<SuperAdmin />} />
+                      <Route
+                        path="/super-admin"
+                        element={
+                          <RequireSuperAdmin>
+                            <SuperAdmin />
+                          </RequireSuperAdmin>
+                        }
+                      />
                       <Route path="/install" element={<Install />} />
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/privacy" element={<Privacy />} />

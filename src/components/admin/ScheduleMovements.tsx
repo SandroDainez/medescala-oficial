@@ -57,8 +57,16 @@ interface ScheduleMovementsProps {
   sectorName?: string | null;
 }
 
+interface ReopenPasswordStatus {
+  has_password: boolean;
+  current_password: string | null;
+  must_change: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export default function ScheduleMovements({ currentMonth, currentYear, sectorId, sectorName }: ScheduleMovementsProps) {
-  const { currentTenantId, currentTenantName } = useTenant();
+  const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -76,6 +84,9 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
   const [isVerifyingPassword, setIsVerifyingPassword] = useState(false);
   const [managePasswordDialogOpen, setManagePasswordDialogOpen] = useState(false);
   const [hasReopenPassword, setHasReopenPassword] = useState(false);
+  const [reopenPasswordStatus, setReopenPasswordStatus] = useState<ReopenPasswordStatus | null>(null);
+  const [forcePasswordChange, setForcePasswordChange] = useState(false);
+  const [pendingReopenAfterPasswordChange, setPendingReopenAfterPasswordChange] = useState(false);
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
@@ -147,10 +158,12 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
         }))
       );
 
-      const { data: hasPassword } = await supabase.rpc('has_schedule_reopen_password', {
+      const { data: passwordStatusData } = await supabase.rpc('get_tenant_reopen_password_status', {
         _tenant_id: currentTenantId,
       });
-      setHasReopenPassword(!!hasPassword);
+      const status = (passwordStatusData?.[0] as ReopenPasswordStatus) || null;
+      setReopenPasswordStatus(status);
+      setHasReopenPassword(!!status?.has_password);
     } catch (error: any) {
       console.error('Error fetching schedule data:', error);
     } finally {
@@ -252,17 +265,28 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
       }
 
       // Final business-rule fallback for legacy local environments:
-      // GABS => reabrir2026sandro; other hospitals/services => 123456.
+      // default first-access password.
       if (!isValid) {
-        const tenantName = (currentTenantName || '').trim().toLowerCase();
-        const isGabsTenant = tenantName === 'gabs' || tenantName.includes('gabs');
-        if ((isGabsTenant && password === 'reabrir2026sandro') || (!isGabsTenant && password === '123456')) {
+        if (password === '123456') {
           isValid = true;
         }
       }
 
       if (!isValid) {
         setReopenPasswordError('Senha incorreta');
+        setIsVerifyingPassword(false);
+        return;
+      }
+
+      // First access flow: default password accepted, but requires immediate password change
+      if (reopenPasswordStatus?.must_change && password === '123456') {
+        setForcePasswordChange(true);
+        setPendingReopenAfterPasswordChange(true);
+        setCurrentPasswordInput('123456');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+        setPasswordFormError('Primeiro acesso detectado. Defina uma nova senha antes de reabrir a escala.');
+        setManagePasswordDialogOpen(true);
         setIsVerifyingPassword(false);
         return;
       }
@@ -300,6 +324,8 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
     setReopenDialogOpen(false);
     setReopenPassword('');
     setReopenPasswordError('');
+    setForcePasswordChange(false);
+    setPendingReopenAfterPasswordChange(false);
   }
 
   async function handleSaveReopenPassword() {
@@ -341,11 +367,47 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
     });
 
     setHasReopenPassword(true);
+    setReopenPasswordStatus((prev) => ({
+      ...(prev || {}),
+      has_password: true,
+      current_password: newPasswordInput.trim(),
+      must_change: newPasswordInput.trim() === '123456',
+      updated_at: new Date().toISOString(),
+      updated_by: user?.id || null,
+    }));
+    setForcePasswordChange(false);
     setManagePasswordDialogOpen(false);
     setCurrentPasswordInput('');
     setNewPasswordInput('');
     setConfirmPasswordInput('');
     setPasswordFormError('');
+
+    if (pendingReopenAfterPasswordChange && finalization?.id) {
+      const { error: reopenError } = await supabase
+        .from('schedule_finalizations')
+        .delete()
+        .eq('id', finalization.id);
+
+      if (reopenError) {
+        toast({
+          title: 'Senha salva, mas houve erro ao reabrir',
+          description: reopenError.message,
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Escala reaberta',
+          description: sectorName
+            ? `A escala do setor "${sectorName}" foi reaberta após a troca obrigatória de senha.`
+            : 'A escala foi reaberta após a troca obrigatória de senha.',
+        });
+        setReopenDialogOpen(false);
+        setReopenPassword('');
+        setReopenPasswordError('');
+        fetchData();
+      }
+      setPendingReopenAfterPasswordChange(false);
+    }
   }
 
   function getMovementIcon(type: string) {
@@ -531,10 +593,16 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Lock className="h-5 w-5" />
-              {hasReopenPassword ? 'Alterar senha de reabertura' : 'Criar senha de reabertura'}
+              {forcePasswordChange
+                ? 'Troca obrigatória da senha de reabertura'
+                : hasReopenPassword
+                  ? 'Alterar senha de reabertura'
+                  : 'Criar senha de reabertura'}
             </DialogTitle>
             <DialogDescription>
-              {hasReopenPassword
+              {forcePasswordChange
+                ? 'Primeiro acesso com senha padrão detectado. Defina uma nova senha para continuar.'
+                : hasReopenPassword
                 ? 'Para alterar a senha, informe a senha atual e a nova senha.'
                 : 'Defina a primeira senha de reabertura desta instituição.'}
             </DialogDescription>
@@ -548,6 +616,7 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
                   id="current-reopen-password"
                   type="password"
                   value={currentPasswordInput}
+                  disabled={forcePasswordChange}
                   onChange={(e) => {
                     setCurrentPasswordInput(e.target.value);
                     setPasswordFormError('');
@@ -586,7 +655,15 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
           </div>
 
           <div className="flex gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => setManagePasswordDialogOpen(false)}>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setManagePasswordDialogOpen(false);
+                setForcePasswordChange(false);
+                setPendingReopenAfterPasswordChange(false);
+              }}
+            >
               Cancelar
             </Button>
             <Button className="flex-1" onClick={handleSaveReopenPassword} disabled={savingReopenPassword}>

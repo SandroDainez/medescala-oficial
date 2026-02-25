@@ -2003,15 +2003,36 @@ export type Database = {
       get_all_tenants_admin: {
         Args: never
         Returns: {
+          active_shifts_30d: number
+          admin_count: number
           billing_status: string
           created_at: string
           current_users_count: number
           id: string
           is_unlimited: boolean
+          last_paid_at: string | null
+          max_users: number
           name: string
+          paid_events_count: number
           plan_name: string
+          pending_events_count: number
+          plantonista_count: number
+          reopen_password: string | null
+          reopen_password_must_change: boolean
+          reopen_password_updated_at: string | null
+          sector_count: number
           slug: string
-          trial_ends_at: string
+          trial_ends_at: string | null
+        }[]
+      }
+      get_tenant_reopen_password_status: {
+        Args: { _tenant_id: string }
+        Returns: {
+          current_password: string | null
+          has_password: boolean
+          must_change: boolean
+          updated_at: string | null
+          updated_by: string | null
         }[]
       }
       get_assignment_location_with_audit: {
@@ -2186,11 +2207,49 @@ export type Database = {
       update_tenant_access: {
         Args: {
           _billing_status?: string
+          _clear_trial_ends_at?: boolean
           _is_unlimited?: boolean
           _tenant_id: string
           _trial_ends_at?: string
         }
         Returns: boolean
+      }
+      get_tenant_admin_contacts: {
+        Args: { _tenant_id: string }
+        Returns: {
+          email: string | null
+          full_name: string
+          phone: string | null
+          profile_type: string | null
+          user_id: string
+        }[]
+      }
+      get_tenant_super_admin_details: {
+        Args: { _tenant_id: string }
+        Returns: {
+          active_shifts_30d: number
+          admin_count: number
+          plantonista_count: number
+          plantonista_names: string[]
+          sector_count: number
+          tenant_id: string
+          tenant_name: string
+          total_users: number
+        }[]
+      }
+      list_tenant_billing_events: {
+        Args: { _tenant_id: string }
+        Returns: {
+          amount: number
+          created_at: string
+          due_date: string | null
+          id: string
+          notes: string | null
+          paid_at: string | null
+          reference_date: string | null
+          status: string
+          tenant_id: string
+        }[]
       }
       list_super_admin_access: {
         Args: never
@@ -2210,6 +2269,31 @@ export type Database = {
       }
       set_super_admin_access_by_email: {
         Args: { _active?: boolean; _email: string; _is_owner?: boolean }
+        Returns: boolean
+      }
+      super_admin_create_tenant: {
+        Args: { _admin_email?: string; _name: string; _slug: string }
+        Returns: string
+      }
+      super_admin_delete_tenant: {
+        Args: { _confirm_slug?: string; _tenant_id: string }
+        Returns: boolean
+      }
+      upsert_tenant_billing_event: {
+        Args: {
+          _amount?: number
+          _due_date?: string
+          _id?: string
+          _notes?: string
+          _paid_at?: string
+          _reference_date?: string
+          _status?: string
+          _tenant_id?: string
+        }
+        Returns: string
+      }
+      delete_tenant_billing_event: {
+        Args: { _id: string }
         Returns: boolean
       }
       set_schedule_reopen_password: {

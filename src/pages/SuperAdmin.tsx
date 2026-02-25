@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -35,7 +36,13 @@ import {
   EyeOff,
   UserPlus,
   UserMinus,
-  Crown
+  Crown,
+  Plus,
+  Trash2,
+  Mail,
+  MessageCircle,
+  CalendarDays,
+  BarChart3
 } from 'lucide-react';
 
 interface Tenant {
@@ -49,6 +56,16 @@ interface Tenant {
   max_users: number;
   plan_name: string | null;
   created_at: string;
+  admin_count: number;
+  plantonista_count: number;
+  sector_count: number;
+  active_shifts_30d: number;
+  paid_events_count: number;
+  pending_events_count: number;
+  last_paid_at: string | null;
+  reopen_password: string | null;
+  reopen_password_must_change: boolean;
+  reopen_password_updated_at: string | null;
 }
 
 interface SuperAdminAccess {
@@ -59,6 +76,45 @@ interface SuperAdminAccess {
   is_owner: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface TenantAdminContact {
+  user_id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  profile_type: string | null;
+}
+
+interface TenantBillingEvent {
+  id: string;
+  tenant_id: string;
+  reference_date: string | null;
+  due_date: string | null;
+  amount: number;
+  status: string;
+  paid_at: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+interface TenantSuperAdminDetails {
+  tenant_id: string;
+  tenant_name: string;
+  total_users: number;
+  admin_count: number;
+  plantonista_count: number;
+  sector_count: number;
+  active_shifts_30d: number;
+  plantonista_names: string[];
+}
+
+interface TenantReopenPasswordStatus {
+  has_password: boolean;
+  current_password: string | null;
+  must_change: boolean;
+  updated_at: string | null;
+  updated_by: string | null;
 }
 
 export default function SuperAdmin() {
@@ -76,6 +132,25 @@ export default function SuperAdmin() {
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
   const [saving, setSaving] = useState(false);
   const [migratingPii, setMigratingPii] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [createName, setCreateName] = useState('');
+  const [createSlug, setCreateSlug] = useState('');
+  const [createAdminEmail, setCreateAdminEmail] = useState('');
+  const [creatingTenant, setCreatingTenant] = useState(false);
+  const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [tenantDetails, setTenantDetails] = useState<TenantSuperAdminDetails | null>(null);
+  const [tenantAdminContacts, setTenantAdminContacts] = useState<TenantAdminContact[]>([]);
+  const [tenantBillingEvents, setTenantBillingEvents] = useState<TenantBillingEvent[]>([]);
+  const [tenantReopenPasswordStatus, setTenantReopenPasswordStatus] = useState<TenantReopenPasswordStatus | null>(null);
+  const [billingFormAmount, setBillingFormAmount] = useState('');
+  const [billingFormStatus, setBillingFormStatus] = useState('pending');
+  const [billingFormReferenceDate, setBillingFormReferenceDate] = useState('');
+  const [billingFormDueDate, setBillingFormDueDate] = useState('');
+  const [billingFormNotes, setBillingFormNotes] = useState('');
+  const [savingBillingEvent, setSavingBillingEvent] = useState(false);
+  const [deletingBillingEventId, setDeletingBillingEventId] = useState<string | null>(null);
   
   // Reopen password management
   const [currentReopenPassword, setCurrentReopenPassword] = useState('');
@@ -93,6 +168,7 @@ export default function SuperAdmin() {
   const [editBillingStatus, setEditBillingStatus] = useState('');
   const [editIsUnlimited, setEditIsUnlimited] = useState(false);
   const [editTrialMonths, setEditTrialMonths] = useState(1);
+  const [editTrialEndsAtDate, setEditTrialEndsAtDate] = useState('');
 
   async function handleMigratePii() {
     setMigratingPii(true);
@@ -316,6 +392,196 @@ export default function SuperAdmin() {
     fetchSuperAdmins();
   }, [fetchSuperAdmins, toast]);
 
+  const resetBillingForm = useCallback(() => {
+    setBillingFormAmount('');
+    setBillingFormStatus('pending');
+    setBillingFormReferenceDate('');
+    setBillingFormDueDate('');
+    setBillingFormNotes('');
+  }, []);
+
+  const fetchTenantDetails = useCallback(async (tenantId: string) => {
+    setDetailsLoading(true);
+    const [detailsRes, contactsRes, billingRes, reopenStatusRes] = await Promise.all([
+      supabase.rpc('get_tenant_super_admin_details', { _tenant_id: tenantId }),
+      supabase.rpc('get_tenant_admin_contacts', { _tenant_id: tenantId }),
+      supabase.rpc('list_tenant_billing_events', { _tenant_id: tenantId }),
+      supabase.rpc('get_tenant_reopen_password_status', { _tenant_id: tenantId }),
+    ]);
+    setDetailsLoading(false);
+
+    if (detailsRes.error || contactsRes.error || billingRes.error || reopenStatusRes.error) {
+      toast({
+        title: 'Erro ao carregar detalhes',
+        description:
+          detailsRes.error?.message ||
+          contactsRes.error?.message ||
+          billingRes.error?.message ||
+          reopenStatusRes.error?.message ||
+          'Falha inesperada',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setTenantDetails((detailsRes.data?.[0] as TenantSuperAdminDetails) || null);
+    setTenantAdminContacts((contactsRes.data || []) as TenantAdminContact[]);
+    setTenantBillingEvents((billingRes.data || []) as TenantBillingEvent[]);
+    setTenantReopenPasswordStatus((reopenStatusRes.data?.[0] as TenantReopenPasswordStatus) || null);
+  }, [toast]);
+
+  const handleOpenDetails = useCallback(async (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setDetailsDialogOpen(true);
+    resetBillingForm();
+    setTenantReopenPasswordStatus(null);
+    await fetchTenantDetails(tenant.id);
+  }, [fetchTenantDetails, resetBillingForm]);
+
+  const handleCreateTenant = useCallback(async () => {
+    const name = createName.trim();
+    const slug = createSlug.trim().toLowerCase();
+    if (!name || !slug) {
+      toast({
+        title: 'Campos obrigatórios',
+        description: 'Informe nome e código do hospital/serviço.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setCreatingTenant(true);
+    const { error } = await supabase.rpc('super_admin_create_tenant', {
+      _name: name,
+      _slug: slug,
+      _admin_email: createAdminEmail.trim() || null,
+    });
+    setCreatingTenant(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao criar hospital',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Hospital criado com sucesso.' });
+    setCreateName('');
+    setCreateSlug('');
+    setCreateAdminEmail('');
+    setCreateDialogOpen(false);
+    fetchTenants();
+  }, [createAdminEmail, createName, createSlug, fetchTenants, toast]);
+
+  const handleDeleteTenant = useCallback(async (tenant: Tenant) => {
+    const confirmSlug = window.prompt(
+      `Para confirmar a exclusão definitiva, digite o código do hospital: ${tenant.slug}`
+    );
+
+    if (!confirmSlug) return;
+
+    setDeletingTenantId(tenant.id);
+    const { error } = await supabase.rpc('super_admin_delete_tenant', {
+      _tenant_id: tenant.id,
+      _confirm_slug: confirmSlug.trim().toLowerCase(),
+    });
+    setDeletingTenantId(null);
+
+    if (error) {
+      toast({
+        title: 'Erro ao excluir hospital',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Hospital removido com sucesso.' });
+    if (selectedTenant?.id === tenant.id) {
+      setDetailsDialogOpen(false);
+      setSelectedTenant(null);
+      setTenantDetails(null);
+      setTenantAdminContacts([]);
+      setTenantBillingEvents([]);
+    }
+    fetchTenants();
+  }, [fetchTenants, selectedTenant?.id, toast]);
+
+  const handleSaveBillingEvent = useCallback(async () => {
+    if (!selectedTenant) return;
+    const amount = Number(billingFormAmount.replace(',', '.'));
+    if (!Number.isFinite(amount)) {
+      toast({
+        title: 'Valor inválido',
+        description: 'Informe um valor numérico para o lançamento.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingBillingEvent(true);
+    const { error } = await supabase.rpc('upsert_tenant_billing_event', {
+      _tenant_id: selectedTenant.id,
+      _amount: amount,
+      _status: billingFormStatus,
+      _reference_date: billingFormReferenceDate || null,
+      _due_date: billingFormDueDate || null,
+      _paid_at: billingFormStatus === 'paid' ? new Date().toISOString() : null,
+      _notes: billingFormNotes.trim() || null,
+    });
+    setSavingBillingEvent(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao salvar histórico',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Histórico de cobrança atualizado.' });
+    resetBillingForm();
+    await fetchTenantDetails(selectedTenant.id);
+    fetchTenants();
+  }, [
+    billingFormAmount,
+    billingFormDueDate,
+    billingFormNotes,
+    billingFormReferenceDate,
+    billingFormStatus,
+    fetchTenantDetails,
+    fetchTenants,
+    resetBillingForm,
+    selectedTenant,
+    toast,
+  ]);
+
+  const handleDeleteBillingEvent = useCallback(async (eventId: string) => {
+    if (!selectedTenant) return;
+
+    setDeletingBillingEventId(eventId);
+    const { error } = await supabase.rpc('delete_tenant_billing_event', {
+      _id: eventId,
+    });
+    setDeletingBillingEventId(null);
+
+    if (error) {
+      toast({
+        title: 'Erro ao excluir lançamento',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Lançamento removido.' });
+    await fetchTenantDetails(selectedTenant.id);
+    fetchTenants();
+  }, [fetchTenantDetails, fetchTenants, selectedTenant, toast]);
+
   const checkSuperAdminAndFetch = useCallback(async () => {
     if (!user) {
       setLoading(false);
@@ -348,6 +614,9 @@ export default function SuperAdmin() {
     setEditBillingStatus(tenant.billing_status);
     setEditIsUnlimited(tenant.is_unlimited);
     setEditTrialMonths(1);
+    setEditTrialEndsAtDate(
+      tenant.trial_ends_at ? format(new Date(tenant.trial_ends_at), 'yyyy-MM-dd') : ''
+    );
     setEditDialogOpen(true);
   }
 
@@ -357,9 +626,16 @@ export default function SuperAdmin() {
     setSaving(true);
 
     // Calculate new trial end date if extending
-    let newTrialEndsAt = null;
+    let newTrialEndsAt: string | null = null;
+    let clearTrialEndsAt = false;
     if (editBillingStatus === 'trial' && !editIsUnlimited) {
-      newTrialEndsAt = endOfMonth(addMonths(new Date(), editTrialMonths)).toISOString();
+      if (editTrialEndsAtDate) {
+        newTrialEndsAt = new Date(`${editTrialEndsAtDate}T23:59:59`).toISOString();
+      } else {
+        newTrialEndsAt = endOfMonth(addMonths(new Date(), editTrialMonths)).toISOString();
+      }
+    } else {
+      clearTrialEndsAt = true;
     }
 
     const { error } = await supabase.rpc('update_tenant_access', {
@@ -367,6 +643,7 @@ export default function SuperAdmin() {
       _billing_status: editBillingStatus,
       _is_unlimited: editIsUnlimited,
       _trial_ends_at: newTrialEndsAt,
+      _clear_trial_ends_at: clearTrialEndsAt,
     });
 
     setSaving(false);
@@ -445,6 +722,33 @@ export default function SuperAdmin() {
         Trial ({daysRemaining}d)
       </Badge>
     );
+  }
+
+  function openWhatsapp(phone: string | null, hospitalName: string) {
+    if (!phone) {
+      toast({
+        title: 'Telefone não informado',
+        description: 'Cadastre o telefone do administrador para usar WhatsApp.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const digits = phone.replace(/\D/g, '');
+    const text = encodeURIComponent(`Olá! Contato da administração MedEscala - ${hospitalName}.`);
+    window.open(`https://wa.me/${digits}?text=${text}`, '_blank', 'noopener,noreferrer');
+  }
+
+  function openEmail(email: string | null, hospitalName: string) {
+    if (!email) {
+      toast({
+        title: 'Email não informado',
+        description: 'Administrador sem email válido.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    const subject = encodeURIComponent(`Contato MedEscala - ${hospitalName}`);
+    window.location.href = `mailto:${email}?subject=${subject}`;
   }
 
   const filteredTenants = tenants.filter(
@@ -848,6 +1152,10 @@ export default function SuperAdmin() {
                     className="pl-9 w-64"
                   />
                 </div>
+                <Button onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  Adicionar hospital
+                </Button>
                 <Button variant="outline" size="icon" onClick={fetchTenants}>
                   <RefreshCw className="h-4 w-4" />
                 </Button>
@@ -863,15 +1171,17 @@ export default function SuperAdmin() {
                     <TableHead>Código</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Usuários</TableHead>
-                    <TableHead>Expira em</TableHead>
-                    <TableHead>Criado em</TableHead>
+                    <TableHead>Equipe</TableHead>
+                    <TableHead>Atividade</TableHead>
+                    <TableHead>Pagamentos</TableHead>
+                    <TableHead>Senha Reabrir</TableHead>
                     <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredTenants.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                         Nenhum hospital encontrado
                       </TableCell>
                     </TableRow>
@@ -892,25 +1202,65 @@ export default function SuperAdmin() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          {tenant.is_unlimited ? (
-                            <span className="text-purple-600">Nunca</span>
-                          ) : tenant.trial_ends_at ? (
-                            format(new Date(tenant.trial_ends_at), "dd/MM/yyyy", { locale: ptBR })
-                          ) : (
-                            '-'
-                          )}
+                          <div className="text-xs text-muted-foreground">
+                            <div>{tenant.admin_count} admins</div>
+                            <div>{tenant.plantonista_count} plantonistas</div>
+                          </div>
                         </TableCell>
                         <TableCell>
-                          {format(new Date(tenant.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                          <div className="text-xs text-muted-foreground">
+                            <div>{tenant.sector_count} setores</div>
+                            <div>{tenant.active_shifts_30d} plantões (30d)</div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs text-muted-foreground">
+                            <div>{tenant.pending_events_count} pendentes</div>
+                            <div>{tenant.paid_events_count} pagos</div>
+                            <div>
+                              {tenant.last_paid_at
+                                ? `Último: ${format(new Date(tenant.last_paid_at), 'dd/MM/yyyy', { locale: ptBR })}`
+                                : 'Sem histórico'}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-xs">
+                            <div className="font-semibold">{tenant.reopen_password || '-'}</div>
+                            <div className="text-muted-foreground">
+                              {tenant.reopen_password_must_change ? 'Troca obrigatória' : 'Personalizada'}
+                            </div>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => openEditDialog(tenant)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleOpenDetails(tenant)}
+                            >
+                              <BarChart3 className="h-4 w-4 mr-1" />
+                              Detalhes
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditDialog(tenant)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {isAppOwner && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={deletingTenantId === tenant.id}
+                                onClick={() => handleDeleteTenant(tenant)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))
@@ -977,8 +1327,19 @@ export default function SuperAdmin() {
                         <SelectItem value="12">12 meses</SelectItem>
                       </SelectContent>
                     </Select>
+                    <div className="space-y-2 pt-2">
+                      <Label htmlFor="trial-ends-at-date">Ou definir prazo manual</Label>
+                      <Input
+                        id="trial-ends-at-date"
+                        type="date"
+                        value={editTrialEndsAtDate}
+                        onChange={(e) => setEditTrialEndsAtDate(e.target.value)}
+                      />
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      Novo vencimento: {format(endOfMonth(addMonths(new Date(), editTrialMonths)), "dd/MM/yyyy", { locale: ptBR })}
+                      Novo vencimento: {editTrialEndsAtDate
+                        ? format(new Date(`${editTrialEndsAtDate}T00:00:00`), "dd/MM/yyyy", { locale: ptBR })
+                        : format(endOfMonth(addMonths(new Date(), editTrialMonths)), "dd/MM/yyyy", { locale: ptBR })}
                     </p>
                   </div>
                 )}
@@ -993,6 +1354,271 @@ export default function SuperAdmin() {
               {saving ? 'Salvando...' : 'Salvar'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adicionar Hospital/Serviço</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="create-hospital-name">Nome</Label>
+              <Input
+                id="create-hospital-name"
+                placeholder="Ex.: Hospital Central"
+                value={createName}
+                onChange={(e) => setCreateName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-hospital-slug">Código</Label>
+              <Input
+                id="create-hospital-slug"
+                placeholder="Ex.: hospital-central"
+                value={createSlug}
+                onChange={(e) => setCreateSlug(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="create-hospital-admin-email">Email do administrador inicial (opcional)</Label>
+              <Input
+                id="create-hospital-admin-email"
+                placeholder="admin@hospital.com"
+                value={createAdminEmail}
+                onChange={(e) => setCreateAdminEmail(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Novo hospital inicia limpo, com trial gratuito e senha de reabertura padrão `123456`.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleCreateTenant} disabled={creatingTenant}>
+              {creatingTenant ? 'Criando...' : 'Criar hospital'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>
+              Painel do Hospital - {selectedTenant?.name || 'Hospital'}
+            </DialogTitle>
+          </DialogHeader>
+          {detailsLoading ? (
+            <div className="py-10 text-center text-muted-foreground">Carregando detalhes...</div>
+          ) : (
+            <div className="space-y-5">
+              <div className="grid gap-3 md:grid-cols-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs">Usuários</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xl font-semibold">{tenantDetails?.total_users ?? 0}</CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs">Admins</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xl font-semibold">{tenantDetails?.admin_count ?? 0}</CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs">Plantonistas</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xl font-semibold">{tenantDetails?.plantonista_count ?? 0}</CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-xs">Setores/Atividade</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <div>{tenantDetails?.sector_count ?? 0} setores</div>
+                    <div>{tenantDetails?.active_shifts_30d ?? 0} plantões (30d)</div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Lock className="h-4 w-4" />
+                    Senha de Reabertura da Escala
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-1">
+                  <p className="text-sm">
+                    Senha atual: <span className="font-semibold">{tenantReopenPasswordStatus?.current_password || 'Não definida'}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Status: {tenantReopenPasswordStatus?.must_change ? 'troca obrigatória no primeiro acesso' : 'senha já personalizada pelo hospital'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Atualizada em:{' '}
+                    {tenantReopenPasswordStatus?.updated_at
+                      ? format(new Date(tenantReopenPasswordStatus.updated_at), 'dd/MM/yyyy HH:mm')
+                      : '-'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Administradores do hospital
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {tenantAdminContacts.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">Nenhum administrador encontrado.</p>
+                  ) : (
+                    tenantAdminContacts.map((admin) => (
+                      <div
+                        key={admin.user_id}
+                        className="rounded-md border p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-2"
+                      >
+                        <div>
+                          <p className="font-medium">{admin.full_name}</p>
+                          <p className="text-xs text-muted-foreground">{admin.email || '-'}</p>
+                          <p className="text-xs text-muted-foreground">{admin.phone || 'Sem telefone'}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button variant="outline" size="sm" onClick={() => openEmail(admin.email, selectedTenant?.name || 'Hospital')}>
+                            <Mail className="h-4 w-4 mr-1" />
+                            Email
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={() => openWhatsapp(admin.phone, selectedTenant?.name || 'Hospital')}>
+                            <MessageCircle className="h-4 w-4 mr-1" />
+                            WhatsApp
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4" />
+                    Histórico de pagamentos da assinatura
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid gap-3 md:grid-cols-5">
+                    <Input
+                      placeholder="Valor"
+                      value={billingFormAmount}
+                      onChange={(e) => setBillingFormAmount(e.target.value)}
+                    />
+                    <Select value={billingFormStatus} onValueChange={setBillingFormStatus}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Pendente</SelectItem>
+                        <SelectItem value="paid">Pago</SelectItem>
+                        <SelectItem value="overdue">Atrasado</SelectItem>
+                        <SelectItem value="waived">Sem cobrança</SelectItem>
+                        <SelectItem value="cancelled">Cancelado</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="date"
+                      value={billingFormReferenceDate}
+                      onChange={(e) => setBillingFormReferenceDate(e.target.value)}
+                    />
+                    <Input
+                      type="date"
+                      value={billingFormDueDate}
+                      onChange={(e) => setBillingFormDueDate(e.target.value)}
+                    />
+                    <Button onClick={handleSaveBillingEvent} disabled={savingBillingEvent}>
+                      {savingBillingEvent ? 'Salvando...' : 'Registrar'}
+                    </Button>
+                  </div>
+                  <Textarea
+                    placeholder="Observações do lançamento (opcional)"
+                    value={billingFormNotes}
+                    onChange={(e) => setBillingFormNotes(e.target.value)}
+                  />
+
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Referência</TableHead>
+                          <TableHead>Vencimento</TableHead>
+                          <TableHead>Valor</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Pago em</TableHead>
+                          <TableHead>Obs</TableHead>
+                          <TableHead className="text-right">Ação</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {tenantBillingEvents.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                              Nenhum lançamento de cobrança.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          tenantBillingEvents.map((event) => (
+                            <TableRow key={event.id}>
+                              <TableCell>{event.reference_date ? format(new Date(`${event.reference_date}T00:00:00`), 'dd/MM/yyyy') : '-'}</TableCell>
+                              <TableCell>{event.due_date ? format(new Date(`${event.due_date}T00:00:00`), 'dd/MM/yyyy') : '-'}</TableCell>
+                              <TableCell>R$ {Number(event.amount || 0).toFixed(2)}</TableCell>
+                              <TableCell>{event.status}</TableCell>
+                              <TableCell>{event.paid_at ? format(new Date(event.paid_at), 'dd/MM/yyyy HH:mm') : '-'}</TableCell>
+                              <TableCell className="max-w-[240px] truncate">{event.notes || '-'}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-destructive hover:text-destructive"
+                                  disabled={deletingBillingEventId === event.id}
+                                  onClick={() => handleDeleteBillingEvent(event.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Plantonistas cadastrados</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {tenantDetails?.plantonista_names?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {tenantDetails.plantonista_names.map((name, idx) => (
+                        <Badge key={`${name}-${idx}`} variant="outline">{name}</Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Sem plantonistas cadastrados.</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
