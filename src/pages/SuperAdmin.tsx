@@ -174,6 +174,7 @@ export default function SuperAdmin() {
   const [savingDetailsPlan, setSavingDetailsPlan] = useState(false);
   const [feedbackItems, setFeedbackItems] = useState<UserFeedbackItem[]>([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [activeTab, setActiveTab] = useState<'tenants' | 'feedback'>('tenants');
   
   const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
   const [grantEmail, setGrantEmail] = useState('');
@@ -857,6 +858,7 @@ export default function SuperAdmin() {
       return false;
     }).length,
   };
+  const unreadFeedbackCount = feedbackItems.filter((f) => f.status === 'new').length;
 
   if (loading) {
     return (
@@ -966,6 +968,37 @@ export default function SuperAdmin() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="border-primary/30">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <MessageCircle className="h-5 w-5 text-primary" />
+              Histórico de Feedback dos Usuários
+            </CardTitle>
+            <CardDescription>
+              Caixa central do superadministrador para acompanhar feedbacks enviados no aplicativo.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant={unreadFeedbackCount > 0 ? 'destructive' : 'outline'}>
+                {unreadFeedbackCount} novo(s)
+              </Badge>
+              <span className="text-sm text-muted-foreground">
+                {feedbackItems.length} feedback(s) no histórico
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={fetchFeedbackItems} disabled={loadingFeedback}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${loadingFeedback ? 'animate-spin' : ''}`} />
+                Atualizar
+              </Button>
+              <Button onClick={() => setActiveTab('feedback')}>
+                Abrir histórico
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Security Actions */}
         <Card>
@@ -1125,7 +1158,7 @@ export default function SuperAdmin() {
           </CardContent>
         </Card>
 
-        <Tabs defaultValue="tenants" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'tenants' | 'feedback')} className="space-y-4">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="tenants" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
@@ -1134,9 +1167,9 @@ export default function SuperAdmin() {
             <TabsTrigger value="feedback" className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" />
               Feedback
-              {feedbackItems.filter((f) => f.status === 'new').length > 0 && (
+              {unreadFeedbackCount > 0 && (
                 <Badge variant="destructive" className="h-5 px-1.5">
-                  {feedbackItems.filter((f) => f.status === 'new').length}
+                  {unreadFeedbackCount}
                 </Badge>
               )}
             </TabsTrigger>
