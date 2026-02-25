@@ -166,7 +166,6 @@ export default function SuperAdmin() {
 
   // Edit form state
   const [editBillingStatus, setEditBillingStatus] = useState('');
-  const [editIsUnlimited, setEditIsUnlimited] = useState(false);
   const [editPlanId, setEditPlanId] = useState('');
   const [editTrialMonths, setEditTrialMonths] = useState(1);
   const [editTrialEndsAtDate, setEditTrialEndsAtDate] = useState('');
@@ -576,7 +575,6 @@ export default function SuperAdmin() {
     const matchedPlan = planOptions.find((p) => p.name === tenant.plan_name);
     setSelectedTenant(tenant);
     setEditBillingStatus(tenant.billing_status);
-    setEditIsUnlimited(tenant.is_unlimited);
     setEditPlanId(matchedPlan?.id || '');
     setEditTrialMonths(1);
     setEditTrialEndsAtDate(
@@ -599,7 +597,7 @@ export default function SuperAdmin() {
     // Calculate new trial end date if extending
     let newTrialEndsAt: string | null = null;
     let clearTrialEndsAt = false;
-    if (editBillingStatus === 'trial' && !editIsUnlimited) {
+    if (editBillingStatus === 'trial') {
       if (editTrialEndsAtDate) {
         newTrialEndsAt = new Date(`${editTrialEndsAtDate}T23:59:59`).toISOString();
       } else {
@@ -612,7 +610,7 @@ export default function SuperAdmin() {
     const { error } = await supabase.rpc('update_tenant_access', {
       _tenant_id: selectedTenant.id,
       _billing_status: editBillingStatus,
-      _is_unlimited: editIsUnlimited,
+      _is_unlimited: false,
       _trial_ends_at: newTrialEndsAt,
       _clear_trial_ends_at: clearTrialEndsAt,
     });
@@ -1169,19 +1167,6 @@ export default function SuperAdmin() {
             <DialogTitle>Editar Acesso - {selectedTenant?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label>Acesso Ilimitado</Label>
-                <p className="text-sm text-muted-foreground">
-                  Remove todas as restrições de trial
-                </p>
-              </div>
-              <Switch
-                checked={editIsUnlimited}
-                onCheckedChange={setEditIsUnlimited}
-              />
-            </div>
-
             <div className="space-y-2">
               <Label>Plano</Label>
               <Select value={editPlanId} onValueChange={setEditPlanId}>
@@ -1201,58 +1186,54 @@ export default function SuperAdmin() {
               </p>
             </div>
 
-            {!editIsUnlimited && (
-              <>
-                <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select value={editBillingStatus} onValueChange={setEditBillingStatus}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="trial">Trial</SelectItem>
-                      <SelectItem value="active">Ativo (Pago)</SelectItem>
-                      <SelectItem value="expired">Expirado</SelectItem>
-                      <SelectItem value="cancelled">Cancelado</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={editBillingStatus} onValueChange={setEditBillingStatus}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="trial">Trial</SelectItem>
+                  <SelectItem value="active">Ativo (Pago)</SelectItem>
+                  <SelectItem value="expired">Expirado</SelectItem>
+                  <SelectItem value="cancelled">Cancelado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                {editBillingStatus === 'trial' && (
-                  <div className="space-y-2">
-                    <Label>Estender Trial por</Label>
-                    <Select 
-                      value={editTrialMonths.toString()} 
-                      onValueChange={(v) => setEditTrialMonths(parseInt(v))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 mês</SelectItem>
-                        <SelectItem value="2">2 meses</SelectItem>
-                        <SelectItem value="3">3 meses</SelectItem>
-                        <SelectItem value="6">6 meses</SelectItem>
-                        <SelectItem value="12">12 meses</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <div className="space-y-2 pt-2">
-                      <Label htmlFor="trial-ends-at-date">Ou definir prazo manual</Label>
-                      <Input
-                        id="trial-ends-at-date"
-                        type="date"
-                        value={editTrialEndsAtDate}
-                        onChange={(e) => setEditTrialEndsAtDate(e.target.value)}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Novo vencimento: {editTrialEndsAtDate
-                        ? format(new Date(`${editTrialEndsAtDate}T00:00:00`), "dd/MM/yyyy", { locale: ptBR })
-                        : format(endOfMonth(addMonths(new Date(), editTrialMonths)), "dd/MM/yyyy", { locale: ptBR })}
-                    </p>
-                  </div>
-                )}
-              </>
+            {editBillingStatus === 'trial' && (
+              <div className="space-y-2">
+                <Label>Estender Trial por</Label>
+                <Select 
+                  value={editTrialMonths.toString()} 
+                  onValueChange={(v) => setEditTrialMonths(parseInt(v))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 mês</SelectItem>
+                    <SelectItem value="2">2 meses</SelectItem>
+                    <SelectItem value="3">3 meses</SelectItem>
+                    <SelectItem value="6">6 meses</SelectItem>
+                    <SelectItem value="12">12 meses</SelectItem>
+                  </SelectContent>
+                </Select>
+                <div className="space-y-2 pt-2">
+                  <Label htmlFor="trial-ends-at-date">Ou definir prazo manual</Label>
+                  <Input
+                    id="trial-ends-at-date"
+                    type="date"
+                    value={editTrialEndsAtDate}
+                    onChange={(e) => setEditTrialEndsAtDate(e.target.value)}
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Novo vencimento: {editTrialEndsAtDate
+                    ? format(new Date(`${editTrialEndsAtDate}T00:00:00`), "dd/MM/yyyy", { locale: ptBR })
+                    : format(endOfMonth(addMonths(new Date(), editTrialMonths)), "dd/MM/yyyy", { locale: ptBR })}
+                </p>
+              </div>
             )}
           </div>
           <DialogFooter>
