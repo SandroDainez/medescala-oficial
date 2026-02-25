@@ -114,6 +114,8 @@ const EMPTY_CREATE_FORM: CreateForm = {
   accessRole: "user",
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function UserManagement() {
   const { currentTenantId, currentTenantName, currentRole } = useTenant();
   const { toast } = useToast();
@@ -435,6 +437,15 @@ export default function UserManagement() {
       return;
     }
 
+    if (!EMAIL_REGEX.test(email)) {
+      toast({
+        title: "Email inválido",
+        description: "Informe um email válido para enviar o convite.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setCreating(true);
 
     const { data, error } = await supabase.functions.invoke("create-user", {
@@ -494,12 +505,32 @@ export default function UserManagement() {
     }
 
     const tempPassword = data?.temporaryPassword as string | undefined;
-    toast({
-      title: "Usuário adicionado",
-      description: tempPassword
-        ? `Senha temporária: ${tempPassword}`
-        : "Usuário vinculado ao hospital com sucesso.",
+
+    const loginUrl = buildPublicAppUrl("/auth");
+    const inviteName = createForm.fullName?.trim() || name;
+    const { data: inviteData, error: inviteError } = await supabase.functions.invoke("send-invite-email", {
+      body: {
+        name: inviteName,
+        email,
+        password: tempPassword?.trim() || undefined,
+        hospitalName: currentTenantName || "MedEscala",
+        loginUrl,
+        tenantId: currentTenantId,
+      },
     });
+
+    if (inviteError || inviteData?.error) {
+      toast({
+        title: "Usuário criado, mas convite não foi enviado",
+        description: inviteData?.error || inviteError?.message || "Você pode enviar manualmente na ação Convite.",
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Usuário adicionado",
+        description: "Convite enviado por email automaticamente.",
+      });
+    }
 
     setCreateForm(EMPTY_CREATE_FORM);
     setCreateOpen(false);
@@ -825,8 +856,14 @@ export default function UserManagement() {
               <Input value={createForm.fullName} onChange={(e) => setCreateForm((p) => ({ ...p, fullName: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
-              <Input type="email" value={createForm.email} onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))} />
+              <Label>Email *</Label>
+              <Input
+                type="email"
+                required
+                value={createForm.email}
+                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+                placeholder="usuario@dominio.com"
+              />
             </div>
             <div className="space-y-2">
               <Label>Telefone</Label>
@@ -909,6 +946,10 @@ export default function UserManagement() {
               <Input value={createForm.pixKey} onChange={(e) => setCreateForm((p) => ({ ...p, pixKey: e.target.value }))} />
             </div>
           </div>
+
+          <p className="mt-3 text-xs text-muted-foreground">
+            * Ao adicionar, o convite é enviado automaticamente por email. Você também pode reenviar manualmente por email/WhatsApp na ação Convite.
+          </p>
 
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={creating}>
