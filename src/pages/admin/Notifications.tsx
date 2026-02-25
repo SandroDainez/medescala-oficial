@@ -295,27 +295,20 @@ export default function AdminNotifications() {
     let targetUsers: string[] = [];
 
     if (notificationType === 'shift') {
-      if (!selectedShift) {
-        toast({
-          title: 'Selecione um plantão',
-          description: 'Para notificação de plantão disponível, escolha o plantão específico.',
-          variant: 'destructive',
-        });
-        return;
-      }
+      // Para "Plantão Disponível":
+      // - Se um plantão específico foi selecionado, usa o setor desse plantão.
+      // - Se não foi selecionado, usa o filtro de setor da tela.
       const shift = availableShifts.find((s) => s.id === selectedShift);
       const shiftSectorId = shift?.sector_id ?? null;
-      if (!shift || !shiftSectorId) {
-        toast({
-          title: 'Plantão inválido',
-          description: 'Este plantão não possui setor válido para envio.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      targetUsers = eligibleMembers
-        .filter((m) => (memberSectorMap[m.user_id] || []).includes(shiftSectorId))
-        .map((m) => m.user_id);
+
+      const shiftScopedMembers =
+        shiftSectorId
+          ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(shiftSectorId))
+          : filteredMembers;
+
+      targetUsers = sendToAll
+        ? shiftScopedMembers.map((m) => m.user_id)
+        : selectedUsers.filter((id) => shiftScopedMembers.some((m) => m.user_id === id));
     } else {
       targetUsers = sendToAll
         ? filteredMembers.map((m) => m.user_id)
@@ -496,12 +489,19 @@ export default function AdminNotifications() {
       ? eligibleMembers
       : eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedSectorFilter));
   const selectedShiftData = availableShifts.find((s) => s.id === selectedShift);
-  const shiftScopedCount =
-    notificationType === 'shift' && selectedShiftData?.sector_id
-      ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedShiftData.sector_id as string)).length
-      : 0;
+  const shiftScopedMembers =
+    notificationType === 'shift'
+      ? (
+          selectedShiftData?.sector_id
+            ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedShiftData.sector_id as string))
+            : filteredMembers
+        )
+      : [];
+  const shiftScopedCount = shiftScopedMembers.length;
   const userCount = notificationType === 'shift'
-    ? shiftScopedCount
+    ? (sendToAll
+        ? shiftScopedCount
+        : selectedUsers.filter((id) => shiftScopedMembers.some((m) => m.user_id === id)).length)
     : sendToAll
       ? filteredMembers.length
       : selectedUsers.filter((id) => filteredMembers.some((m) => m.user_id === id)).length;
@@ -661,14 +661,16 @@ export default function AdminNotifications() {
                     />
                     <label htmlFor="sendToAll" className="text-sm cursor-pointer">
                       {notificationType === 'shift'
-                        ? `Enviar para plantonistas do setor do plantão selecionado (${shiftScopedCount})`
+                        ? (selectedShiftData?.sector_id
+                            ? `Enviar para plantonistas do setor do plantão selecionado (${shiftScopedCount})`
+                            : `Enviar para plantonistas do setor filtrado (${shiftScopedCount})`)
                         : `Enviar para todos os plantonistas do filtro (${filteredMembers.length})`}
                     </label>
                   </div>
                   
-                  {!sendToAll && notificationType !== 'shift' && (
+                  {!sendToAll && (
                     <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                      {filteredMembers.map(member => (
+                      {(notificationType === 'shift' ? shiftScopedMembers : filteredMembers).map(member => (
                         <div key={member.user_id} className="flex items-center gap-2">
                           <Checkbox
                             id={member.user_id}
