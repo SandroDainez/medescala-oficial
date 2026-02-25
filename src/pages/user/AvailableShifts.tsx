@@ -224,6 +224,15 @@ export default function UserAvailableShifts() {
       title: 'Plantão aceito!',
       description: 'Seu nome já entrou na escala desse plantão.',
     });
+
+    // Atualiza imediatamente na tela: remove dos disponíveis e marca como atribuído.
+    setAvailableShifts((prev) => prev.filter((shift) => shift.id !== selectedShift.id));
+    setMyAssignedShiftIds((prev) => {
+      const next = new Set(prev);
+      next.add(selectedShift.id);
+      return next;
+    });
+
     setSelectedShift(null);
     setOfferMessage('');
     fetchData();
@@ -278,9 +287,9 @@ export default function UserAvailableShifts() {
       <div>
         <h1 className="text-xl font-bold flex items-center gap-2">
           <Hand className="h-5 w-5 text-primary" />
-          Ofertas de Plantão
+          Anúncios e Candidaturas
         </h1>
-        <p className="text-sm text-muted-foreground">Ofertas abertas no seu setor</p>
+        <p className="text-sm text-muted-foreground">Plantões disponíveis dos setores em que você está cadastrado</p>
       </div>
 
       <Tabs defaultValue="available" className="space-y-4">
@@ -289,7 +298,7 @@ export default function UserAvailableShifts() {
             Disponíveis ({availableShifts.length})
           </TabsTrigger>
           <TabsTrigger value="myoffers" className="flex-1">
-            Meu Histórico de Ofertas ({myOffers.length})
+            Minhas Candidaturas ({myOffers.length})
           </TabsTrigger>
         </TabsList>
 
@@ -385,12 +394,12 @@ export default function UserAvailableShifts() {
                                     )}
                                     {isPending ? (
                                       <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
-                                        Solicitação pendente
+                                        Candidatura pendente
                                       </Badge>
                                     ) : (
                                       <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
                                         <Hand className="h-4 w-4 mr-2" />
-                                        Aceitar
+                                        Candidatar
                                       </Button>
                                     )}
                                   </div>
@@ -442,12 +451,12 @@ export default function UserAvailableShifts() {
                                     )}
                                     {isPending ? (
                                       <Badge variant="outline" className="mt-2 bg-yellow-500/10 text-yellow-600">
-                                        Solicitação pendente
+                                        Candidatura pendente
                                       </Badge>
                                     ) : (
                                       <Button size="sm" className="mt-2" onClick={() => setSelectedShift(shift)}>
                                         <Hand className="h-4 w-4 mr-2" />
-                                        Aceitar
+                                        Candidatar
                                       </Button>
                                     )}
                                   </div>
@@ -471,8 +480,8 @@ export default function UserAvailableShifts() {
             <Card>
               <CardContent className="p-8 text-center">
                 <Hand className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <p className="text-muted-foreground">Nenhuma oferta no histórico</p>
-                <p className="text-sm text-muted-foreground mt-1">Aceite uma oferta para registrar aqui.</p>
+                <p className="text-muted-foreground">Nenhuma candidatura no histórico</p>
+                <p className="text-sm text-muted-foreground mt-1">Faça uma candidatura para registrar aqui.</p>
               </CardContent>
             </Card>
           ) : (
@@ -550,7 +559,7 @@ export default function UserAvailableShifts() {
       <Dialog open={!!selectedShift} onOpenChange={(open) => !open && setSelectedShift(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Aceitar Plantão</DialogTitle>
+            <DialogTitle>Candidatar ao Plantão</DialogTitle>
             <DialogDescription>
               Ao confirmar, seu nome entra imediatamente na escala deste plantão.
             </DialogDescription>
@@ -605,12 +614,12 @@ export default function UserAvailableShifts() {
               {submitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando...
+                  Candidatando...
                 </>
               ) : (
                 <>
                   <Hand className="h-4 w-4 mr-2" />
-                  Confirmar Aceite
+                  Confirmar Candidatura
                 </>
               )}
             </Button>

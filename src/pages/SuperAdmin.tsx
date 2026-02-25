@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -122,6 +123,18 @@ interface PlanOption {
   max_users: number;
 }
 
+interface UserFeedbackItem {
+  id: string;
+  tenant_id: string | null;
+  user_id: string;
+  rating: 'bad' | 'neutral' | 'good' | 'excellent';
+  message: string | null;
+  status: 'new' | 'read' | 'archived';
+  created_at: string;
+  profile_name: string | null;
+  tenant_name: string | null;
+}
+
 export default function SuperAdmin() {
   const { user, signOut } = useAuth();
   const { toast } = useToast();
@@ -159,6 +172,8 @@ export default function SuperAdmin() {
   const [savingBillingEvent, setSavingBillingEvent] = useState(false);
   const [deletingBillingEventId, setDeletingBillingEventId] = useState<string | null>(null);
   const [savingDetailsPlan, setSavingDetailsPlan] = useState(false);
+  const [feedbackItems, setFeedbackItems] = useState<UserFeedbackItem[]>([]);
+  const [loadingFeedback, setLoadingFeedback] = useState(false);
   
   const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
   const [grantEmail, setGrantEmail] = useState('');
@@ -271,6 +286,63 @@ export default function SuperAdmin() {
     }
 
     setPlanOptions((data || []) as PlanOption[]);
+  }, [toast]);
+
+  const fetchFeedbackItems = useCallback(async () => {
+    setLoadingFeedback(true);
+
+    const { data, error } = await (supabase as any)
+      .from('user_feedback')
+      .select(`
+        id, tenant_id, user_id, rating, message, status, created_at,
+        profile:profiles!user_feedback_user_id_fkey(name, full_name),
+        tenant:tenants!user_feedback_tenant_id_fkey(name)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(300);
+
+    setLoadingFeedback(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao carregar feedbacks',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const normalized: UserFeedbackItem[] = ((data as any[]) || []).map((row) => ({
+      id: row.id,
+      tenant_id: row.tenant_id ?? null,
+      user_id: row.user_id,
+      rating: row.rating,
+      message: row.message ?? null,
+      status: row.status,
+      created_at: row.created_at,
+      profile_name: row.profile?.full_name || row.profile?.name || null,
+      tenant_name: row.tenant?.name || null,
+    }));
+
+    setFeedbackItems(normalized);
+  }, [toast]);
+
+  const markFeedbackAsRead = useCallback(async (id: string) => {
+    const { error } = await (supabase as any)
+      .from('user_feedback')
+      .update({ status: 'read' })
+      .eq('id', id);
+
+    if (error) {
+      toast({
+        title: 'Erro ao atualizar feedback',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setFeedbackItems((prev) => prev.map((item) => (item.id === id ? { ...item, status: 'read' } : item)));
   }, [toast]);
 
   const handleGrantSuperAdmin = useCallback(async () => {
@@ -563,9 +635,9 @@ export default function SuperAdmin() {
 
     setIsSuperAdmin(true);
     setIsAppOwner(Boolean(isOwner));
-    await Promise.all([fetchTenants(), fetchSuperAdmins(), fetchPlanOptions()]);
+    await Promise.all([fetchTenants(), fetchSuperAdmins(), fetchPlanOptions(), fetchFeedbackItems()]);
     setLoading(false);
-  }, [user, fetchTenants, fetchSuperAdmins, fetchPlanOptions]);
+  }, [user, fetchTenants, fetchSuperAdmins, fetchPlanOptions, fetchFeedbackItems]);
 
   useEffect(() => {
     checkSuperAdminAndFetch();
@@ -708,6 +780,37 @@ export default function SuperAdmin() {
         Trial ({daysRemaining}d)
       </Badge>
     );
+  }
+
+  function getFeedbackRatingLabel(rating: UserFeedbackItem['rating']) {
+    switch (rating) {
+      case 'excellent':
+        return 'Excelente';
+      case 'good':
+        return 'Bom';
+      case 'neutral':
+        return 'Regular';
+      case 'bad':
+        return 'Ruim';
+      default:
+        return rating;
+    }
+  }
+
+  function getFeedbackRatingBadge(rating: UserFeedbackItem['rating']) {
+    const baseClass = 'border';
+    switch (rating) {
+      case 'excellent':
+        return <Badge className={`${baseClass} bg-emerald-500/10 text-emerald-600 border-emerald-500/20`}>Excelente</Badge>;
+      case 'good':
+        return <Badge className={`${baseClass} bg-green-500/10 text-green-600 border-green-500/20`}>Bom</Badge>;
+      case 'neutral':
+        return <Badge className={`${baseClass} bg-amber-500/10 text-amber-700 border-amber-500/20`}>Regular</Badge>;
+      case 'bad':
+        return <Badge className={`${baseClass} bg-red-500/10 text-red-600 border-red-500/20`}>Ruim</Badge>;
+      default:
+        return <Badge variant="outline">{getFeedbackRatingLabel(rating)}</Badge>;
+    }
   }
 
   function openWhatsapp(phone: string | null, hospitalName: string) {
@@ -1022,8 +1125,26 @@ export default function SuperAdmin() {
           </CardContent>
         </Card>
 
-        {/* Tenants Table */}
-        <Card>
+        <Tabs defaultValue="tenants" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="tenants" className="flex items-center gap-2">
+              <Building2 className="h-4 w-4" />
+              Hospitais
+            </TabsTrigger>
+            <TabsTrigger value="feedback" className="flex items-center gap-2">
+              <MessageCircle className="h-4 w-4" />
+              Feedback
+              {feedbackItems.filter((f) => f.status === 'new').length > 0 && (
+                <Badge variant="destructive" className="h-5 px-1.5">
+                  {feedbackItems.filter((f) => f.status === 'new').length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="tenants" className="space-y-4">
+            {/* Tenants Table */}
+            <Card>
           <CardHeader>
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div>
@@ -1157,7 +1278,63 @@ export default function SuperAdmin() {
               </Table>
             </div>
           </CardContent>
-        </Card>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="feedback" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Feedback dos Usuários</CardTitle>
+                <CardDescription>Mensagens enviadas pelos usuários para o dono/superadministrador</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingFeedback ? (
+                  <p className="text-muted-foreground">Carregando feedbacks...</p>
+                ) : feedbackItems.length === 0 ? (
+                  <p className="text-muted-foreground">Nenhum feedback enviado até agora.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {feedbackItems.map((item) => (
+                      <div key={item.id} className="rounded-lg border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {getFeedbackRatingBadge(item.rating)}
+                            {item.status === 'new' ? (
+                              <Badge variant="destructive">Novo</Badge>
+                            ) : (
+                              <Badge variant="outline">Lido</Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {format(new Date(item.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                          </div>
+                        </div>
+
+                        <div className="mt-2 text-sm">
+                          <span className="font-medium">Usuário:</span> {item.profile_name || item.user_id}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">Hospital:</span> {item.tenant_name || 'Sem hospital'}
+                        </div>
+                        <div className="mt-2 text-sm text-foreground">
+                          {item.message?.trim() ? item.message : 'Sem comentário adicional.'}
+                        </div>
+
+                        {item.status === 'new' && (
+                          <div className="mt-3">
+                            <Button size="sm" variant="outline" onClick={() => markFeedbackAsRead(item.id)}>
+                              Marcar como lido
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
 
       {/* Edit Dialog */}

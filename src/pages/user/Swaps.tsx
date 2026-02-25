@@ -62,6 +62,8 @@ interface SwapRequest {
       shift_date: string;
       start_time: string;
       end_time: string;
+      sector_id?: string | null;
+      sector?: { name: string; color: string | null } | null;
     };
   };
 }
@@ -163,6 +165,100 @@ export default function UserSwaps() {
     if (selectedDay === 'all') return monthAssignments;
     return monthAssignments.filter((a) => a.shift.shift_date === selectedDay);
   }, [monthAssignments, selectedDay]);
+
+  const groupedVisibleAssignments = useMemo(() => {
+    const byDate = new Map<
+      string,
+      {
+        sectors: Map<string, { sectorName: string; sectorColor: string | null; assignments: Assignment[] }>;
+      }
+    >();
+
+    visibleAssignments.forEach((assignment) => {
+      const dateKey = assignment.shift.shift_date;
+      const sectorKey = assignment.shift.sector_id || 'sem-setor';
+      const sectorName = assignment.shift.sector?.name || 'Sem setor';
+      const sectorColor = assignment.shift.sector?.color ?? null;
+
+      if (!byDate.has(dateKey)) {
+        byDate.set(dateKey, { sectors: new Map() });
+      }
+
+      const dateGroup = byDate.get(dateKey)!;
+      if (!dateGroup.sectors.has(sectorKey)) {
+        dateGroup.sectors.set(sectorKey, {
+          sectorName,
+          sectorColor,
+          assignments: [],
+        });
+      }
+
+      dateGroup.sectors.get(sectorKey)!.assignments.push(assignment);
+    });
+
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, dateGroup]) => ({
+        date,
+        sectors: Array.from(dateGroup.sectors.values())
+          .sort((a, b) => a.sectorName.localeCompare(b.sectorName, 'pt-BR'))
+          .map((sector) => ({
+            ...sector,
+            assignments: [...sector.assignments].sort((a, b) =>
+              `${a.shift.shift_date}T${a.shift.start_time}`.localeCompare(`${b.shift.shift_date}T${b.shift.start_time}`)
+            ),
+          })),
+      }));
+  }, [visibleAssignments]);
+
+  const groupedIncomingRequests = useMemo(() => {
+    const byDate = new Map<
+      string,
+      {
+        sectors: Map<string, { sectorName: string; sectorColor: string | null; requests: SwapRequest[] }>;
+      }
+    >();
+
+    incomingSwapRequests.forEach((swap) => {
+      const dateKey = swap.origin_assignment?.shift?.shift_date;
+      if (!dateKey) return;
+
+      const sectorKey = swap.origin_assignment?.shift?.sector_id || 'sem-setor';
+      const sectorName = swap.origin_assignment?.shift?.sector?.name || 'Sem setor';
+      const sectorColor = swap.origin_assignment?.shift?.sector?.color ?? null;
+
+      if (!byDate.has(dateKey)) {
+        byDate.set(dateKey, { sectors: new Map() });
+      }
+
+      const dateGroup = byDate.get(dateKey)!;
+      if (!dateGroup.sectors.has(sectorKey)) {
+        dateGroup.sectors.set(sectorKey, {
+          sectorName,
+          sectorColor,
+          requests: [],
+        });
+      }
+
+      dateGroup.sectors.get(sectorKey)!.requests.push(swap);
+    });
+
+    return Array.from(byDate.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, dateGroup]) => ({
+        date,
+        sectors: Array.from(dateGroup.sectors.values())
+          .sort((a, b) => a.sectorName.localeCompare(b.sectorName, 'pt-BR'))
+          .map((sector) => ({
+            ...sector,
+            requests: [...sector.requests].sort((a, b) =>
+              `${a.origin_assignment?.shift?.shift_date || ''}T${a.origin_assignment?.shift?.start_time || ''}`.localeCompare(
+                `${b.origin_assignment?.shift?.shift_date || ''}T${b.origin_assignment?.shift?.start_time || ''}`
+              )
+            ),
+          })),
+      }));
+  }, [incomingSwapRequests]);
 
   useEffect(() => {
     if (user && currentTenantId) {
@@ -357,7 +453,10 @@ export default function UserSwaps() {
         target_user:profiles!swap_requests_target_user_id_profiles_fkey(name),
         origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
           id, user_id,
-          shift:shifts(id, title, hospital, shift_date, start_time, end_time)
+          shift:shifts(
+            id, title, hospital, shift_date, start_time, end_time, sector_id,
+            sector:sectors(name, color)
+          )
         )
       `)
       .eq('tenant_id', currentTenantId)
@@ -377,7 +476,10 @@ export default function UserSwaps() {
         target_user:profiles!swap_requests_target_user_id_profiles_fkey(name),
         origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
           id, user_id,
-          shift:shifts(id, title, hospital, shift_date, start_time, end_time)
+          shift:shifts(
+            id, title, hospital, shift_date, start_time, end_time, sector_id,
+            sector:sectors(name, color)
+          )
         )
       `)
       .eq('tenant_id', currentTenantId)
@@ -547,7 +649,7 @@ export default function UserSwaps() {
     await notifyTenantAdmins({
       type: 'swap_request_update_admin',
       title: 'Troca aceita',
-      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi aceita por ${currentUserDisplayName || 'um usuário'}.`,
+      message: `Troca concluída automaticamente. Solicitante: ${swap.requester?.name || 'N/A'}. Aceitou: ${currentUserDisplayName || 'N/A'}. Plantão: "${swap.origin_assignment?.shift?.title}" em ${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : 'N/A'} (${swap.origin_assignment?.shift?.start_time?.slice(0, 5)}-${swap.origin_assignment?.shift?.end_time?.slice(0, 5)}). Processado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}.`,
       shiftAssignmentId: swap.origin_assignment_id,
       excludeUserIds: [user.id],
     });
@@ -587,7 +689,7 @@ export default function UserSwaps() {
     await notifyTenantAdmins({
       type: 'swap_request_update_admin',
       title: 'Troca recusada',
-      message: `A solicitação de troca do plantão "${swap.origin_assignment?.shift?.title}" foi recusada por ${currentUserDisplayName || 'um usuário'}.`,
+      message: `Troca recusada. Solicitante: ${swap.requester?.name || 'N/A'}. Recusou: ${currentUserDisplayName || 'N/A'}. Plantão: "${swap.origin_assignment?.shift?.title}" em ${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : 'N/A'} (${swap.origin_assignment?.shift?.start_time?.slice(0, 5)}-${swap.origin_assignment?.shift?.end_time?.slice(0, 5)}). Processado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}.`,
       shiftAssignmentId: swap.origin_assignment_id,
       excludeUserIds: [user.id],
     });
@@ -660,8 +762,8 @@ export default function UserSwaps() {
         <TabsContent value="my-shifts" className="space-y-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Meus Plantões</CardTitle>
-              <p className="text-sm text-muted-foreground">Escolha o mês/dia e clique em um plantão para passar</p>
+              <CardTitle className="text-lg">Meus Plantões por Dia e Setor</CardTitle>
+              <p className="text-sm text-muted-foreground">Escolha o plantão e envie para um colega do mesmo setor</p>
 
               <div className="grid gap-3 pt-3 sm:grid-cols-3">
                 <div className="space-y-1">
@@ -719,39 +821,62 @@ export default function UserSwaps() {
               {visibleAssignments.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">Nenhum plantão disponível para passar neste filtro.</p>
               ) : (
-                <div className="grid gap-3">
-                   {visibleAssignments.map((assignment) => (
-                     <TapSafeButton
-                      key={assignment.id}
-                      type="button"
-                       moveThresholdPx={40}
-                       minPressTime={160}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleShiftClick(assignment);
-                      }}
-                      className="p-4 border rounded-lg cursor-pointer hover:bg-accent/50 active:bg-accent transition-colors w-full text-left select-none"
-                     >
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-1">
-                          <div className="font-medium">{assignment.shift.title}</div>
-                          <div className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {format(parseDateOnly(assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
-                          </div>
-                          <div className="text-sm text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {assignment.shift.start_time.slice(0, 5)} - {assignment.shift.end_time.slice(0, 5)}
-                          </div>
-                          {assignment.shift.sector && (
-                            <Badge variant="outline" className="text-xs mt-1">
-                              {assignment.shift.sector.name}
-                            </Badge>
-                          )}
+                <div className="space-y-4">
+                  {groupedVisibleAssignments.map((dayGroup) => (
+                    <div key={dayGroup.date} className="space-y-3">
+                      <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                        <div className="text-sm font-semibold text-foreground">
+                          {format(parseDateOnly(dayGroup.date), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                         </div>
-                        <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
                       </div>
-                     </TapSafeButton>
+
+                      <div className="space-y-3">
+                        {dayGroup.sectors.map((sectorGroup) => (
+                          <div key={`${dayGroup.date}-${sectorGroup.sectorName}`} className="space-y-2 rounded-lg border border-border/60 p-3">
+                            <div
+                              className="rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
+                              style={{
+                                backgroundColor: sectorGroup.sectorColor ? `${sectorGroup.sectorColor}18` : 'hsl(var(--muted))',
+                                borderLeft: `4px solid ${sectorGroup.sectorColor || 'hsl(var(--muted-foreground))'}`,
+                              }}
+                            >
+                              {sectorGroup.sectorName}
+                            </div>
+
+                            <div className="grid gap-2">
+                              {sectorGroup.assignments.map((assignment) => (
+                                <TapSafeButton
+                                  key={assignment.id}
+                                  type="button"
+                                  moveThresholdPx={40}
+                                  minPressTime={160}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleShiftClick(assignment);
+                                  }}
+                                  className="w-full cursor-pointer rounded-lg border p-3 text-left transition-colors hover:bg-accent/50 active:bg-accent select-none"
+                                >
+                                  <div className="flex items-start justify-between">
+                                    <div className="space-y-1">
+                                      <div className="font-medium">{assignment.shift.title}</div>
+                                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {assignment.shift.start_time.slice(0, 5)} - {assignment.shift.end_time.slice(0, 5)}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">{assignment.shift.hospital}</div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="text-[10px]">Enviar para</Badge>
+                                      <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                  </div>
+                                </TapSafeButton>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
@@ -763,54 +888,75 @@ export default function UserSwaps() {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Solicitações Recebidas</CardTitle>
-              <p className="text-sm text-muted-foreground">Colegas que querem passar plantões para você</p>
+              <p className="text-sm text-muted-foreground">Solicitações organizadas por dia e setor</p>
             </CardHeader>
             <CardContent>
               {incomingSwapRequests.length === 0 ? (
                 <p className="text-center text-muted-foreground py-8">Nenhuma solicitação pendente.</p>
               ) : (
-                <div className="grid gap-3">
-                  {incomingSwapRequests.map((swap) => (
-                    <div key={swap.id} className="p-4 border rounded-lg">
-                      <div className="flex items-start justify-between">
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <User className="h-4 w-4 text-primary" />
-                            <span className="font-medium">{swap.requester?.name}</span>
-                            <span className="text-muted-foreground">quer passar:</span>
-                          </div>
-                          <div className="pl-6 space-y-1">
-                            <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
-                            <div className="text-sm text-muted-foreground flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {swap.origin_assignment?.shift?.shift_date &&
-                                format(parseDateOnly(swap.origin_assignment.shift.shift_date), "EEEE, dd 'de' MMMM", { locale: ptBR })}
-                            </div>
-                            <div className="text-sm text-muted-foreground flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}
-                            </div>
-                            {swap.reason && (
-                              <div className="text-sm text-muted-foreground italic mt-2">"{swap.reason}"</div>
-                            )}
-                          </div>
+                <div className="space-y-4">
+                  {groupedIncomingRequests.map((dayGroup) => (
+                    <div key={dayGroup.date} className="space-y-3">
+                      <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+                        <div className="text-sm font-semibold text-foreground">
+                          {format(parseDateOnly(dayGroup.date), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
                         </div>
                       </div>
-                      <div className="flex gap-2 mt-4">
-                        <Button onClick={() => handleAcceptSwap(swap)} disabled={processing} className="flex-1" size="sm">
-                          <Check className="h-4 w-4 mr-1" />
-                          Aceitar
-                        </Button>
-                        <Button
-                          onClick={() => handleRejectSwap(swap)}
-                          disabled={processing}
-                          variant="outline"
-                          className="flex-1"
-                          size="sm"
-                        >
-                          <X className="h-4 w-4 mr-1" />
-                          Recusar
-                        </Button>
+
+                      <div className="space-y-3">
+                        {dayGroup.sectors.map((sectorGroup) => (
+                          <div key={`${dayGroup.date}-${sectorGroup.sectorName}`} className="space-y-2 rounded-lg border border-border/60 p-3">
+                            <div
+                              className="rounded-md px-3 py-1.5 text-xs font-semibold uppercase tracking-wide"
+                              style={{
+                                backgroundColor: sectorGroup.sectorColor ? `${sectorGroup.sectorColor}18` : 'hsl(var(--muted))',
+                                borderLeft: `4px solid ${sectorGroup.sectorColor || 'hsl(var(--muted-foreground))'}`,
+                              }}
+                            >
+                              {sectorGroup.sectorName}
+                            </div>
+
+                            <div className="grid gap-3">
+                              {sectorGroup.requests.map((swap) => (
+                                <div key={swap.id} className="rounded-lg border p-3">
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <User className="h-4 w-4 text-primary" />
+                                      <span className="font-medium">{swap.requester?.name}</span>
+                                      <span className="text-muted-foreground">quer passar:</span>
+                                    </div>
+                                    <div className="pl-6 space-y-1">
+                                      <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
+                                      <div className="text-sm text-muted-foreground flex items-center gap-1">
+                                        <Clock className="h-3 w-3" />
+                                        {swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}
+                                      </div>
+                                      {swap.reason && (
+                                        <div className="text-sm text-muted-foreground italic mt-2">"{swap.reason}"</div>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2 mt-4">
+                                    <Button onClick={() => handleAcceptSwap(swap)} disabled={processing} className="flex-1" size="sm">
+                                      <Check className="h-4 w-4 mr-1" />
+                                      Aceitar
+                                    </Button>
+                                    <Button
+                                      onClick={() => handleRejectSwap(swap)}
+                                      disabled={processing}
+                                      variant="outline"
+                                      className="flex-1"
+                                      size="sm"
+                                    >
+                                      <X className="h-4 w-4 mr-1" />
+                                      Recusar
+                                    </Button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   ))}

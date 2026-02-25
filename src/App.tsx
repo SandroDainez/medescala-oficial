@@ -276,7 +276,8 @@ const App = () => (
                           </ProtectedRoute>
                         }
                       >
-                        <Route index element={<UserHome />} />
+                        <Route index element={<UserCalendar />} />
+                        <Route path="home" element={<UserHome />} />
                         <Route path="calendar" element={<UserCalendar />} />
                         <Route path="shifts" element={<UserShifts />} />
                         <Route path="available" element={<UserAvailableShifts />} />

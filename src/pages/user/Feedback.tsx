@@ -6,10 +6,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useTenant } from '@/hooks/useTenant';
+import { supabase } from '@/integrations/supabase/client';
 import { MessageSquare, Send, Star, ThumbsUp, ThumbsDown, Meh, CheckCircle } from 'lucide-react';
 
 export default function UserFeedback() {
   const { user } = useAuth();
+  const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const [rating, setRating] = useState<string>('');
   const [message, setMessage] = useState('');
@@ -25,17 +28,43 @@ export default function UserFeedback() {
       return;
     }
 
+    if (!user?.id) {
+      toast({
+        title: 'Sessão inválida',
+        description: 'Faça login novamente para enviar feedback.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSending(true);
-    
-    // Simulate sending feedback
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
+    const { error } = await (supabase as any)
+      .from('user_feedback')
+      .insert({
+        tenant_id: currentTenantId || null,
+        user_id: user.id,
+        rating,
+        message: message.trim() || null,
+      });
+
     setSending(false);
+
+    if (error) {
+      toast({
+        title: 'Erro ao enviar feedback',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSent(true);
-    
+    setMessage('');
+
     toast({
       title: 'Feedback enviado!',
-      description: 'Obrigado por nos ajudar a melhorar.',
+      description: 'Seu feedback foi enviado ao superadministrador.',
     });
   };
 

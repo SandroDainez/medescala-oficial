@@ -13,10 +13,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { isNativePlatform, getNotificationPreferences, saveNotificationPreferences } from '@/lib/pushNotifications';
+import { isNativePlatform, saveNotificationPreferences } from '@/lib/pushNotifications';
 import { requestCalendarPermissions, syncAllShiftsToCalendar } from '@/lib/nativeCalendar';
 import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
-import { calendarSyncPromptKeys } from '@/lib/calendarSyncPrompts';
 
 /**
  * Modal que aparece na primeira abertura do app perguntando se o usuário
@@ -31,32 +30,22 @@ export function CalendarSyncInitialModal() {
   
   const isNative = isNativePlatform();
   const { hasShifts, exportToCalendar } = useWebCalendarSync();
+  const loginPromptSessionKey = `medescala-calendar-login-prompt-${user?.id || 'anonymous'}`;
 
   useEffect(() => {
     if (!user?.id || !currentTenantId) return;
-    
-    // Verifica se já perguntamos antes
-    const alreadyAsked = localStorage.getItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY);
-    if (alreadyAsked) return;
-    
-    // Verifica se o usuário já tem preferência de calendário salva
-    const checkPreference = async () => {
-      const prefs = await getNotificationPreferences(user.id);
-      
-      // Se já tem preferência definida (sim ou não), não pergunta de novo
-      if (prefs.calendar_sync_enabled !== undefined && prefs.calendar_sync_enabled !== null) {
-        localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
-        return;
-      }
-      
-      // Mostra o modal após um pequeno delay para não parecer abrupto
-      setTimeout(() => {
-        setOpen(true);
-      }, 2000);
-    };
-    
-    checkPreference();
-  }, [user?.id, currentTenantId]);
+
+    // Mostra 1x por sessão de login quando houver plantões.
+    if (!hasShifts) return;
+    if (sessionStorage.getItem(loginPromptSessionKey)) return;
+
+    const timer = setTimeout(() => {
+      setOpen(true);
+      sessionStorage.setItem(loginPromptSessionKey, 'true');
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [user?.id, currentTenantId, hasShifts, loginPromptSessionKey]);
 
   const handleAccept = async () => {
     if (!user?.id || !currentTenantId) return;
@@ -134,9 +123,6 @@ export function CalendarSyncInitialModal() {
         setSuccess(true);
       }
       
-      // Marca como perguntado
-      localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
-      
       // Fecha após mostrar sucesso
       setTimeout(() => {
         setOpen(false);
@@ -152,8 +138,6 @@ export function CalendarSyncInitialModal() {
   };
 
   const handleDismiss = () => {
-    // Marca como perguntado mas não ativado
-    localStorage.setItem(calendarSyncPromptKeys.INITIAL_SYNC_ASKED_KEY, 'true');
     setOpen(false);
   };
 

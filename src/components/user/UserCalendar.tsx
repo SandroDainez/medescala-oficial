@@ -11,7 +11,6 @@ import { format, startOfMonth, endOfMonth, isSameDay, addMonths, subMonths, isTo
 import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
-import { MyShiftStatsChart } from './MyShiftStatsChart';
 import { TapSafeButton } from '@/components/TapSafeButton';
 import {
   Sheet,
@@ -278,6 +277,16 @@ export default function UserCalendar() {
   }, [currentTenantId, user, currentDate, fetchData]);
 
   useEffect(() => {
+    // Quando muda mês/ano do calendário, mantém o dia selecionado dentro do mês visível.
+    if (
+      selectedDate.getMonth() !== currentDate.getMonth() ||
+      selectedDate.getFullYear() !== currentDate.getFullYear()
+    ) {
+      setSelectedDate(startOfMonth(currentDate));
+    }
+  }, [currentDate, selectedDate]);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadCurrentUserDisplayName() {
@@ -319,12 +328,29 @@ export default function UserCalendar() {
     return myShiftIds.includes(shiftId) || assignments.some(a => a.shift_id === shiftId && a.user_id === user?.id);
   }
 
+  function getShiftAssignedNames(shiftId: string) {
+    const names = getAssignmentsForShift(shiftId)
+      .map((assignment) => assignment.profile?.full_name || assignment.profile?.name || '')
+      .map((name) => name.trim())
+      .filter((name): name is string => Boolean(name));
+
+    return Array.from(new Set(names));
+  }
+
   function hasShiftsOnDate(date: Date) {
     const dayShifts = getShiftsForDate(date);
     if (activeTab === 'meus') {
       return dayShifts.some(s => isMyShift(s.id));
     }
     return dayShifts.length > 0;
+  }
+
+  function getShiftPeriodFlagsOnDate(date: Date) {
+    const dayShifts = getShiftsForDate(date).filter((s) => activeTab === 'todos' || isMyShift(s.id));
+    return {
+      hasDay: dayShifts.some((s) => !isNightShift(s.start_time)),
+      hasNight: dayShifts.some((s) => isNightShift(s.start_time)),
+    };
   }
 
   // Calculate hours
@@ -651,7 +677,8 @@ export default function UserCalendar() {
     return groups;
   };
 
-  const groupedBySector = groupBySector(selectedDateShifts.filter(s => activeTab === 'todos' || isMyShift(s.id)));
+  const selectedDateShiftsFiltered = selectedDateShifts.filter(s => activeTab === 'todos' || isMyShift(s.id));
+  const groupedBySector = groupBySector(selectedDateShiftsFiltered);
   const groupedBySectorWithDates = groupBySectorWithDates(myMonthShifts);
   const hasAnyShiftsForSelectedDate = activeTab === 'meus' ? myMonthShifts.length > 0 : selectedDateShifts.length > 0;
 
@@ -768,13 +795,27 @@ export default function UserCalendar() {
                 {format(date, 'd')}
               </span>
               
-              {/* Indicator dots */}
+              {/* Indicator dots by period */}
               {hasShifts && (
-                <div className="absolute bottom-1 flex gap-0.5">
-                  <div className={cn(
-                    "w-1.5 h-1.5 rounded-full",
-                    isSelected ? "bg-primary-foreground" : hasMyShiftToday ? "bg-primary" : "bg-primary/60"
-                  )} />
+                <div className="absolute bottom-1 flex items-center gap-1">
+                  {getShiftPeriodFlagsOnDate(date).hasDay && (
+                    <div
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        isSelected ? 'bg-primary-foreground' : hasMyShiftToday ? 'bg-amber-500' : 'bg-amber-400/80'
+                      )}
+                      title="Há plantão diurno"
+                    />
+                  )}
+                  {getShiftPeriodFlagsOnDate(date).hasNight && (
+                    <div
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        isSelected ? 'bg-primary-foreground' : hasMyShiftToday ? 'bg-sky-500' : 'bg-sky-400/80'
+                      )}
+                      title="Há plantão noturno"
+                    />
+                  )}
                 </div>
               )}
             </button>
@@ -819,6 +860,17 @@ export default function UserCalendar() {
           >
             Meus Plantões
           </button>
+        </div>
+
+        <div className="flex items-center justify-center gap-4 border-b bg-card/70 px-4 py-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            Diurno
+          </span>
+          <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+            <span className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+            Noturno
+          </span>
         </div>
 
         {/* Shifts List */}
@@ -878,7 +930,7 @@ export default function UserCalendar() {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
                                 }}
-                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 bg-warning/5 hover:bg-warning/10 hover:shadow-md active:bg-warning/20 active:shadow-inner border-l-warning cursor-pointer w-full text-left select-none touch-manipulation"
+                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 bg-amber-50 hover:bg-amber-100/80 hover:shadow-md active:bg-amber-100 border-l-amber-500 cursor-pointer w-full text-left select-none touch-manipulation dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:active:bg-amber-500/25"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -898,11 +950,11 @@ export default function UserCalendar() {
 
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <Sun className="h-3.5 w-3.5 text-warning" />
+                                    <Sun className="h-3.5 w-3.5 text-amber-500" />
                                     <span className="text-sm font-medium text-foreground">
                                       {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                                     </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
                                       Diurno
                                     </span>
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
@@ -937,7 +989,7 @@ export default function UserCalendar() {
                                   e.stopPropagation();
                                   handleMyShiftClick(shift);
                                 }}
-                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 bg-info/5 hover:bg-info/10 hover:shadow-md active:bg-info/20 active:shadow-inner border-l-info cursor-pointer w-full text-left select-none touch-manipulation"
+                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 bg-sky-50 hover:bg-sky-100/80 hover:shadow-md active:bg-sky-100 border-l-sky-500 cursor-pointer w-full text-left select-none touch-manipulation dark:bg-sky-500/10 dark:hover:bg-sky-500/20 dark:active:bg-sky-500/25"
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -957,11 +1009,11 @@ export default function UserCalendar() {
 
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <Moon className="h-3.5 w-3.5 text-info" />
+                                    <Moon className="h-3.5 w-3.5 text-sky-500" />
                                     <span className="text-sm font-medium text-foreground">
                                       {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                                     </span>
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-info/15 text-info">
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400">
                                       Noturno
                                     </span>
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
@@ -1009,16 +1061,18 @@ export default function UserCalendar() {
                     {/* Day shifts for this sector */}
                     {dayShifts.length > 0 && (
                       <div>
-                        <div className="px-4 py-1.5 bg-warning/10 border-b">
+                        <div className="px-4 py-1.5 bg-amber-500/10 border-b">
                           <div className="flex items-center gap-2">
-                            <Sun className="h-3.5 w-3.5 text-warning" />
-                            <span className="text-xs font-medium text-warning">Diurnos ({dayShifts.length})</span>
+                            <Sun className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Diurnos ({dayShifts.length})</span>
                           </div>
                         </div>
 
                         {dayShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const assignedNames = getShiftAssignedNames(shift.id);
+                          const isVacant = assignedNames.length === 0;
 
                           return (
                             <TapSafeButton
@@ -1041,7 +1095,7 @@ export default function UserCalendar() {
                               }}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
-                                "bg-warning/5 hover:bg-warning/10 border-l-warning",
+                                "bg-amber-50 hover:bg-amber-100/80 border-l-amber-500 dark:bg-amber-500/10 dark:hover:bg-amber-500/20",
                                 isMine
                                   ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
@@ -1070,20 +1124,25 @@ export default function UserCalendar() {
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <Sun className="h-3.5 w-3.5 text-warning" />
+                                  <Sun className="h-3.5 w-3.5 text-amber-500" />
                                   <span className="text-sm text-muted-foreground">{shift.start_time.slice(0, 5)}</span>
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-warning/15 text-warning">
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-amber-500/15 text-amber-600 dark:text-amber-400">
                                     Diurno
                                   </span>
-                                  <span className="font-medium text-foreground truncate">
-                                    {shiftAssignments[0]?.profile?.name || shift.title}
-                                  </span>
+                                  {isVacant && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-emerald-500/40 text-emerald-700 dark:text-emerald-300">
+                                      Vago
+                                    </Badge>
+                                  )}
                                   {isMine && (
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
                                   )}
+                                </div>
+                                <div className="text-sm font-medium text-foreground break-words">
+                                  {assignedNames.length > 0 ? assignedNames.join(' • ') : 'Disponível para escala'}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   {shift.end_time.slice(0, 5)} • {calculateHours(shift.start_time, shift.end_time)}
@@ -1102,16 +1161,18 @@ export default function UserCalendar() {
                     {/* Night shifts for this sector */}
                     {nightShifts.length > 0 && (
                       <div>
-                        <div className="px-4 py-1.5 bg-info/10 border-b">
+                        <div className="px-4 py-1.5 bg-sky-500/10 border-b">
                           <div className="flex items-center gap-2">
-                            <Moon className="h-3.5 w-3.5 text-info" />
-                            <span className="text-xs font-medium text-info">Noturnos ({nightShifts.length})</span>
+                            <Moon className="h-3.5 w-3.5 text-sky-600 dark:text-sky-400" />
+                            <span className="text-xs font-medium text-sky-700 dark:text-sky-300">Noturnos ({nightShifts.length})</span>
                           </div>
                         </div>
 
                         {nightShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const assignedNames = getShiftAssignedNames(shift.id);
+                          const isVacant = assignedNames.length === 0;
 
                           return (
                             <TapSafeButton
@@ -1134,7 +1195,7 @@ export default function UserCalendar() {
                               }}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
-                                "bg-info/5 hover:bg-info/10 border-l-info",
+                                "bg-sky-50 hover:bg-sky-100/80 border-l-sky-500 dark:bg-sky-500/10 dark:hover:bg-sky-500/20",
                                 isMine
                                   ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
                                   : "cursor-default opacity-75"
@@ -1163,20 +1224,25 @@ export default function UserCalendar() {
 
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <Moon className="h-3.5 w-3.5 text-info" />
-                                  <span className="text-sm text-info">{shift.start_time.slice(0, 5)}</span>
-                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-info/15 text-info">
+                                  <Moon className="h-3.5 w-3.5 text-sky-500" />
+                                  <span className="text-sm text-sky-600 dark:text-sky-400">{shift.start_time.slice(0, 5)}</span>
+                                  <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-sky-500/15 text-sky-600 dark:text-sky-400">
                                     Noturno
                                   </span>
-                                  <span className="font-medium text-foreground truncate">
-                                    {shiftAssignments[0]?.profile?.name || shift.title}
-                                  </span>
+                                  {isVacant && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-emerald-500/40 text-emerald-700 dark:text-emerald-300">
+                                      Vago
+                                    </Badge>
+                                  )}
                                   {isMine && (
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
                                   )}
+                                </div>
+                                <div className="text-sm font-medium text-foreground break-words">
+                                  {assignedNames.length > 0 ? assignedNames.join(' • ') : 'Disponível para escala'}
                                 </div>
                                 <div className="text-xs text-muted-foreground">
                                   {shift.end_time.slice(0, 5)} • {calculateHours(shift.start_time, shift.end_time)}
@@ -1191,6 +1257,7 @@ export default function UserCalendar() {
                         })}
                       </div>
                     )}
+
                   </div>
                 ))}
               </div>
@@ -1198,11 +1265,6 @@ export default function UserCalendar() {
           </div>
         )}
 
-      </div>
-
-      {/* My Shift Stats Chart Widget */}
-      <div className="px-4 py-4 bg-background">
-        <MyShiftStatsChart />
       </div>
 
       {/* Swap Request Sheet */}

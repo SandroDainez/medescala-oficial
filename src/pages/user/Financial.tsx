@@ -141,6 +141,7 @@ export default function UserFinancial() {
 
     const startDate = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}-01`;
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
 
     // Fetch assignments and user's individual overrides in parallel
     const [assignmentsRes, userValuesRes] = await Promise.all([
@@ -167,7 +168,8 @@ export default function UserFinancial() {
         .eq('user_id', user.id)
         .in('status', ['assigned', 'confirmed', 'completed'])
         .gte('shift.shift_date', startDate)
-        .lte('shift.shift_date', endDate),
+        .lte('shift.shift_date', endDate)
+        .lte('shift.shift_date', today),
       supabase
         .from('user_sector_values')
         .select('sector_id, user_id, day_value, night_value')
@@ -307,7 +309,7 @@ export default function UserFinancial() {
       <div className="flex flex-col gap-3">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-foreground">Financeiro</h2>
-          <p className="text-sm text-muted-foreground">Seu resumo mensal de plantões</p>
+          <p className="text-sm text-muted-foreground">Resumo de plantões realizados, por setor e total geral</p>
         </div>
         <div className="flex gap-2 w-full">
           <Select value={selectedMonth.toString()} onValueChange={(v) => setSelectedMonth(parseInt(v))}>

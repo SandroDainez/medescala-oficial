@@ -35,18 +35,22 @@ export default function UserNotifications() {
     if (!user) return;
     setLoading(true);
 
-    const { data, error } = await supabase
+    const query = supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(200);
+
+    const { data, error } = currentTenantId
+      ? await query.eq('tenant_id', currentTenantId)
+      : await query;
 
     if (!error && data) {
       setNotifications(data);
     }
     setLoading(false);
-  }, [user]);
+  }, [user, currentTenantId]);
 
   useEffect(() => {
     if (user && currentTenantId) {

@@ -11,7 +11,7 @@ import { parseDateOnly } from '@/lib/utils';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import type { ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
-import { CalendarDays, Bell, ArrowLeftRight, Hand, Wallet, Building2, Clock3 } from 'lucide-react';
+import { CalendarDays, Bell, ArrowLeftRight, Hand, Wallet, Building2, Clock3, ChevronRight, Calendar } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
@@ -242,65 +242,95 @@ export default function UserHome() {
     setLoading(false);
   }
 
+  const metricCards = [
+    { label: 'Plantões no mês', value: loading ? '...' : String(monthSummary.shifts), icon: Calendar },
+    { label: 'Horas no mês', value: loading ? '...' : `${monthSummary.hours.toFixed(1)}h`, icon: Clock3 },
+    {
+      label: 'Valor estimado',
+      value: loading ? '...' : `R$ ${monthSummary.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`,
+      icon: Wallet,
+    },
+    { label: 'Setores vinculados', value: loading ? '...' : String(sectorMemberships.length), icon: Building2 },
+  ];
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold">Visão do Usuário</h1>
-          <p className="text-sm text-muted-foreground">Escala, setores, financeiro e ações importantes.</p>
-        </div>
-        <div className="flex gap-2">
-          <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {months.map((m) => (
-                <SelectItem key={m.value} value={String(m.value)}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
-            <SelectTrigger className="w-24">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {years.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-card to-primary/[0.05] shadow-sm">
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-lg font-bold">Visão do Usuário</h1>
+              <p className="text-xs text-muted-foreground">Escala, setores, financeiro e ações importantes.</p>
+            </div>
+            <div className="flex gap-2">
+              <Select value={String(month)} onValueChange={(v) => setMonth(Number(v))}>
+                <SelectTrigger className="h-9 w-32 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {months.map((m) => (
+                    <SelectItem key={m.value} value={String(m.value)}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
+                <SelectTrigger className="h-9 w-24 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {years.map((y) => (
+                    <SelectItem key={y} value={String(y)}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Plantões no mês</p><p className="text-2xl font-bold">{loading ? '...' : monthSummary.shifts}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Horas no mês</p><p className="text-2xl font-bold">{loading ? '...' : `${monthSummary.hours.toFixed(1)}h`}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Valor estimado</p><p className="text-2xl font-bold">{loading ? '...' : `R$ ${monthSummary.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`}</p></CardContent></Card>
-        <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Setores vinculados</p><p className="text-2xl font-bold">{loading ? '...' : sectorMemberships.length}</p></CardContent></Card>
-      </div>
+          <div className="grid grid-cols-2 gap-2">
+            {metricCards.map((card) => (
+              <div key={card.label} className="rounded-2xl border border-primary/20 bg-background/80 p-3 shadow-sm">
+                <div className="mb-1 flex items-center justify-between text-muted-foreground">
+                  <span className="text-[11px]">{card.label}</span>
+                  <card.icon className="h-3.5 w-3.5" />
+                </div>
+                <p className="text-lg font-bold leading-none">{card.value}</p>
+              </div>
+            ))}
+          </div>
 
-      <div className="grid gap-3 lg:grid-cols-4">
-        <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/app/calendar')}><CalendarDays className="h-4 w-4" /> Agenda Geral</Button>
-        <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/app/shifts')}><Clock3 className="h-4 w-4" /> Minha Agenda</Button>
-        <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/app/financial')}><Wallet className="h-4 w-4" /> Financeiro</Button>
-        <Button variant="outline" className="justify-start gap-2" onClick={() => navigate('/app/swaps')}><ArrowLeftRight className="h-4 w-4" /> Trocas</Button>
-      </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/calendar')}>
+              <CalendarDays className="h-4 w-4" /> Agenda Geral
+            </Button>
+            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/shifts')}>
+              <Clock3 className="h-4 w-4" /> Minha Agenda
+            </Button>
+            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/financial')}>
+              <Wallet className="h-4 w-4" /> Financeiro
+            </Button>
+            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/swaps')}>
+              <ArrowLeftRight className="h-4 w-4" /> Trocas
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Meus Setores</CardTitle></CardHeader>
+        <Card className="border-primary/20 bg-card/90 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2"><Building2 className="h-4 w-4 text-primary" /> Meus Setores</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-2">
             {sectorMemberships.length === 0 ? (
               <p className="text-sm text-muted-foreground">Você ainda não está vinculado a setores.</p>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {sectorMemberships.map((m) => (
-                  <Badge key={m.sector_id} variant="secondary" style={m.sector?.color ? { borderColor: m.sector.color } : undefined}>
+                  <Badge key={m.sector_id} variant="secondary" className="rounded-full border" style={m.sector?.color ? { borderColor: m.sector.color } : undefined}>
                     {m.sector?.name || 'Setor'}
                   </Badge>
                 ))}
@@ -310,13 +340,19 @@ export default function UserHome() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader><CardTitle className="text-base">Atenção</CardTitle></CardHeader>
+        <Card className="border-primary/20 bg-card/90 shadow-sm">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Atenção</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <div className="flex items-center justify-between"><span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Não lidas</span><Badge>{unreadNotifications}</Badge></div>
-            <div className="flex items-center justify-between"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas para responder</span><Badge>{pendingIncomingSwaps}</Badge></div>
-            <div className="flex items-center justify-between"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas aguardando colega</span><Badge>{pendingOutgoingSwaps}</Badge></div>
-            <div className="flex items-center justify-between"><span className="flex items-center gap-2"><Hand className="h-4 w-4" /> Plantões disponíveis no meu setor</span><Badge>{availableInMySectors}</Badge></div>
+            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/notifications')}>
+              <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Não lidas</span><Badge>{unreadNotifications}</Badge>
+            </button>
+            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/swaps')}>
+              <span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas para responder</span><Badge>{pendingIncomingSwaps}</Badge>
+            </button>
+            <div className="flex items-center justify-between rounded-lg border border-border/60 px-2 py-2"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas aguardando colega</span><Badge>{pendingOutgoingSwaps}</Badge></div>
+            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/available')}>
+              <span className="flex items-center gap-2"><Hand className="h-4 w-4" /> Plantões disponíveis no meu setor</span><Badge>{availableInMySectors}</Badge>
+            </button>
             {monthSummary.unpriced > 0 && (
               <p className="text-xs text-amber-600">Há {monthSummary.unpriced} plantão(ões) sem valor definido neste mês.</p>
             )}
@@ -324,22 +360,27 @@ export default function UserHome() {
         </Card>
       </div>
 
-      <Card>
-        <CardHeader><CardTitle className="text-base">Próximos Plantões</CardTitle></CardHeader>
+      <Card className="border-primary/20 bg-card/90 shadow-sm">
+        <CardHeader className="pb-2"><CardTitle className="text-base">Próximos Plantões</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {upcomingShifts.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum plantão futuro confirmado.</p>
           ) : (
             upcomingShifts.map((s) => (
-              <div key={s.id} className="flex items-center justify-between rounded border p-2">
+              <button
+                key={s.id}
+                onClick={() => navigate('/app/shifts')}
+                className="flex w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40"
+              >
                 <div>
-                  <p className="text-sm font-medium">{s.title}</p>
+                  <p className="text-sm font-semibold">{s.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {format(parseDateOnly(s.shift_date), "dd/MM/yyyy", { locale: ptBR })} • {s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}
+                    {format(parseDateOnly(s.shift_date), 'dd/MM/yyyy', { locale: ptBR })} • {s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}
                   </p>
+                  <p className="text-xs text-muted-foreground">{s.sector?.name || 'Sem setor'}</p>
                 </div>
-                <Badge variant="outline">{s.sector?.name || 'Sem setor'}</Badge>
-              </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </button>
             ))
           )}
         </CardContent>
@@ -352,4 +393,3 @@ export default function UserHome() {
     </div>
   );
 }
-
