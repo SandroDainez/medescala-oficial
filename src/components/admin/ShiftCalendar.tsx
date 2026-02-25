@@ -313,9 +313,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Update filter when initialSectorId changes (from URL)
   useEffect(() => {
-    if (initialSectorId !== undefined) {
-      setFilterSector(initialSectorId || 'all');
-    }
+    // When route has no sectorId (e.g. /admin/calendar), always show all sectors.
+    // When route has a sectorId (e.g. /admin/calendar/:sectorId), show only that sector.
+    setFilterSector(initialSectorId || 'all');
   }, [initialSectorId]);
 
   const fetchData = useCallback(async () => {
@@ -4245,6 +4245,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         <Badge variant="outline">{sectorShifts.length} plantões</Badge>
                         <Badge variant="outline">{sectorAssignments.length} atribuições</Badge>
                         <Badge variant="outline">{[...new Set(sectorAssignments.map(a => a.user_id))].length} plantonistas</Badge>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFilterSector('all')}
+                        >
+                          Ver todos
+                        </Button>
                       </div>
                     </CardTitle>
                   </CardHeader>
