@@ -197,15 +197,15 @@ export function AdminLayout() {
                   end
                   className={({ isActive }) =>
                     cn(
-                      'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
+                      'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
                       isActive
-                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                        : 'bg-card hover:bg-accent border-border hover:border-primary/30'
+                        ? 'bg-primary text-primary-foreground border-primary shadow-md'
+                        : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
                     )
                   }
                 >
-                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted to-muted-foreground/20 flex items-center justify-center">
-                    <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted/90 to-muted-foreground/20 flex items-center justify-center ring-1 ring-border/60">
+                    <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                   </div>
                   <span className="font-medium">Todos os Setores</span>
                 </NavLink>
@@ -216,15 +216,15 @@ export function AdminLayout() {
                     to={`/admin/calendar/${sector.id}`}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
+                        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
                         isActive
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                          : 'bg-card hover:bg-accent border-border hover:border-primary/30'
+                          ? 'bg-primary text-primary-foreground border-primary shadow-md'
+                          : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
                       )
                     }
                   >
                     <div 
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-border/50"
                       style={{ 
                         backgroundColor: `${sector.color || '#6b7280'}20`,
                         border: `2px solid ${sector.color || '#6b7280'}`
@@ -352,15 +352,15 @@ export function AdminLayout() {
                     onClick={() => setMobileMenuOpen(false)}
                     className={({ isActive }) =>
                       cn(
-                        'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
+                        'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
                         isActive
-                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                          : 'bg-card hover:bg-accent border-border hover:border-primary/30'
+                          ? 'bg-primary text-primary-foreground border-primary shadow-md'
+                          : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
                       )
                     }
                   >
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted to-muted-foreground/20 flex items-center justify-center">
-                      <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-muted/90 to-muted-foreground/20 flex items-center justify-center ring-1 ring-border/60">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     </div>
                     <span className="font-medium">Todos os Setores</span>
                   </NavLink>
@@ -371,15 +371,15 @@ export function AdminLayout() {
                       onClick={() => setMobileMenuOpen(false)}
                       className={({ isActive }) =>
                         cn(
-                          'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border',
+                          'group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm',
                           isActive
-                            ? 'bg-primary text-primary-foreground border-primary shadow-sm'
-                            : 'bg-card hover:bg-accent border-border hover:border-primary/30'
+                            ? 'bg-primary text-primary-foreground border-primary shadow-md'
+                            : 'bg-gradient-to-br from-card to-muted/20 hover:from-accent/80 hover:to-accent/40 border-border/70 hover:border-primary/30 hover:shadow-md'
                         )
                       }
                     >
                       <div 
-                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm"
+                        className="w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ring-1 ring-border/50"
                         style={{ 
                           backgroundColor: `${sector.color || '#6b7280'}20`,
                           border: `2px solid ${sector.color || '#6b7280'}`

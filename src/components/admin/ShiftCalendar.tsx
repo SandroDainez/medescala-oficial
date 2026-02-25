@@ -308,6 +308,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   });
   const [transferAssignment, setTransferAssignment] = useState<ShiftAssignment | null>(null);
   const [transferSourceShift, setTransferSourceShift] = useState<Shift | null>(null);
+  const [transferTargetSectorId, setTransferTargetSectorId] = useState('');
   const [transferTargetShiftId, setTransferTargetShiftId] = useState('');
   const [transferring, setTransferring] = useState(false);
 
@@ -876,25 +877,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function openTransferDialog(assignment: ShiftAssignment, sourceShift: Shift) {
+    const userId = assignment.user_id;
+    const memberSectors = new Set(getUserSectorIds(userId));
+    const firstAllowedSectorId =
+      sectors
+        .filter((s) => s.id !== sourceShift.sector_id)
+        .find((s) => memberSectors.has(s.id))?.id || '';
+
     setTransferAssignment(assignment);
     setTransferSourceShift(sourceShift);
+    setTransferTargetSectorId(firstAllowedSectorId);
     setTransferTargetShiftId('');
     setTransferDialogOpen(true);
   }
 
-  const transferTargetCandidates = useMemo(() => {
+  const transferAllowedSectors = useMemo(() => {
     if (!transferAssignment || !transferSourceShift) return [];
     const userId = transferAssignment.user_id;
     const memberSectors = new Set(getUserSectorIds(userId));
+    return sectors
+      .filter((s) => memberSectors.has(s.id))
+      .filter((s) => s.id !== transferSourceShift.sector_id)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [transferAssignment, transferSourceShift, sectorMemberships, sectors]);
 
+  const transferTargetCandidates = useMemo(() => {
+    if (!transferAssignment || !transferSourceShift || !transferTargetSectorId) return [];
+    const userId = transferAssignment.user_id;
     return shifts
       .filter((s) => s.id !== transferSourceShift.id)
-      .filter((s) => !!s.sector_id)
-      .filter((s) => s.sector_id !== transferSourceShift.sector_id)
-      .filter((s) => (s.sector_id ? memberSectors.has(s.sector_id) : false))
+      .filter((s) => s.shift_date === transferSourceShift.shift_date) // transfer only within the same day
+      .filter((s) => s.sector_id === transferTargetSectorId)
       .filter((s) => !assignments.some((a) => a.shift_id === s.id && a.user_id === userId))
       .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`));
-  }, [transferAssignment, transferSourceShift, shifts, assignments, sectorMemberships]);
+  }, [transferAssignment, transferSourceShift, transferTargetSectorId, shifts, assignments]);
 
   // Get pending offers for a shift
   function getOffersForShift(shiftId: string) {
@@ -2093,6 +2109,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return;
     }
 
+    if (targetShift.shift_date !== transferSourceShift.shift_date) {
+      toast({
+        title: 'Transferência bloqueada',
+        description: 'A transferência deve ocorrer no mesmo dia, apenas entre setores.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     if (assignments.some((a) => a.shift_id === targetShift.id && a.user_id === userId)) {
       toast({
         title: 'Plantonista já está no destino',
@@ -2172,6 +2197,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setTransferDialogOpen(false);
       setTransferAssignment(null);
       setTransferSourceShift(null);
+      setTransferTargetSectorId('');
       setTransferTargetShiftId('');
       await fetchData();
     } catch (error: any) {
@@ -3837,66 +3863,84 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   return (
     <div className="space-y-4">
       {/* Page Header */}
-      <div className="flex items-center gap-3">
-        {currentSectorColor && (
-          <div 
-            className="w-4 h-4 rounded-full" 
-            style={{ backgroundColor: currentSectorColor }}
-          />
-        )}
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">{currentSectorName}</h2>
-          <p className="text-muted-foreground text-sm">
-            {viewMode === 'month' 
-              ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
-              : `Semana de ${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })}`
-            }
-          </p>
-        </div>
-      </div>
+      <Card className="border-border/70 bg-gradient-to-br from-card to-card/70 shadow-sm">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div
+                className="h-10 w-10 rounded-xl ring-1 ring-border/70 shadow-inner"
+                style={{ backgroundColor: currentSectorColor || '#1f2937' }}
+              />
+              <div>
+                <h2 className="text-xl sm:text-2xl font-semibold text-foreground tracking-tight">{currentSectorName}</h2>
+                <p className="text-muted-foreground text-sm capitalize">
+                  {viewMode === 'month'
+                    ? format(currentDate, 'MMMM yyyy', { locale: ptBR })
+                    : `Semana de ${format(startOfWeek(currentDate, { weekStartsOn: 0 }), "dd/MM", { locale: ptBR })}`}
+                </p>
+              </div>
+            </div>
+            <Badge variant="secondary" className="h-8 px-3 text-xs font-medium">
+              {viewMode === 'month' ? 'Visão mensal' : 'Visão semanal'}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-primary" />
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{totalShifts}</p>
-                <p className="text-xs text-muted-foreground">Plantões</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Plantões</p>
+                <p className="text-3xl font-semibold text-foreground leading-tight">{totalShifts}</p>
+                <p className="text-xs text-muted-foreground mt-1">No período selecionado</p>
+              </div>
+              <div className="h-11 w-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
+                <Calendar className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{totalAssignments}</p>
-                <p className="text-xs text-muted-foreground">Atribuições</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Atribuições</p>
+                <p className="text-3xl font-semibold text-foreground leading-tight">{totalAssignments}</p>
+                <p className="text-xs text-muted-foreground mt-1">Registros alocados</p>
+              </div>
+              <div className="h-11 w-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
+                <Users className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{uniqueWorkers}</p>
-                <p className="text-xs text-muted-foreground">Plantonistas Ativos</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Plantonistas</p>
+                <p className="text-3xl font-semibold text-foreground leading-tight">{uniqueWorkers}</p>
+                <p className="text-xs text-muted-foreground mt-1">Com plantão ativo</p>
+              </div>
+              <div className="h-11 w-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
+                <Users className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card className="border-border/70 bg-gradient-to-br from-card to-muted/20 shadow-sm hover:shadow-md transition-shadow">
           <CardContent className="p-4">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-primary" />
+            <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold">{sectors.length}</p>
-                <p className="text-xs text-muted-foreground">Setores</p>
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Setores</p>
+                <p className="text-3xl font-semibold text-foreground leading-tight">{sectors.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">Disponíveis na instituição</p>
+              </div>
+              <div className="h-11 w-11 rounded-xl bg-primary/15 text-primary flex items-center justify-center ring-1 ring-primary/20">
+                <MapPin className="h-5 w-5" />
               </div>
             </div>
           </CardContent>
@@ -4641,12 +4685,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       </Dialog>
 
       {/* Transfer Assignment Dialog */}
-      <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
+      <Dialog
+        open={transferDialogOpen}
+        onOpenChange={(open) => {
+          setTransferDialogOpen(open);
+          if (!open) {
+            setTransferAssignment(null);
+            setTransferSourceShift(null);
+            setTransferTargetSectorId('');
+            setTransferTargetShiftId('');
+          }
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Transferir Plantonista</DialogTitle>
             <DialogDescription>
-              Migre o plantonista para outro plantão de setor permitido.
+              Migre o plantonista para outro setor no mesmo dia.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -4661,20 +4716,47 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             </div>
 
             <div className="space-y-2">
-              <Label>Plantão de destino (outro setor permitido)</Label>
-              <Select value={transferTargetShiftId} onValueChange={setTransferTargetShiftId}>
+              <Label>Setor de destino</Label>
+              <Select
+                value={transferTargetSectorId}
+                onValueChange={(value) => {
+                  setTransferTargetSectorId(value);
+                  setTransferTargetShiftId('');
+                }}
+              >
                 <SelectTrigger>
-                  <SelectValue placeholder="Selecione o plantão destino" />
+                  <SelectValue placeholder="Selecione o setor destino" />
+                </SelectTrigger>
+                <SelectContent>
+                  {transferAllowedSectors.map((sector) => (
+                    <SelectItem key={sector.id} value={sector.id}>
+                      {sector.name}
+                    </SelectItem>
+                  ))}
+                  {transferAllowedSectors.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Nenhum setor elegível para este plantonista.
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Horário no setor de destino</Label>
+              <Select value={transferTargetShiftId} onValueChange={setTransferTargetShiftId}>
+                <SelectTrigger disabled={!transferTargetSectorId}>
+                  <SelectValue placeholder="Selecione o horário do plantão" />
                 </SelectTrigger>
                 <SelectContent className="max-h-[300px] overflow-y-auto">
                   {transferTargetCandidates.map((target) => (
                     <SelectItem key={target.id} value={target.id}>
-                      {format(parseISO(target.shift_date), 'dd/MM/yyyy')} • {target.start_time.slice(0, 5)}-{target.end_time.slice(0, 5)} • {getSectorName(target.sector_id, target.hospital)}
+                      {target.start_time.slice(0, 5)}-{target.end_time.slice(0, 5)} • {getSectorName(target.sector_id, target.hospital)}
                     </SelectItem>
                   ))}
                   {transferTargetCandidates.length === 0 && (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Nenhum plantão elegível encontrado para transferência.
+                      Nenhum horário disponível neste setor para este dia.
                     </div>
                   )}
                 </SelectContent>
