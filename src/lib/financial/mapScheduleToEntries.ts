@@ -103,11 +103,20 @@ export function mapScheduleToFinancialEntries(params: {
     sectorDefaultNightById.set(s.id, s.default_night_value ?? null);
   });
 
-  // Build individual user override lookup: key = "sector_id:user_id"
+  // Build individual user override lookup.
+  // Prefer month/year-specific values when available, and keep a legacy fallback without competence.
   const userValueMap = new Map<string, { day_value: number | null; night_value: number | null }>();
+  const userValueFallbackMap = new Map<string, { day_value: number | null; night_value: number | null }>();
   (params.userSectorValues ?? []).forEach((uv) => {
-    const key = `${uv.sector_id}:${uv.user_id}`;
-    userValueMap.set(key, { day_value: uv.day_value, night_value: uv.night_value });
+    const hasCompetence = uv.month != null && uv.year != null;
+    const baseKey = `${uv.sector_id}:${uv.user_id}`;
+    const key = hasCompetence ? `${baseKey}:${uv.year}:${uv.month}` : baseKey;
+    const payload = { day_value: uv.day_value, night_value: uv.night_value };
+    if (hasCompetence) {
+      userValueMap.set(key, payload);
+    } else {
+      userValueFallbackMap.set(baseKey, payload);
+    }
   });
 
   const assignmentsByShift = new Map<string, ScheduleAssignment[]>();
@@ -169,8 +178,13 @@ export function mapScheduleToFinancialEntries(params: {
 
     for (const a of shiftAssignments) {
       // Look up individual user override for this sector/user combination
-      const userOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}` : null;
-      const userOverride = userOverrideKey ? userValueMap.get(userOverrideKey) : undefined;
+      const shiftMonth = Number(shift.shift_date.slice(5, 7));
+      const shiftYear = Number(shift.shift_date.slice(0, 4));
+      const userOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}:${shiftYear}:${shiftMonth}` : null;
+      const legacyOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}` : null;
+      const userOverride = userOverrideKey
+        ? userValueMap.get(userOverrideKey) ?? (legacyOverrideKey ? userValueFallbackMap.get(legacyOverrideKey) : undefined)
+        : undefined;
       const individualValue = userOverride 
         ? (isNight ? userOverride.night_value : userOverride.day_value) 
         : null;

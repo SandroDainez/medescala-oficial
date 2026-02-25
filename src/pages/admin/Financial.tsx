@@ -342,10 +342,8 @@ export default function AdminFinancial() {
         fetchAllSectors(currentTenantId),
         supabase
           .from('user_sector_values')
-          .select('sector_id, user_id, day_value, night_value')
-          .eq('tenant_id', currentTenantId)
-          .eq('month', new Date(startDate).getMonth() + 1)
-          .eq('year', new Date(startDate).getFullYear()),
+          .select('sector_id, user_id, day_value, night_value, month, year, updated_at')
+          .eq('tenant_id', currentTenantId),
         supabase
           .from('tenants')
           .select('slug')
@@ -392,12 +390,48 @@ export default function AdminFinancial() {
       // Ensure assignments match ONLY the fetched shifts (important when sector filter is active).
       const assignmentsScoped = assignmentsRaw.filter((a) => shiftIdSet.has(a.shift_id));
       const sectors = sectorsRes.data ?? [];
-      const userValues = (userValuesRes.data ?? []) as Array<{
+      const userValuesRaw = (userValuesRes.data ?? []) as Array<{
         sector_id: string;
         user_id: string;
         day_value: number | null;
         night_value: number | null;
+        month: number | null;
+        year: number | null;
+        updated_at?: string | null;
       }>;
+
+      // Keep only rows relevant to the selected date range and de-duplicate by
+      // (sector,user,year,month), preferring the newest update when duplicates exist.
+      const startRef = Number(startDate.slice(0, 4)) * 100 + Number(startDate.slice(5, 7));
+      const endRef = Number(endDate.slice(0, 4)) * 100 + Number(endDate.slice(5, 7));
+      const valuesByKey = new Map<string, typeof userValuesRaw[number]>();
+
+      for (const uv of userValuesRaw) {
+        const hasCompetence = uv.year != null && uv.month != null;
+        if (hasCompetence) {
+          const ref = Number(uv.year) * 100 + Number(uv.month);
+          if (ref < startRef || ref > endRef) continue;
+        }
+
+        const key = `${uv.sector_id}:${uv.user_id}:${uv.year ?? 'null'}:${uv.month ?? 'null'}`;
+        const prev = valuesByKey.get(key);
+        if (!prev) {
+          valuesByKey.set(key, uv);
+          continue;
+        }
+        const prevTs = prev.updated_at ? Date.parse(prev.updated_at) : 0;
+        const nextTs = uv.updated_at ? Date.parse(uv.updated_at) : 0;
+        if (nextTs >= prevTs) valuesByKey.set(key, uv);
+      }
+
+      const userValues = Array.from(valuesByKey.values()).map((uv) => ({
+        sector_id: uv.sector_id,
+        user_id: uv.user_id,
+        day_value: uv.day_value,
+        night_value: uv.night_value,
+        month: uv.month,
+        year: uv.year,
+      }));
 
       // Debug: Log raw assignments to verify values are coming from DB correctly
       console.log('[AdminFinancial] Raw assignments sample:', assignmentsRaw.slice(0, 5).map(a => ({
