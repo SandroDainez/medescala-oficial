@@ -1155,24 +1155,27 @@ export default function SuperAdmin() {
               />
             </div>
 
+            <div className="space-y-2">
+              <Label>Plano</Label>
+              <Select value={editPlanId} onValueChange={setEditPlanId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um plano" />
+                </SelectTrigger>
+                <SelectContent>
+                  {planOptions.map((plan) => (
+                    <SelectItem key={plan.id} value={plan.id}>
+                      {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '201+' : plan.max_users})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Definir um plano remove o acesso ilimitado automaticamente.
+              </p>
+            </div>
+
             {!editIsUnlimited && (
               <>
-                <div className="space-y-2">
-                  <Label>Plano</Label>
-                  <Select value={editPlanId} onValueChange={setEditPlanId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione um plano" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {planOptions.map((plan) => (
-                        <SelectItem key={plan.id} value={plan.id}>
-                          {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '200+' : plan.max_users})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <div className="space-y-2">
                   <Label>Status</Label>
                   <Select value={editBillingStatus} onValueChange={setEditBillingStatus}>
