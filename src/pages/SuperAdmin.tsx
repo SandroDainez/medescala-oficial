@@ -32,8 +32,6 @@ import {
   Search,
   Database,
   Lock,
-  Eye,
-  EyeOff,
   UserPlus,
   UserMinus,
   Crown,
@@ -152,14 +150,6 @@ export default function SuperAdmin() {
   const [savingBillingEvent, setSavingBillingEvent] = useState(false);
   const [deletingBillingEventId, setDeletingBillingEventId] = useState<string | null>(null);
   
-  // Reopen password management
-  const [currentReopenPassword, setCurrentReopenPassword] = useState('');
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [newReopenPassword, setNewReopenPassword] = useState('');
-  const [confirmReopenPassword, setConfirmReopenPassword] = useState('');
-  const [savingPassword, setSavingPassword] = useState(false);
-  const [showPasswordFields, setShowPasswordFields] = useState(false);
-  const [loadingPassword, setLoadingPassword] = useState(false);
   const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
   const [grantEmail, setGrantEmail] = useState('');
   const [grantAsOwner, setGrantAsOwner] = useState(false);
@@ -222,88 +212,6 @@ export default function SuperAdmin() {
       setMigratingPii(false);
     }
   }
-
-  async function handleChangeReopenPassword() {
-    if (!newReopenPassword.trim()) {
-      toast({
-        title: 'Erro',
-        description: 'Digite a nova senha',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (newReopenPassword !== confirmReopenPassword) {
-      toast({
-        title: 'Erro',
-        description: 'As senhas não coincidem',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (newReopenPassword.length < 6) {
-      toast({
-        title: 'Erro',
-        description: 'A senha deve ter pelo menos 6 caracteres',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    setSavingPassword(true);
-    
-    try {
-      const { error } = await supabase
-        .from('system_settings')
-        .update({ 
-          setting_value: newReopenPassword,
-          updated_at: new Date().toISOString(),
-          updated_by: user?.id 
-        })
-        .eq('setting_key', 'schedule_reopen_password');
-      
-      if (error) throw error;
-      
-      toast({
-        title: 'Senha alterada!',
-        description: 'A senha de reabertura de escalas foi atualizada com sucesso.',
-      });
-      
-      // Update local state with new password
-      setCurrentReopenPassword(newReopenPassword);
-      setNewReopenPassword('');
-      setConfirmReopenPassword('');
-      setShowPasswordFields(false);
-      setShowCurrentPassword(false);
-    } catch (error: any) {
-      toast({
-        title: 'Erro ao alterar senha',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setSavingPassword(false);
-    }
-  }
-
-  const fetchReopenPassword = useCallback(async () => {
-    setLoadingPassword(true);
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('setting_value')
-        .eq('setting_key', 'schedule_reopen_password')
-        .maybeSingle();
-      
-      if (error) throw error;
-      setCurrentReopenPassword(data?.setting_value || '');
-    } catch (error) {
-      console.error('Error fetching reopen password:', error);
-    } finally {
-      setLoadingPassword(false);
-    }
-  }, []);
 
   const fetchTenants = useCallback(async () => {
     const { data, error } = await supabase.rpc('get_all_tenants_admin');
@@ -601,9 +509,9 @@ export default function SuperAdmin() {
 
     setIsSuperAdmin(true);
     setIsAppOwner(Boolean(isOwner));
-    await Promise.all([fetchTenants(), fetchReopenPassword(), fetchSuperAdmins()]);
+    await Promise.all([fetchTenants(), fetchSuperAdmins()]);
     setLoading(false);
-  }, [user, fetchTenants, fetchReopenPassword, fetchSuperAdmins]);
+  }, [user, fetchTenants, fetchSuperAdmins]);
 
   useEffect(() => {
     checkSuperAdminAndFetch();
@@ -1033,104 +941,6 @@ export default function SuperAdmin() {
                 </TableBody>
               </Table>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Schedule Reopen Password */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Lock className="h-5 w-5" />
-              Senha de Reabertura de Escalas
-            </CardTitle>
-            <CardDescription>
-              Defina a senha necessária para reabrir escalas finalizadas
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Current password display */}
-            <div className="p-4 rounded-lg bg-muted/50 border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground mb-1">Senha atual</p>
-                  {loadingPassword ? (
-                    <p className="text-lg font-mono">Carregando...</p>
-                  ) : (
-                    <p className="text-lg font-mono">
-                      {showCurrentPassword ? currentReopenPassword : '••••••••••'}
-                    </p>
-                  )}
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  disabled={loadingPassword}
-                >
-                  {showCurrentPassword ? (
-                    <EyeOff className="h-5 w-5" />
-                  ) : (
-                    <Eye className="h-5 w-5" />
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            {/* Change password section */}
-            {!showPasswordFields ? (
-              <Button 
-                onClick={() => setShowPasswordFields(true)}
-                variant="outline"
-              >
-                <Edit className="h-4 w-4 mr-2" />
-                Alterar senha de reabertura
-              </Button>
-            ) : (
-              <div className="space-y-4 max-w-md">
-                <div className="space-y-2">
-                  <Label htmlFor="new-reopen-password">Nova senha</Label>
-                  <Input
-                    id="new-reopen-password"
-                    type="password"
-                    placeholder="Digite a nova senha..."
-                    value={newReopenPassword}
-                    onChange={(e) => setNewReopenPassword(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirm-reopen-password">Confirmar senha</Label>
-                  <Input
-                    id="confirm-reopen-password"
-                    type="password"
-                    placeholder="Confirme a nova senha..."
-                    value={confirmReopenPassword}
-                    onChange={(e) => setConfirmReopenPassword(e.target.value)}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button 
-                    onClick={handleChangeReopenPassword}
-                    disabled={savingPassword}
-                  >
-                    {savingPassword ? 'Salvando...' : 'Salvar nova senha'}
-                  </Button>
-                  <Button 
-                    variant="outline"
-                    onClick={() => {
-                      setShowPasswordFields(false);
-                      setNewReopenPassword('');
-                      setConfirmReopenPassword('');
-                    }}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">
-              Esta senha é exigida quando um administrador tenta reabrir uma escala já finalizada.
-              Somente você (Super Admin) pode alterar esta senha.
-            </p>
           </CardContent>
         </Card>
 
