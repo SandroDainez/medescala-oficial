@@ -105,11 +105,29 @@ interface ConflictRecord {
   kept_shift_time: string | null;
   justification: string | null;
   resolved_at: string;
+  resolved_by_name: string;
+  action_taken: string;
 }
 
 interface FinancialSummaryRecord {
   user_id: string;
   user_name: string;
+  total_shifts: number;
+  total_hours: number;
+  total_value: number;
+}
+
+interface FinancialBySectorRecord {
+  sector_name: string;
+  total_shifts: number;
+  total_hours: number;
+  total_value: number;
+}
+
+interface FinancialByPlantonistaSectorRecord {
+  user_id: string;
+  user_name: string;
+  sector_name: string;
   total_shifts: number;
   total_hours: number;
   total_value: number;
@@ -155,6 +173,8 @@ export default function AdminReports() {
   const [checkins, setCheckins] = useState<CheckinRecord[]>([]);
   const [shifts, setShifts] = useState<ShiftReport[]>([]);
   const [financialData, setFinancialData] = useState<FinancialSummaryRecord[]>([]);
+  const [financialBySector, setFinancialBySector] = useState<FinancialBySectorRecord[]>([]);
+  const [financialByPlantonistaSector, setFinancialByPlantonistaSector] = useState<FinancialByPlantonistaSectorRecord[]>([]);
   const [movements, setMovements] = useState<MovementRecord[]>([]);
   const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
   const [loading, setLoading] = useState(false);
@@ -316,6 +336,8 @@ export default function AdminReports() {
   async function fetchFinancialReport() {
     if (!currentTenantId) {
       setFinancialData([]);
+      setFinancialBySector([]);
+      setFinancialByPlantonistaSector([]);
       return;
     }
 
@@ -368,11 +390,15 @@ export default function AdminReports() {
       if (shiftsRes.error) {
         console.error('Error fetching shifts for financial report:', shiftsRes.error);
         setFinancialData([]);
+        setFinancialBySector([]);
+        setFinancialByPlantonistaSector([]);
         return;
       }
       if (assignmentsRes.error) {
         console.error('Error fetching assignments for financial report:', assignmentsRes.error);
         setFinancialData([]);
+        setFinancialBySector([]);
+        setFinancialByPlantonistaSector([]);
         return;
       }
 
@@ -388,6 +414,8 @@ export default function AdminReports() {
 
       if (shiftsData.length === 0 || assignmentsData.length === 0) {
         setFinancialData([]);
+        setFinancialBySector([]);
+        setFinancialByPlantonistaSector([]);
         return;
       }
 
@@ -413,7 +441,7 @@ export default function AdminReports() {
 
       // Este relatório é por plantonista; removemos linhas "Vago" (sem assignee real)
       const assignedOnly = mapped.filter((e) => e.assignee_id !== 'unassigned');
-      const { plantonistaReports } = aggregateFinancial(assignedOnly);
+      const { plantonistaReports, sectorReports } = aggregateFinancial(assignedOnly);
 
       const financialRecords: FinancialSummaryRecord[] = plantonistaReports
         .map((p) => ({
@@ -426,9 +454,46 @@ export default function AdminReports() {
         .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
 
       setFinancialData(financialRecords);
+
+      const sectorSummary: FinancialBySectorRecord[] = (sectorReports ?? [])
+        .map((s) => ({
+          sector_name: s.sector_name,
+          total_shifts: s.total_shifts,
+          total_hours: s.total_hours,
+          total_value: s.total_value,
+        }))
+        .sort((a, b) => a.sector_name.localeCompare(b.sector_name, 'pt-BR'));
+      setFinancialBySector(sectorSummary);
+
+      const groupedByPlantonistaSector = new Map<string, FinancialByPlantonistaSectorRecord>();
+      assignedOnly.forEach((e) => {
+        if (!e.assignee_id || e.assignee_id === 'unassigned') return;
+        const key = `${e.assignee_id}::${e.sector_name}`;
+        const current = groupedByPlantonistaSector.get(key) ?? {
+          user_id: e.assignee_id,
+          user_name: e.assignee_name,
+          sector_name: e.sector_name,
+          total_shifts: 0,
+          total_hours: 0,
+          total_value: 0,
+        };
+        current.total_shifts += 1;
+        current.total_hours += Number(e.duration_hours || 0);
+        current.total_value += Number(e.final_value || 0);
+        groupedByPlantonistaSector.set(key, current);
+      });
+      setFinancialByPlantonistaSector(
+        Array.from(groupedByPlantonistaSector.values()).sort((a, b) => {
+          const byUser = a.user_name.localeCompare(b.user_name, 'pt-BR');
+          if (byUser !== 0) return byUser;
+          return a.sector_name.localeCompare(b.sector_name, 'pt-BR');
+        })
+      );
     } catch (err) {
       console.error('Unexpected error in financial report:', err);
       setFinancialData([]);
+      setFinancialBySector([]);
+      setFinancialByPlantonistaSector([]);
     }
   }
 
@@ -498,7 +563,7 @@ export default function AdminReports() {
   async function fetchConflicts() {
     const { data, error } = await supabase
       .from('conflict_resolutions')
-      .select('*')
+      .select('*, resolved_by_profile:profiles!conflict_resolutions_resolved_by_fkey(full_name, name)')
       .eq('tenant_id', currentTenantId)
       .gte('conflict_date', startDate)
       .lte('conflict_date', endDate)
@@ -510,7 +575,7 @@ export default function AdminReports() {
       return;
     }
     
-    const conflictRecords: ConflictRecord[] = (data || []).map(c => ({
+    const conflictRecords: ConflictRecord[] = (data || []).map((c: any) => ({
       id: c.id,
       conflict_date: c.conflict_date,
       plantonista_name: c.plantonista_name,
@@ -521,6 +586,11 @@ export default function AdminReports() {
       kept_shift_time: c.kept_shift_time,
       justification: c.justification,
       resolved_at: c.resolved_at,
+      resolved_by_name: c.resolved_by_profile?.full_name || c.resolved_by_profile?.name || 'Administrador',
+      action_taken:
+        c.resolution_type === 'removed'
+          ? `Removido de ${c.removed_sector_name || 'setor não informado'} e mantido em ${c.kept_sector_name || 'setor não informado'}`
+          : `Conflito reconhecido e mantido em ${c.kept_sector_name || 'setor não informado'}`,
     }));
     
     setConflicts(conflictRecords);
@@ -1078,8 +1148,8 @@ export default function AdminReports() {
                 <SelectContent>
                   <SelectItem value="afastamentos">Afastamentos</SelectItem>
                   <SelectItem value="checkins">Check-ins/Check-outs</SelectItem>
-                  <SelectItem value="plantoes">Plantões por Período</SelectItem>
-                  <SelectItem value="financeiro">Resumo Financeiro</SelectItem>
+                  <SelectItem value="plantoes">Plantões por Período (por setor)</SelectItem>
+                  <SelectItem value="financeiro">Resumo Financeiro (setor e plantonista)</SelectItem>
                   <SelectItem value="movimentacoes">Movimentações de Escala</SelectItem>
                   <SelectItem value="conflitos">Histórico de Conflitos</SelectItem>
                 </SelectContent>
@@ -1386,89 +1456,180 @@ export default function AdminReports() {
                             </TableCell>
                           </TableRow>
                         ) : (
-                          shifts.map(shift => (
-                            <TableRow key={shift.id} className="cursor-pointer" onClick={() => toggleSelectShift(shift.id)}>
-                              <TableCell onClick={(e) => e.stopPropagation()}>
-                                <Checkbox
-                                  checked={selectedShifts.has(shift.id)}
-                                  onCheckedChange={() => toggleSelectShift(shift.id)}
-                                />
-                              </TableCell>
-                              <TableCell>{format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</TableCell>
-                              <TableCell>{shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}</TableCell>
-                              <TableCell>{shift.sector_name}</TableCell>
-                              <TableCell className="font-medium">{shift.title}</TableCell>
-                              <TableCell>{shift.hospital}</TableCell>
-                              <TableCell>
-                                {shift.base_value ? (
-                                  <Badge variant="default">R$ {Number(shift.base_value).toFixed(2)}</Badge>
-                                ) : (
-                                  <Badge variant="secondary">-</Badge>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline">{shift.assignee_count}</Badge>
-                                  {shift.assignees.length > 0 && (
-                                    <span className="text-sm text-muted-foreground truncate max-w-[200px]">
-                                      {shift.assignees.join(', ')}
-                                    </span>
-                                  )}
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))
+                          Object.entries(
+                            shifts.reduce<Record<string, ShiftReport[]>>((acc, shift) => {
+                              const key = shift.sector_name || 'Sem setor';
+                              if (!acc[key]) acc[key] = [];
+                              acc[key].push(shift);
+                              return acc;
+                            }, {})
+                          )
+                            .sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+                            .flatMap(([sectorName, sectorShifts]) => {
+                              const groupRows = sectorShifts.map((shift) => (
+                                <TableRow key={shift.id} className="cursor-pointer" onClick={() => toggleSelectShift(shift.id)}>
+                                  <TableCell onClick={(e) => e.stopPropagation()}>
+                                    <Checkbox
+                                      checked={selectedShifts.has(shift.id)}
+                                      onCheckedChange={() => toggleSelectShift(shift.id)}
+                                    />
+                                  </TableCell>
+                                  <TableCell>{format(parseISO(shift.shift_date), 'dd/MM/yyyy')}</TableCell>
+                                  <TableCell>{shift.start_time?.slice(0, 5)} - {shift.end_time?.slice(0, 5)}</TableCell>
+                                  <TableCell>{shift.sector_name}</TableCell>
+                                  <TableCell className="font-medium">{shift.title}</TableCell>
+                                  <TableCell>{shift.hospital}</TableCell>
+                                  <TableCell>
+                                    {shift.base_value ? (
+                                      <Badge variant="default">R$ {Number(shift.base_value).toFixed(2)}</Badge>
+                                    ) : (
+                                      <Badge variant="secondary">-</Badge>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline">{shift.assignee_count}</Badge>
+                                      {shift.assignees.length > 0 && (
+                                        <span className="text-sm text-muted-foreground truncate max-w-[200px]">
+                                          {shift.assignees.join(', ')}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ));
+
+                              return [
+                                <TableRow key={`group-${sectorName}`} className="bg-muted/40">
+                                  <TableCell colSpan={8} className="font-semibold">
+                                    Setor: {sectorName} ({sectorShifts.length} plantão(ões))
+                                  </TableCell>
+                                </TableRow>,
+                                ...groupRows,
+                              ];
+                            })
                         )}
                       </TableBody>
                     </Table>
                   </ScrollArea>
                 </div>
               ) : reportType === 'financeiro' ? (
-                <ScrollArea className="h-[500px]">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Plantonista</TableHead>
-                        <TableHead className="text-center">Plantões</TableHead>
-                        <TableHead className="text-center">Horas</TableHead>
-                        <TableHead className="text-right">Total a Receber</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {financialData.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
-                            Nenhum dado financeiro no período
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        <>
-                          {financialData.map(record => (
-                            <TableRow key={record.user_id}>
-                              <TableCell className="font-medium">{record.user_name}</TableCell>
-                              <TableCell className="text-center">{record.total_shifts}</TableCell>
-                              <TableCell className="text-center">{record.total_hours.toFixed(1)}h</TableCell>
-                              <TableCell className="text-right">
-                                <Badge variant="default" className="gap-1">
-                                  <DollarSign className="h-3 w-3" />
-                                  R$ {record.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                                </Badge>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="font-semibold mb-2">Financeiro por Setor</h3>
+                    <ScrollArea className="h-[220px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Setor</TableHead>
+                            <TableHead className="text-center">Plantões</TableHead>
+                            <TableHead className="text-center">Horas</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {financialBySector.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                                Nenhum dado por setor no período
                               </TableCell>
                             </TableRow>
-                          ))}
-                          <TableRow className="bg-muted/50 font-bold">
-                            <TableCell>TOTAL</TableCell>
-                            <TableCell className="text-center">{financialData.reduce((sum, r) => sum + r.total_shifts, 0)}</TableCell>
-                            <TableCell className="text-center">{financialData.reduce((sum, r) => sum + r.total_hours, 0).toFixed(1)}h</TableCell>
-                            <TableCell className="text-right">
-                              R$ {financialData.reduce((sum, r) => sum + r.total_value, 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
-                            </TableCell>
+                          ) : (
+                            <>
+                              {financialBySector.map((record) => (
+                                <TableRow key={record.sector_name}>
+                                  <TableCell className="font-medium">{record.sector_name}</TableCell>
+                                  <TableCell className="text-center">{record.total_shifts}</TableCell>
+                                  <TableCell className="text-center">{record.total_hours.toFixed(1)}h</TableCell>
+                                  <TableCell className="text-right">
+                                    R$ {record.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold mb-2">Financeiro por Plantonista</h3>
+                    <ScrollArea className="h-[220px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Plantonista</TableHead>
+                            <TableHead className="text-center">Plantões</TableHead>
+                            <TableHead className="text-center">Horas</TableHead>
+                            <TableHead className="text-right">Total a Receber</TableHead>
                           </TableRow>
-                        </>
-                      )}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
+                        </TableHeader>
+                        <TableBody>
+                          {financialData.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                                Nenhum dado financeiro no período
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            financialData.map((record) => (
+                              <TableRow key={record.user_id}>
+                                <TableCell className="font-medium">{record.user_name}</TableCell>
+                                <TableCell className="text-center">{record.total_shifts}</TableCell>
+                                <TableCell className="text-center">{record.total_hours.toFixed(1)}h</TableCell>
+                                <TableCell className="text-right">
+                                  <Badge variant="default" className="gap-1">
+                                    <DollarSign className="h-3 w-3" />
+                                    R$ {record.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold mb-2">Plantões do Plantonista em Cada Setor</h3>
+                    <ScrollArea className="h-[220px]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Plantonista</TableHead>
+                            <TableHead>Setor</TableHead>
+                            <TableHead className="text-center">Plantões</TableHead>
+                            <TableHead className="text-center">Horas</TableHead>
+                            <TableHead className="text-right">Total</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {financialByPlantonistaSector.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center text-muted-foreground py-6">
+                                Nenhum detalhamento por plantonista/setor no período
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            financialByPlantonistaSector.map((record) => (
+                              <TableRow key={`${record.user_id}-${record.sector_name}`}>
+                                <TableCell className="font-medium">{record.user_name}</TableCell>
+                                <TableCell>{record.sector_name}</TableCell>
+                                <TableCell className="text-center">{record.total_shifts}</TableCell>
+                                <TableCell className="text-center">{record.total_hours.toFixed(1)}h</TableCell>
+                                <TableCell className="text-right">
+                                  R$ {record.total_value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </ScrollArea>
+                  </div>
+                </div>
               ) : reportType === 'movimentacoes' ? (
                 <div className="space-y-4">
                   <div className="flex justify-end">
@@ -1573,8 +1734,10 @@ export default function AdminReports() {
                         <TableHead>Data Conflito</TableHead>
                         <TableHead>Plantonista</TableHead>
                         <TableHead>Resolução</TableHead>
+                        <TableHead>Ação Tomada</TableHead>
                         <TableHead>Removido de</TableHead>
                         <TableHead>Mantido em</TableHead>
+                        <TableHead>Resolvido por</TableHead>
                         <TableHead>Justificativa</TableHead>
                         <TableHead>Resolvido em</TableHead>
                       </TableRow>
@@ -1582,7 +1745,7 @@ export default function AdminReports() {
                     <TableBody>
                       {conflicts.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                             Nenhum conflito resolvido no período
                           </TableCell>
                         </TableRow>
@@ -1596,6 +1759,7 @@ export default function AdminReports() {
                                 {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
                               </Badge>
                             </TableCell>
+                            <TableCell className="max-w-[260px] truncate">{conflict.action_taken}</TableCell>
                             <TableCell>
                               {conflict.removed_sector_name ? (
                                 <div className="text-sm">
@@ -1620,6 +1784,7 @@ export default function AdminReports() {
                                 <span className="text-muted-foreground">-</span>
                               )}
                             </TableCell>
+                            <TableCell>{conflict.resolved_by_name}</TableCell>
                             <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
                             <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
                           </TableRow>
@@ -1665,8 +1830,10 @@ export default function AdminReports() {
                       <TableHead>Data Conflito</TableHead>
                       <TableHead>Plantonista</TableHead>
                       <TableHead>Resolução</TableHead>
+                      <TableHead>Ação Tomada</TableHead>
                       <TableHead>Removido de</TableHead>
                       <TableHead>Mantido em</TableHead>
+                      <TableHead>Resolvido por</TableHead>
                       <TableHead>Justificativa</TableHead>
                       <TableHead>Resolvido em</TableHead>
                     </TableRow>
@@ -1674,7 +1841,7 @@ export default function AdminReports() {
                   <TableBody>
                     {conflicts.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                        <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
                           Nenhum conflito resolvido no período. Selecione um período e clique em "Gerar" para ver conflitos.
                         </TableCell>
                       </TableRow>
@@ -1694,6 +1861,7 @@ export default function AdminReports() {
                               {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
                             </Badge>
                           </TableCell>
+                          <TableCell className="max-w-[260px] truncate">{conflict.action_taken}</TableCell>
                           <TableCell>
                             {conflict.removed_sector_name ? (
                               <div className="text-sm">
@@ -1718,6 +1886,7 @@ export default function AdminReports() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
+                          <TableCell>{conflict.resolved_by_name}</TableCell>
                           <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
                           <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
                         </TableRow>

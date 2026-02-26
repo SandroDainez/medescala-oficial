@@ -1527,6 +1527,7 @@ export default function AdminFinancial() {
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
                         <TableHead>Plantonista</TableHead>
+                        <TableHead>Plantões por Setor</TableHead>
                         <TableHead className="text-center">Plantões</TableHead>
                         <TableHead className="text-center">Horas</TableHead>
                         <TableHead className="text-center">Sem valor</TableHead>
@@ -1538,6 +1539,23 @@ export default function AdminFinancial() {
                       {visiblePlantonistaReports.map((p) => (
                         <TableRow key={p.assignee_id}>
                           <TableCell className="font-medium">{p.assignee_name}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {Object.entries(
+                                (p.entries ?? []).reduce<Record<string, number>>((acc, entry) => {
+                                  const key = entry.sector_name || 'Sem setor';
+                                  acc[key] = (acc[key] || 0) + 1;
+                                  return acc;
+                                }, {})
+                              )
+                                .sort(([a], [b]) => a.localeCompare(b, 'pt-BR'))
+                                .map(([sectorName, count]) => (
+                                  <Badge key={`${p.assignee_id}-${sectorName}`} variant="outline" className="text-xs">
+                                    {sectorName}: {count}
+                                  </Badge>
+                                ))}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-center">{p.total_shifts}</TableCell>
                           <TableCell className="text-center">{p.total_hours.toFixed(1)}h</TableCell>
                           <TableCell className="text-center">
