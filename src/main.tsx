@@ -5,6 +5,8 @@ import "./index.css";
 import { registerSW } from "virtual:pwa-register";
 import { clearPwaCacheAndReload } from "./lib/pwa";
 
+declare const __APP_BUILD_ID__: string;
+
 // Ensure installed PWA/mobile app picks up new builds
 const updateSW = registerSW({
   immediate: true,
@@ -48,6 +50,13 @@ window.addEventListener("unhandledrejection", (event) => {
     triggerSingleChunkRecovery();
   }
 });
+
+// Hard guarantee: when build id changes, purge old caches once.
+const lastBuildId = localStorage.getItem("medescala_build_id");
+if (lastBuildId !== __APP_BUILD_ID__) {
+  localStorage.setItem("medescala_build_id", __APP_BUILD_ID__);
+  void clearPwaCacheAndReload();
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
