@@ -281,13 +281,7 @@ export default function CheckinReport() {
                 <SelectItem value="all">Todos os Setores</SelectItem>
                 {sectors.map(sector => (
                   <SelectItem key={sector.id} value={sector.id}>
-                    <div className="flex items-center gap-2">
-                      <div 
-                        className="w-3 h-3 rounded-full" 
-                        style={{ backgroundColor: sector.color || '#6b7280' }}
-                      />
-                      {sector.name}
-                    </div>
+                    {sector.name}
                   </SelectItem>
                 ))}
               </SelectContent>
