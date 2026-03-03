@@ -915,6 +915,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const sectorByNormalizedName = new Map(
       sectors.map((s) => [normalizeString(s.name), s]),
     );
+    const defaultSector =
+      (filterSector && filterSector !== 'all'
+        ? sectors.find((s) => s.id === filterSector)
+        : null) || sectors[0] || null;
 
     const resolveSectorFromCell = (value: unknown): Sector | null => {
       const text = String(value ?? '').trim();
@@ -976,39 +980,63 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const date = new Date(baseYear, month - 1, day);
         if (Number.isNaN(date.getTime())) continue;
 
-        const sector = findNearestSector(r);
+        const sector = findNearestSector(r) || defaultSector;
         if (!sector) {
           errors.push(`Linha ${r + 1}: não foi possível identificar o setor para ${cellText}.`);
           continue;
         }
 
         const extractedNames: string[] = [];
+        const timeRanges: Array<{ start: string; end: string }> = [];
         for (let rr = r; rr <= Math.min(rawMatrix.length - 1, r + 3); rr++) {
           const raw = String(rawMatrix[rr]?.[c] ?? '').trim();
           if (!raw) continue;
           const cleaned = rr === r ? raw.replace(dayRegex, '').trim() : raw;
           if (!cleaned) continue;
+          const timeMatches = cleaned.matchAll(/(\d{1,2}:\d{2})\s*[~\-]\s*(\d{1,2}:\d{2})/g);
+          for (const m of timeMatches) {
+            const start = parseImportTime(m[1]);
+            const end = parseImportTime(m[2]);
+            if (start && end) {
+              timeRanges.push({ start, end });
+            }
+          }
+
           const parts = cleaned.split(/\n|;|,|\|/g).map((p) => p.trim()).filter(Boolean);
           for (const part of parts) {
+            if (/^\d{1,2}:\d{2}\s*[~\-]\s*\d{1,2}:\d{2}$/.test(part)) continue;
             if (!isIgnored(part)) extractedNames.push(part);
           }
         }
 
         const uniqueNames = Array.from(new Set(extractedNames));
-        const noteValue = uniqueNames.length > 0 ? `Importado da escala impressa - ${uniqueNames.join(' | ')}` : 'Importado da escala impressa';
+        const noteValue = uniqueNames.length > 0
+          ? `Importado da escala impressa - ${uniqueNames.join(' | ')}`
+          : 'Importado da escala impressa';
 
-        parsed.push({
-          sector_id: sector.id,
-          sector_name: sector.name,
-          shift_date: format(date, 'yyyy-MM-dd'),
-          start_time: '07:00',
-          end_time: '19:00',
-          hospital: sector.name,
-          location: null,
-          base_value: null,
-          notes: noteValue,
-          title: 'Plantão Diurno',
-          assignee_names: uniqueNames,
+        const uniqueRanges = Array.from(
+          new Map(
+            (timeRanges.length > 0 ? timeRanges : [{ start: '07:00', end: '19:00' }]).map((range) => [
+              `${range.start}|${range.end}`,
+              range,
+            ]),
+          ).values(),
+        );
+
+        uniqueRanges.forEach((range) => {
+          parsed.push({
+            sector_id: sector.id,
+            sector_name: sector.name,
+            shift_date: format(date, 'yyyy-MM-dd'),
+            start_time: range.start,
+            end_time: range.end,
+            hospital: sector.name,
+            location: null,
+            base_value: null,
+            notes: noteValue,
+            title: generateShiftTitle(range.start, range.end),
+            assignee_names: uniqueNames,
+          });
         });
       }
     }
