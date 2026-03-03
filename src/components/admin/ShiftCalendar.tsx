@@ -955,18 +955,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~\-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
     let baseYear = currentDate.getFullYear();
+    let periodStart: Date | null = null;
+    let periodEnd: Date | null = null;
     for (let r = 0; r < Math.min(20, rawMatrix.length); r++) {
       for (const cell of rawMatrix[r] || []) {
         const text = String(cell ?? '').trim();
         const match = text.match(periodRegex);
         if (match) {
           baseYear = Number(match[3]);
+          periodStart = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
+          periodEnd = new Date(Number(match[6]), Number(match[5]) - 1, Number(match[4]));
           break;
         }
       }
     }
 
-    const dayRegex = /\b(?:SEG|TER|QUA|QUI|SEX|SAB|DOM)\s*(\d{1,2})\/(\d{1,2})\b/i;
+    const dayRegex = /\b(?:SEG|TER|QUA|QUI|SEX|SAB|SÁB|DOM)\s*(\d{1,2})\/(\d{1,2})\b/i;
     const ignoreTokens = ['escalas', 'profissional de plantao', 'profissional de plantão', 'local', 'gerado em'];
     const isIgnored = (value: string) => {
       const norm = normalizeString(value);
@@ -977,7 +981,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return false;
     };
 
+    const dayRows: number[] = [];
     for (let r = 0; r < rawMatrix.length; r++) {
+      const row = rawMatrix[r] || [];
+      if (row.some((cell) => dayRegex.test(String(cell ?? '').trim()))) {
+        dayRows.push(r);
+      }
+    }
+
+    for (let idx = 0; idx < dayRows.length; idx++) {
+      const r = dayRows[idx];
+      const nextDayRow = dayRows[idx + 1] ?? rawMatrix.length;
       const row = rawMatrix[r] || [];
       for (let c = 0; c < row.length; c++) {
         const cellText = String(row[c] ?? '').trim();
@@ -988,6 +1002,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const month = Number(dayMatch[2]);
         const date = new Date(baseYear, month - 1, day);
         if (Number.isNaN(date.getTime())) continue;
+        if (periodStart && date < periodStart) continue;
+        if (periodEnd && date > periodEnd) continue;
 
         const sector = findNearestSector(r) || defaultSector;
         if (!sector) {
@@ -995,64 +1011,79 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           continue;
         }
 
-        const extractedNames: string[] = [];
-        const timeRanges: Array<{ start: string; end: string }> = [];
-        for (let rr = r; rr <= Math.min(rawMatrix.length - 1, r + 3); rr++) {
+        const namesByRange = new Map<string, string[]>();
+        let currentRange = { start: '07:00', end: '19:00' };
+        namesByRange.set(`${currentRange.start}|${currentRange.end}`, []);
+
+        for (let rr = r + 1; rr < nextDayRow; rr++) {
           const raw = String(rawMatrix[rr]?.[c] ?? '').trim();
           if (!raw) continue;
-          const cleaned = rr === r ? raw.replace(dayRegex, '').trim() : raw;
-          if (!cleaned) continue;
-          const timeMatches = cleaned.matchAll(/(\d{1,2}:\d{2})\s*[~\-]\s*(\d{1,2}:\d{2})/g);
-          for (const m of timeMatches) {
-            const start = parseImportTime(m[1]);
-            const end = parseImportTime(m[2]);
+
+          const rangeMatches = Array.from(raw.matchAll(/(\d{1,2}:\d{2})\s*[~\-]\s*(\d{1,2}:\d{2})/g));
+          if (rangeMatches.length > 0) {
+            const first = rangeMatches[0];
+            const start = parseImportTime(first[1]);
+            const end = parseImportTime(first[2]);
             if (start && end) {
-              timeRanges.push({ start, end });
+              currentRange = { start, end };
+              const key = `${start}|${end}`;
+              if (!namesByRange.has(key)) namesByRange.set(key, []);
             }
+            continue;
           }
 
-          const parts = cleaned.split(/\n|;|,|\|/g).map((p) => p.trim()).filter(Boolean);
-          for (const part of parts) {
-            if (/^\d{1,2}:\d{2}\s*[~\-]\s*\d{1,2}:\d{2}$/.test(part)) continue;
-            if (!isIgnored(part)) extractedNames.push(part);
-          }
+          const parts = raw.split(/\n|;|,|\|/g).map((p) => p.trim()).filter(Boolean);
+          const cleanNames = parts.filter((part) => !isIgnored(part));
+          if (cleanNames.length === 0) continue;
+
+          const key = `${currentRange.start}|${currentRange.end}`;
+          if (!namesByRange.has(key)) namesByRange.set(key, []);
+          namesByRange.get(key)!.push(...cleanNames);
         }
 
-        const uniqueNames = Array.from(new Set(extractedNames));
-        const noteValue = uniqueNames.length > 0
-          ? `Importado da escala impressa - ${uniqueNames.join(' | ')}`
-          : 'Importado da escala impressa';
+        for (const [rangeKey, importedNames] of namesByRange.entries()) {
+          const [start, end] = rangeKey.split('|');
+          const uniqueNames = Array.from(new Set(importedNames.map((n) => n.trim()).filter(Boolean)));
 
-        const uniqueRanges = Array.from(
-          new Map(
-            (timeRanges.length > 0 ? timeRanges : [{ start: '07:00', end: '19:00' }]).map((range) => [
-              `${range.start}|${range.end}`,
-              range,
-            ]),
-          ).values(),
-        );
+          if (uniqueNames.length === 0) {
+            parsed.push({
+              sector_id: sector.id,
+              sector_name: sector.name,
+              shift_date: format(date, 'yyyy-MM-dd'),
+              start_time: start,
+              end_time: end,
+              hospital: sector.name,
+              location: null,
+              base_value: null,
+              notes: 'Importado da escala impressa',
+              title: generateShiftTitle(start, end),
+            });
+            continue;
+          }
 
-        uniqueRanges.forEach((range) => {
-          parsed.push({
-            sector_id: sector.id,
-            sector_name: sector.name,
-            shift_date: format(date, 'yyyy-MM-dd'),
-            start_time: range.start,
-            end_time: range.end,
-            hospital: sector.name,
-            location: null,
-            base_value: null,
-            notes: noteValue,
-            title: generateShiftTitle(range.start, range.end),
-            assignee_names: uniqueNames,
+          uniqueNames.forEach((name) => {
+            parsed.push({
+              sector_id: sector.id,
+              sector_name: sector.name,
+              shift_date: format(date, 'yyyy-MM-dd'),
+              start_time: start,
+              end_time: end,
+              hospital: sector.name,
+              location: null,
+              base_value: null,
+              notes: `Importado da escala impressa - ${name}`,
+              title: generateShiftTitle(start, end),
+              assignee_names: [name],
+            });
           });
-        });
+        }
       }
     }
 
     const dedup = new Map<string, ImportedShiftRow>();
     for (const row of parsed) {
-      const key = `${row.sector_id}|${row.shift_date}|${row.start_time}|${row.end_time}`;
+      const assigneeKey = (row.assignee_names?.[0] || '').toLowerCase();
+      const key = `${row.sector_id}|${row.shift_date}|${row.start_time}|${row.end_time}|${assigneeKey}`;
       if (!dedup.has(key)) dedup.set(key, row);
     }
 
@@ -1161,7 +1192,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         setImportPreviewRows(fallback.parsed);
         setImportErrors([
           ...fallback.errors,
-          'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
+          'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
         ]);
         notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
         return;
@@ -1258,7 +1289,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setImportPreviewRows(fallback.parsed);
       setImportErrors([
         ...fallback.errors,
-        'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
+        'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
       ]);
       setImportFileName(file.name);
       notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
@@ -1360,6 +1391,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setImportErrors([]);
       setImportFileName('');
       await fetchData();
+    } catch (error) {
+      notifyError('importar escala', error, 'Não foi possível concluir a importação.');
     } finally {
       setImportingShifts(false);
     }
