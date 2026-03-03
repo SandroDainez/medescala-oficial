@@ -941,7 +941,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     };
 
     const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~\-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
-    let baseYear = selectedYear;
+    let baseYear = currentDate.getFullYear();
     for (let r = 0; r < Math.min(20, rawMatrix.length); r++) {
       for (const cell of rawMatrix[r] || []) {
         const text = String(cell ?? '').trim();
