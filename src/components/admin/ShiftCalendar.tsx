@@ -1084,6 +1084,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const parsed: ImportedShiftRow[] = [];
     const errors: string[] = [];
 
+    let sectorNotFoundCount = 0;
+
     rows.forEach((row, index) => {
       const line = firstDataLine + index;
 
@@ -1107,6 +1109,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const sectorName = String(rawSector ?? '').trim();
       const sector = sectorByNormalizedName.get(normalizeString(sectorName));
       if (!sector) {
+        sectorNotFoundCount += 1;
         errors.push(`Linha ${line}: setor não encontrado (${sectorName || 'vazio'}).`);
         return;
       }
@@ -1144,24 +1147,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       });
     });
 
+    const fallback = parseEscalasGridLayout(rawMatrix);
+    const shouldPreferFallback =
+      fallback.parsed.length > 0 &&
+      (
+        parsed.length === 0 ||
+        fallback.parsed.length > parsed.length ||
+        sectorNotFoundCount >= Math.max(6, parsed.length)
+      );
+
+    if (shouldPreferFallback) {
+      setImportPreviewRows(fallback.parsed);
+      setImportErrors([
+        ...fallback.errors,
+        'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
+      ]);
+      setImportFileName(file.name);
+      notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+      return;
+    }
+
     setImportPreviewRows(parsed);
     setImportErrors(errors);
     setImportFileName(file.name);
 
     if (!parsed.length) {
-      const fallback = parseEscalasGridLayout(rawMatrix);
-      if (fallback.parsed.length > 0) {
-        setImportPreviewRows(fallback.parsed);
-        setImportErrors([
-          ...errors,
-          ...fallback.errors,
-          'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
-        ]);
-        setImportFileName(file.name);
-        notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
-        return;
-      }
-
       notifyWarning('Importação sem linhas válidas', 'Revise o arquivo e tente novamente.');
       return;
     }
