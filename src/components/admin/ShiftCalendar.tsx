@@ -1077,6 +1077,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return;
     }
 
+    // Detecta layout de escala impressa em grade:
+    // "ESCALAS", "PROFISSIONAL DE PLANTÃO", dias em colunas etc.
+    // Nesses casos, não devemos passar pelo parser tabular.
+    const lookaheadText = rawMatrix
+      .slice(0, 20)
+      .flat()
+      .map((cell) => normalizeString(cell))
+      .join(' | ');
+    const looksLikeEscalasGrid =
+      lookaheadText.includes('escalas') &&
+      lookaheadText.includes('profissional de plant');
+
+    if (looksLikeEscalasGrid) {
+      const fallback = parseEscalasGridLayout(rawMatrix);
+      setImportFileName(file.name);
+
+      if (fallback.parsed.length > 0) {
+        setImportPreviewRows(fallback.parsed);
+        setImportErrors([
+          ...fallback.errors,
+          'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
+        ]);
+        notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+        return;
+      }
+
+      setImportPreviewRows([]);
+      setImportErrors([
+        'Formato de grade detectado, mas não foi possível identificar dias/setores automaticamente.',
+      ]);
+      notifyWarning('Importação sem linhas válidas', 'Não foi possível interpretar a grade desta planilha.');
+      return;
+    }
+
     const sectorByNormalizedName = new Map(
       sectors.map((s) => [normalizeString(s.name), s]),
     );
