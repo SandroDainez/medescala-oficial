@@ -75,6 +75,7 @@ export default function ChangePassword() {
 
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
+      data: { must_change_password: false },
     });
 
     if (error) {

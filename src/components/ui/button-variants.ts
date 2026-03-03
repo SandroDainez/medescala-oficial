@@ -6,13 +6,13 @@ export const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-sm hover:brightness-110 hover:shadow-md",
-        destructive: "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md",
-        outline: "border border-border/70 bg-card/70 text-foreground hover:bg-accent/80 hover:text-accent-foreground hover:border-primary/35 shadow-xs",
-        secondary: "bg-secondary text-secondary-foreground border border-border/70 hover:bg-secondary/85 shadow-xs hover:shadow-sm",
-        ghost: "text-foreground/90 hover:bg-accent/70 hover:text-foreground",
+        default: "border border-primary/70 bg-primary text-primary-foreground shadow-sm hover:brightness-110 hover:shadow-md",
+        destructive: "border border-destructive/70 bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md",
+        outline: "border border-border/70 bg-card text-foreground shadow-sm hover:bg-accent/70 hover:border-primary/45 hover:shadow-md",
+        secondary: "border border-border/70 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/85 hover:shadow-md",
+        ghost: "border border-border/60 bg-card/80 text-foreground shadow-sm hover:bg-accent/70 hover:border-primary/40 hover:shadow-md",
         link: "text-primary underline-offset-4 hover:underline",
-        success: "bg-primary text-primary-foreground shadow-sm hover:brightness-110 hover:shadow-md",
+        success: "border border-primary/70 bg-primary text-primary-foreground shadow-sm hover:brightness-110 hover:shadow-md",
       },
       size: {
         default: "h-10 px-4 py-2",

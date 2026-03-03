@@ -3,15 +3,17 @@ import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
-export default defineConfig(({ mode }) => ({
-  define: {
-    __APP_BUILD_ID__: JSON.stringify(new Date().toISOString()),
-  },
+export default defineConfig(() => ({
   plugins: [
     react(),
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
       manifest: {
         name: "MedEscala",
         short_name: "MedEscala",
@@ -35,6 +37,39 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+
+          if (id.includes("react") || id.includes("scheduler")) {
+            return "vendor-react";
+          }
+          if (id.includes("@supabase")) {
+            return "vendor-supabase";
+          }
+          if (id.includes("@radix-ui")) {
+            return "vendor-radix";
+          }
+          if (id.includes("date-fns")) {
+            return "vendor-date";
+          }
+          if (id.includes("recharts") || id.includes("d3-")) {
+            return "vendor-charts";
+          }
+          if (id.includes("@capacitor")) {
+            return "vendor-capacitor";
+          }
+          if (id.includes("xlsx")) {
+            return "vendor-xlsx";
+          }
+
+          return undefined;
+        },
+      },
     },
   },
   server: {

@@ -14,6 +14,7 @@ function Calendar({ className, classNames, showOutsideDays = true, ...props }: C
 
   return (
     <DayPicker
+      ISOWeek
       showOutsideDays={showOutsideDays}
       fromYear={fromYear}
       toYear={toYear}

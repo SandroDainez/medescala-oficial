@@ -190,9 +190,15 @@ export default function UserAvailableShifts() {
     if (error) {
       console.error('Error claiming shift:', error);
       setSubmitting(false);
+      const backendMessage = String(error.message || '');
+      const isConflictError =
+        backendMessage.toLowerCase().includes('conflito de horário') ||
+        backendMessage.toLowerCase().includes('conflito de horario');
       toast({
-        title: 'Erro ao aceitar plantão',
-        description: error.message,
+        title: isConflictError ? 'Candidatura bloqueada por conflito' : 'Erro ao aceitar plantão',
+        description: isConflictError
+          ? 'Você já possui plantão nesse dia/horário. Ajuste primeiro em Trocas e tente novamente.'
+          : error.message,
         variant: 'destructive',
       });
       return;

@@ -29,3 +29,15 @@ verify_jwt = false
 
 [functions.get-user-email]
 verify_jwt = false
+
+[functions.lookup-cfm]
+verify_jwt = false
+
+[functions.lookup-lattes]
+verify_jwt = false
+
+[functions.lookup-regional-crm]
+verify_jwt = false
+
+[functions.verify-professional]
+verify_jwt = false

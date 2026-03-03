@@ -52,8 +52,14 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
 
         const accessData = tenantAccess?.[0];
 
+        const metadataMustChange = user?.user_metadata?.must_change_password;
+        const mustChangePassword =
+          typeof metadataMustChange === 'boolean'
+            ? metadataMustChange
+            : (profile?.must_change_password ?? false);
+
         setAccessStatus({
-          mustChangePassword: profile?.must_change_password ?? false,
+          mustChangePassword,
           isAccessActive:
             accessData?.is_unlimited ||
             accessData?.status === 'active' ||
@@ -117,11 +123,17 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   }
 
   // Check role if required
-  if (requiredRole && currentRole !== requiredRole) {
-    if (currentRole === 'admin') {
-      return <Navigate to="/admin" replace />;
+  if (requiredRole) {
+    const hasRequiredRole =
+      requiredRole === 'admin'
+        ? currentRole === 'admin' || currentRole === 'owner'
+        : currentRole === 'user';
+    if (!hasRequiredRole) {
+      if (currentRole === 'admin' || currentRole === 'owner') {
+        return <Navigate to="/admin" replace />;
+      }
+      return <Navigate to="/app" replace />;
     }
-    return <Navigate to="/app" replace />;
   }
 
   return <>{children}</>;

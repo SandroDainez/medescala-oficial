@@ -58,6 +58,7 @@ export function UserLayout() {
   const location = useLocation();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [profileName, setProfileName] = useState<string | null>(null);
+  const mobileHeaderOffset = 'calc(56px + env(safe-area-inset-top))';
 
   const handleSignOut = async () => {
     await signOut();
@@ -112,7 +113,10 @@ export function UserLayout() {
       <CalendarSyncInitialModal />
       <CalendarSyncPrompt />
 
-      <header className="fixed left-0 right-0 top-0 z-[100] border-b border-border/60 bg-gradient-to-r from-background via-background to-primary/5 backdrop-blur">
+      <header
+        className="fixed left-0 right-0 top-0 z-[100] border-b border-border/60 bg-gradient-to-r from-background via-background to-primary/5 backdrop-blur"
+        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+      >
         <TrialBanner />
         <div className="flex min-h-[56px] items-center justify-between px-3 sm:px-4">
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -127,7 +131,11 @@ export function UserLayout() {
             </SheetTrigger>
             <SheetContent
               side="left"
-              className="top-[56px] h-[calc(100dvh-56px)] w-[300px] border-r border-border/70 bg-card/95 p-0 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+              className="flex w-[300px] flex-col border-r border-border/70 bg-card/95 p-0 backdrop-blur supports-[backdrop-filter]:bg-card/85"
+              style={{
+                top: mobileHeaderOffset,
+                height: `calc(100dvh - ${mobileHeaderOffset})`,
+              }}
             >
               <div className="bg-gradient-to-br from-primary/20 via-primary/5 to-transparent p-6 pb-4">
                 <div className="flex items-center gap-4">
@@ -149,61 +157,63 @@ export function UserLayout() {
 
               <Separator />
 
-              <nav className="flex flex-col p-2">
-                {mainNavItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.end}
-                    onClick={() => setSheetOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        'mb-1 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-foreground hover:bg-accent/70'
-                      )
-                    }
+              <div className="flex-1 overflow-y-auto pb-[max(12px,env(safe-area-inset-bottom))]">
+                <nav className="flex flex-col p-2">
+                  {mainNavItems.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      onClick={() => setSheetOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'mb-1 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-foreground hover:bg-accent/70'
+                        )
+                      }
+                    >
+                      <item.icon className="h-4.5 w-4.5" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </nav>
+
+                <Separator />
+
+                <nav className="flex flex-col p-2">
+                  {secondaryNavItems.map((item) => (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setSheetOpen(false)}
+                      className={({ isActive }) =>
+                        cn(
+                          'mb-1 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
+                          isActive
+                            ? 'bg-primary text-primary-foreground shadow-sm'
+                            : 'text-foreground hover:bg-accent/70'
+                        )
+                      }
+                    >
+                      <item.icon className="h-4.5 w-4.5" />
+                      {item.label}
+                    </NavLink>
+                  ))}
+                </nav>
+
+                <Separator />
+
+                <div className="p-2">
+                  <button
+                    onClick={handleSignOut}
+                    className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
                   >
-                    <item.icon className="h-4.5 w-4.5" />
-                    {item.label}
-                  </NavLink>
-                ))}
-              </nav>
-
-              <Separator />
-
-              <nav className="flex flex-col p-2">
-                {secondaryNavItems.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    onClick={() => setSheetOpen(false)}
-                    className={({ isActive }) =>
-                      cn(
-                        'mb-1 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground shadow-sm'
-                          : 'text-foreground hover:bg-accent/70'
-                      )
-                    }
-                  >
-                    <item.icon className="h-4.5 w-4.5" />
-                    {item.label}
-                  </NavLink>
-                ))}
-              </nav>
-
-              <Separator />
-
-              <div className="p-2">
-                <button
-                  onClick={handleSignOut}
-                  className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-destructive transition-colors hover:bg-destructive/10"
-                >
-                  <LogOut className="h-4.5 w-4.5" />
-                  Sair
-                </button>
+                    <LogOut className="h-4.5 w-4.5" />
+                    Sair
+                  </button>
+                </div>
               </div>
             </SheetContent>
           </Sheet>
@@ -230,7 +240,7 @@ export function UserLayout() {
       <main
         className="min-h-[100dvh] overflow-y-auto overflow-x-hidden bg-gradient-to-b from-primary/[0.04] via-background to-background"
         style={{
-          paddingTop: '56px',
+          paddingTop: mobileHeaderOffset,
           paddingBottom: 'calc(78px + env(safe-area-inset-bottom))',
         }}
       >

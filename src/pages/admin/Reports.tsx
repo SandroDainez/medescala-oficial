@@ -237,7 +237,10 @@ export default function AdminReports() {
         .in('id', userIds);
       
       if (profiles) {
-        setUsers(profiles.map(p => ({ id: p.id, name: p.name || 'Sem nome' })));
+        const sortedUsers = profiles
+          .map(p => ({ id: p.id, name: p.name || 'Sem nome' }))
+          .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+        setUsers(sortedUsers);
       }
     }
   }, [currentTenantId]);
@@ -248,25 +251,25 @@ export default function AdminReports() {
     setLoading(true);
     
     try {
-      if (reportType === 'afastamentos') {
+      const targetReportType = activeTab === 'conflicts' ? 'conflitos' : reportType;
+
+      if (targetReportType === 'afastamentos') {
         await fetchAbsences();
-      } else if (reportType === 'checkins') {
+      } else if (targetReportType === 'checkins') {
         await fetchCheckins();
-      } else if (reportType === 'plantoes') {
+      } else if (targetReportType === 'plantoes') {
         await fetchShiftsReport();
-      } else if (reportType === 'financeiro') {
+      } else if (targetReportType === 'financeiro') {
         await fetchFinancialReport();
-      } else if (reportType === 'movimentacoes') {
+      } else if (targetReportType === 'movimentacoes') {
         await fetchMovements();
-      } else if (reportType === 'conflitos') {
+      } else if (targetReportType === 'conflitos') {
         await fetchConflicts();
       }
     } finally {
       setLoading(false);
-      // Muda para a aba de relatório APÓS carregar os dados
-      setActiveTab('report');
     }
-  }, [currentTenantId, reportType, selectedSector, startDate, endDate]);
+  }, [activeTab, currentTenantId, reportType, selectedSector, startDate, endDate]);
 
   async function fetchShiftsReport() {
     let query = supabase
@@ -565,8 +568,6 @@ export default function AdminReports() {
       .from('conflict_resolutions')
       .select('*, resolved_by_profile:profiles!conflict_resolutions_resolved_by_fkey(full_name, name)')
       .eq('tenant_id', currentTenantId)
-      .gte('conflict_date', startDate)
-      .lte('conflict_date', endDate)
       .order('resolved_at', { ascending: false });
     
     if (error) {
@@ -575,7 +576,22 @@ export default function AdminReports() {
       return;
     }
     
-    const conflictRecords: ConflictRecord[] = (data || []).map((c: any) => ({
+    const isInSelectedPeriod = (c: any) => {
+      const conflictDate = typeof c?.conflict_date === 'string' ? c.conflict_date.slice(0, 10) : '';
+      const resolvedDate = typeof c?.resolved_at === 'string' ? c.resolved_at.slice(0, 10) : '';
+
+      const conflictInRange =
+        Boolean(conflictDate) && conflictDate >= startDate && conflictDate <= endDate;
+      const resolvedInRange =
+        Boolean(resolvedDate) && resolvedDate >= startDate && resolvedDate <= endDate;
+
+      // Relatório de conflitos resolvidos: prioriza resolved_at, mas mantém compatibilidade com dados antigos.
+      return resolvedInRange || conflictInRange;
+    };
+
+    const filtered = (data || []).filter(isInSelectedPeriod);
+
+    const conflictRecords: ConflictRecord[] = filtered.map((c: any) => ({
       id: c.id,
       conflict_date: c.conflict_date,
       plantonista_name: c.plantonista_name,
@@ -1119,7 +1135,7 @@ export default function AdminReports() {
   useEffect(() => {
     if (!currentTenantId) return;
     generateReport();
-  }, [currentTenantId, reportType, selectedSector, startDate, endDate, generateReport]);
+  }, [activeTab, currentTenantId, reportType, selectedSector, startDate, endDate, generateReport]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -1376,10 +1392,9 @@ export default function AdminReports() {
                               <div className="flex gap-1">
                                 {!checkin.checkin_at && (
                                   <Button
-                                    variant="outline"
+                                    variant="success"
                                     size="sm"
                                     onClick={() => handleAdminCheckin(checkin.id)}
-                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
                                     title="Registrar check-in manual"
                                   >
                                     <LogIn className="h-4 w-4" />
@@ -1390,7 +1405,6 @@ export default function AdminReports() {
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleAdminCheckout(checkin.id)}
-                                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                                     title="Registrar check-out manual"
                                   >
                                     <LogOut className="h-4 w-4" />
@@ -1398,10 +1412,9 @@ export default function AdminReports() {
                                 )}
                                 {checkin.checkin_at && (
                                   <Button
-                                    variant="ghost"
+                                    variant="destructive"
                                     size="sm"
                                     onClick={() => handleClearCheckin(checkin.id)}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                     title="Limpar registros de presença"
                                   >
                                     <Trash2 className="h-4 w-4" />
@@ -2008,24 +2021,22 @@ export default function AdminReports() {
                               {absence.status === 'pending' && (
                                 <>
                                   <Button
-                                    variant="ghost"
+                                    variant="success"
                                     size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleUpdateAbsenceStatus(absence.id, 'approved');
                                     }}
-                                    className="text-green-600 hover:text-green-700 hover:bg-green-50"
                                   >
                                     <Check className="h-4 w-4" />
                                   </Button>
                                   <Button
-                                    variant="ghost"
+                                    variant="destructive"
                                     size="sm"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleUpdateAbsenceStatus(absence.id, 'rejected');
                                     }}
-                                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                   >
                                     <X className="h-4 w-4" />
                                   </Button>
@@ -2086,10 +2097,9 @@ export default function AdminReports() {
                           </TableCell>
                           <TableCell>
                             <Button
-                              variant="outline"
+                              variant="success"
                               size="sm"
                               onClick={() => handleAdminCheckin(checkin.id)}
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
                             >
                               <LogIn className="mr-2 h-4 w-4" />
                               Check-in Manual

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -70,6 +71,7 @@ interface TenantMember {
 type FilterTab = 'todos' | 'meus';
 
 export default function UserCalendar() {
+  const navigate = useNavigate();
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -82,7 +84,7 @@ export default function UserCalendar() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [panelExpanded, setPanelExpanded] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>('todos');
+  const [activeTab, setActiveTab] = useState<FilterTab>('meus');
 
   // Swap request states
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);
@@ -117,7 +119,14 @@ export default function UserCalendar() {
   }, []);
 
   const fetchData = useCallback(async () => {
-    if (!currentTenantId || !user) return;
+    if (!currentTenantId || !user) {
+      setShifts([]);
+      setAssignments([]);
+      setMyShiftIds([]);
+      setMySectors([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
 
     const start = startOfMonth(currentDate);
@@ -220,7 +229,19 @@ export default function UserCalendar() {
     const mergedShiftsMap = new Map<string, Shift>();
     (sectorShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
     (myShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
+    const rosterShiftIds = new Set<string>(
+      (rosterRes.data as { shift_id: string }[] | null | undefined)?.map((r) => r.shift_id).filter(Boolean) ?? []
+    );
+
     const mergedShifts = Array.from(mergedShiftsMap.values())
+      .filter((shift) => {
+        if (!shift?.id || !shift?.shift_date) return false;
+        if (!(shift.shift_date >= startStr && shift.shift_date <= endStr)) return false;
+        // Exibe no calendário do usuário apenas plantões realmente na escala:
+        // - atribuídos ao próprio usuário, ou
+        // - com roster (alguém escalado).
+        return myShiftIdsLocal.includes(shift.id) || rosterShiftIds.has(shift.id);
+      })
       .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`));
 
     if (mergedShifts) {
@@ -251,7 +272,9 @@ export default function UserCalendar() {
       }
 
       const enrichedAssignments: ShiftAssignment[] = [];
+      const visibleShiftIds = new Set(mergedShifts.map((s) => s.id));
       rosterMap.forEach((roster, shiftId) => {
+        if (!visibleShiftIds.has(shiftId)) return;
         roster.forEach((r, idx) => {
           const resolvedName = fullNameByUserId.get(r.user_id) || r.name || null;
           enrichedAssignments.push({
@@ -357,15 +380,60 @@ export default function UserCalendar() {
   function calculateHours(start: string, end: string) {
     const [sh, sm] = start.split(':').map(Number);
     const [eh, em] = end.split(':').map(Number);
-    let hours = eh - sh;
-    if (hours < 0) hours += 24;
-    return `${hours}h${em > 0 ? em.toString().padStart(2, '0') : '00'}`;
+    const startMinutes = (sh * 60) + sm;
+    let endMinutes = (eh * 60) + em;
+    if (endMinutes <= startMinutes) endMinutes += 24 * 60;
+    const totalMinutes = endMinutes - startMinutes;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return `${hours}h${minutes.toString().padStart(2, '0')}`;
   }
 
   // Check if shift is nocturnal (starts at 18:00 or later, or before 06:00)
   function isNightShift(startTime: string) {
     const [hour] = startTime.split(':').map(Number);
     return hour >= 18 || hour < 6;
+  }
+
+  function parseTimeToMinutes(time: string) {
+    const [hour, minute] = time.split(':').map(Number);
+    return (hour * 60) + minute;
+  }
+
+  // Detect only the current user's overlaps (same date + overlapping times)
+  function detectMyConflictShiftIds(list: Shift[]) {
+    const groupedByDate: Record<string, Shift[]> = {};
+    const conflictIds = new Set<string>();
+
+    list.forEach((shift) => {
+      if (!groupedByDate[shift.shift_date]) groupedByDate[shift.shift_date] = [];
+      groupedByDate[shift.shift_date].push(shift);
+    });
+
+    Object.values(groupedByDate).forEach((dayShifts) => {
+      for (let i = 0; i < dayShifts.length; i++) {
+        for (let j = i + 1; j < dayShifts.length; j++) {
+          const a = dayShifts[i];
+          const b = dayShifts[j];
+
+          const aStart = parseTimeToMinutes(a.start_time);
+          let aEnd = parseTimeToMinutes(a.end_time);
+          if (aEnd <= aStart) aEnd += 24 * 60;
+
+          const bStart = parseTimeToMinutes(b.start_time);
+          let bEnd = parseTimeToMinutes(b.end_time);
+          if (bEnd <= bStart) bEnd += 24 * 60;
+
+          const overlaps = aStart < bEnd && bStart < aEnd;
+          if (overlaps) {
+            conflictIds.add(a.id);
+            conflictIds.add(b.id);
+          }
+        }
+      }
+    });
+
+    return conflictIds;
   }
 
   // ====== SWAP REQUEST FUNCTIONS ======
@@ -451,7 +519,7 @@ export default function UserCalendar() {
     return data.id;
   }
 
-  // Handle shift click - open swap sheet
+  // Handle shift click - open swap sheet (legacy flow)
   function handleMyShiftClick(shift: Shift) {
     setSelectedShiftForSwap(shift);
     setSwapSheetOpen(true);
@@ -599,6 +667,8 @@ export default function UserCalendar() {
   
   // For "Meus Plantões" tab, show ALL user's shifts for the month
   const myMonthShifts = shifts.filter(s => isMyShift(s.id));
+  const myConflictShiftIds = detectMyConflictShiftIds(myMonthShifts);
+  const myConflictsCount = myConflictShiftIds.size;
   
   const filteredShifts = activeTab === 'meus'
     ? myMonthShifts // Show all month's shifts when in "Meus Plantões"
@@ -872,6 +942,11 @@ export default function UserCalendar() {
             Noturno
           </span>
         </div>
+        {myConflictsCount > 0 && (
+          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-300">
+            Você tem {myConflictsCount} plantão(ões) com conflito de horário no mesmo dia.
+          </div>
+        )}
 
         {/* Shifts List */}
         {panelExpanded && (
@@ -920,6 +995,7 @@ export default function UserCalendar() {
                           {/* Day shifts */}
                           {dayShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
+                            const isConflict = myConflictShiftIds.has(shift.id);
                              return (
                                <TapSafeButton
                                 key={shift.id}
@@ -928,9 +1004,14 @@ export default function UserCalendar() {
                                  minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleMyShiftClick(shift);
+                                  navigate('/app/swaps');
                                 }}
-                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 bg-amber-50 hover:bg-amber-100/80 hover:shadow-md active:bg-amber-100 border-l-amber-500 cursor-pointer w-full text-left select-none touch-manipulation dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:active:bg-amber-500/25"
+                                className={cn(
+                                  "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 cursor-pointer w-full text-left select-none touch-manipulation",
+                                  "bg-amber-50 hover:bg-amber-100/80 hover:shadow-md active:bg-amber-100 border-l-amber-500",
+                                  "dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:active:bg-amber-500/25",
+                                  isConflict && "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
+                                )}
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -961,6 +1042,11 @@ export default function UserCalendar() {
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
+                                    {isConflict && (
+                                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                        Conflito
+                                      </Badge>
+                                    )}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {shift.hospital} {shift.location && `• ${shift.location}`}
@@ -979,6 +1065,7 @@ export default function UserCalendar() {
                           {/* Night shifts */}
                           {nightShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
+                            const isConflict = myConflictShiftIds.has(shift.id);
                              return (
                                <TapSafeButton
                                 key={shift.id}
@@ -987,9 +1074,14 @@ export default function UserCalendar() {
                                  minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleMyShiftClick(shift);
+                                  navigate('/app/swaps');
                                 }}
-                                className="flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 bg-sky-50 hover:bg-sky-100/80 hover:shadow-md active:bg-sky-100 border-l-sky-500 cursor-pointer w-full text-left select-none touch-manipulation dark:bg-sky-500/10 dark:hover:bg-sky-500/20 dark:active:bg-sky-500/25"
+                                className={cn(
+                                  "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 cursor-pointer w-full text-left select-none touch-manipulation",
+                                  "bg-sky-50 hover:bg-sky-100/80 hover:shadow-md active:bg-sky-100 border-l-sky-500",
+                                  "dark:bg-sky-500/10 dark:hover:bg-sky-500/20 dark:active:bg-sky-500/25",
+                                  isConflict && "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
+                                )}
                               >
                                 <div className="flex -space-x-2">
                                   {shiftAssignments.slice(0, 2).map((assignment) => (
@@ -1020,6 +1112,11 @@ export default function UserCalendar() {
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
+                                    {isConflict && (
+                                      <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                        Conflito
+                                      </Badge>
+                                    )}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     {shift.hospital} {shift.location && `• ${shift.location}`}
@@ -1071,6 +1168,7 @@ export default function UserCalendar() {
                         {dayShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const isConflict = isMine && myConflictShiftIds.has(shift.id);
                           const assignedNames = getShiftAssignedNames(shift.id);
                           const isVacant = assignedNames.length === 0;
 
@@ -1083,22 +1181,27 @@ export default function UserCalendar() {
                               minPressTime={160}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!isMine) {
-                                  toast({
-                                    title: 'Apenas seus plantões',
-                                    description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
-                                    variant: 'destructive',
-                                  });
+                                if (isMine) {
+                                  navigate('/app/swaps');
                                   return;
                                 }
-                                handleMyShiftClick(shift);
+                                if (isVacant) {
+                                  navigate('/app/available');
+                                  return;
+                                }
+                                toast({
+                                  title: 'Plantão de outro colega',
+                                  description: 'Para este horário você pode abrir seus plantões em Trocas ou ver vagas em Anúncios.',
+                                  variant: 'destructive',
+                                });
                               }}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
                                 "bg-amber-50 hover:bg-amber-100/80 border-l-amber-500 dark:bg-amber-500/10 dark:hover:bg-amber-500/20",
                                 isMine
                                   ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
-                                  : "cursor-default opacity-75"
+                                  : "cursor-default opacity-75",
+                                isConflict && "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -1140,6 +1243,11 @@ export default function UserCalendar() {
                                       Meu Plantão
                                     </Badge>
                                   )}
+                                  {isConflict && (
+                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      Conflito
+                                    </Badge>
+                                  )}
                                 </div>
                                 <div className="text-sm font-medium text-foreground break-words">
                                   {assignedNames.length > 0 ? assignedNames.join(' • ') : 'Disponível para escala'}
@@ -1171,6 +1279,7 @@ export default function UserCalendar() {
                         {nightShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const isConflict = isMine && myConflictShiftIds.has(shift.id);
                           const assignedNames = getShiftAssignedNames(shift.id);
                           const isVacant = assignedNames.length === 0;
 
@@ -1183,22 +1292,27 @@ export default function UserCalendar() {
                               minPressTime={160}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!isMine) {
-                                  toast({
-                                    title: 'Apenas seus plantões',
-                                    description: 'Você só pode solicitar troca/passar plantão nos seus próprios plantões.',
-                                    variant: 'destructive',
-                                  });
+                                if (isMine) {
+                                  navigate('/app/swaps');
                                   return;
                                 }
-                                handleMyShiftClick(shift);
+                                if (isVacant) {
+                                  navigate('/app/available');
+                                  return;
+                                }
+                                toast({
+                                  title: 'Plantão de outro colega',
+                                  description: 'Para este horário você pode abrir seus plantões em Trocas ou ver vagas em Anúncios.',
+                                  variant: 'destructive',
+                                });
                               }}
                               className={cn(
                                 "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-2 w-full text-left select-none touch-manipulation",
                                 "bg-sky-50 hover:bg-sky-100/80 border-l-sky-500 dark:bg-sky-500/10 dark:hover:bg-sky-500/20",
                                 isMine
                                   ? "cursor-pointer hover:shadow-md active:shadow-inner ring-1 ring-primary/20"
-                                  : "cursor-default opacity-75"
+                                  : "cursor-default opacity-75",
+                                isConflict && "border-l-destructive bg-destructive/5 dark:bg-destructive/10"
                               )}
                             >
                               <div className="flex -space-x-2">
@@ -1238,6 +1352,11 @@ export default function UserCalendar() {
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
+                                    </Badge>
+                                  )}
+                                  {isConflict && (
+                                    <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
+                                      Conflito
                                     </Badge>
                                   )}
                                 </div>

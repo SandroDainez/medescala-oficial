@@ -240,26 +240,12 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
 
         if (!canFallback) throw verifyError;
 
-        // Try alternate RPC signature first: (_password, _tenant_id)
-        const { data: altValid, error: altError } = await supabase
-          .rpc('verify_schedule_reopen_password', { _password: password, _tenant_id: currentTenantId });
+        const { data: legacyValid, error: legacyError } = await (supabase as any)
+          // Legacy signature used in older databases.
+          .rpc('verify_schedule_reopen_password', { _password: password });
 
-        if (!altError) {
-          isValid = !!altValid;
-        } else {
-          const altMessage = String(altError.message || '').toLowerCase();
-          const canUseLegacy =
-            altMessage.includes('could not find the function public.verify_schedule_reopen_password') ||
-            altMessage.includes('schema cache');
-          if (!canUseLegacy) throw altError;
-
-          const { data: legacyValid, error: legacyError } = await (supabase as any)
-            // Legacy signature used in older databases.
-            .rpc('verify_schedule_reopen_password', { _password: password });
-
-          if (legacyError) throw legacyError;
-          isValid = !!legacyValid;
-        }
+        if (legacyError) throw legacyError;
+        isValid = !!legacyValid;
       } else {
         isValid = !!rpcValid;
       }

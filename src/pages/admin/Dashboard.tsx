@@ -10,13 +10,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { useIsMobile } from '@/hooks/use-mobile';
 import { useNavigate } from 'react-router-dom';
 import { DashboardCharts } from '@/components/admin/DashboardCharts';
 import { AnimatedNumber } from '@/components/AnimatedContainer';
 import {
   Calendar,
   Users,
+  ShieldCheck,
   ArrowLeftRight,
   DollarSign,
   ChevronLeft,
@@ -114,7 +114,6 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
-  const isMobile = useIsMobile();
 
   const [loading, setLoading] = useState(true);
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -146,6 +145,13 @@ export default function AdminDashboard() {
     pendingSwaps: 0,
     monthlyValue: 0,
   });
+
+  const activeAdminNames = useMemo(() => {
+    return members
+      .filter((m) => m.active && (m.role === 'admin' || m.role === 'owner'))
+      .map((m) => m.profile?.full_name || m.profile?.name || 'Sem nome')
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [members]);
 
   const fetchUsedMonths = useCallback(async () => {
     if (!currentTenantId) return;
@@ -517,42 +523,24 @@ export default function AdminDashboard() {
               <ChevronLeft className="h-4 w-4" />
             </Button>
 
-            {isMobile ? (
-              <select
-                aria-label="Selecionar mês"
-                value={format(currentDate, 'yyyy-MM')}
-                onChange={(e) => {
-                  const [year, month] = e.target.value.split('-').map(Number);
-                  setCurrentDate(new Date(year, month - 1, 1));
-                }}
-                className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-[220px]"
-              >
+            <Select
+              value={format(currentDate, 'yyyy-MM')}
+              onValueChange={(v) => {
+                const [year, month] = v.split('-').map(Number);
+                setCurrentDate(new Date(year, month - 1, 1));
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-[220px]">
+                <SelectValue placeholder="Selecione o mês" />
+              </SelectTrigger>
+              <SelectContent className="max-h-[300px]">
                 {monthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
+                  <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
-                  </option>
+                  </SelectItem>
                 ))}
-              </select>
-            ) : (
-              <Select
-                value={format(currentDate, 'yyyy-MM')}
-                onValueChange={(v) => {
-                  const [year, month] = v.split('-').map(Number);
-                  setCurrentDate(new Date(year, month - 1, 1));
-                }}
-              >
-                <SelectTrigger className="w-full sm:w-[220px]">
-                  <SelectValue placeholder="Selecione o mês" />
-                </SelectTrigger>
-                <SelectContent className="max-h-[300px]">
-                  {monthOptions.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+              </SelectContent>
+            </Select>
 
             <Button
               variant="outline"
@@ -582,7 +570,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card className="cursor-pointer hover:bg-accent/50" onClick={() => navigate('/admin/calendar')}>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Plantões do Mês</CardTitle>
@@ -603,6 +591,19 @@ export default function AdminDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalUsers}</div>
             <p className="text-xs text-muted-foreground">Gerenciar →</p>
+          </CardContent>
+        </Card>
+
+        <Card className="cursor-pointer hover:bg-accent/50" onClick={() => navigate('/admin/users')}>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">Administradores Ativos</CardTitle>
+            <ShieldCheck className="h-5 w-5 text-emerald-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{activeAdminNames.length}</div>
+            <p className="text-xs text-muted-foreground truncate">
+              {activeAdminNames.length > 0 ? activeAdminNames.join(', ') : 'Nenhum administrador ativo'}
+            </p>
           </CardContent>
         </Card>
 
@@ -752,42 +753,24 @@ export default function AdminDashboard() {
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
 
-                {isMobile ? (
-                  <select
-                    aria-label="Selecionar mês do resumo financeiro"
-                    value={format(currentDate, 'yyyy-MM')}
-                    onChange={(e) => {
-                      const [year, month] = e.target.value.split('-').map(Number);
-                      setCurrentDate(new Date(year, month - 1, 1));
-                    }}
-                    className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 sm:w-[220px]"
-                  >
+                <Select
+                  value={format(currentDate, 'yyyy-MM')}
+                  onValueChange={(v) => {
+                    const [year, month] = v.split('-').map(Number);
+                    setCurrentDate(new Date(year, month - 1, 1));
+                  }}
+                >
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Selecione o mês" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
                     {monthOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
+                      <SelectItem key={opt.value} value={opt.value}>
                         {opt.label}
-                      </option>
+                      </SelectItem>
                     ))}
-                  </select>
-                ) : (
-                  <Select
-                    value={format(currentDate, 'yyyy-MM')}
-                    onValueChange={(v) => {
-                      const [year, month] = v.split('-').map(Number);
-                      setCurrentDate(new Date(year, month - 1, 1));
-                    }}
-                  >
-                    <SelectTrigger className="w-[220px]">
-                      <SelectValue placeholder="Selecione o mês" />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-[300px]">
-                      {monthOptions.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>
-                          {opt.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
+                  </SelectContent>
+                </Select>
 
                 <Button
                   variant="outline"
@@ -882,8 +865,8 @@ export default function AdminDashboard() {
                     <TableRow key={m.id}>
                       <TableCell className="font-medium">{m.profile?.name || 'Sem nome'}</TableCell>
                       <TableCell>
-                        <Badge variant={m.role === 'admin' ? 'default' : 'secondary'}>
-                          {m.role === 'admin' ? 'Administrador' : 'Plantonista'}
+                        <Badge variant={m.role === 'admin' || m.role === 'owner' ? 'default' : 'secondary'}>
+                          {m.role === 'admin' || m.role === 'owner' ? 'Administrador' : 'Plantonista'}
                         </Badge>
                       </TableCell>
                       <TableCell>

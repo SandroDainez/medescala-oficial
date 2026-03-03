@@ -23,7 +23,8 @@ function normalizeText(value: unknown): string | null {
 }
 
 function randomPassword(length = 12): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  // Keep invite password copy-friendly (no symbols or ambiguous chars).
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
   const bytes = crypto.getRandomValues(new Uint8Array(length));
   let result = "";
 
@@ -104,7 +105,6 @@ Deno.serve(async (req) => {
 
     let targetUserId: string | null = null;
     let createdNow = false;
-    let temporaryPassword: string | null = null;
 
     const { data: existingProfile } = await admin
       .from("profiles")
@@ -117,14 +117,17 @@ Deno.serve(async (req) => {
     }
 
     if (!targetUserId) {
-      temporaryPassword = randomPassword(14);
+      // Internal random password only to satisfy auth creation.
+      // User defines the real password through the invite recovery link.
+      const bootstrapPassword = randomPassword(14);
 
       const { data: createdUserData, error: createUserError } = await admin.auth.admin.createUser({
         email,
-        password: temporaryPassword,
+        password: bootstrapPassword,
         email_confirm: true,
         user_metadata: {
           name,
+          must_change_password: false,
         },
       });
 
@@ -140,6 +143,25 @@ Deno.serve(async (req) => {
       return json({ error: "Não foi possível resolver o usuário" }, 500);
     }
 
+    if (!createdNow) {
+      const { data: existingAuthUser, error: existingAuthUserError } = await admin.auth.admin.getUserById(targetUserId);
+      if (existingAuthUserError) {
+        return json({ error: `Erro ao obter usuário existente: ${existingAuthUserError.message}` }, 400);
+      }
+      const currentMetadata = (existingAuthUser.user?.user_metadata ?? {}) as Record<string, unknown>;
+      const { error: metadataUpdateError } = await admin.auth.admin.updateUserById(targetUserId, {
+        email_confirm: true,
+        user_metadata: {
+          ...currentMetadata,
+          name,
+          must_change_password: false,
+        },
+      });
+      if (metadataUpdateError) {
+        return json({ error: `Erro ao atualizar metadados do usuário: ${metadataUpdateError.message}` }, 400);
+      }
+    }
+
     const { error: profileError } = await admin
       .from("profiles")
       .upsert(
@@ -151,7 +173,7 @@ Deno.serve(async (req) => {
           phone,
           status: "ativo",
           updated_at: new Date().toISOString(),
-          must_change_password: createdNow ? true : undefined,
+          must_change_password: false,
         },
         { onConflict: "id" },
       );
@@ -186,7 +208,6 @@ Deno.serve(async (req) => {
         userId: targetUserId,
         createdNow,
         membershipCreated: false,
-        temporaryPassword,
       });
     }
 
@@ -210,7 +231,6 @@ Deno.serve(async (req) => {
       userId: targetUserId,
       createdNow,
       membershipCreated: true,
-      temporaryPassword,
     });
   } catch (err) {
     return json(

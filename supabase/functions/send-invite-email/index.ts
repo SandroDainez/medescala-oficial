@@ -21,10 +21,16 @@ function escapeHtml(text: string): string {
 interface InviteEmailRequest {
   name: string;
   email: string;
-  password?: string;
   hospitalName: string;
-  loginUrl: string;
+  loginUrl?: string;
+  redirectUrl?: string;
   tenantId: string;
+  sendEmail?: boolean;
+}
+
+function normalizeRedirectUrl(_input: string | undefined, _loginUrl: string): string {
+  // Force canonical production reset route to avoid stale preview domains in invites.
+  return "https://app.medescalas.com.br/reset-password";
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -33,8 +39,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   try {
-    const { name, email, password, hospitalName, loginUrl, tenantId }: InviteEmailRequest = await req.json();
-    const hasPassword = !!password?.trim();
+    const { name, email, hospitalName, redirectUrl, tenantId, sendEmail = true }: InviteEmailRequest = await req.json();
+    const loginUrl = "https://app.medescalas.com.br/auth";
 
     if (!tenantId) {
       return new Response(JSON.stringify({ error: 'tenantId é obrigatório' }), {
@@ -46,10 +52,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!RESEND_API_KEY) {
-      throw new Error("RESEND_API_KEY not configured");
-    }
 
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       throw new Error("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not configured");
@@ -105,6 +107,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
       );
     }
 
+    const safeRedirectUrl = normalizeRedirectUrl(redirectUrl, loginUrl);
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'recovery',
+      email,
+      options: { redirectTo: safeRedirectUrl },
+    });
+    if (linkError) {
+      throw new Error(`Erro ao gerar link de definição de senha: ${linkError.message}`);
+    }
+    const rawActionLink = (linkData.properties as any)?.action_link as string | undefined;
+    const tokenHash = (linkData.properties as any)?.hashed_token as string | undefined;
+    // Use token_hash link as primary to avoid stale redirect_to values from action_link.
+    // ResetPassword page handles token_hash via verifyOtp.
+    const resetLink = tokenHash
+      ? `${safeRedirectUrl}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
+      : (rawActionLink || safeRedirectUrl);
+
     const htmlContent = `
       <!DOCTYPE html>
       <html>
@@ -126,10 +145,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
           <div style="background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #374151;">Seus dados de acesso:</h3>
             <p style="margin: 10px 0;"><strong>Email:</strong> ${escapeHtml(email)}</p>
-            ${hasPassword
-              ? `<p style="margin: 10px 0;"><strong>Senha provisória:</strong> <code style="background: #f3f4f6; padding: 4px 8px; border-radius: 4px; font-family: monospace;">${escapeHtml(password || "")}</code></p>`
-              : `<p style="margin: 10px 0;">Use a opção <strong>Esqueci minha senha</strong> na tela de login para definir sua senha.</p>`
-            }
+            <p style="margin: 10px 0;">Para seu primeiro acesso, defina sua senha clicando no botão abaixo.</p>
+            <p style="margin: 10px 0;">Depois de salvar a senha, você será direcionado para a tela de login.</p>
           </div>
           
           <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
@@ -139,10 +156,14 @@ Deno.serve(async (req: Request): Promise<Response> => {
           </div>
           
           <div style="text-align: center; margin: 30px 0;">
-            <a href="${escapeHtml(loginUrl)}" style="display: inline-block; background: #059669; color: white; text-decoration: none; padding: 14px 30px; border-radius: 8px; font-weight: bold; font-size: 16px;">
-              Acessar o Sistema
+            <a href="${escapeHtml(resetLink)}" style="display: inline-block; background: #2563eb; color: white; text-decoration: none; padding: 14px 30px; border-radius: 8px; font-weight: bold; font-size: 16px;">
+              Definir senha
             </a>
           </div>
+          <p style="margin: 0 0 12px 0; color: #6b7280; font-size: 13px;">
+            Se o botão não abrir, copie e cole este link no navegador:<br />
+            <a href="${escapeHtml(resetLink)}">${escapeHtml(resetLink)}</a>
+          </p>
           
           <p style="color: #6b7280; font-size: 14px;">
             Se você não reconhece este email, por favor ignore-o.
@@ -155,6 +176,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       </body>
       </html>
     `;
+
+    if (!sendEmail) {
+      return new Response(JSON.stringify({ success: true, resetLink, emailSent: false }), {
+        status: 200,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
+    if (!RESEND_API_KEY) {
+      throw new Error("RESEND_API_KEY not configured");
+    }
 
     const fromAddress = "MedEscala <noreply@medescalas.com.br>";
 
@@ -178,7 +210,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error(data.message || "Failed to send email");
     }
 
-    return new Response(JSON.stringify({ success: true, data }), {
+    return new Response(JSON.stringify({ success: true, data, resetLink, emailSent: true }), {
       status: 200,
       headers: { "Content-Type": "application/json", ...corsHeaders },
     });

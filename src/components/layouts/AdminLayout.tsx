@@ -39,6 +39,55 @@ interface Sector {
   color: string | null;
 }
 
+const prefetchedAdminRoutes = new Set<string>();
+
+function prefetchAdminRoute(path: string) {
+  let key: string | null = null;
+  let loader: (() => Promise<unknown>) | null = null;
+
+  if (path === "/admin" || path.startsWith("/admin/dashboard")) {
+    key = "dashboard";
+    loader = () => import("../../pages/admin/Dashboard");
+  } else if (path.startsWith("/admin/calendar")) {
+    key = "calendar";
+    loader = () => import("../../pages/admin/Calendar");
+  } else if (path.startsWith("/admin/users")) {
+    key = "users";
+    loader = () => import("../../pages/admin/Users");
+  } else if (path.startsWith("/admin/sectors")) {
+    key = "sectors";
+    loader = () => import("../../pages/admin/Sectors");
+  } else if (path.startsWith("/admin/swaps")) {
+    key = "swaps";
+    loader = () => import("../../pages/admin/Swaps");
+  } else if (path.startsWith("/admin/offers")) {
+    key = "offers";
+    loader = () => import("../../pages/admin/Offers");
+  } else if (path.startsWith("/admin/checkins")) {
+    key = "checkins";
+    loader = () => import("../../pages/admin/CheckinReport");
+  } else if (path.startsWith("/admin/notifications")) {
+    key = "notifications";
+    loader = () => import("../../pages/admin/Notifications");
+  } else if (path.startsWith("/admin/financial")) {
+    key = "financial";
+    loader = () => import("../../pages/admin/Financial");
+  } else if (path.startsWith("/admin/reports")) {
+    key = "reports";
+    loader = () => import("../../pages/admin/Reports");
+  } else if (path.startsWith("/admin/subscription")) {
+    key = "subscription";
+    loader = () => import("../../pages/admin/Subscription");
+  } else if (path.startsWith("/super-admin")) {
+    key = "super-admin";
+    loader = () => import("../../pages/SuperAdmin");
+  }
+
+  if (!key || !loader || prefetchedAdminRoutes.has(key)) return;
+  prefetchedAdminRoutes.add(key);
+  void loader();
+}
+
 const navItems = [
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
@@ -86,6 +135,12 @@ export function AdminLayout() {
     await signOut();
     navigate('/auth');
   };
+
+  const getPrefetchHandlers = (path: string) => ({
+    onMouseEnter: () => prefetchAdminRoute(path),
+    onFocus: () => prefetchAdminRoute(path),
+    onTouchStart: () => prefetchAdminRoute(path),
+  });
 
   // Check if current route is a calendar sector route
   const isCalendarRoute = location.pathname.startsWith('/admin/calendar');
@@ -146,42 +201,46 @@ export function AdminLayout() {
 
       <div className="flex" style={{ paddingTop: 'calc(64px + env(safe-area-inset-top))' }}>
         {/* Sidebar - Desktop */}
-        <aside className="hidden w-64 border-r border-border/70 bg-card/85 backdrop-blur-md md:block dark:bg-slate-800/65">
+        <aside className="hidden w-72 px-3 py-3 md:block">
           <nav 
-            className="flex flex-col gap-1 p-4 sticky"
+            className="admin-surface sticky flex flex-col gap-2 border-2 p-3"
             style={{ top: 'calc(64px + env(safe-area-inset-top))' }}
           >
             {/* Dashboard */}
             <NavLink
               to="/admin"
               end
+              {...getPrefetchHandlers("/admin")}
               className={({ isActive }) =>
                 cn(
-                  'group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-primary'
-                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  'admin-nav-card group',
+                  isActive && 'admin-nav-card-active'
                 )
               }
             >
-              <LayoutDashboard className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-              <span>Dashboard</span>
+              <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', location.pathname === '/admin' ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+              <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                <LayoutDashboard className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+              </div>
+              <span className="font-semibold">Dashboard</span>
             </NavLink>
 
             {/* Escalas - Expandable with sectors */}
             <Collapsible open={escalasOpen} onOpenChange={setEscalasOpen}>
               <CollapsibleTrigger asChild>
                 <button
+                  {...getPrefetchHandlers("/admin/calendar")}
                   className={cn(
-                    'group flex items-center justify-between w-full rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
-                    isCalendarRoute
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    'admin-nav-card group w-full justify-between',
+                    isCalendarRoute && 'admin-nav-card-active'
                   )}
                 >
+                  <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
                   <div className="flex items-center gap-3">
-                    <CalendarDays className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-                    <span>Escalas</span>
+                    <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                    </div>
+                    <span className="font-semibold">Escalas</span>
                   </div>
                   {escalasOpen ? (
                     <ChevronDown className="h-4 w-4" />
@@ -195,17 +254,16 @@ export function AdminLayout() {
                 <NavLink
                   to="/admin/calendar"
                   end
+                  {...getPrefetchHandlers("/admin/calendar")}
                   className={({ isActive }) =>
                     cn(
-                      'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
-                      isActive
-                        ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
-                        : 'bg-card/70 hover:bg-accent/60 border-border/70 hover:border-primary/40 hover:shadow-md dark:bg-slate-700/30 dark:hover:bg-slate-700/50 dark:border-slate-500/30'
+                      'admin-nav-card group',
+                      isActive && 'admin-nav-card-active'
                     )
                   }
                 >
                   <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
-                  <div className="w-8 h-8 rounded-md bg-muted/80 flex items-center justify-center ring-1 ring-border/70 dark:bg-slate-800/80 dark:ring-slate-400/30">
+                  <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
                     <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                   </div>
                   <div className="min-w-0">
@@ -218,18 +276,17 @@ export function AdminLayout() {
                   <NavLink
                     key={sector.id}
                     to={`/admin/calendar/${sector.id}`}
+                    {...getPrefetchHandlers("/admin/calendar")}
                     className={({ isActive }) =>
                       cn(
-                        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
-                        isActive
-                          ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
-                          : 'bg-card/70 hover:bg-accent/60 border-border/70 hover:border-primary/40 hover:shadow-md dark:bg-slate-700/30 dark:hover:bg-slate-700/50 dark:border-slate-500/30'
+                        'admin-nav-card group',
+                        isActive && 'admin-nav-card-active'
                       )
                     }
                   >
                     <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', 'opacity-0 group-hover:opacity-100')} style={{ backgroundColor: sector.color || '#22c55e' }} />
                     <div 
-                      className="w-8 h-8 rounded-md flex items-center justify-center shadow-sm ring-1 ring-border/70 dark:ring-slate-400/30"
+                      className="admin-nav-icon shadow-sm dark:ring-slate-400/30"
                       style={{ 
                         backgroundColor: `${sector.color || '#6b7280'}1f`,
                         border: `2px solid ${sector.color || '#6b7280'}`
@@ -262,17 +319,19 @@ export function AdminLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  {...getPrefetchHandlers(item.to)}
                   className={({ isActive }) =>
                     cn(
-                      'group flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
-                      isActive
-                        ? 'bg-primary text-primary-foreground shadow-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      'admin-nav-card group',
+                      isActive && 'admin-nav-card-active'
                     )
                   }
                 >
-                  <item.icon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110" />
-                  <span className="flex-1">{item.label}</span>
+                  <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', location.pathname === item.to ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+                  <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                    <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                  </div>
+                  <span className="flex-1 font-semibold">{item.label}</span>
                   {showBadge && (
                     <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
                       {badgeCount > 9 ? '9+' : badgeCount}
@@ -286,6 +345,7 @@ export function AdminLayout() {
             {isSuperAdmin && (
               <NavLink
                 to="/super-admin"
+                {...getPrefetchHandlers("/super-admin")}
                 className={({ isActive }) =>
                   cn(
                     'group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mt-4 border-t pt-4',
@@ -318,33 +378,37 @@ export function AdminLayout() {
                 to="/admin"
                 end
                 onClick={() => setMobileMenuOpen(false)}
+                {...getPrefetchHandlers("/admin")}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
-                    isActive
-                      ? 'bg-primary text-primary-foreground shadow-primary'
-                      : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                    'admin-nav-card group',
+                    isActive && 'admin-nav-card-active'
                   )
                 }
               >
-                <LayoutDashboard className="h-5 w-5" />
-                Dashboard
+                <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', location.pathname === '/admin' ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+                <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                  <LayoutDashboard className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                </div>
+                <span className="font-semibold">Dashboard</span>
               </NavLink>
 
               {/* Escalas - Mobile Expandable */}
               <Collapsible open={escalasOpen} onOpenChange={setEscalasOpen}>
                 <CollapsibleTrigger asChild>
                   <button
+                    {...getPrefetchHandlers("/admin/calendar")}
                     className={cn(
-                      'flex items-center justify-between w-full rounded-md px-4 py-3 text-sm font-medium transition-all duration-200',
-                      isCalendarRoute
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                      'admin-nav-card group w-full justify-between',
+                      isCalendarRoute && 'admin-nav-card-active'
                     )}
                   >
+                    <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
                     <div className="flex items-center gap-3">
-                      <CalendarDays className="h-5 w-5" />
-                      <span>Escalas</span>
+                      <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                      </div>
+                      <span className="font-semibold">Escalas</span>
                     </div>
                     {escalasOpen ? (
                       <ChevronDown className="h-4 w-4" />
@@ -358,17 +422,16 @@ export function AdminLayout() {
                     to="/admin/calendar"
                     end
                     onClick={() => setMobileMenuOpen(false)}
+                    {...getPrefetchHandlers("/admin/calendar")}
                     className={({ isActive }) =>
                       cn(
-                        'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
-                        isActive
-                          ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
-                          : 'bg-card/70 hover:bg-accent/60 border-border/70 hover:border-primary/40 hover:shadow-md dark:bg-slate-700/30 dark:hover:bg-slate-700/50 dark:border-slate-500/30'
+                        'admin-nav-card group',
+                        isActive && 'admin-nav-card-active'
                       )
                     }
                   >
                     <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', isCalendarRoute ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
-                    <div className="w-8 h-8 rounded-md bg-muted/80 flex items-center justify-center ring-1 ring-border/70 dark:bg-slate-800/80 dark:ring-slate-400/30">
+                    <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
                       <CalendarDays className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     </div>
                     <div className="min-w-0">
@@ -381,18 +444,17 @@ export function AdminLayout() {
                       key={sector.id}
                       to={`/admin/calendar/${sector.id}`}
                       onClick={() => setMobileMenuOpen(false)}
+                      {...getPrefetchHandlers("/admin/calendar")}
                       className={({ isActive }) =>
                         cn(
-                          'group relative flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-all duration-200 border shadow-sm overflow-hidden',
-                          isActive
-                            ? 'bg-primary/95 text-primary-foreground border-primary shadow-md'
-                            : 'bg-card/70 hover:bg-accent/60 border-border/70 hover:border-primary/40 hover:shadow-md dark:bg-slate-700/30 dark:hover:bg-slate-700/50 dark:border-slate-500/30'
+                          'admin-nav-card group',
+                          isActive && 'admin-nav-card-active'
                         )
                       }
                     >
                       <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', 'opacity-0 group-hover:opacity-100')} style={{ backgroundColor: sector.color || '#22c55e' }} />
                       <div 
-                        className="w-8 h-8 rounded-md flex items-center justify-center shadow-sm ring-1 ring-border/70 dark:ring-slate-400/30"
+                        className="admin-nav-icon shadow-sm dark:ring-slate-400/30"
                         style={{ 
                           backgroundColor: `${sector.color || '#6b7280'}1f`,
                           border: `2px solid ${sector.color || '#6b7280'}`
@@ -426,18 +488,20 @@ export function AdminLayout() {
                     key={item.to}
                     to={item.to}
                     onClick={() => setMobileMenuOpen(false)}
+                    {...getPrefetchHandlers(item.to)}
                     className={({ isActive }) =>
                         cn(
-                          'flex items-center gap-3 rounded-md px-4 py-3 text-sm font-medium transition-all duration-200 animate-slide-up',
-                        isActive
-                          ? 'bg-primary text-primary-foreground shadow-primary'
-                          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                          'admin-nav-card group animate-slide-up',
+                          isActive && 'admin-nav-card-active'
                       )
                     }
                     style={{ animationDelay: `${index * 50}ms` }}
                   >
-                    <item.icon className="h-5 w-5" />
-                    <span className="flex-1">{item.label}</span>
+                    <span className={cn('absolute left-0 top-0 h-full w-1.5 transition-opacity', location.pathname === item.to ? 'bg-primary opacity-100' : 'bg-primary/70 opacity-0 group-hover:opacity-100')} />
+                    <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
+                      <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
+                    </div>
+                    <span className="flex-1 font-semibold">{item.label}</span>
                     {showBadge && (
                       <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
                         {badgeCount > 9 ? '9+' : badgeCount}
@@ -452,6 +516,7 @@ export function AdminLayout() {
                 <NavLink
                   to="/super-admin"
                   onClick={() => setMobileMenuOpen(false)}
+                  {...getPrefetchHandlers("/super-admin")}
                   className={({ isActive }) =>
                     cn(
                       'flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 mt-4 border-t pt-4',

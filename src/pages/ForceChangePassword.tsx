@@ -46,6 +46,14 @@ export default function ForceChangePassword() {
       return;
     }
 
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user?.id) {
+      await supabase
+        .from("profiles")
+        .update({ must_change_password: false })
+        .eq("id", authData.user.id);
+    }
+
     toast({
       title: "Senha atualizada",
       description: "Sua senha foi alterada com sucesso.",

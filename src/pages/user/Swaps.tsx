@@ -445,13 +445,16 @@ export default function UserSwaps() {
 
     if (membershipsError) {
       console.error('[UserSwaps] fetchSectorMembers sector_memberships error:', membershipsError);
-      return [];
+      return [...tenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
     }
 
     const sectorUserIds = Array.from(
       new Set((membershipsData ?? []).map((m: any) => m.user_id).filter(Boolean))
     ) as string[];
-    if (sectorUserIds.length === 0) return [];
+    if (sectorUserIds.length === 0) {
+      // Fallback defensivo: se o setor ainda não tem vínculos, permite selecionar membros do tenant.
+      return [...tenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+    }
 
     // 2) Cross with tenantMembers (RPC) to ensure we only show ACTIVE tenant members
     //    and avoid leaking names through joins that can behave differently under restrictive RLS.
@@ -468,10 +471,31 @@ export default function UserSwaps() {
     }
 
     const allowedIds = new Set(sectorUserIds);
-    return activeTenantMembers
+    const filteredBySector = activeTenantMembers
       .filter((m) => m.user_id !== user.id)
       .filter((m) => allowedIds.has(m.user_id))
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+    if (filteredBySector.length > 0) return filteredBySector;
+
+    // Fallback 2: tenta resolver nomes direto em profiles para os IDs do setor
+    const { data: profilesData } = await supabase
+      .from('profiles')
+      .select('id, full_name, name')
+      .in('id', sectorUserIds);
+
+    const fromProfiles = ((profilesData as any[]) ?? [])
+      .map((p: any) => ({
+        user_id: p.id as string,
+        name: (p.full_name?.trim() || p.name?.trim() || 'Sem nome') as string,
+      }))
+      .filter((m) => m.user_id !== user.id)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+    if (fromProfiles.length > 0) return fromProfiles;
+
+    // Fallback final: não bloqueia o fluxo de troca
+    return [...activeTenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }
 
   async function fetchMySwapRequests() {
@@ -879,8 +903,8 @@ export default function UserSwaps() {
                                 <TapSafeButton
                                   key={assignment.id}
                                   type="button"
-                                  moveThresholdPx={40}
-                                  minPressTime={160}
+                                  moveThresholdPx={24}
+                                  minPressTime={60}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleShiftClick(assignment);
@@ -1078,8 +1102,8 @@ export default function UserSwaps() {
                  <TapSafeButton
                   key={member.user_id}
                   type="button"
-                   moveThresholdPx={40}
-                   minPressTime={160}
+                   moveThresholdPx={24}
+                   minPressTime={60}
                   onClick={(e) => {
                     e.stopPropagation();
                     handleUserSelect(member);

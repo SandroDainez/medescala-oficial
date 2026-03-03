@@ -252,7 +252,7 @@
 @layer components {
   /* Elegant Card Styles with glow */
   .card-elevated {
-    @apply bg-card rounded-xl border border-border/40;
+    @apply bg-card rounded-lg border border-border/40;
     background: var(--gradient-card);
     box-shadow: var(--shadow-card);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -266,33 +266,10 @@
 
   /* Stats card with glow effect */
   .stat-card {
-    @apply relative bg-card rounded-xl border border-border/40 p-5 overflow-hidden;
+    @apply relative bg-card rounded-lg border border-border/60 p-5 overflow-hidden;
     background: var(--gradient-card);
     box-shadow: var(--shadow-card);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .stat-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: var(--gradient-primary);
-    opacity: 0.7;
-  }
-
-  .stat-card::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 60%;
-    height: 1px;
-    background: hsl(var(--primary));
-    box-shadow: var(--shadow-glow);
   }
 
   .stat-card:hover {
@@ -399,17 +376,48 @@
 
   /* Sidebar styles - Dark elegant */
   .sidebar-item {
-    @apply flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-250;
-    @apply text-muted-foreground hover:bg-primary/10 hover:text-foreground;
+    @apply flex min-h-12 items-center gap-3 rounded-lg px-4 py-3 text-sm font-semibold transition-all duration-200;
+    @apply border-2 border-border text-foreground;
+    background: linear-gradient(180deg, hsl(var(--card)) 0%, hsl(var(--muted) / 0.35) 100%);
+    box-shadow: 0 4px 12px hsl(0 0% 0% / 0.08);
+    @apply hover:border-primary/60 hover:shadow-md;
   }
 
   .sidebar-item:hover {
-    box-shadow: inset 3px 0 0 hsl(var(--primary));
+    transform: translateY(-1px);
   }
 
   .sidebar-item-active {
-    @apply bg-primary text-primary-foreground;
-    box-shadow: var(--shadow-primary), var(--shadow-glow);
+    @apply border-2 border-primary bg-primary text-primary-foreground;
+    box-shadow: 0 8px 18px hsl(var(--primary) / 0.35), inset 0 0 0 1px hsl(var(--primary-foreground) / 0.18);
+  }
+
+  .admin-block-card {
+    @apply rounded-lg border border-border/70 bg-card p-4 shadow-sm transition-all duration-200;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .admin-block-card:hover {
+    @apply border-primary/35;
+  }
+
+  .admin-nav-card {
+    @apply relative flex items-center gap-3 overflow-hidden rounded-lg border border-border/70 bg-card px-3 py-2.5 text-sm transition-all duration-200;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .admin-nav-card:hover {
+    @apply border-primary/40 bg-accent/60;
+    box-shadow: var(--shadow-md);
+  }
+
+  .admin-nav-card-active {
+    @apply border-primary bg-primary/95 text-primary-foreground;
+    box-shadow: var(--shadow-primary);
+  }
+
+  .admin-nav-icon {
+    @apply flex h-8 w-8 items-center justify-center rounded-md bg-muted/80 ring-1 ring-border/70;
   }
 
   /* Header - Glass effect */
@@ -433,9 +441,28 @@
     @apply text-muted-foreground mt-2;
   }
 
+  .admin-page {
+    @apply space-y-6;
+  }
+
+  .admin-surface {
+    @apply overflow-hidden rounded-lg border border-border/60 bg-card;
+    background: var(--gradient-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .admin-surface-header {
+    @apply flex items-center justify-between gap-3 border-b border-border/60 px-5 py-4;
+    background: hsl(var(--muted) / 0.25);
+  }
+
+  .admin-surface-title {
+    @apply text-base font-semibold text-foreground;
+  }
+
   /* Dialog - Dark elegant */
   .dialog-professional {
-    @apply rounded-2xl border border-border/40 bg-card p-0 overflow-hidden;
+    @apply rounded-lg border border-border/40 bg-card p-0 overflow-hidden;
     box-shadow: var(--shadow-2xl), var(--shadow-glow);
   }
 

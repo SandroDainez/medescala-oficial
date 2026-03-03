@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,6 +95,7 @@ export default function AdminNotifications() {
   const [sendToAll, setSendToAll] = useState(true);
   const [selectedShift, setSelectedShift] = useState<string>('');
   const [selectedSectorFilter, setSelectedSectorFilter] = useState<string>('all');
+  const [recipientSearch, setRecipientSearch] = useState('');
   
   // Preview dialog
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -117,13 +118,16 @@ export default function AdminNotifications() {
       .eq('active', true);
 
     if (membersData) {
-      setMembers(membersData.map(m => ({
-        // Sempre prioriza nome completo quando existir
-        user_id: m.user_id,
-        name: (m.profile as any)?.full_name?.trim() || (m.profile as any)?.name || 'Sem nome',
-        role: m.role,
-        profile_type: (m.profile as any)?.profile_type ?? null,
-      })));
+      const sortedMembers = membersData
+        .map(m => ({
+          // Sempre prioriza nome completo quando existir
+          user_id: m.user_id,
+          name: (m.profile as any)?.full_name?.trim() || (m.profile as any)?.name || 'Sem nome',
+          role: m.role,
+          profile_type: (m.profile as any)?.profile_type ?? null,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+      setMembers(sortedMembers);
     }
 
     const [{ data: sectorsData }, { data: sectorMembershipsData }] = await Promise.all([
@@ -487,20 +491,41 @@ export default function AdminNotifications() {
 
   const typeInfo = notificationTypes.find(t => t.value === notificationType);
   const TypeIcon = typeInfo?.icon || Bell;
-  const eligibleMembers = members.filter((m) => m.role !== 'admin');
-  const filteredMembers =
-    selectedSectorFilter === 'all'
-      ? eligibleMembers
-      : eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedSectorFilter));
+  const eligibleMembers = useMemo(
+    () =>
+      members
+        .filter((m) => m.role !== 'admin')
+        .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [members],
+  );
+  const filteredMembers = useMemo(
+    () =>
+      (selectedSectorFilter === 'all'
+        ? eligibleMembers
+        : eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedSectorFilter))
+      ).slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    [eligibleMembers, memberSectorMap, selectedSectorFilter],
+  );
   const selectedShiftData = availableShifts.find((s) => s.id === selectedShift);
-  const shiftScopedMembers =
-    notificationType === 'shift'
-      ? (
-          selectedShiftData?.sector_id
-            ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedShiftData.sector_id as string))
-            : filteredMembers
-        )
-      : [];
+  const shiftScopedMembers = useMemo(
+    () =>
+      notificationType === 'shift'
+        ? (
+            selectedShiftData?.sector_id
+              ? eligibleMembers.filter((m) => (memberSectorMap[m.user_id] || []).includes(selectedShiftData.sector_id as string))
+              : filteredMembers
+          ).slice().sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'))
+        : [],
+    [eligibleMembers, filteredMembers, memberSectorMap, notificationType, selectedShiftData?.sector_id],
+  );
+  const manualRecipientBase = notificationType === 'shift' ? shiftScopedMembers : filteredMembers;
+  const manualRecipientFiltered = useMemo(
+    () =>
+      manualRecipientBase.filter((member) =>
+        member.name.toLowerCase().includes(recipientSearch.trim().toLowerCase()),
+      ),
+    [manualRecipientBase, recipientSearch],
+  );
   const shiftScopedCount = shiftScopedMembers.length;
   const userCount = notificationType === 'shift'
     ? (sendToAll
@@ -595,10 +620,10 @@ export default function AdminNotifications() {
                   <div className="space-y-2">
                     <Label>Selecionar Plantão (opcional)</Label>
                     <Select value={selectedShift} onValueChange={handleShiftSelect}>
-                      <SelectTrigger>
+                      <SelectTrigger className="rounded-xl">
                         <SelectValue placeholder="Escolha um plantão para preencher automaticamente" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="rounded-xl border-border/70 p-2">
                         {availableShifts.map(shift => (
                           <SelectItem key={shift.id} value={shift.id}>
                             {format(parseISO(shift.shift_date), 'dd/MM')} - {shift.sector_name} - {shift.title}
@@ -642,13 +667,16 @@ export default function AdminNotifications() {
                       onValueChange={(value) => {
                         setSelectedSectorFilter(value);
                         setSelectedUsers([]);
+                        setRecipientSearch('');
                       }}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger className="rounded-xl">
                         <SelectValue placeholder="Todos os setores" />
                       </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os setores</SelectItem>
+                      <SelectContent className="rounded-xl border-border/70 p-2">
+                        <SelectItem value="all">
+                          Todos os setores
+                        </SelectItem>
                         {sectors.map((sector) => (
                           <SelectItem key={sector.id} value={sector.id}>
                             {sector.name}
@@ -657,13 +685,30 @@ export default function AdminNotifications() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox 
-                      id="sendToAll" 
-                      checked={sendToAll} 
+                  <div
+                    className={`flex items-center gap-3 rounded-lg border px-3 py-3 transition-colors ${
+                      sendToAll
+                        ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/20'
+                        : 'border-border bg-background hover:bg-muted/40'
+                    }`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSendToAll((prev) => !prev)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        setSendToAll((prev) => !prev);
+                      }
+                    }}
+                  >
+                    <Checkbox
+                      id="sendToAll"
+                      checked={sendToAll}
+                      className="h-5 w-5 rounded-[4px] border-2 border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white"
+                      onClick={(event) => event.stopPropagation()}
                       onCheckedChange={(checked) => setSendToAll(checked === true)}
                     />
-                    <label htmlFor="sendToAll" className="text-sm cursor-pointer">
+                    <label htmlFor="sendToAll" className="cursor-pointer text-sm font-medium leading-tight">
                       {notificationType === 'shift'
                         ? (selectedShiftData?.sector_id
                             ? `Enviar para plantonistas do setor do plantão selecionado (${shiftScopedCount})`
@@ -673,19 +718,70 @@ export default function AdminNotifications() {
                   </div>
                   
                   {!sendToAll && (
-                    <div className="border rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                      {(notificationType === 'shift' ? shiftScopedMembers : filteredMembers).map(member => (
-                        <div key={member.user_id} className="flex items-center gap-2">
-                          <Checkbox
-                            id={member.user_id}
-                            checked={selectedUsers.includes(member.user_id)}
-                            onCheckedChange={() => toggleUserSelection(member.user_id)}
-                          />
-                          <label htmlFor={member.user_id} className="text-sm cursor-pointer">
-                            {member.name}
-                          </label>
+                    <div className="max-h-64 overflow-y-auto rounded-md border bg-muted/10 p-3">
+                      <div className="mb-3 space-y-2">
+                        <Input
+                          value={recipientSearch}
+                          onChange={(e) => setRecipientSearch(e.target.value)}
+                          placeholder="Buscar destinatário por nome..."
+                        />
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span>
+                            {manualRecipientFiltered.length} de {manualRecipientBase.length} exibidos
+                          </span>
+                          {manualRecipientFiltered.length > 0 && (
+                            <button
+                              type="button"
+                              className="font-medium text-emerald-600 hover:underline"
+                              onClick={() => {
+                                const visibleIds = manualRecipientFiltered.map((m) => m.user_id);
+                                const allVisibleSelected = visibleIds.every((id) => selectedUsers.includes(id));
+                                setSelectedUsers((prev) =>
+                                  allVisibleSelected
+                                    ? prev.filter((id) => !visibleIds.includes(id))
+                                    : Array.from(new Set([...prev, ...visibleIds])),
+                                );
+                              }}
+                            >
+                              {manualRecipientFiltered.every((m) => selectedUsers.includes(m.user_id))
+                                ? 'Desmarcar visíveis'
+                                : 'Selecionar visíveis'}
+                            </button>
+                          )}
                         </div>
-                      ))}
+                      </div>
+                      {(manualRecipientFiltered.length === 0) ? (
+                        <p className="text-sm text-muted-foreground">Nenhum plantonista encontrado para o filtro atual.</p>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {manualRecipientFiltered.map((member) => {
+                            const checked = selectedUsers.includes(member.user_id);
+                            return (
+                              <button
+                                key={member.user_id}
+                                type="button"
+                                className={`flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
+                                  checked
+                                    ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/20'
+                                    : 'border-border bg-background hover:bg-muted/40'
+                                }`}
+                                onClick={() => toggleUserSelection(member.user_id)}
+                              >
+                                <Checkbox
+                                  id={`notify-member-${member.user_id}`}
+                                  checked={checked}
+                                  className="h-5 w-5 rounded-[4px] border-2 border-emerald-600 data-[state=checked]:bg-emerald-600 data-[state=checked]:text-white"
+                                  onClick={(event) => event.stopPropagation()}
+                                  onCheckedChange={() => toggleUserSelection(member.user_id)}
+                                />
+                                <Label htmlFor={`notify-member-${member.user_id}`} className="cursor-pointer font-medium leading-tight">
+                                  {member.name}
+                                </Label>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -906,7 +1002,7 @@ export default function AdminNotifications() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-8 w-8 shrink-0"
+                                      className="shrink-0"
                                       aria-label="Ações"
                                     >
                                       <MoreVertical className="h-4 w-4" />
@@ -937,10 +1033,9 @@ export default function AdminNotifications() {
                                     Editar
                                   </Button>
                                   <Button
-                                    variant="ghost"
+                                    variant="destructive"
                                     size="sm"
                                     onClick={() => deleteNotification(notif.id)}
-                                    className="text-destructive"
                                   >
                                     Excluir
                                   </Button>

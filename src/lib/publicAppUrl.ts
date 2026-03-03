@@ -1,4 +1,4 @@
-const FALLBACK_PUBLIC_URL = "https://medescala-oficial.vercel.app";
+const CANONICAL_PUBLIC_URL = "https://app.medescalas.com.br";
 
 function trimTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, "");
@@ -6,13 +6,22 @@ function trimTrailingSlashes(value: string): string {
 
 export function getPublicAppBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_APP_URL as string | undefined)?.trim();
-  if (envUrl) return trimTrailingSlashes(envUrl);
+  if (envUrl) {
+    const normalizedEnv = trimTrailingSlashes(envUrl);
+    if (!normalizedEnv.includes(".vercel.app")) {
+      return normalizedEnv;
+    }
+  }
 
-  if (typeof window === "undefined") return FALLBACK_PUBLIC_URL;
+  if (typeof window === "undefined") return CANONICAL_PUBLIC_URL;
 
   const origin = window.location.origin;
-  if (origin.startsWith("capacitor://") || origin.includes("localhost")) {
-    return FALLBACK_PUBLIC_URL;
+  if (
+    origin.startsWith("capacitor://") ||
+    origin.includes("localhost") ||
+    origin.includes(".vercel.app")
+  ) {
+    return CANONICAL_PUBLIC_URL;
   }
 
   return trimTrailingSlashes(origin);

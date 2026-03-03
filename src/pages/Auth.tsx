@@ -194,7 +194,7 @@ export default function Auth() {
     if (error) {
       let message = 'Erro ao fazer login';
       if (error.message.includes('Invalid login credentials')) {
-        message = 'Email ou senha incorretos';
+        message = 'Email ou senha incorretos. Se for seu primeiro acesso, use o link do convite para definir a senha ou clique em "Esqueceu sua senha?".';
       } else if (error.message.includes('Email not confirmed')) {
         message = 'Email não confirmado. Verifique sua caixa de entrada.';
       }

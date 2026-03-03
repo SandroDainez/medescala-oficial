@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, lazy, useEffect } from "react";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, TenantProvider, ThemeProvider } from "@/providers";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenant } from "@/hooks/useTenant";
@@ -59,6 +59,84 @@ const UserFeedback = lazy(() => import("./pages/user/Feedback"));
 const UserAvailableShifts = lazy(() => import("./pages/user/AvailableShifts"));
 
 function RouteLoadingFallback() {
+  const { pathname } = useLocation();
+
+  if (pathname.startsWith("/admin")) {
+    const isCalendar = pathname.includes("/admin/calendar");
+    const isUsers = pathname.includes("/admin/users");
+    const isSectors = pathname.includes("/admin/sectors");
+    const isFinancial = pathname.includes("/admin/financial");
+    const isReports = pathname.includes("/admin/reports");
+
+    return (
+      <div className="min-h-screen bg-background">
+        <div className="h-16 border-b border-border/70 bg-card/80" />
+        <div className="flex">
+          <aside className="hidden w-72 border-r border-border/70 bg-card/40 p-4 md:block">
+            <div className="space-y-2">
+              {Array.from({ length: 9 }).map((_, idx) => (
+                <div key={idx} className="h-11 animate-pulse rounded-xl border border-border/70 bg-muted/30" />
+              ))}
+            </div>
+          </aside>
+          <main className="flex-1 p-4 md:p-6">
+            <div className="mb-4 h-16 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+            {isCalendar ? (
+              <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="h-28 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                  ))}
+                </div>
+                <div className="h-[480px] animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+              </>
+            ) : isUsers ? (
+              <div className="space-y-3">
+                {Array.from({ length: 6 }).map((_, idx) => (
+                  <div key={idx} className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                ))}
+              </div>
+            ) : isSectors ? (
+              <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {Array.from({ length: 2 }).map((_, idx) => (
+                    <div key={idx} className="h-44 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                  ))}
+                </div>
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={idx} className="h-20 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                ))}
+              </div>
+            ) : isFinancial ? (
+              <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, idx) => (
+                    <div key={idx} className="h-28 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                  ))}
+                </div>
+                <div className="h-[420px] animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+              </div>
+            ) : isReports ? (
+              <div className="space-y-3">
+                <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                <div className="h-[460px] animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+              </div>
+            ) : (
+              <>
+                <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="h-28 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                  ))}
+                </div>
+                <div className="h-[420px] animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+              </>
+            )}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="text-muted-foreground">Carregando...</div>
@@ -74,25 +152,7 @@ const queryClient = new QueryClient();
  * ele só pode ficar em /trocar-senha (e rotas públicas tipo /auth).
  */
 function ForcePasswordGate({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
-
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="text-muted-foreground">Carregando...</div>
-      </div>
-    );
-  }
-
-  // Se não está logado, não bloqueia aqui (deixa a ProtectedRoute cuidar)
-  if (!user) return <>{children}</>;
-
-  const mustChange = !!user?.user_metadata?.must_change_password;
-
-  if (mustChange) {
-    return <Navigate to="/trocar-senha" replace />;
-  }
-
+  // Must-change-password is enforced centrally in ProtectedRoute using profiles.must_change_password.
   return <>{children}</>;
 }
 
@@ -150,19 +210,13 @@ function RoleRedirect() {
     return <Navigate to="/auth" replace />;
   }
 
-  // ✅ Se precisa trocar senha, manda direto
-  const mustChange = !!user?.user_metadata?.must_change_password;
-  if (mustChange) {
-    return <Navigate to="/trocar-senha" replace />;
-  }
-
   // No memberships - go to onboarding
   if (memberships.length === 0) {
     return <Navigate to="/onboarding" replace />;
   }
 
   // Redirect based on role
-  if (currentRole === "admin") {
+  if (currentRole === "admin" || currentRole === "owner") {
     return <Navigate to="/admin" replace />;
   }
 
@@ -176,7 +230,7 @@ function PrefetchDashboardChunks() {
   useEffect(() => {
     if (authLoading || tenantLoading || !user) return;
 
-    if (currentRole === "admin") {
+    if (currentRole === "admin" || currentRole === "owner") {
       void import("./components/layouts/AdminLayout");
       void import("./pages/admin/Dashboard");
       return;

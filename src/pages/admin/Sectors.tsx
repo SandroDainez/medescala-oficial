@@ -7,12 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
+import { adminFeedback } from '@/lib/adminFeedback';
 import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw, MapPin, Clock, LocateFixed, ExternalLink } from 'lucide-react';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
@@ -54,6 +55,22 @@ export default function AdminSectors() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
+  const notifySuccess = useCallback(
+    (action: string, description?: string) => adminFeedback.success(toast, action, description),
+    [toast],
+  );
+  const notifyInfo = useCallback(
+    (title: string, description?: string) => adminFeedback.info(toast, title, description),
+    [toast],
+  );
+  const notifyWarning = useCallback(
+    (title: string, description?: string) => adminFeedback.warning(toast, title, description),
+    [toast],
+  );
+  const notifyError = useCallback(
+    (action: string, error?: unknown, fallback?: string) => adminFeedback.error(toast, action, error, fallback),
+    [toast],
+  );
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
@@ -150,9 +167,9 @@ export default function AdminSectors() {
         .eq('id', editingSector.id);
 
       if (error) {
-        toast({ title: 'Erro ao atualizar', description: error.message, variant: 'destructive' });
+        notifyError('atualizar setor', error, 'Não foi possível atualizar o setor.');
       } else {
-        toast({ title: 'Setor atualizado!' });
+        notifySuccess('Atualização de setor');
         fetchData();
         closeDialog();
       }
@@ -163,12 +180,12 @@ export default function AdminSectors() {
 
       if (error) {
         if (error.code === '23505') {
-          toast({ title: 'Erro', description: 'Já existe um setor com este nome', variant: 'destructive' });
+          notifyWarning('Nome já em uso', 'Já existe um setor com este nome.');
         } else {
-          toast({ title: 'Erro ao criar', description: error.message, variant: 'destructive' });
+          notifyError('criar setor', error, 'Não foi possível criar o setor.');
         }
       } else {
-        toast({ title: 'Setor criado!' });
+        notifySuccess('Cadastro de setor');
         fetchData();
         closeDialog();
       }
@@ -180,9 +197,9 @@ export default function AdminSectors() {
 
     const { error } = await supabase.from('sectors').delete().eq('id', id);
     if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+      notifyError('excluir setor', error, 'Não foi possível excluir o setor.');
     } else {
-      toast({ title: 'Setor excluído!' });
+      notifySuccess('Exclusão de setor');
       fetchData();
     }
   }
@@ -194,9 +211,9 @@ export default function AdminSectors() {
       .eq('id', sector.id);
 
     if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      notifyError('atualizar status do setor', error, 'Não foi possível atualizar o status do setor.');
     } else {
-      toast({ title: sector.active ? 'Setor desativado' : 'Setor ativado' });
+      notifySuccess(sector.active ? 'Setor desativado' : 'Setor ativado');
       fetchData();
     }
   }
@@ -208,11 +225,11 @@ export default function AdminSectors() {
       .eq('id', userId);
 
     if (error) {
-      toast({ title: 'Erro ao tornar plantonista', description: error.message, variant: 'destructive' });
+      notifyError('atualizar perfil', error, 'Não foi possível marcar o usuário como plantonista.');
       return;
     }
 
-    toast({ title: 'Perfil atualizado', description: 'Usuário marcado como plantonista.' });
+    notifySuccess('Perfil atualizado', 'Usuário marcado como plantonista.');
     fetchData();
   }
 
@@ -253,7 +270,7 @@ export default function AdminSectors() {
         .in('user_id', toRemove);
       
       if (error) {
-        toast({ title: 'Erro ao remover membros', description: error.message, variant: 'destructive' });
+        notifyError('remover membros do setor', error, 'Não foi possível remover membros do setor.');
         return;
       }
     }
@@ -272,12 +289,12 @@ export default function AdminSectors() {
         .insert(newMemberships);
 
       if (error) {
-        toast({ title: 'Erro ao adicionar membros', description: error.message, variant: 'destructive' });
+        notifyError('adicionar membros ao setor', error, 'Não foi possível adicionar membros ao setor.');
         return;
       }
     }
 
-    toast({ title: 'Membros atualizados!' });
+    notifySuccess('Atualização de membros');
     fetchData();
     setMembersDialogOpen(false);
   }
@@ -331,11 +348,7 @@ export default function AdminSectors() {
     // Validate coordinates if GPS is required
     if (checkinSettings.require_gps_checkin) {
       if (!checkinSettings.reference_latitude || !checkinSettings.reference_longitude) {
-        toast({ 
-          title: 'Erro', 
-          description: 'Informe as coordenadas de referência para validação GPS.', 
-          variant: 'destructive' 
-        });
+        notifyWarning('Coordenadas obrigatórias', 'Informe as coordenadas de referência para validação GPS.');
         return;
       }
     }
@@ -354,22 +367,18 @@ export default function AdminSectors() {
       .eq('id', selectedSectorForCheckin.id);
 
     if (error) {
-      toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });
+      notifyError('salvar configurações de check-in', error, 'Não foi possível salvar as configurações de check-in.');
       return;
     }
 
-    toast({ title: 'Configurações de check-in salvas!' });
+    notifySuccess('Configurações de check-in');
     fetchData();
     setCheckinDialogOpen(false);
   }
 
   async function captureCurrentReferenceLocation() {
     if (!navigator.geolocation) {
-      toast({
-        title: 'GPS indisponível',
-        description: 'Seu navegador não suporta geolocalização.',
-        variant: 'destructive',
-      });
+      notifyError('capturar localização', 'GPS indisponível', 'Seu navegador não suporta geolocalização.');
       return;
     }
 
@@ -382,18 +391,11 @@ export default function AdminSectors() {
           reference_longitude: Number(position.coords.longitude.toFixed(6)),
         }));
         setCapturingReferenceLocation(false);
-        toast({
-          title: 'Localização capturada',
-          description: 'Coordenadas de referência preenchidas com sua posição atual.',
-        });
+        notifySuccess('Localização capturada', 'Coordenadas de referência preenchidas com sua posição atual.');
       },
       (error) => {
         setCapturingReferenceLocation(false);
-        toast({
-          title: 'Erro ao capturar localização',
-          description: error.message || 'Permita acesso à localização e tente novamente.',
-          variant: 'destructive',
-        });
+        notifyError('capturar localização', error, 'Permita acesso à localização e tente novamente.');
       },
       {
         enableHighAccuracy: true,
@@ -417,12 +419,12 @@ export default function AdminSectors() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="admin-page animate-fade-in">
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-6 border-b border-border/60">
+      <div className="page-header mb-0 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground tracking-tight">Setores</h1>
-          <p className="text-muted-foreground mt-1">Gerencie os setores/unidades do hospital</p>
+          <h1 className="page-title text-2xl">Setores</h1>
+          <p className="page-description mt-1">Gerencie os setores/unidades do hospital</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={(open) => !open && closeDialog()}>
           <DialogTrigger asChild>
@@ -531,7 +533,7 @@ export default function AdminSectors() {
 
       {/* Dedicated cards for Values and GPS Check-ins */}
       <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="border-border/60">
+        <Card className="card-elevated border-border/60">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <DollarSign className="h-5 w-5 text-primary" />
@@ -544,15 +546,21 @@ export default function AdminSectors() {
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Setor</Label>
-              <select
+              <Select
                 value={selectedConfigSectorId}
-                onChange={(e) => setSelectedConfigSectorId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                onValueChange={setSelectedConfigSectorId}
               >
-                {sectors.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                <SelectTrigger className="h-10 w-full rounded-xl">
+                  <SelectValue placeholder="Selecione o setor" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-border/70 p-2">
+                  {sectors.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -575,38 +583,48 @@ export default function AdminSectors() {
             <div className="flex items-center gap-2">
               <Calendar className="h-4 w-4 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">Mês/Ano dos individuais:</span>
-              <select
-                value={userValuesMonth}
-                onChange={(e) => setUserValuesMonth(Number(e.target.value))}
-                className="px-2 py-1 text-xs border rounded-md bg-background"
+              <Select
+                value={String(userValuesMonth)}
+                onValueChange={(value) => setUserValuesMonth(Number(value))}
               >
-                <option value={1}>Jan</option>
-                <option value={2}>Fev</option>
-                <option value={3}>Mar</option>
-                <option value={4}>Abr</option>
-                <option value={5}>Mai</option>
-                <option value={6}>Jun</option>
-                <option value={7}>Jul</option>
-                <option value={8}>Ago</option>
-                <option value={9}>Set</option>
-                <option value={10}>Out</option>
-                <option value={11}>Nov</option>
-                <option value={12}>Dez</option>
-              </select>
-              <select
-                value={userValuesYear}
-                onChange={(e) => setUserValuesYear(Number(e.target.value))}
-                className="px-2 py-1 text-xs border rounded-md bg-background"
+                <SelectTrigger className="h-8 w-[88px] rounded-lg text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-border/70 p-2">
+                  <SelectItem value="1">Jan</SelectItem>
+                  <SelectItem value="2">Fev</SelectItem>
+                  <SelectItem value="3">Mar</SelectItem>
+                  <SelectItem value="4">Abr</SelectItem>
+                  <SelectItem value="5">Mai</SelectItem>
+                  <SelectItem value="6">Jun</SelectItem>
+                  <SelectItem value="7">Jul</SelectItem>
+                  <SelectItem value="8">Ago</SelectItem>
+                  <SelectItem value="9">Set</SelectItem>
+                  <SelectItem value="10">Out</SelectItem>
+                  <SelectItem value="11">Nov</SelectItem>
+                  <SelectItem value="12">Dez</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(userValuesYear)}
+                onValueChange={(value) => setUserValuesYear(Number(value))}
               >
-                {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
-                  <option key={y} value={y}>{y}</option>
-                ))}
-              </select>
+                <SelectTrigger className="h-8 w-[92px] rounded-lg text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-border/70 p-2">
+                  {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
+                    <SelectItem key={y} value={String(y)}>
+                      {y}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border/60">
+        <Card className="card-elevated border-border/60">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
@@ -619,15 +637,21 @@ export default function AdminSectors() {
           <CardContent className="space-y-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Setor</Label>
-              <select
+              <Select
                 value={selectedConfigSectorId}
-                onChange={(e) => setSelectedConfigSectorId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border rounded-md bg-background"
+                onValueChange={setSelectedConfigSectorId}
               >
-                {sectors.map((s) => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+                <SelectTrigger className="h-10 w-full rounded-xl">
+                  <SelectValue placeholder="Selecione o setor" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-border/70 p-2">
+                  {sectors.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -647,101 +671,95 @@ export default function AdminSectors() {
         </Card>
       </div>
 
-      {/* Sectors Table */}
-      <Card className="overflow-hidden border-border/60">
-        <CardHeader className="bg-muted/30 border-b border-border/60 py-4">
-          <CardTitle className="text-base font-semibold flex items-center gap-2">
+      {/* Sectors List */}
+      <Card className="admin-surface">
+        <CardHeader className="admin-surface-header py-4">
+          <CardTitle className="admin-surface-title flex items-center gap-2">
             <Building2 className="h-5 w-5 text-primary" />
             Lista de Setores
           </CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-16">Cor</TableHead>
-                <TableHead>Nome</TableHead>
-                <TableHead className="hidden md:table-cell">Descrição</TableHead>
-                <TableHead>Membros</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sectors.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="h-32">
-                    <div className="flex flex-col items-center justify-center text-muted-foreground">
-                      <Building2 className="h-10 w-10 mb-2 opacity-40" />
-                      <p>Nenhum setor cadastrado.</p>
-                      <p className="text-sm">Crie o primeiro setor para começar.</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                sectors.map((sector, index) => (
-                  <TableRow key={sector.id} className="group" style={{ animationDelay: `${index * 50}ms` }}>
-                    <TableCell>
+        <CardContent className="space-y-3 p-4">
+          {sectors.length === 0 ? (
+            <div className="flex h-32 flex-col items-center justify-center text-muted-foreground">
+              <Building2 className="mb-2 h-10 w-10 opacity-40" />
+              <p>Nenhum setor cadastrado.</p>
+              <p className="text-sm">Crie o primeiro setor para começar.</p>
+            </div>
+          ) : (
+            sectors.map((sector) => (
+              <div key={sector.id} className="rounded-xl border border-border bg-background p-4 shadow-sm">
+                <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="mb-1 flex items-center gap-2">
                       <div
-                        className="h-8 w-8 rounded-lg shadow-sm border-2 border-white"
+                        className="h-4 w-4 rounded-md border border-border"
                         style={{ backgroundColor: sector.color }}
                       />
-                    </TableCell>
-                    <TableCell>
-                      <span className="font-semibold text-foreground">{sector.name}</span>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-muted-foreground max-w-[200px] truncate">
-                      {sector.description || '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="font-semibold">
-                        <Users className="mr-1.5 h-3 w-3" />
-                        {getMemberCount(sector.id)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={sector.active ? 'success' : 'outline'}>
-                        {sector.active ? 'Ativo' : 'Inativo'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => navigate(`/admin/calendar?sector=${sector.id}`)}
-                        >
-                          <Calendar className="mr-1 h-4 w-4" />
-                          Escala
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => openMembersDialog(sector)}
-                        >
-                          <Users className="mr-1 h-4 w-4" />
-                          Membros
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(sector)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleToggleActive(sector)}
-                        >
-                          {sector.active ? 'Desativar' : 'Ativar'}
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(sector.id)}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                      <h3 className="truncate text-sm font-semibold text-foreground lg:text-base">{sector.name}</h3>
+                    </div>
+                    <p className="truncate text-xs text-muted-foreground lg:text-sm">{sector.description || '-'}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="secondary" className="font-semibold">
+                      <Users className="mr-1.5 h-3 w-3" />
+                      {getMemberCount(sector.id)}
+                    </Badge>
+                    <Badge variant={sector.active ? 'success' : 'outline'}>
+                      {sector.active ? 'Ativo' : 'Inativo'}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => navigate(`/admin/calendar?sector=${sector.id}`)}
+                  >
+                    <Calendar className="mr-1 h-4 w-4" />
+                    Escala
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => openMembersDialog(sector)}
+                  >
+                    <Users className="mr-1 h-4 w-4" />
+                    Membros
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => openEdit(sector)}
+                  >
+                    <Pencil className="mr-1 h-4 w-4" />
+                    Editar
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8"
+                    onClick={() => handleToggleActive(sector)}
+                  >
+                    {sector.active ? 'Desativar' : 'Ativar'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-destructive"
+                    onClick={() => handleDelete(sector.id)}
+                  >
+                    <Trash2 className="mr-1 h-4 w-4" />
+                    Excluir
+                  </Button>
+                </div>
+              </div>
+            ))
+          )}
         </CardContent>
       </Card>
 
@@ -791,26 +809,16 @@ export default function AdminSectors() {
                       .in('user_id', toRemove);
                     
                     if (error) {
-                      toast({ 
-                        title: 'Erro ao sincronizar', 
-                        description: error.message, 
-                        variant: 'destructive' 
-                      });
+                      notifyError('sincronizar membros do setor', error, 'Não foi possível sincronizar os membros.');
                       return;
                     }
                     
-                    toast({ 
-                      title: 'Sincronização concluída', 
-                      description: `${toRemove.length} membro(s) removido(s) por não serem plantonistas.` 
-                    });
+                    notifyInfo('Sincronização concluída', `${toRemove.length} membro(s) removido(s) por não serem plantonistas.`);
                     
                     fetchData();
                     setSelectedMembers(validMembers);
                   } else {
-                    toast({ 
-                      title: 'Já sincronizado', 
-                      description: 'Todos os membros do setor são plantonistas válidos.' 
-                    });
+                    notifyInfo('Já sincronizado', 'Todos os membros do setor são plantonistas válidos.');
                   }
                 }}
                 title="Remover membros que não são plantonistas"
@@ -819,7 +827,7 @@ export default function AdminSectors() {
                 Sincronizar
               </Button>
             </div>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto border rounded-lg p-2">
+            <div className="max-h-[300px] overflow-y-auto rounded-md border bg-muted/10 p-3">
               {members
                 .filter(m => (m.profile?.profile_type || '') === 'plantonista')
                 .sort((a, b) => {
@@ -829,34 +837,45 @@ export default function AdminSectors() {
                 })
                 .map((member) => {
                   const displayName = (member.profile?.full_name || member.profile?.name || 'Sem nome').trim();
+                  const checked = selectedMembers.includes(member.user_id);
 
                   return (
-                    <div
+                    <button
                       key={member.user_id}
-                      className="flex items-center gap-3 p-2 rounded hover:bg-accent cursor-pointer"
+                      type="button"
+                      className={`mb-2 flex w-full items-center gap-3 rounded-lg border px-3 py-3 text-left transition-colors ${
+                        checked
+                          ? 'border-emerald-600 bg-emerald-50 dark:bg-emerald-950/20'
+                          : 'border-border bg-background hover:bg-muted/40'
+                      }`}
                       onClick={() => {
-                        const next = selectedMembers.includes(member.user_id)
+                        const next = checked
                           ? selectedMembers.filter((id) => id !== member.user_id)
                           : [...selectedMembers, member.user_id];
                         setSelectedMembers(next);
                       }}
                     >
                       <Checkbox
-                        id={member.user_id}
-                        checked={selectedMembers.includes(member.user_id)}
+                        id={`sector-member-${member.user_id}`}
+                        checked={checked}
+                        onClick={(event) => event.stopPropagation()}
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedMembers([...selectedMembers, member.user_id]);
+                            setSelectedMembers((prev) =>
+                              prev.includes(member.user_id) ? prev : [...prev, member.user_id],
+                            );
                           } else {
-                            setSelectedMembers(selectedMembers.filter(id => id !== member.user_id));
+                            setSelectedMembers((prev) => prev.filter(id => id !== member.user_id));
                           }
                         }}
                       />
-                      <span className="flex-1">{displayName}</span>
-                      {selectedMembers.includes(member.user_id) && (
+                      <Label htmlFor={`sector-member-${member.user_id}`} className="flex-1 cursor-pointer font-medium leading-tight">
+                        {displayName}
+                      </Label>
+                      {checked && (
                         <Badge variant="secondary" className="text-xs">Membro</Badge>
                       )}
-                    </div>
+                    </button>
                   );
                 })}
             </div>

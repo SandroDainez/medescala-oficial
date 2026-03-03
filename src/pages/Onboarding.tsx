@@ -40,7 +40,7 @@ export default function Onboarding() {
 
   const handleSelectTenant = async (tenantId: string, role: string) => {
     setCurrentTenant(tenantId);
-    if (role === 'admin') {
+    if (role === 'admin' || role === 'owner') {
       navigate('/admin');
     } else {
       navigate('/app');
@@ -236,7 +236,7 @@ setLoading(false);
                             <div className="text-left">
                               <h3 className="font-semibold text-lg">{membership.tenant_name}</h3>
                               <p className="text-sm text-muted-foreground capitalize">
-                                {membership.role === 'admin' ? 'Administrador' : 'Plantonista'}
+                                {membership.role === 'admin' || membership.role === 'owner' ? 'Administrador' : 'Plantonista'}
                               </p>
                             </div>
                           </div>
