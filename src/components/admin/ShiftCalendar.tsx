@@ -877,6 +877,124 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
 
+  function parseEscalasGridLayout(rawMatrix: Array<Array<string | number | Date>>): {
+    parsed: ImportedShiftRow[];
+    errors: string[];
+  } {
+    const parsed: ImportedShiftRow[] = [];
+    const errors: string[] = [];
+
+    if (!rawMatrix.length) return { parsed, errors };
+
+    const sectorByNormalizedName = new Map(
+      sectors.map((s) => [normalizeString(s.name), s]),
+    );
+
+    const resolveSectorFromCell = (value: unknown): Sector | null => {
+      const text = String(value ?? '').trim();
+      if (!text) return null;
+      const norm = normalizeString(text);
+      const exact = sectorByNormalizedName.get(norm);
+      if (exact) return exact;
+
+      for (const sector of sectors) {
+        const sNorm = normalizeString(sector.name);
+        if (norm.includes(sNorm) || sNorm.includes(norm)) return sector;
+      }
+      return null;
+    };
+
+    const findNearestSector = (rowIndex: number): Sector | null => {
+      for (let r = rowIndex; r >= Math.max(0, rowIndex - 14); r--) {
+        for (const cell of rawMatrix[r] || []) {
+          const sector = resolveSectorFromCell(cell);
+          if (sector) return sector;
+        }
+      }
+      return null;
+    };
+
+    const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~\-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
+    let baseYear = selectedYear;
+    for (let r = 0; r < Math.min(20, rawMatrix.length); r++) {
+      for (const cell of rawMatrix[r] || []) {
+        const text = String(cell ?? '').trim();
+        const match = text.match(periodRegex);
+        if (match) {
+          baseYear = Number(match[3]);
+          break;
+        }
+      }
+    }
+
+    const dayRegex = /\b(?:SEG|TER|QUA|QUI|SEX|SAB|DOM)\s*(\d{1,2})\/(\d{1,2})\b/i;
+    const ignoreTokens = ['escalas', 'profissional de plantao', 'profissional de plantão', 'local', 'gerado em'];
+    const isIgnored = (value: string) => {
+      const norm = normalizeString(value);
+      if (!norm) return true;
+      if (ignoreTokens.some((token) => norm.includes(token))) return true;
+      if (/^\d{2}\/\d{2}\/\d{4}/.test(norm)) return true;
+      if (/^(seg|ter|qua|qui|sex|sab|dom)\s*\d{1,2}\/\d{1,2}$/.test(norm)) return true;
+      return false;
+    };
+
+    for (let r = 0; r < rawMatrix.length; r++) {
+      const row = rawMatrix[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        const cellText = String(row[c] ?? '').trim();
+        const dayMatch = cellText.match(dayRegex);
+        if (!dayMatch) continue;
+
+        const day = Number(dayMatch[1]);
+        const month = Number(dayMatch[2]);
+        const date = new Date(baseYear, month - 1, day);
+        if (Number.isNaN(date.getTime())) continue;
+
+        const sector = findNearestSector(r);
+        if (!sector) {
+          errors.push(`Linha ${r + 1}: não foi possível identificar o setor para ${cellText}.`);
+          continue;
+        }
+
+        const extractedNames: string[] = [];
+        for (let rr = r; rr <= Math.min(rawMatrix.length - 1, r + 3); rr++) {
+          const raw = String(rawMatrix[rr]?.[c] ?? '').trim();
+          if (!raw) continue;
+          const cleaned = rr === r ? raw.replace(dayRegex, '').trim() : raw;
+          if (!cleaned) continue;
+          const parts = cleaned.split(/\n|;|,|\|/g).map((p) => p.trim()).filter(Boolean);
+          for (const part of parts) {
+            if (!isIgnored(part)) extractedNames.push(part);
+          }
+        }
+
+        const uniqueNames = Array.from(new Set(extractedNames));
+        const noteValue = uniqueNames.length > 0 ? `Importado da escala impressa - ${uniqueNames.join(' | ')}` : 'Importado da escala impressa';
+
+        parsed.push({
+          sector_id: sector.id,
+          sector_name: sector.name,
+          shift_date: format(date, 'yyyy-MM-dd'),
+          start_time: '07:00',
+          end_time: '19:00',
+          hospital: sector.name,
+          location: null,
+          base_value: null,
+          notes: noteValue,
+          title: 'Plantão Diurno',
+        });
+      }
+    }
+
+    const dedup = new Map<string, ImportedShiftRow>();
+    for (const row of parsed) {
+      const key = `${row.sector_id}|${row.shift_date}|${row.start_time}|${row.end_time}`;
+      if (!dedup.has(key)) dedup.set(key, row);
+    }
+
+    return { parsed: Array.from(dedup.values()), errors };
+  }
+
   async function handleImportScheduleFile(file: File) {
     if (!file) return;
 
@@ -1031,6 +1149,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setImportFileName(file.name);
 
     if (!parsed.length) {
+      const fallback = parseEscalasGridLayout(rawMatrix);
+      if (fallback.parsed.length > 0) {
+        setImportPreviewRows(fallback.parsed);
+        setImportErrors([
+          ...errors,
+          ...fallback.errors,
+          'Formato de grade detectado: horários padrão 07:00-19:00 aplicados.',
+        ]);
+        setImportFileName(file.name);
+        notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+        return;
+      }
+
       notifyWarning('Importação sem linhas válidas', 'Revise o arquivo e tente novamente.');
       return;
     }
