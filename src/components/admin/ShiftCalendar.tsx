@@ -4819,7 +4819,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     {selectedShiftIds.size > 0 && (
                       <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Excluir ({selectedShiftIds.size})
+                        Excluir selecionados ({selectedShiftIds.size})
                       </Button>
                     )}
                     {selectedDates.size > 0 && (
@@ -4851,7 +4851,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       </Button>
                     )}
                     <Button variant="ghost" size="sm" onClick={clearSelection}>
-                      Limpar
+                      Limpar seleção
                     </Button>
                     <Button variant="outline" size="sm" onClick={exitBulkMode}>
                       <X className="mr-2 h-4 w-4" />
@@ -5121,7 +5121,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               }}
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
-                              Excluir ({selectedCount})
+                              Excluir selecionados ({selectedCount})
                             </Button>
                             <Button
                               variant="outline"
