@@ -12,13 +12,14 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as XLSX from 'xlsx';
 
 interface Sector {
   id: string;
@@ -76,6 +77,19 @@ type ShiftAssignmentType = 'vago' | 'disponivel' | string; // string is user_id
 
 interface ShiftCalendarProps {
   initialSectorId?: string;
+}
+
+interface ImportedShiftRow {
+  sector_id: string;
+  sector_name: string;
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  hospital: string;
+  location: string | null;
+  base_value: number | null;
+  notes: string | null;
+  title: string;
 }
 
 const SQUARE_SELECT_TRIGGER_CLASS =
@@ -329,6 +343,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     assigned_user_id: '', // '' means keep
   });
   const [bulkApplyShiftIds, setBulkApplyShiftIds] = useState<string[]>([]);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importingShifts, setImportingShifts] = useState(false);
+  const [importFileName, setImportFileName] = useState('');
+  const [importPreviewRows, setImportPreviewRows] = useState<ImportedShiftRow[]>([]);
+  const [importErrors, setImportErrors] = useState<string[]>([]);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   
   // Form data
   const [formData, setFormData] = useState({
@@ -776,6 +796,217 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const parsed = parseMoneyValue(raw);
     if (!Number.isFinite(parsed)) return null;
     return parsed;
+  }
+
+  function normalizeString(value: unknown): string {
+    return String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  }
+
+  function normalizeHeader(value: unknown): string {
+    return normalizeString(value).replace(/\s+/g, '_');
+  }
+
+  function readFieldByAliases(
+    row: Record<string, unknown>,
+    aliases: string[],
+  ): unknown {
+    const aliasSet = new Set(aliases.map((a) => normalizeHeader(a)));
+    for (const [key, value] of Object.entries(row)) {
+      if (aliasSet.has(normalizeHeader(key))) {
+        return value;
+      }
+    }
+    return undefined;
+  }
+
+  function parseImportDate(value: unknown): string | null {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return format(value, 'yyyy-MM-dd');
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+      if (!Number.isNaN(date.getTime())) return format(date, 'yyyy-MM-dd');
+    }
+
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+
+    const br = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if (br) {
+      const day = Number(br[1]);
+      const month = Number(br[2]);
+      const year = Number(br[3].length === 2 ? `20${br[3]}` : br[3]);
+      const date = new Date(year, month - 1, day);
+      if (!Number.isNaN(date.getTime())) return format(date, 'yyyy-MM-dd');
+    }
+
+    const iso = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    if (iso) {
+      const year = Number(iso[1]);
+      const month = Number(iso[2]);
+      const day = Number(iso[3]);
+      const date = new Date(year, month - 1, day);
+      if (!Number.isNaN(date.getTime())) return format(date, 'yyyy-MM-dd');
+    }
+
+    return null;
+  }
+
+  function parseImportTime(value: unknown): string | null {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      const totalMinutes = Math.round(value * 24 * 60);
+      const hh = String(Math.floor(totalMinutes / 60) % 24).padStart(2, '0');
+      const mm = String(totalMinutes % 60).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+
+    const match = raw.match(/^(\d{1,2}):?(\d{2})/);
+    if (!match) return null;
+
+    const hh = Number(match[1]);
+    const mm = Number(match[2]);
+    if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return null;
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+  }
+
+  async function handleImportScheduleFile(file: File) {
+    if (!file) return;
+
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
+      notifyWarning('Arquivo inválido', 'Use um arquivo .xlsx, .xls ou .csv.');
+      return;
+    }
+
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: '',
+      raw: false,
+    });
+
+    if (!rows.length) {
+      setImportPreviewRows([]);
+      setImportErrors(['Planilha vazia.']);
+      return;
+    }
+
+    const sectorByNormalizedName = new Map(
+      sectors.map((s) => [normalizeString(s.name), s]),
+    );
+
+    const parsed: ImportedShiftRow[] = [];
+    const errors: string[] = [];
+
+    rows.forEach((row, index) => {
+      const line = index + 2;
+
+      const rawSector = readFieldByAliases(row, ['setor', 'sector', 'setor_nome', 'nome_setor']);
+      const rawDate = readFieldByAliases(row, ['data', 'date', 'shift_date', 'dia']);
+      const rawStart = readFieldByAliases(row, ['inicio', 'início', 'start', 'start_time', 'hora_inicio']);
+      const rawEnd = readFieldByAliases(row, ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim']);
+      const rawHospital = readFieldByAliases(row, ['hospital', 'unidade']);
+      const rawLocation = readFieldByAliases(row, ['local', 'location', 'sala']);
+      const rawBase = readFieldByAliases(row, ['valor', 'valor_base', 'base_value', 'valorbase']);
+      const rawNotes = readFieldByAliases(row, ['obs', 'observacao', 'observação', 'notes']);
+      const rawTitle = readFieldByAliases(row, ['titulo', 'título', 'title']);
+
+      const sectorName = String(rawSector ?? '').trim();
+      const sector = sectorByNormalizedName.get(normalizeString(sectorName));
+      if (!sector) {
+        errors.push(`Linha ${line}: setor não encontrado (${sectorName || 'vazio'}).`);
+        return;
+      }
+
+      const shiftDate = parseImportDate(rawDate);
+      if (!shiftDate) {
+        errors.push(`Linha ${line}: data inválida (${String(rawDate ?? '').trim() || 'vazia'}).`);
+        return;
+      }
+
+      const startTime = parseImportTime(rawStart);
+      const endTime = parseImportTime(rawEnd);
+      if (!startTime || !endTime) {
+        errors.push(`Linha ${line}: horário inválido (início/fim).`);
+        return;
+      }
+
+      const hospital = String(rawHospital ?? '').trim() || sector.name;
+      const location = String(rawLocation ?? '').trim() || null;
+      const baseValue = parseMoneyNullable(rawBase);
+      const notes = String(rawNotes ?? '').trim() || null;
+      const title = String(rawTitle ?? '').trim() || generateShiftTitle(startTime, endTime);
+
+      parsed.push({
+        sector_id: sector.id,
+        sector_name: sector.name,
+        shift_date: shiftDate,
+        start_time: startTime,
+        end_time: endTime,
+        hospital,
+        location,
+        base_value: baseValue,
+        notes,
+        title,
+      });
+    });
+
+    setImportPreviewRows(parsed);
+    setImportErrors(errors);
+    setImportFileName(file.name);
+
+    if (!parsed.length) {
+      notifyWarning('Importação sem linhas válidas', 'Revise o arquivo e tente novamente.');
+      return;
+    }
+
+    notifyInfo('Arquivo carregado', `${parsed.length} linha(s) pronta(s) para importar.`);
+  }
+
+  async function confirmImportSchedule() {
+    if (!currentTenantId || importPreviewRows.length === 0) return;
+
+    setImportingShifts(true);
+    try {
+      const payload = importPreviewRows.map((row) => ({
+        tenant_id: currentTenantId,
+        title: row.title,
+        hospital: row.hospital,
+        location: row.location,
+        shift_date: row.shift_date,
+        start_time: row.start_time,
+        end_time: row.end_time,
+        base_value: row.base_value,
+        notes: row.notes,
+        sector_id: row.sector_id,
+        updated_by: user?.id,
+      }));
+
+      const { error } = await supabase.from('shifts').insert(payload);
+      if (error) {
+        notifyError('importar escala', error, 'Não foi possível importar a planilha.');
+        return;
+      }
+
+      notifySuccess('Escala importada', `${payload.length} plantão(ões) criado(s).`);
+      setImportDialogOpen(false);
+      setImportPreviewRows([]);
+      setImportErrors([]);
+      setImportFileName('');
+      await fetchData();
+    } finally {
+      setImportingShifts(false);
+    }
   }
 
   // Resolve value using the same rules everywhere:
@@ -4348,6 +4579,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       <FileText className="mr-2 h-4 w-4" />
                       Baixar PDF
                     </Button>
+                    <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Importar Escala
+                    </Button>
 
                     <Button onClick={() => openCreateShift()}>
                       <Plus className="mr-2 h-4 w-4" />
@@ -6097,6 +6332,108 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) {
+            setImportPreviewRows([]);
+            setImportErrors([]);
+            setImportFileName('');
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Importar Escala</DialogTitle>
+            <DialogDescription>
+              Envie um arquivo CSV/XLSX com colunas: setor, data, início e fim. Campos opcionais: hospital, local, valor, observações, título.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <input
+              ref={importFileInputRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                void handleImportScheduleFile(file);
+                event.currentTarget.value = '';
+              }}
+            />
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => importFileInputRef.current?.click()}>
+                <Upload className="mr-2 h-4 w-4" />
+                Selecionar arquivo
+              </Button>
+              {importFileName && (
+                <span className="text-sm text-muted-foreground">{importFileName}</span>
+              )}
+            </div>
+
+            {importErrors.length > 0 && (
+              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+                <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
+                  Avisos ({importErrors.length})
+                </p>
+                <div className="mt-1 max-h-32 overflow-y-auto text-xs text-yellow-700 dark:text-yellow-200">
+                  {importErrors.slice(0, 20).map((err, idx) => (
+                    <p key={`${idx}-${err}`}>{err}</p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {importPreviewRows.length > 0 && (
+              <div className="rounded-lg border border-border/70 bg-card p-3">
+                <p className="mb-2 text-sm font-medium">
+                  Pré-visualização ({importPreviewRows.length} linha(s) válida(s))
+                </p>
+                <div className="max-h-56 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-muted-foreground">
+                        <th className="py-1 pr-2">Data</th>
+                        <th className="py-1 pr-2">Setor</th>
+                        <th className="py-1 pr-2">Horário</th>
+                        <th className="py-1 pr-2">Hospital</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {importPreviewRows.slice(0, 30).map((row, idx) => (
+                        <tr key={`${row.shift_date}-${row.sector_id}-${row.start_time}-${idx}`} className="border-t border-border/40">
+                          <td className="py-1 pr-2">{format(parseISO(row.shift_date), 'dd/MM/yyyy')}</td>
+                          <td className="py-1 pr-2">{row.sector_name}</td>
+                          <td className="py-1 pr-2">{row.start_time} - {row.end_time}</td>
+                          <td className="py-1 pr-2">{row.hospital}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setImportDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmImportSchedule}
+                disabled={importPreviewRows.length === 0 || importingShifts}
+              >
+                {importingShifts ? 'Importando...' : `Importar ${importPreviewRows.length || ''}`.trim()}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
 
