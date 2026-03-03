@@ -890,14 +890,72 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
     const firstSheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[firstSheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    const rawMatrix = XLSX.utils.sheet_to_json<(string | number | Date)[]>(sheet, {
+      header: 1,
       defval: '',
       raw: false,
+      blankrows: false,
+    });
+
+    if (!rawMatrix.length) {
+      setImportPreviewRows([]);
+      setImportErrors(['Planilha vazia.']);
+      return;
+    }
+
+    const sectorAliases = [
+      'setor',
+      'sector',
+      'setor_nome',
+      'nome_setor',
+      'unidade',
+      'setor_local',
+      'setor/local',
+      'hospital',
+      'hospital_setor',
+    ];
+    const dateAliases = ['data', 'date', 'shift_date', 'dia'];
+    const startAliases = ['inicio', 'início', 'start', 'start_time', 'hora_inicio'];
+    const endAliases = ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim'];
+
+    const groups = [sectorAliases, dateAliases, startAliases, endAliases];
+    const maxHeaderScan = Math.min(12, rawMatrix.length);
+
+    const rowContainsAlias = (row: unknown[], aliases: string[]) => {
+      const normalizedCells = row.map((cell) => normalizeHeader(cell));
+      return aliases.some((alias) => normalizedCells.includes(normalizeHeader(alias)));
+    };
+
+    let headerRowIndex = -1;
+    let bestScore = -1;
+    for (let i = 0; i < maxHeaderScan; i++) {
+      const row = rawMatrix[i] || [];
+      const score = groups.reduce((acc, aliases) => acc + (rowContainsAlias(row as unknown[], aliases) ? 1 : 0), 0);
+      if (score > bestScore) {
+        bestScore = score;
+        headerRowIndex = i;
+      }
+    }
+
+    const useDetectedHeader = bestScore >= 2 && headerRowIndex >= 0;
+    const fallbackHeaders = ['setor', 'data', 'inicio', 'fim', 'hospital', 'local', 'valor', 'observacao', 'titulo'];
+    const headers = useDetectedHeader
+      ? (rawMatrix[headerRowIndex] || []).map((cell, idx) => String(cell ?? '').trim() || `col_${idx + 1}`)
+      : fallbackHeaders;
+    const dataRows = useDetectedHeader ? rawMatrix.slice(headerRowIndex + 1) : rawMatrix;
+    const firstDataLine = useDetectedHeader ? headerRowIndex + 2 : 1;
+
+    const rows = dataRows.map((cells) => {
+      const obj: Record<string, unknown> = {};
+      headers.forEach((header, index) => {
+        obj[header] = cells?.[index] ?? '';
+      });
+      return obj;
     });
 
     if (!rows.length) {
       setImportPreviewRows([]);
-      setImportErrors(['Planilha vazia.']);
+      setImportErrors(['Planilha sem dados após o cabeçalho.']);
       return;
     }
 
@@ -909,13 +967,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const errors: string[] = [];
 
     rows.forEach((row, index) => {
-      const line = index + 2;
+      const line = firstDataLine + index;
 
-      const rawSector = readFieldByAliases(row, ['setor', 'sector', 'setor_nome', 'nome_setor']);
-      const rawDate = readFieldByAliases(row, ['data', 'date', 'shift_date', 'dia']);
-      const rawStart = readFieldByAliases(row, ['inicio', 'início', 'start', 'start_time', 'hora_inicio']);
-      const rawEnd = readFieldByAliases(row, ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim']);
-      const rawHospital = readFieldByAliases(row, ['hospital', 'unidade']);
+      const isEmptyRow = Object.values(row).every((value) => String(value ?? '').trim() === '');
+      if (isEmptyRow) return;
+
+      const rawHospital = readFieldByAliases(row, ['hospital', 'hospital_nome']);
+      const rawUnit = readFieldByAliases(row, ['unidade', 'setor_unidade']);
+      const rawSector =
+        readFieldByAliases(row, sectorAliases) ??
+        rawUnit ??
+        rawHospital;
+      const rawDate = readFieldByAliases(row, dateAliases);
+      const rawStart = readFieldByAliases(row, startAliases);
+      const rawEnd = readFieldByAliases(row, endAliases);
       const rawLocation = readFieldByAliases(row, ['local', 'location', 'sala']);
       const rawBase = readFieldByAliases(row, ['valor', 'valor_base', 'base_value', 'valorbase']);
       const rawNotes = readFieldByAliases(row, ['obs', 'observacao', 'observação', 'notes']);
@@ -941,7 +1006,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return;
       }
 
-      const hospital = String(rawHospital ?? '').trim() || sector.name;
+      const hospital = String(rawHospital ?? '').trim() || String(rawUnit ?? '').trim() || sector.name;
       const location = String(rawLocation ?? '').trim() || null;
       const baseValue = parseMoneyNullable(rawBase);
       const notes = String(rawNotes ?? '').trim() || null;
