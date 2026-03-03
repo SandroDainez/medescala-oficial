@@ -90,6 +90,7 @@ interface ImportedShiftRow {
   base_value: number | null;
   notes: string | null;
   title: string;
+  assignee_names?: string[];
 }
 
 const SQUARE_SELECT_TRIGGER_CLASS =
@@ -806,6 +807,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .trim();
   }
 
+  function resolveImportedMember(name: string): Member | null {
+    const target = normalizeString(name);
+    if (!target) return null;
+
+    const exact = members.find((member) => {
+      const full = normalizeString(member.profile?.full_name ?? '');
+      const short = normalizeString(member.profile?.name ?? '');
+      return full === target || short === target;
+    });
+    if (exact) return exact;
+
+    if (target.length < 6) return null;
+
+    return (
+      members.find((member) => {
+        const full = normalizeString(member.profile?.full_name ?? '');
+        const short = normalizeString(member.profile?.name ?? '');
+        return (
+          (full && (full.includes(target) || target.includes(full))) ||
+          (short && (short.includes(target) || target.includes(short)))
+        );
+      }) || null
+    );
+  }
+
   function normalizeHeader(value: unknown): string {
     return normalizeString(value).replace(/\s+/g, '_');
   }
@@ -982,6 +1008,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           base_value: null,
           notes: noteValue,
           title: 'Plantão Diurno',
+          assignee_names: uniqueNames,
         });
       }
     }
@@ -1218,27 +1245,79 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     setImportingShifts(true);
     try {
-      const payload = importPreviewRows.map((row) => ({
-        tenant_id: currentTenantId,
-        title: row.title,
-        hospital: row.hospital,
-        location: row.location,
-        shift_date: row.shift_date,
-        start_time: row.start_time,
-        end_time: row.end_time,
-        base_value: row.base_value,
-        notes: row.notes,
-        sector_id: row.sector_id,
-        updated_by: user?.id,
-      }));
+      let createdCount = 0;
+      let assignedCount = 0;
+      const unmatchedNames = new Set<string>();
 
-      const { error } = await supabase.from('shifts').insert(payload);
-      if (error) {
-        notifyError('importar escala', error, 'Não foi possível importar a planilha.');
-        return;
+      for (const row of importPreviewRows) {
+        const shiftId = await insertShiftAndGetId({
+          tenant_id: currentTenantId,
+          title: row.title,
+          hospital: row.hospital,
+          location: row.location,
+          shift_date: row.shift_date,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          base_value: row.base_value,
+          notes: row.notes,
+          sector_id: row.sector_id,
+          updated_by: user?.id,
+        });
+        createdCount += 1;
+
+        const names = (row.assignee_names || []).map((n) => n.trim()).filter(Boolean);
+        for (const importedName of names) {
+          const member = resolveImportedMember(importedName);
+          if (!member?.user_id) {
+            unmatchedNames.add(importedName);
+            continue;
+          }
+
+          if (!isUserAllowedInSector(member.user_id, row.sector_id || null)) {
+            unmatchedNames.add(`${importedName} (fora do setor)`);
+            continue;
+          }
+
+          const assignedValue = resolveValue({
+            raw: row.base_value ?? '',
+            sector_id: row.sector_id || null,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            user_id: member.user_id,
+            useSectorDefault: true,
+            applyProRata: true,
+          });
+
+          const { error: assignErr } = await supabase
+            .from('shift_assignments')
+            .upsert(
+              {
+                tenant_id: currentTenantId,
+                shift_id: shiftId,
+                user_id: member.user_id,
+                assigned_value: assignedValue,
+                updated_by: user?.id,
+              },
+              { onConflict: 'shift_id,user_id' },
+            );
+
+          if (assignErr) {
+            unmatchedNames.add(`${importedName} (erro de vínculo)`);
+          } else {
+            assignedCount += 1;
+          }
+        }
       }
 
-      notifySuccess('Escala importada', `${payload.length} plantão(ões) criado(s).`);
+      const unmatchedList = Array.from(unmatchedNames);
+      const unmatchedText =
+        unmatchedList.length > 0
+          ? ` Não vinculados: ${unmatchedList.slice(0, 8).join(', ')}${unmatchedList.length > 8 ? '...' : ''}.`
+          : '';
+      notifySuccess(
+        'Escala importada',
+        `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}`,
+      );
       setImportDialogOpen(false);
       setImportPreviewRows([]);
       setImportErrors([]);
