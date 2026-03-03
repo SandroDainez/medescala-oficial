@@ -174,6 +174,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
   const [deletingDayShifts, setDeletingDayShifts] = useState(false);
   const [deletingCurrentScale, setDeletingCurrentScale] = useState(false);
+  const [deleteScaleDialogOpen, setDeleteScaleDialogOpen] = useState(false);
+  const [deleteScaleConfirmText, setDeleteScaleConfirmText] = useState('');
+  const [deleteScaleContext, setDeleteScaleContext] = useState<{
+    sectorName: string;
+    periodLabel: string;
+    count: number;
+    ids: string[];
+  } | null>(null);
   
   // Conflict resolution states
   const [justificationDialogOpen, setJustificationDialogOpen] = useState(false);
@@ -2348,7 +2356,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
-  async function handleDeleteCurrentScale() {
+  function handleDeleteCurrentScale() {
     if (deletingCurrentScale) return;
     if (filterSector === 'all') {
       notifyWarning('Selecione um setor', 'Para excluir escala, selecione um setor específico.');
@@ -2367,13 +2375,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         ? format(currentDate, 'MMMM/yyyy', { locale: ptBR })
         : `semana ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM', { locale: ptBR })} a ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM/yyyy', { locale: ptBR })}`;
 
-    const ok = confirm(
-      `Deseja excluir TODA a escala de ${sectorName} (${periodLabel})?\nSerão removidos ${shiftsToDelete.length} plantão(ões). Esta ação não pode ser desfeita.`,
-    );
-    if (!ok) return;
+    setDeleteScaleContext({
+      sectorName,
+      periodLabel,
+      count: shiftsToDelete.length,
+      ids: shiftsToDelete.map((s) => s.id),
+    });
+    setDeleteScaleConfirmText('');
+    setDeleteScaleDialogOpen(true);
+  }
+
+  async function confirmDeleteCurrentScale() {
+    if (deletingCurrentScale || !deleteScaleContext) return;
+    if (deleteScaleConfirmText.trim().toUpperCase() !== 'EXCLUIR') {
+      notifyWarning('Confirmação inválida', 'Digite EXCLUIR para confirmar.');
+      return;
+    }
 
     setDeletingCurrentScale(true);
-    const ids = shiftsToDelete.map((s) => s.id);
+    const ids = deleteScaleContext.ids;
 
     try {
       const { error: bulkError } = await supabase.from('shifts').delete().in('id', ids);
@@ -2389,6 +2409,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       });
       notifySuccess('Escala excluída', `${ids.length} plantão(ões) removido(s).`);
       await fetchData();
+      setDeleteScaleDialogOpen(false);
+      setDeleteScaleConfirmText('');
+      setDeleteScaleContext(null);
     } finally {
       setDeletingCurrentScale(false);
     }
@@ -7384,6 +7407,77 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteScaleDialogOpen}
+        onOpenChange={(open) => {
+          if (!deletingCurrentScale) {
+            setDeleteScaleDialogOpen(open);
+            if (!open) {
+              setDeleteScaleConfirmText('');
+              setDeleteScaleContext(null);
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+              Confirmar exclusão de escala
+            </DialogTitle>
+            <DialogDescription>
+              Esta ação é irreversível.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 text-sm">
+            <p>
+              Setor: <span className="font-semibold">{deleteScaleContext?.sectorName ?? '-'}</span>
+            </p>
+            <p>
+              Período: <span className="font-semibold">{deleteScaleContext?.periodLabel ?? '-'}</span>
+            </p>
+            <p>
+              Plantões afetados: <span className="font-semibold">{deleteScaleContext?.count ?? 0}</span>
+            </p>
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-200">
+              Digite <span className="font-semibold">EXCLUIR</span> para liberar a exclusão.
+            </div>
+            <Input
+              value={deleteScaleConfirmText}
+              onChange={(e) => setDeleteScaleConfirmText(e.target.value)}
+              placeholder="Digite EXCLUIR"
+              autoComplete="off"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              disabled={deletingCurrentScale}
+              onClick={() => {
+                setDeleteScaleDialogOpen(false);
+                setDeleteScaleConfirmText('');
+                setDeleteScaleContext(null);
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="flex-1"
+              disabled={deletingCurrentScale || deleteScaleConfirmText.trim().toUpperCase() !== 'EXCLUIR'}
+              onClick={confirmDeleteCurrentScale}
+            >
+              {deletingCurrentScale ? 'Excluindo...' : 'Excluir Escala'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
