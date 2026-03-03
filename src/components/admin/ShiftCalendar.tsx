@@ -173,6 +173,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
   const [deletingDayShifts, setDeletingDayShifts] = useState(false);
+  const [deletingCurrentScale, setDeletingCurrentScale] = useState(false);
   
   // Conflict resolution states
   const [justificationDialogOpen, setJustificationDialogOpen] = useState(false);
@@ -2113,8 +2114,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Clear all selections
   function clearSelection() {
+    if (selectedShiftIds.size === 0 && selectedDates.size === 0) {
+      notifyWarning('Nenhuma seleção para limpar');
+      return;
+    }
     setSelectedShiftIds(new Set());
     setSelectedDates(new Set());
+    notifySuccess('Seleção limpa');
   }
 
   // Exit bulk mode
@@ -2339,6 +2345,52 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setSelectedDate(null);
     } finally {
       setDeletingDayShifts(false);
+    }
+  }
+
+  async function handleDeleteCurrentScale() {
+    if (deletingCurrentScale) return;
+    if (filterSector === 'all') {
+      notifyWarning('Selecione um setor', 'Para excluir escala, selecione um setor específico.');
+      return;
+    }
+
+    const sectorName = sectors.find((s) => s.id === filterSector)?.name || 'setor selecionado';
+    const shiftsToDelete = [...filteredShifts];
+    if (shiftsToDelete.length === 0) {
+      notifyWarning('Nenhum plantão no período');
+      return;
+    }
+
+    const periodLabel =
+      viewMode === 'month'
+        ? format(currentDate, 'MMMM/yyyy', { locale: ptBR })
+        : `semana ${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM', { locale: ptBR })} a ${format(endOfWeek(currentDate, { weekStartsOn: 1 }), 'dd/MM/yyyy', { locale: ptBR })}`;
+
+    const ok = confirm(
+      `Deseja excluir TODA a escala de ${sectorName} (${periodLabel})?\nSerão removidos ${shiftsToDelete.length} plantão(ões). Esta ação não pode ser desfeita.`,
+    );
+    if (!ok) return;
+
+    setDeletingCurrentScale(true);
+    const ids = shiftsToDelete.map((s) => s.id);
+
+    try {
+      const { error: bulkError } = await supabase.from('shifts').delete().in('id', ids);
+      if (bulkError) {
+        notifyError('excluir escala do período', bulkError, 'Não foi possível excluir a escala inteira.');
+        return;
+      }
+
+      setSelectedShiftIds((prev) => {
+        const next = new Set(prev);
+        ids.forEach((id) => next.delete(id));
+        return next;
+      });
+      notifySuccess('Escala excluída', `${ids.length} plantão(ões) removido(s).`);
+      await fetchData();
+    } finally {
+      setDeletingCurrentScale(false);
     }
   }
 
@@ -4912,6 +4964,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${recalculateLoading ? 'animate-spin' : ''}`} />
                       {recalculateLoading ? 'Recalculando...' : 'Recalcular'}
+                    </Button>
+
+                    <Button
+                      variant="destructive"
+                      onClick={handleDeleteCurrentScale}
+                      disabled={deletingCurrentScale || filterSector === 'all' || filteredShifts.length === 0}
+                      title={filterSector === 'all' ? 'Selecione um setor para excluir a escala' : 'Excluir todos os plantões do período atual'}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      {deletingCurrentScale ? 'Excluindo escala...' : 'Excluir Escala'}
                     </Button>
 
                     <Button variant="outline" onClick={handlePrintSchedule}>
