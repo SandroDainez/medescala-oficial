@@ -5025,8 +5025,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <Button
                       variant="destructive"
                       onClick={handleDeleteCurrentScale}
-                      disabled={deletingCurrentScale || filterSector === 'all' || filteredShifts.length === 0}
-                      title={filterSector === 'all' ? 'Selecione um setor para excluir a escala' : 'Excluir todos os plantões do período atual'}
+                      disabled={deletingCurrentScale}
+                      title={
+                        filterSector === 'all'
+                          ? 'Selecione um setor para excluir a escala'
+                          : filteredShifts.length === 0
+                            ? 'Não há plantões no período atual para excluir'
+                            : 'Excluir todos os plantões do período atual'
+                      }
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
                       {deletingCurrentScale ? 'Excluindo escala...' : 'Excluir Escala'}
