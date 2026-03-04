@@ -1537,24 +1537,61 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return assignments.filter(a => a.shift_id === shiftId);
   }
 
+  // Refresh assignment rows for a specific set of shifts directly from table
+  // and merge into local state. Used as a resilient fallback after save operations.
+  async function refreshAssignmentsForShiftIds(shiftIds: string[]) {
+    if (shiftIds.length === 0) return;
+    const uniqueIds = Array.from(new Set(shiftIds));
+
+    const { data, error } = await supabase
+      .from('shift_assignments')
+      .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
+      .in('shift_id', uniqueIds);
+
+    if (error) {
+      console.error('[ShiftCalendar] refreshAssignmentsForShiftIds error', error);
+      return;
+    }
+
+    const mapped = ((data || []) as any[]).map((row) => ({
+      id: row.id,
+      shift_id: row.shift_id,
+      user_id: row.user_id,
+      assigned_value: row.assigned_value,
+      status: row.status,
+      profile: {
+        name: row.profile?.name ?? null,
+        full_name: row.profile?.full_name ?? null,
+      },
+    })) as unknown as ShiftAssignment[];
+
+    setAssignments((prev) => {
+      const kept = prev.filter((a) => !uniqueIds.includes(a.shift_id));
+      return [...kept, ...mapped];
+    });
+  }
+
   // Refresh assignment rows for a specific day and merge into local state.
   // This avoids stale "VAGO" rendering when day dialog is opened right after edits/imports.
   async function refreshAssignmentsForDate(date: Date) {
     if (!currentTenantId || !user?.id) return;
 
     const dayStr = format(date, 'yyyy-MM-dd');
+    const dayShiftIds = new Set(
+      shifts
+        .filter((s) => isSameDay(parseISO(s.shift_date), date))
+        .map((s) => s.id)
+    );
+    if (dayShiftIds.size === 0) return;
+
     const { data, error } = await supabase.rpc('get_shift_assignments_range', {
       _tenant_id: currentTenantId,
       _start: dayStr,
       _end: dayStr,
     });
 
-    if (error) {
-      console.error('[ShiftCalendar] refreshAssignmentsForDate error', error);
-      return;
-    }
-
-    const mapped = ((data ?? []) as any[]).map((row) => {
+    // Build mapped rows from RPC when available.
+    let mapped: ShiftAssignment[] = ((data ?? []) as any[]).map((row) => {
       const member = members.find((m) => m.user_id === row.user_id);
       const fallbackName = getMemberDisplayName(member);
       const resolvedFullName = row.full_name ?? null;
@@ -1569,12 +1606,35 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       } as unknown as ShiftAssignment;
     });
 
-    const dayShiftIds = new Set(
-      shifts
-        .filter((s) => isSameDay(parseISO(s.shift_date), date))
-        .map((s) => s.id)
-    );
-    if (dayShiftIds.size === 0) return;
+    // Harden against transient empty RPC responses:
+    // confirm with direct table query before clearing any existing day assignments.
+    if (error || mapped.length === 0) {
+      if (error) {
+        console.error('[ShiftCalendar] refreshAssignmentsForDate rpc error', error);
+      }
+
+      const direct = await supabase
+        .from('shift_assignments')
+        .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
+        .in('shift_id', Array.from(dayShiftIds));
+
+      if (direct.error) {
+        console.error('[ShiftCalendar] refreshAssignmentsForDate fallback error', direct.error);
+        return;
+      }
+
+      mapped = ((direct.data || []) as any[]).map((row) => ({
+        id: row.id,
+        shift_id: row.shift_id,
+        user_id: row.user_id,
+        assigned_value: row.assigned_value,
+        status: row.status,
+        profile: {
+          name: row.profile?.name ?? null,
+          full_name: row.profile?.full_name ?? null,
+        },
+      })) as unknown as ShiftAssignment[];
+    }
 
     setAssignments((prev) => {
       const kept = prev.filter((a) => !dayShiftIds.has(a.shift_id));
@@ -1605,6 +1665,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Fallback: look up in members list by user_id
     const member = members.find(m => m.user_id === assignment.user_id);
     return getMemberDisplayName(member);
+  }
+
+  function stripShiftStatusTags(notes?: string | null): string {
+    return (notes || '')
+      .replace('[DISPONÍVEL]', '')
+      .replace('[VAGO]', '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
 
   function getOfferName(offer: ShiftOffer): string {
@@ -2033,6 +2101,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         notifySuccess('Plantão atualizado');
       }
 
+      await refreshAssignmentsForShiftIds([editingShift.id]);
       await fetchData();
       closeShiftDialog();
       setDayDialogOpen(false);
@@ -2159,6 +2228,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         notifySuccess('Cadastro de plantões', `${createdCount} plantão(ões) criado(s).`);
       }
 
+      if (selectedDate) {
+        await refreshAssignmentsForDate(selectedDate);
+      }
       await fetchData();
       closeShiftDialog();
       setDayDialogOpen(false);
@@ -3056,7 +3128,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         .neq('id', offer.id);
 
       // Remove [DISPONÍVEL] from shift notes
-      const updatedNotes = (shift.notes || '').replace('[DISPONÍVEL]', '').trim();
+      const updatedNotes = stripShiftStatusTags(shift.notes);
       await supabase
         .from('shifts')
         .update({ notes: updatedNotes || null, updated_by: user.id })
@@ -3742,14 +3814,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               });
             }
 
-            // Remove [DISPONÍVEL] if present
-            if (originalShift.notes?.includes('[DISPONÍVEL]')) {
-              const { error: noteErr } = await supabase
-                .from('shifts')
-                .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
-                .eq('id', editData.id);
-              if (noteErr) throw noteErr;
-            }
+            const cleanedNotes = stripShiftStatusTags(editData.notes);
+            const { error: noteErr } = await supabase
+              .from('shifts')
+              .update({ notes: cleanedNotes || null })
+              .eq('id', editData.id);
+            if (noteErr) throw noteErr;
           } else if (assignmentChoice === 'disponivel') {
             // Make available - remove assignment if exists
             if (currentAssignment) {
@@ -3778,9 +3848,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             }
 
             // Add [DISPONÍVEL] tag
-            const newNotes = editData.notes?.includes('[DISPONÍVEL]')
-              ? editData.notes
-              : `[DISPONÍVEL] ${editData.notes || ''}`.trim();
+            const newNotes = `[DISPONÍVEL] ${stripShiftStatusTags(editData.notes)}`.trim();
 
             const { error: noteErr } = await supabase
               .from('shifts')
@@ -3814,14 +3882,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               if (delErr) throw delErr;
             }
 
-            // Remove [DISPONÍVEL] if present
-            if (originalShift.notes?.includes('[DISPONÍVEL]')) {
-              const { error: noteErr } = await supabase
-                .from('shifts')
-                .update({ notes: (editData.notes || '').replace('[DISPONÍVEL]', '').trim() || null })
-                .eq('id', editData.id);
-              if (noteErr) throw noteErr;
-            }
+            const newNotes = `[VAGO] ${stripShiftStatusTags(editData.notes)}`.trim();
+            const { error: noteErr } = await supabase
+              .from('shifts')
+              .update({ notes: newNotes || null })
+              .eq('id', editData.id);
+            if (noteErr) throw noteErr;
           }
         } catch (assignmentError: any) {
           const errorMessage = formatSupabaseError(assignmentError);
