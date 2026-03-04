@@ -2554,28 +2554,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     const protectedShiftIds = new Set((assignedRows || []).map((row: any) => row.shift_id));
     const deletableIds = ids.filter((id) => !protectedShiftIds.has(id));
+    const protectedCount = protectedShiftIds.size;
+    const hasProtected = protectedCount > 0;
 
-    if (deletableIds.length === 0) {
-      notifyWarning(
-        'Nenhum plantão vago selecionado',
-        'Os plantões selecionados possuem plantonistas e foram protegidos contra exclusão.',
+    let idsToDelete = deletableIds;
+
+    if (hasProtected) {
+      const forceDelete = confirm(
+        `${protectedCount} plantão(ões) selecionado(s) têm plantonista atribuído.\n\n` +
+        'Deseja excluir mesmo assim? Esta ação removerá também essas atribuições.'
       );
-      return;
+
+      if (forceDelete) {
+        idsToDelete = ids;
+      } else if (deletableIds.length === 0) {
+        notifyWarning(
+          'Nenhum plantão excluído',
+          'Você cancelou a exclusão dos plantões com plantonista.',
+        );
+        return;
+      }
     }
 
-    const { error } = await supabase.from('shifts').delete().in('id', deletableIds);
+    const { error } = await supabase.from('shifts').delete().in('id', idsToDelete);
     if (error) {
       notifyError('excluir plantões selecionados', error, 'Não foi possível excluir os plantões selecionados.');
       return;
     }
 
-    if (protectedShiftIds.size > 0) {
+    if (hasProtected && idsToDelete.length !== ids.length) {
       notifyWarning(
         'Exclusão parcial',
-        `${deletableIds.length} removido(s). ${protectedShiftIds.size} com plantonista foram preservados.`,
+        `${idsToDelete.length} removido(s). ${protectedCount} com plantonista foram preservados.`,
       );
     } else {
-      notifySuccess('Plantões excluídos', `${deletableIds.length} plantão(ões) removido(s).`);
+      notifySuccess('Plantões excluídos', `${idsToDelete.length} plantão(ões) removido(s).`);
     }
 
     setDaySelectedShiftIds(new Set());
