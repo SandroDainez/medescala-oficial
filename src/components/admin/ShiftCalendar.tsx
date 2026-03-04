@@ -171,6 +171,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [replicateWeeks, setReplicateWeeks] = useState(1);
   const [replicateLoading, setReplicateLoading] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [bulkEditSaving, setBulkEditSaving] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
   const [deletingDayShifts, setDeletingDayShifts] = useState(false);
   const [deletingCurrentScale, setDeletingCurrentScale] = useState(false);
@@ -3463,9 +3464,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   async function handleBulkEditSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!user?.id || !currentTenantId) return;
+    if (!user?.id || !currentTenantId || bulkEditSaving) return;
 
+    setBulkEditSaving(true);
     try {
+      let updatedCount = 0;
+      let errorCount = 0;
+
       for (const editData of bulkEditData) {
         const originalShift = bulkEditShifts.find(s => s.id === editData.id);
         if (!originalShift) continue;
@@ -3480,6 +3485,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             'Plantonista inválido para o setor',
             'No modo "Editar todos", selecione apenas plantonistas do setor.',
           );
+          errorCount++;
           continue;
         }
 
@@ -3508,6 +3514,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         if (shiftError) {
           console.error('Error updating shift:', shiftError);
+          errorCount++;
           continue;
         }
 
@@ -3712,14 +3719,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           const errorMessage = formatSupabaseError(assignmentError);
           console.error('[ShiftCalendar] bulk edit assignment failed:', assignmentError, errorMessage);
           notifyError('salvar plantão', assignmentError, errorMessage || 'Falha ao atualizar o plantonista.');
+          errorCount++;
+          continue;
         }
+
+        updatedCount++;
       }
 
-      notifySuccess('Plantões atualizados', 'Alterações aplicadas. Você pode continuar editando antes de fechar.');
+      if (updatedCount > 0) {
+        notifySuccess(
+          'Plantões atualizados',
+          errorCount > 0
+            ? `${updatedCount} salvo(s) e ${errorCount} com pendência. Você pode continuar editando.`
+            : `${updatedCount} plantão(ões) salvos. Você pode continuar editando.`
+        );
+      } else if (errorCount > 0) {
+        notifyWarning('Nenhum plantão salvo', 'Revise os campos e tente novamente.');
+      }
+
       await fetchData();
+      if (selectedDate) {
+        openBulkEditDialog(selectedDate, dayDialogSectorId);
+      }
     } catch (error) {
       console.error('Error saving bulk edits:', error);
       notifyError('salvar plantões', error, 'Ocorreu um erro ao salvar os plantões.');
+    } finally {
+      setBulkEditSaving(false);
     }
   }
 
@@ -7037,6 +7063,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Bulk Edit All Shifts of Day Dialog */}
       <Dialog open={bulkEditDialogOpen} onOpenChange={(open) => {
+        if (!open && bulkEditSaving) return;
+
         if (open && bulkEditDialogCloseGuardRef.current) {
           setBulkEditDialogOpen(false);
           return;
@@ -7050,6 +7078,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }}>
         <DialogContent
           className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          onInteractOutside={(e) => {
+            if (bulkEditSaving) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (bulkEditSaving) e.preventDefault();
+          }}
           onCloseAutoFocus={(e) => {
             // Prevent focus from returning to the trigger button, which can cause an immediate re-open
             // when the user released Enter after submitting the form.
@@ -7275,12 +7309,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 type="button" 
                 variant="outline" 
                 className="flex-1"
+                disabled={bulkEditSaving}
                 onClick={closeBulkEditDialog}
               >
                 Cancelar
               </Button>
-              <Button type="submit" className="flex-1">
-                Salvar Todos ({bulkEditData.length} plantões)
+              <Button type="submit" className="flex-1" disabled={bulkEditSaving}>
+                {bulkEditSaving ? 'Salvando...' : `Salvar Todos (${bulkEditData.length} plantões)`}
               </Button>
             </div>
           </form>
