@@ -156,6 +156,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Prevent immediate re-open after a programmatic close (e.g. focus/trigger quirks)
   const shiftDialogCloseGuardRef = useRef(false);
   const bulkEditDialogCloseGuardRef = useRef(false);
+  const fetchRequestIdRef = useRef(0);
 
   // Extra hard guard: temporarily disable the trigger button to avoid click-through (mouse up)
   // after closing/saving the bulk edit dialog.
@@ -421,6 +422,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   const fetchData = useCallback(async () => {
     if (!currentTenantId || !user?.id) return;
+    const requestId = ++fetchRequestIdRef.current;
+    const isStale = () => requestId !== fetchRequestIdRef.current;
     setLoading(true);
 
     let start: Date, end: Date;
@@ -477,6 +480,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       if (sectorMembershipsRes.error) throw sectorMembershipsRes.error;
       if (membersRes.error) throw membersRes.error;
       if (shiftsRes.error) throw shiftsRes.error;
+      if (isStale()) return;
 
       setSectors((sectorsRes.data ?? []) as Sector[]);
       setSectorMemberships(sectorMembershipsRes.data ?? []);
@@ -505,6 +509,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const key = `${uv.sector_id}:${uv.user_id}`;
         valuesMap.set(key, { day_value: uv.day_value, night_value: uv.night_value });
       });
+      if (isStale()) return;
       setUserSectorValues(valuesMap);
 
       const nextShifts = (shiftsRes.data ?? []) as Shift[];
@@ -537,7 +542,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (currentTenantId && user?.id) fetchData();
         }, 1200);
       } else {
-        const mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => {
+        let mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => {
           const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
           const resolvedFullName = row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
           const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
@@ -550,7 +555,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           profile: { name: resolvedName, full_name: resolvedFullName },
         };
       });
-        setAssignments(mapped as unknown as ShiftAssignment[]);
+
+        // Guard against transient empty RPC snapshots by confirming via direct table query.
+        if (mapped.length === 0 && nextShifts.length > 0) {
+          const shiftIds = nextShifts.map((s) => s.id);
+          const direct = await supabase
+            .from('shift_assignments')
+            .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
+            .in('shift_id', shiftIds);
+
+          if (!direct.error) {
+            mapped = ((direct.data || []) as any[]).map((row) => ({
+              id: row.id,
+              shift_id: row.shift_id,
+              user_id: row.user_id,
+              assigned_value: row.assigned_value,
+              status: row.status,
+              profile: {
+                name: row.profile?.name ?? null,
+                full_name: row.profile?.full_name ?? null,
+              },
+            }));
+          }
+        }
+
+        if (!isStale()) {
+          setAssignments(mapped as unknown as ShiftAssignment[]);
+        }
       }
 
       if (offersRes.error) {
@@ -570,13 +601,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           profile: { name: resolvedName, full_name: resolvedFullName },
         };
       });
-        setShiftOffers(mapped as unknown as ShiftOffer[]);
+        if (!isStale()) {
+          setShiftOffers(mapped as unknown as ShiftOffer[]);
+        }
       }
     } catch (error: any) {
       console.error('[ShiftCalendar] fetchData error', error);
       notifyError('carregar calendário', error, 'Erro desconhecido');
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [currentTenantId, user?.id, currentDate, viewMode, filterSector, notifyError]);
 
