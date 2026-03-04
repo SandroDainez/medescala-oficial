@@ -3715,14 +3715,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
       }
 
-      notifySuccess('Plantões atualizados', 'Alterações aplicadas. Se algum plantão não salvar, você verá uma mensagem de erro.');
-      closeBulkEditDialog();
-      // After saving "Editar Todos", also close the day dialog to avoid the impression
-      // that the edit flow reopened automatically.
-      setDayDialogOpen(false);
-      setDayDialogSectorId(null);
-      setSelectedDate(null);
-      fetchData();
+      notifySuccess('Plantões atualizados', 'Alterações aplicadas. Você pode continuar editando antes de fechar.');
+      await fetchData();
     } catch (error) {
       console.error('Error saving bulk edits:', error);
       notifyError('salvar plantões', error, 'Ocorreu um erro ao salvar os plantões.');
