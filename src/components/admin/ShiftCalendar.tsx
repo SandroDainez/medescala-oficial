@@ -6403,7 +6403,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Conflict Details Dialog */}
       <Dialog open={conflictDialogOpen} onOpenChange={setConflictDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="h-5 w-5" />
@@ -6435,7 +6435,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="flex items-center gap-2">
                           <Users className="h-5 w-5 text-red-600" />
-                          <span className="font-bold text-lg">{conflict.userName}</span>
+                          <span className="font-bold text-lg break-words">{conflict.userName}</span>
                           {isAcknowledged && (
                             <Badge className="bg-yellow-500 text-white">Reconhecido</Badge>
                           )}
@@ -6566,7 +6566,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Remove Confirmation Dialog */}
       <Dialog open={removeConfirmDialogOpen} onOpenChange={setRemoveConfirmDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <Trash2 className="h-5 w-5" />
@@ -6576,14 +6576,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           
           {pendingRemoval && (
             <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-muted-foreground break-words">
                 Confirme a remoção do plantonista <strong>{pendingRemoval.conflict.userName}</strong> do local abaixo:
               </p>
               
               <div className="space-y-3">
                 <div className="admin-block-card border-red-200 bg-red-50 p-3 dark:bg-red-950/20">
                   <p className="text-sm font-medium text-red-700 dark:text-red-400">Será REMOVIDO de:</p>
-                  <p className="font-medium">{pendingRemoval.assignmentToRemove.sectorName}</p>
+                  <p className="font-medium break-words">{pendingRemoval.assignmentToRemove.sectorName}</p>
                   <p className="text-sm text-muted-foreground">
                     {pendingRemoval.assignmentToRemove.startTime.slice(0,5)} - {pendingRemoval.assignmentToRemove.endTime.slice(0,5)}
                   </p>
@@ -6591,7 +6591,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 
                 <div className="admin-block-card border-green-200 bg-green-50 p-3 dark:bg-green-950/20">
                   <p className="text-sm font-medium text-green-700 dark:text-green-400">Permanecerá em:</p>
-                  <p className="font-medium">{pendingRemoval.assignmentToKeep.sectorName}</p>
+                  <p className="font-medium break-words">{pendingRemoval.assignmentToKeep.sectorName}</p>
                   <p className="text-sm text-muted-foreground">
                     {pendingRemoval.assignmentToKeep.startTime.slice(0,5)} - {pendingRemoval.assignmentToKeep.endTime.slice(0,5)}
                   </p>
@@ -6614,7 +6614,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Conflict History Dialog */}
       <Dialog open={conflictHistoryDialogOpen} onOpenChange={setConflictHistoryDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
