@@ -1537,6 +1537,51 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return assignments.filter(a => a.shift_id === shiftId);
   }
 
+  // Refresh assignment rows for a specific day and merge into local state.
+  // This avoids stale "VAGO" rendering when day dialog is opened right after edits/imports.
+  async function refreshAssignmentsForDate(date: Date) {
+    if (!currentTenantId || !user?.id) return;
+
+    const dayStr = format(date, 'yyyy-MM-dd');
+    const { data, error } = await supabase.rpc('get_shift_assignments_range', {
+      _tenant_id: currentTenantId,
+      _start: dayStr,
+      _end: dayStr,
+    });
+
+    if (error) {
+      console.error('[ShiftCalendar] refreshAssignmentsForDate error', error);
+      return;
+    }
+
+    const mapped = ((data ?? []) as any[]).map((row) => {
+      const member = members.find((m) => m.user_id === row.user_id);
+      const fallbackName = getMemberDisplayName(member);
+      const resolvedFullName = row.full_name ?? null;
+      const resolvedName = row.name ?? fallbackName ?? null;
+      return {
+        id: row.id,
+        shift_id: row.shift_id,
+        user_id: row.user_id,
+        assigned_value: row.assigned_value,
+        status: row.status,
+        profile: { name: resolvedName, full_name: resolvedFullName },
+      } as unknown as ShiftAssignment;
+    });
+
+    const dayShiftIds = new Set(
+      shifts
+        .filter((s) => isSameDay(parseISO(s.shift_date), date))
+        .map((s) => s.id)
+    );
+    if (dayShiftIds.size === 0) return;
+
+    setAssignments((prev) => {
+      const kept = prev.filter((a) => !dayShiftIds.has(a.shift_id));
+      return [...kept, ...mapped];
+    });
+  }
+
   const editingCurrentAssignment = useMemo(() => {
     if (!editingShift) return null;
     return assignments.find((a) => a.shift_id === editingShift.id) || null;
@@ -2363,20 +2408,42 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     const ids = Array.from(daySelectedShiftIds);
 
-    // Safety check: never delete shifts that currently have assigned plantonistas.
-    // This avoids accidental removals when the UI is temporarily stale.
-    const { data: assignedRows, error: assignedCheckError } = await supabase
-      .from('shift_assignments')
-      .select('shift_id')
-      .in('shift_id', ids);
+    // Safety check (RPC + direct table fallback):
+    // never delete shifts that currently have assigned plantonistas.
+    const dayStr = selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null;
+    let assignedRows: Array<{ shift_id: string }> = [];
+    let assignedCheckError: any = null;
 
-    if (assignedCheckError) {
-      notifyError(
-        'validar exclusão',
-        assignedCheckError,
-        'Não foi possível validar os plantonistas antes de excluir.',
-      );
-      return;
+    if (dayStr && currentTenantId) {
+      const rpcRes = await supabase.rpc('get_shift_assignments_range', {
+        _tenant_id: currentTenantId,
+        _start: dayStr,
+        _end: dayStr,
+      });
+      if (rpcRes.error) {
+        assignedCheckError = rpcRes.error;
+      } else {
+        assignedRows = ((rpcRes.data ?? []) as any[]).map((row) => ({ shift_id: row.shift_id }));
+      }
+    }
+
+    // Fallback for safety if RPC is unavailable.
+    if (assignedRows.length === 0) {
+      const tableRes = await supabase
+        .from('shift_assignments')
+        .select('shift_id')
+        .in('shift_id', ids);
+      if (tableRes.error && assignedCheckError) {
+        notifyError(
+          'validar exclusão',
+          assignedCheckError,
+          'Não foi possível validar os plantonistas antes de excluir.',
+        );
+        return;
+      }
+      if (!tableRes.error) {
+        assignedRows = (tableRes.data || []) as Array<{ shift_id: string }>;
+      }
     }
 
     const protectedShiftIds = new Set((assignedRows || []).map((row: any) => row.shift_id));
@@ -3219,6 +3286,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setDayDialogFocusedShiftId(focusedShiftId || null);
     setDaySelectedShiftIds(new Set());
     setDayDialogOpen(true);
+    void refreshAssignmentsForDate(date);
   }
 
   function openEditShift(shift: Shift) {
