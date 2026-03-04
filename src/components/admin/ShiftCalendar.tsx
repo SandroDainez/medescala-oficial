@@ -3374,15 +3374,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const nextDay = Math.max(0, Math.min(20, nextDayRaw));
     const nextNight = Math.max(0, Math.min(20, nextNightRaw));
     const total = Math.max(1, Math.min(20, nextDay + nextNight));
+    const rows = buildRowsByShiftType(nextDay, nextNight);
 
     setFormData((prev) => ({
       ...prev,
       day_quantity: nextDay,
       night_quantity: nextNight,
       quantity: total,
+      // When there is exactly one row by type, keep the main time inputs in sync
+      // so "Noturno" uses 19:00-07:00 and "Diurno" uses 07:00-19:00.
+      start_time: rows.length === 1 ? rows[0].start_time : prev.start_time,
+      end_time: rows.length === 1 ? rows[0].end_time : prev.end_time,
     }));
 
-    const rows = buildRowsByShiftType(nextDay, nextNight);
     setMultiShifts(rows.length > 1 ? rows : []);
   }
 
