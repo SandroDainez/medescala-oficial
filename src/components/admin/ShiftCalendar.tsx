@@ -335,6 +335,76 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return 'Ação não informada.';
   }
 
+  function renderConflictHistoryCard(resolution: any) {
+    return (
+      <Card key={resolution.id} className={`border ${resolution.resolution_type === 'acknowledged' ? 'border-yellow-300' : 'border-blue-300'}`}>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+            <div className="flex items-start gap-2">
+              <Checkbox
+                id={`resolution-${resolution.id}`}
+                checked={selectedConflictHistoryIds.has(resolution.id)}
+                onCheckedChange={(checked) => toggleConflictHistorySelection(resolution.id, Boolean(checked))}
+                disabled={deletingConflictHistory}
+              />
+              <div>
+                <p className="font-medium">{resolution.plantonista_name}</p>
+                <p className="text-sm text-muted-foreground">
+                  {format(parseISO(resolution.conflict_date), "dd/MM/yyyy", { locale: ptBR })}
+                </p>
+              </div>
+            </div>
+            <Badge variant={resolution.resolution_type === 'acknowledged' ? 'secondary' : 'outline'}>
+              {resolution.resolution_type === 'acknowledged' ? '✅ Conflito Mantido' : '🔄 Remoção'}
+            </Badge>
+          </div>
+
+          <div className="mb-2 rounded-md border border-border/60 bg-muted/30 p-2">
+            <p className="text-xs font-medium text-muted-foreground">Ação tomada</p>
+            <p className="text-sm font-medium">{getResolutionActionSummary(resolution)}</p>
+          </div>
+          
+          {resolution.resolution_type === 'acknowledged' ? (
+            <div className="mt-2 space-y-2">
+              {getAcknowledgedResolutionLocations(resolution).length > 0 && (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {getAcknowledgedResolutionLocations(resolution).map((location) => (
+                    <div key={location.assignmentKey} className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                      <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
+                      <p className="text-sm font-medium">{location.sectorName}</p>
+                      <p className="text-xs text-muted-foreground">{location.shiftTime}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/20">
+                <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Justificativa:</p>
+                <p className="text-sm whitespace-pre-wrap break-words">{resolution.justification}</p>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
+                <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
+                <p className="text-sm font-medium">{getResolutionLocation(resolution, 'removed').sectorName}</p>
+                <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'removed').shiftTime}</p>
+              </div>
+              <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
+                <p className="text-sm font-medium">{getResolutionLocation(resolution, 'kept').sectorName}</p>
+                <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'kept').shiftTime}</p>
+              </div>
+            </div>
+          )}
+          
+          <p className="text-xs text-muted-foreground mt-2">
+            Resolvido por {getResolvedByName(resolution)} em {format(parseISO(resolution.resolved_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   async function resolveExistingProfileId(userId: string | null | undefined): Promise<string | null> {
     if (!userId) return null;
     const { data, error } = await supabase
@@ -4692,6 +4762,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const conflicts = detectConflicts();
   const unresolvedConflicts = conflicts.filter(c => !acknowledgedConflicts.has(c.id));
 
+  function getConflictUniqueSectorCount(conflict: ShiftConflict): number {
+    return new Set(conflict.shifts.map((shift) => shift.sectorName)).size;
+  }
+
+  function getConflictUniqueTimeRangeCount(conflict: ShiftConflict): number {
+    return new Set(
+      conflict.shifts.map((shift) => `${shift.startTime.slice(0, 5)}-${shift.endTime.slice(0, 5)}`)
+    ).size;
+  }
+
+  function getConflictSummaryLabel(conflict: ShiftConflict): string {
+    const sectorCount = getConflictUniqueSectorCount(conflict);
+    const rangeCount = getConflictUniqueTimeRangeCount(conflict);
+
+    if (rangeCount > 1) {
+      return `Conflitos em ${sectorCount} ${sectorCount === 1 ? 'local' : 'locais'}, em ${rangeCount} faixas de horário:`;
+    }
+
+    return `Conflito em ${sectorCount} ${sectorCount === 1 ? 'local' : 'locais'} no mesmo horário:`;
+  }
+
   // Open justification dialog instead of immediate acknowledge
   function handleAcknowledgeConflict(conflict: ShiftConflict) {
     setPendingAcknowledgeConflict(conflict);
@@ -5049,7 +5140,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         </Button>
         <Button variant="outline" size="sm" onClick={() => setConflictDialogOpen(true)}>
           <AlertTriangle className="h-4 w-4 mr-1" />
-          Conflitos ({conflicts.length})
+          Conflitos ({unresolvedConflicts.length})
         </Button>
       </div>
 
@@ -5087,9 +5178,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       {format(parseISO(conflict.date), "dd/MM/yyyy", { locale: ptBR })}
                     </span>
                     <span className="text-muted-foreground">•</span>
-                    <span className="text-red-600">
-                      Escalado em {conflict.shifts.length} locais ao mesmo tempo:
-                    </span>
+                    <span className="text-red-600">{getConflictSummaryLabel(conflict)}</span>
                     <div className="flex flex-wrap gap-1">
                       {conflict.shifts.map((s, i) => (
                         <Badge key={i} variant="outline" className="border-red-300 text-red-700">
@@ -6407,7 +6496,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="h-5 w-5" />
-              Conflitos de Escala ({conflicts.length})
+              Conflitos de Escala ({unresolvedConflicts.length})
             </DialogTitle>
           </DialogHeader>
 
@@ -6417,18 +6506,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               Você pode remover uma das atribuições ou reconhecer o conflito se for intencional.
             </p>
 
-            {conflicts.length === 0 ? (
+            {unresolvedConflicts.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground">
                 ✅ Nenhum conflito detectado
               </div>
             ) : (
-              conflicts.map(conflict => {
-                const isAcknowledged = acknowledgedConflicts.has(conflict.id);
-                
+              unresolvedConflicts.map(conflict => {
                 return (
                   <Card 
                     key={conflict.id} 
-                    className={`border-2 ${isAcknowledged ? 'border-yellow-400 bg-yellow-50/50 dark:bg-yellow-950/20' : 'border-red-400 bg-red-50/50 dark:bg-red-950/20'}`}
+                    className="border-2 border-red-400 bg-red-50/50 dark:bg-red-950/20"
                   >
                     <CardContent className="p-4 space-y-3">
                       {/* Header */}
@@ -6436,9 +6523,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         <div className="flex items-center gap-2">
                           <Users className="h-5 w-5 text-red-600" />
                           <span className="font-bold text-lg break-words">{conflict.userName}</span>
-                          {isAcknowledged && (
-                            <Badge className="bg-yellow-500 text-white">Reconhecido</Badge>
-                          )}
                         </div>
                         <Badge variant="outline">
                           {format(parseISO(conflict.date), "EEEE, dd/MM/yyyy", { locale: ptBR })}
@@ -6448,7 +6532,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       {/* Conflicting shifts */}
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-red-700 dark:text-red-400">
-                          Escalado em {conflict.shifts.length} locais simultaneamente:
+                          {getConflictSummaryLabel(conflict)}
                         </p>
                         {conflict.shifts.map((shiftInfo, idx) => (
                           <div 
@@ -6477,19 +6561,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       </div>
 
                       {/* Actions */}
-                      {!isAcknowledged && (
-                        <div className="flex justify-end pt-2 border-t">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleAcknowledgeConflict(conflict)}
-                            className="border-yellow-500 text-yellow-700 hover:bg-yellow-100"
-                          >
-                            <Check className="h-4 w-4 mr-1" />
-                            Reconhecer e Manter
-                          </Button>
-                        </div>
-                      )}
+                      <div className="flex justify-end pt-2 border-t">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleAcknowledgeConflict(conflict)}
+                          className="border-yellow-500 text-yellow-700 hover:bg-yellow-100"
+                        >
+                          <Check className="h-4 w-4 mr-1" />
+                          Reconhecer e Manter
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 );
@@ -6667,73 +6749,44 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   </Button>
                 </div>
               </div>
-              {conflictHistory.map((resolution) => (
-                <Card key={resolution.id} className={`border ${resolution.resolution_type === 'acknowledged' ? 'border-yellow-300' : 'border-blue-300'}`}>
-                  <CardContent className="p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                      <div className="flex items-start gap-2">
-                        <Checkbox
-                          id={`resolution-${resolution.id}`}
-                          checked={selectedConflictHistoryIds.has(resolution.id)}
-                          onCheckedChange={(checked) => toggleConflictHistorySelection(resolution.id, Boolean(checked))}
-                          disabled={deletingConflictHistory}
-                        />
-                        <div>
-                        <p className="font-medium">{resolution.plantonista_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          {format(parseISO(resolution.conflict_date), "dd/MM/yyyy", { locale: ptBR })}
+              {(() => {
+                const acknowledgedHistory = conflictHistory.filter(
+                  (item) => item.resolution_type === 'acknowledged'
+                );
+                const removedHistory = conflictHistory.filter(
+                  (item) => item.resolution_type !== 'acknowledged'
+                );
+
+                return (
+                  <div className="space-y-5">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 rounded-md border border-yellow-300 bg-yellow-50/70 px-3 py-2 dark:bg-yellow-950/20">
+                        <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
+                          Conflitos aceitos com justificativa ({acknowledgedHistory.length})
                         </p>
-                        </div>
                       </div>
-                      <Badge variant={resolution.resolution_type === 'acknowledged' ? 'secondary' : 'outline'}>
-                        {resolution.resolution_type === 'acknowledged' ? '✅ Conflito Mantido' : '🔄 Remoção'}
-                      </Badge>
+                      {acknowledgedHistory.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-1">Nenhum conflito aceito registrado.</p>
+                      ) : (
+                        acknowledgedHistory.map((resolution) => renderConflictHistoryCard(resolution))
+                      )}
                     </div>
 
-                    <div className="mb-2 rounded-md border border-border/60 bg-muted/30 p-2">
-                      <p className="text-xs font-medium text-muted-foreground">Ação tomada</p>
-                      <p className="text-sm font-medium">{getResolutionActionSummary(resolution)}</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2 rounded-md border border-blue-300 bg-blue-50/70 px-3 py-2 dark:bg-blue-950/20">
+                        <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                          Conflitos resolvidos por remoção ({removedHistory.length})
+                        </p>
+                      </div>
+                      {removedHistory.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-1">Nenhuma remoção registrada.</p>
+                      ) : (
+                        removedHistory.map((resolution) => renderConflictHistoryCard(resolution))
+                      )}
                     </div>
-                    
-                    {resolution.resolution_type === 'acknowledged' ? (
-                      <div className="mt-2 space-y-2">
-                        {getAcknowledgedResolutionLocations(resolution).length > 0 && (
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {getAcknowledgedResolutionLocations(resolution).map((location) => (
-                              <div key={location.assignmentKey} className="p-2 rounded bg-green-50 dark:bg-green-950/20">
-                                <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
-                                <p className="text-sm font-medium">{location.sectorName}</p>
-                                <p className="text-xs text-muted-foreground">{location.shiftTime}</p>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="p-2 rounded bg-yellow-50 dark:bg-yellow-950/20">
-                          <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">Justificativa:</p>
-                          <p className="text-sm whitespace-pre-wrap break-words">{resolution.justification}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-2 grid grid-cols-2 gap-2">
-                        <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
-                          <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
-                          <p className="text-sm font-medium">{getResolutionLocation(resolution, 'removed').sectorName}</p>
-                          <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'removed').shiftTime}</p>
-                        </div>
-                        <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
-                          <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
-                          <p className="text-sm font-medium">{getResolutionLocation(resolution, 'kept').sectorName}</p>
-                          <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'kept').shiftTime}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Resolvido por {getResolvedByName(resolution)} em {format(parseISO(resolution.resolved_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
           
