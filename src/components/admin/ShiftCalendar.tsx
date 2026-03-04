@@ -518,7 +518,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       // Fetch assignments/offers by date range (avoids huge URL `in.(...ids...)` -> 400)
       // If RPC fails transiently, DO NOT wipe existing names; keep last good state and notify.
-      const [assignmentsRes, offersRes] = await Promise.all([
+      const [assignmentsRes, offersRes, resolutionsRes] = await Promise.all([
         supabase.rpc('get_shift_assignments_range', {
           _tenant_id: currentTenantId,
           _start: startStr,
@@ -529,6 +529,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           _start: startStr,
           _end: endStr,
         }),
+        supabase
+          .from('conflict_resolutions')
+          .select('conflict_date, plantonista_id')
+          .eq('tenant_id', currentTenantId)
+          .gte('conflict_date', startStr)
+          .lte('conflict_date', endStr),
       ]);
 
       if (assignmentsRes.error) {
@@ -605,6 +611,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         if (!isStale()) {
           setShiftOffers(mapped as unknown as ShiftOffer[]);
         }
+      }
+
+      // Persist resolved conflicts across reloads/navigation:
+      // any conflict with (plantonista_id + conflict_date) already resolved should stay suppressed.
+      if (!resolutionsRes.error && !isStale()) {
+        const resolvedKeys = new Set<string>();
+        for (const row of (resolutionsRes.data || []) as Array<{ conflict_date: string; plantonista_id: string | null }>) {
+          if (row.plantonista_id && row.conflict_date) {
+            resolvedKeys.add(`${row.plantonista_id}_${row.conflict_date}`);
+          }
+        }
+        setAcknowledgedConflicts(resolvedKeys);
+      } else if (resolutionsRes.error) {
+        console.error('[ShiftCalendar] conflict_resolutions fetch error', resolutionsRes.error);
       }
     } catch (error: any) {
       console.error('[ShiftCalendar] fetchData error', error);
