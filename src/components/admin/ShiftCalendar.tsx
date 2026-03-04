@@ -156,6 +156,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Prevent immediate re-open after a programmatic close (e.g. focus/trigger quirks)
   const shiftDialogCloseGuardRef = useRef(false);
   const bulkEditDialogCloseGuardRef = useRef(false);
+  const dayDialogCloseGuardRef = useRef(false);
   const fetchRequestIdRef = useRef(0);
 
   // Extra hard guard: temporarily disable the trigger button to avoid click-through (mouse up)
@@ -2408,8 +2409,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       notifyError('excluir plantão', error, 'Não foi possível excluir o plantão.');
     } else {
       notifySuccess('Exclusão de plantão');
-      fetchData();
-      setDayDialogOpen(false);
+      await fetchData();
+      closeDayDialog();
     }
   }
 
@@ -3386,12 +3387,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function openDayView(date: Date, sectorId?: string, focusedShiftId?: string | null) {
+    if (dayDialogCloseGuardRef.current) return;
     setSelectedDate(date);
     setDayDialogSectorId(sectorId || null);
     setDayDialogFocusedShiftId(focusedShiftId || null);
     setDaySelectedShiftIds(new Set());
     setDayDialogOpen(true);
     void refreshAssignmentsForDate(date);
+  }
+
+  function closeDayDialog() {
+    dayDialogCloseGuardRef.current = true;
+
+    const active = document.activeElement as HTMLElement | null;
+    active?.blur();
+
+    const stopEnter = (ev: KeyboardEvent) => {
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    window.addEventListener('keyup', stopEnter, true);
+    window.setTimeout(() => {
+      window.removeEventListener('keyup', stopEnter, true);
+    }, 400);
+
+    window.setTimeout(() => {
+      dayDialogCloseGuardRef.current = false;
+    }, 800);
+
+    setDayDialogOpen(false);
+    setDayDialogSectorId(null);
+    setDayDialogFocusedShiftId(null);
+    setDaySelectedShiftIds(new Set());
   }
 
   function openEditShift(shift: Shift) {
