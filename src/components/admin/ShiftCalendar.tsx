@@ -3314,7 +3314,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           base_value: formatMoneyInput(shift.base_value),
           notes: shift.notes || '',
           sector_id: shift.sector_id || '',
-          assigned_user_id: currentAssignment?.user_id || '',
+          // Keep assignee unchanged unless admin explicitly chooses a new value.
+          assigned_user_id: '__keep__',
         };
       })
     );
@@ -3474,12 +3475,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       for (const editData of bulkEditData) {
         const originalShift = bulkEditShifts.find(s => s.id === editData.id);
         if (!originalShift) continue;
+        const assignmentChoice = editData.assigned_user_id || '__keep__';
 
         if (
-          editData.assigned_user_id &&
-          editData.assigned_user_id !== 'vago' &&
-          editData.assigned_user_id !== 'disponivel' &&
-          !isUserAllowedInSector(editData.assigned_user_id, editData.sector_id || null)
+          assignmentChoice !== '__keep__' &&
+          assignmentChoice !== 'vago' &&
+          assignmentChoice !== 'disponivel' &&
+          !isUserAllowedInSector(assignmentChoice, editData.sector_id || null)
         ) {
           notifyWarning(
             'Plantonista inválido para o setor',
@@ -3522,19 +3524,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         try {
           const currentAssignment = assignments.find(a => a.shift_id === editData.id);
 
-          if (editData.assigned_user_id && editData.assigned_user_id !== 'vago' && editData.assigned_user_id !== 'disponivel') {
+          if (assignmentChoice === '__keep__') {
+            // Keep current assignment status untouched.
+          } else if (assignmentChoice !== 'vago' && assignmentChoice !== 'disponivel') {
             const assignedValue = resolveValue({
               raw: editData.base_value,
               sector_id: editData.sector_id || null,
               start_time: editData.start_time,
               end_time: editData.end_time,
-              user_id: editData.assigned_user_id,
+              user_id: assignmentChoice,
               useSectorDefault: false,
               applyProRata: true,
             });
 
             if (currentAssignment) {
-              if (currentAssignment.user_id === editData.assigned_user_id) {
+              if (currentAssignment.user_id === assignmentChoice) {
                 // Same user - just update value
                 const { error: updErr } = await supabase
                   .from('shift_assignments')
@@ -3545,7 +3549,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 // Different user - this is a SUBSTITUTION (not a transfer)
                 // The old user is REMOVED, the new user is ADDED
                 const oldUserName = getAssignmentName(currentAssignment);
-                const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
+                const newUserMember = members.find(m => m.user_id === assignmentChoice);
                 const newUserName = newUserMember?.profile?.name || 'Desconhecido';
                 
                 const { error: upErr } = await supabase
@@ -3554,7 +3558,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     {
                       tenant_id: currentTenantId,
                       shift_id: editData.id,
-                      user_id: editData.assigned_user_id,
+                      user_id: assignmentChoice,
                       assigned_value: assignedValue,
                       updated_by: user.id,
                     }
@@ -3590,7 +3594,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   tenant_id: currentTenantId,
                   month: shiftDate.getMonth() + 1,
                   year: shiftDate.getFullYear(),
-                  user_id: editData.assigned_user_id,
+                  user_id: assignmentChoice,
                   user_name: newUserName,
                   movement_type: 'added',
                   destination_sector_id: originalShift.sector_id || null,
@@ -3609,7 +3613,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   {
                     tenant_id: currentTenantId,
                     shift_id: editData.id,
-                    user_id: editData.assigned_user_id,
+                    user_id: assignmentChoice,
                     assigned_value: assignedValue,
                     updated_by: user.id,
                   }
@@ -3617,13 +3621,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               if (upErr) throw upErr;
 
               // Record the addition
-              const newUserMember = members.find(m => m.user_id === editData.assigned_user_id);
+              const newUserMember = members.find(m => m.user_id === assignmentChoice);
               const shiftDate = parseISO(originalShift.shift_date);
               await recordScheduleMovement({
                 tenant_id: currentTenantId,
                 month: shiftDate.getMonth() + 1,
                 year: shiftDate.getFullYear(),
-                user_id: editData.assigned_user_id,
+                user_id: assignmentChoice,
                 user_name: newUserMember?.profile?.name || 'Desconhecido',
                 movement_type: 'added',
                 destination_sector_id: originalShift.sector_id || null,
@@ -3642,7 +3646,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 .eq('id', editData.id);
               if (noteErr) throw noteErr;
             }
-          } else if (editData.assigned_user_id === 'disponivel') {
+          } else if (assignmentChoice === 'disponivel') {
             // Make available - remove assignment if exists
             if (currentAssignment) {
               // Record the removal before deleting
@@ -7101,10 +7105,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
               {bulkEditData.map((editData, index) => {
                 const originalShift = bulkEditShifts.find(s => s.id === editData.id);
+                const originalAssignment = originalShift
+                  ? assignments.find((a) => a.shift_id === originalShift.id) || null
+                  : null;
                 const sectorMembers = editData.sector_id ? getMembersForSector(editData.sector_id) : [];
                 const membersToShow = sortMembersAlphabetically(sectorMembers);
                 const sectorColor = getSectorColor(editData.sector_id, editData.hospital);
                 const isNight = isNightShift(editData.start_time, editData.end_time);
+                const currentStatusLabel = originalAssignment
+                  ? getAssignmentName(originalAssignment)
+                  : (originalShift && isShiftAvailable(originalShift) ? 'Disponível' : 'Vago');
 
                 return (
                   <Card 
@@ -7236,7 +7246,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 	                        <div className="space-y-2">
 	                          <Label>Plantonista</Label>
                           <Select 
-                            value={editData.assigned_user_id || 'vago'} 
+                            value={editData.assigned_user_id || '__keep__'} 
                             onValueChange={(v) => setBulkEditData(prev => prev.map((d, i) => 
                               i === index ? { ...d, assigned_user_id: v } : d
                             ))}
@@ -7245,6 +7255,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               <SelectValue placeholder="Selecionar" />
                             </SelectTrigger>
                             <SelectContent className={SQUARE_SELECT_CONTENT_CLASS}>
+                              <SelectItem value="__keep__" className={SQUARE_SELECT_ITEM_CLASS}>
+                                <span className="flex items-center gap-2">
+                                  <span className="h-4 w-4 rounded-[4px] border-2 border-emerald-600/70 bg-card" />
+                                  Manter atual
+                                </span>
+                              </SelectItem>
                               <SelectItem value="vago" className={SQUARE_SELECT_ITEM_CLASS}>
                                 <span className="flex items-center gap-2">
                                   <span className="h-4 w-4 rounded-[4px] border-2 border-emerald-600/70 bg-card" />
@@ -7272,6 +7288,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               )}
                             </SelectContent>
 	                          </Select>
+                            <p className="text-xs text-muted-foreground">Atual: {currentStatusLabel}</p>
                             {originalShift && assignments.some((a) => a.shift_id === originalShift.id) && (
                               <Button
                                 type="button"
