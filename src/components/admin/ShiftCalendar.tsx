@@ -2362,13 +2362,49 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!confirm(`Deseja excluir ${daySelectedShiftIds.size} plantão(ões) selecionado(s)?`)) return;
 
     const ids = Array.from(daySelectedShiftIds);
-    const { error } = await supabase.from('shifts').delete().in('id', ids);
+
+    // Safety check: never delete shifts that currently have assigned plantonistas.
+    // This avoids accidental removals when the UI is temporarily stale.
+    const { data: assignedRows, error: assignedCheckError } = await supabase
+      .from('shift_assignments')
+      .select('shift_id')
+      .in('shift_id', ids);
+
+    if (assignedCheckError) {
+      notifyError(
+        'validar exclusão',
+        assignedCheckError,
+        'Não foi possível validar os plantonistas antes de excluir.',
+      );
+      return;
+    }
+
+    const protectedShiftIds = new Set((assignedRows || []).map((row: any) => row.shift_id));
+    const deletableIds = ids.filter((id) => !protectedShiftIds.has(id));
+
+    if (deletableIds.length === 0) {
+      notifyWarning(
+        'Nenhum plantão vago selecionado',
+        'Os plantões selecionados possuem plantonistas e foram protegidos contra exclusão.',
+      );
+      return;
+    }
+
+    const { error } = await supabase.from('shifts').delete().in('id', deletableIds);
     if (error) {
       notifyError('excluir plantões selecionados', error, 'Não foi possível excluir os plantões selecionados.');
       return;
     }
 
-    notifySuccess('Plantões excluídos', `${ids.length} plantão(ões) removido(s).`);
+    if (protectedShiftIds.size > 0) {
+      notifyWarning(
+        'Exclusão parcial',
+        `${deletableIds.length} removido(s). ${protectedShiftIds.size} com plantonista foram preservados.`,
+      );
+    } else {
+      notifySuccess('Plantões excluídos', `${deletableIds.length} plantão(ões) removido(s).`);
+    }
+
     setDaySelectedShiftIds(new Set());
     await fetchData();
   }
