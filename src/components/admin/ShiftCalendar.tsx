@@ -12,7 +12,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, CheckSquare, Square, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { Textarea } from '@/components/ui/textarea';
@@ -140,9 +140,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // When viewing a specific sector card while filter is "all",
   // keep the day dialog scoped to that sector.
   const [dayDialogSectorId, setDayDialogSectorId] = useState<string | null>(null);
+  const [dayDialogFocusedShiftId, setDayDialogFocusedShiftId] = useState<string | null>(null);
   
-  // Bulk selection mode
-  const [bulkMode, setBulkMode] = useState(false);
   const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set());
   const [selectedDates, setSelectedDates] = useState<Set<string>>(new Set());
   
@@ -1523,6 +1522,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return getShiftsForDate(date, dayDialogSectorId);
   }
 
+  // If a shift was clicked in the month/week card, keep the day dialog focused on that single shift.
+  function getDisplayedShiftsForDayDialog(date: Date) {
+    const allShifts = sortShiftsByTimeAndName(getShiftsForDayDialog(date));
+    if (!dayDialogFocusedShiftId) return allShifts;
+    const focused = allShifts.find((s) => s.id === dayDialogFocusedShiftId);
+    return focused ? [focused] : allShifts;
+  }
+
   // Get assignments for a shift
   function getAssignmentsForShift(shiftId: string) {
     return assignments.filter(a => a.shift_id === shiftId);
@@ -2121,38 +2128,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     });
   }
 
-  // Toggle shift selection for bulk operations
-  function toggleShiftSelection(shiftId: string) {
-    setSelectedShiftIds(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(shiftId)) {
-        newSet.delete(shiftId);
-      } else {
-        newSet.add(shiftId);
-      }
-      return newSet;
-    });
-  }
-
-  // Toggle date selection for bulk create
-  function toggleDateSelection(dateStr: string) {
-    setSelectedDates(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(dateStr)) {
-        newSet.delete(dateStr);
-      } else {
-        newSet.add(dateStr);
-      }
-      return newSet;
-    });
-  }
-
-  // Select all visible shifts
-  function selectAllShifts() {
-    const allIds = new Set(filteredShifts.map(s => s.id));
-    setSelectedShiftIds(allIds);
-  }
-
   // Clear all selections
   function clearSelection() {
     if (selectedShiftIds.size === 0 && selectedDates.size === 0) {
@@ -2162,45 +2137,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setSelectedShiftIds(new Set());
     setSelectedDates(new Set());
     notifySuccess('Seleção limpa');
-  }
-
-  // Exit bulk mode
-  function exitBulkMode() {
-    setBulkMode(false);
-    clearSelection();
-  }
-
-  // Bulk delete shifts
-  async function handleBulkDelete() {
-    if (selectedShiftIds.size === 0) {
-      notifyWarning('Nenhum plantão selecionado');
-      return;
-    }
-
-    if (!confirm(`Deseja excluir ${selectedShiftIds.size} plantão(ões)? Esta ação não pode ser desfeita.`)) return;
-
-    const idsToDelete = Array.from(selectedShiftIds);
-    let successCount = 0;
-    let errorCount = 0;
-
-    for (const id of idsToDelete) {
-      const { error } = await supabase.from('shifts').delete().eq('id', id);
-      if (error) {
-        errorCount++;
-      } else {
-        successCount++;
-      }
-    }
-
-    if (errorCount > 0) {
-      notifyError('excluir plantões', `${errorCount} erro(s)`, `${successCount} excluído(s).`);
-    } else {
-      notifySuccess('Exclusão de plantões', `${successCount} plantão(ões) excluído(s).`);
-    }
-
-    clearSelection();
-    fetchData();
-    setDayDialogOpen(false);
   }
 
   // Bulk create shifts for selected dates
@@ -3193,9 +3129,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setMultiShifts(rows.length > 1 ? rows : []);
   }
 
-  function openDayView(date: Date, sectorId?: string) {
+  function openDayView(date: Date, sectorId?: string, focusedShiftId?: string | null) {
     setSelectedDate(date);
     setDayDialogSectorId(sectorId || null);
+    setDayDialogFocusedShiftId(focusedShiftId || null);
     setDayDialogOpen(true);
   }
 
@@ -3334,20 +3271,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     );
     setBulkEditDialogOpen(true);
   }
-  function openBulkApplySelectedDialog(date: Date) {
-    const dayShiftIds = getShiftsForDayDialog(date).map((s) => s.id);
-    const selectedInDay = dayShiftIds.filter((id) => selectedShiftIds.has(id));
-
-    if (selectedInDay.length === 0) {
-      notifyWarning('Nenhum plantão selecionado', 'Selecione 1 ou mais plantões deste dia.');
-      return;
-    }
-
-    setBulkApplyShiftIds(selectedInDay);
-    setBulkApplyData({ title: '', start_time: '', end_time: '', base_value: '', assigned_user_id: '' });
-    setBulkApplyDialogOpen(true);
-  }
-
   async function handleBulkApplySave(e: React.FormEvent) {
     e.preventDefault();
     if (!user?.id || !currentTenantId) return;
@@ -3793,21 +3716,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           {days.map(day => {
             const dayShifts = getShiftsForDateFiltered(day);
             const hasShifts = dayShifts.length > 0;
-            const dateStr = format(day, 'yyyy-MM-dd');
-            const isDateSelected = selectedDates.has(dateStr);
-            const dayHasSelectedShifts = dayShifts.some(s => selectedShiftIds.has(s.id));
             
             return (
               <div
                 key={day.toISOString()}
                 className={`${viewMode === 'week' ? 'min-h-[200px]' : 'min-h-[120px]'} p-1 border rounded-xl cursor-pointer transition-colors
                   ${isToday(day) ? 'border-primary bg-primary/5' : 'border-border hover:bg-accent/50'}
-                  ${bulkMode && isDateSelected ? 'ring-2 ring-primary bg-primary/10' : ''}
-                  ${bulkMode && dayHasSelectedShifts ? 'ring-2 ring-destructive bg-destructive/10' : ''}
                 `}
                 onClick={() => {
-                  // Always open day view on click - bulk selection is done via checkboxes
-                  openDayView(day, options?.sectorContextId);
+                  // Click on the day container opens all shifts for that day.
+                  openDayView(day, options?.sectorContextId, null);
                 }}
               >
                 <div className={`flex items-center justify-between text-sm font-medium mb-1 ${isToday(day) ? 'text-primary' : 'text-foreground'}`}>
@@ -3819,19 +3737,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       </span>
                     )}
                   </span>
-                  {bulkMode && !hasShifts && (
-                    <Checkbox 
-                      checked={isDateSelected}
-                      onCheckedChange={() => toggleDateSelection(dateStr)}
-                      onClick={(e) => e.stopPropagation()}
-                      className="h-4 w-4"
-                    />
-                  )}
                 </div>
                 
                 {hasShifts && (
-                  <div className="space-y-1">
-                    {sortShiftsByTimeAndName(dayShifts).slice(0, viewMode === 'week' ? 8 : 4).map(shift => {
+                  <div className={`space-y-1 overflow-y-auto pr-0.5 ${viewMode === 'week' ? 'max-h-[220px]' : 'max-h-[140px]'}`}>
+                    {sortShiftsByTimeAndName(dayShifts).map(shift => {
                       const shiftAssignments = getAssignmentsForShift(shift.id);
                       const shiftPendingOffers = getOffersForShift(shift.id);
                       const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
@@ -3839,8 +3749,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       const isNight = isNightShift(shift.start_time, shift.end_time);
                       const isAvailable = isShiftAvailable(shift);
                       const showSectorName = !options?.hideSectorName && filterSector === 'all';
-                      const isShiftSelected = selectedShiftIds.has(shift.id);
-                      
                       // Determine what to show for each shift:
                       // - If has assignments: show assigned plantonistas
                       // - If available and has offers: show "DISPONÍVEL" + offer names
@@ -3850,29 +3758,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       return (
                         <div
                           key={shift.id}
-                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''} ${bulkMode && isShiftSelected ? 'ring-2 ring-destructive' : ''}`}
+                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
                           style={{ 
                             backgroundColor: isNight ? '#e0e7ff' : `${sectorColor}20`,
                             borderLeft: `3px solid ${isNight ? '#6366f1' : sectorColor}`
                           }}
                           title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
                           onClick={(e) => {
-                            if (bulkMode) {
-                              e.stopPropagation();
-                              toggleShiftSelection(shift.id);
-                            }
+                            // Click on the shift card opens only this shift in day dialog.
+                            e.stopPropagation();
+                            openDayView(day, options?.sectorContextId, shift.id);
                           }}
                         >
-                          {bulkMode && (
-                            <div className="flex justify-end mb-1">
-                              <Checkbox 
-                                checked={isShiftSelected}
-                                onCheckedChange={() => toggleShiftSelection(shift.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="h-3 w-3"
-                              />
-                            </div>
-                          )}
                           {showSectorName && (
                             <div className="flex items-center gap-1">
                               {isNight ? (
@@ -3941,11 +3838,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         </div>
                       );
                     })}
-                    {dayShifts.length > (viewMode === 'week' ? 8 : 4) && (
-                      <div className="text-xs text-muted-foreground text-center">
-                        +{dayShifts.length - (viewMode === 'week' ? 8 : 4)} mais
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -4911,62 +4803,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                {/* Bulk Mode Toggle */}
-                {bulkMode ? (
-                  <>
-                    <div className="flex items-center gap-2 rounded-xl border border-primary/30 bg-primary/10 px-3 py-1 shadow-sm">
-                      <CheckSquare className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium text-primary">
-                        {selectedShiftIds.size > 0 
-                          ? `${selectedShiftIds.size} plantão(ões)` 
-                          : selectedDates.size > 0 
-                            ? `${selectedDates.size} data(s)`
-                            : 'Modo Seleção'}
-                      </span>
-                    </div>
-                    {selectedShiftIds.size > 0 && (
-                      <Button variant="destructive" size="sm" onClick={handleBulkDelete}>
-                        <Trash2 className="mr-2 h-4 w-4" />
-                        Excluir selecionados ({selectedShiftIds.size})
-                      </Button>
-                    )}
-                    {selectedDates.size > 0 && (
-                      <Button size="sm" onClick={() => {
-                        // Open bulk create dialog
-                        const effectiveSectorId = filterSector !== 'all' ? filterSector : sectors[0]?.id || '';
-                        const effectiveSector = sectors.find(s => s.id === effectiveSectorId);
-                        setFormData({
-                          hospital: effectiveSector?.name || sectors[0]?.name || '',
-                          location: '',
-                          shift_date: '',
-                          start_time: '07:00',
-                          end_time: '19:00',
-                          base_value: '',
-                          notes: '',
-                          sector_id: effectiveSectorId,
-                          assigned_user_id: '',
-                          duration_hours: '',
-                          repeat_weeks: 0,
-                          quantity: 1,
-                          day_quantity: 1,
-                          night_quantity: 0,
-                          use_sector_default: true,
-                        });
-                        setBulkCreateDialogOpen(true);
-                      }}>
-                        <Plus className="mr-2 h-4 w-4" />
-                        Criar ({selectedDates.size})
-                      </Button>
-                    )}
-                    <Button variant="ghost" size="sm" onClick={clearSelection}>
-                      Limpar seleção
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={exitBulkMode}>
-                      <X className="mr-2 h-4 w-4" />
-                      Sair
-                    </Button>
-                  </>
-                ) : (
                   <>
                     {/* View Mode Toggle */}
                     <div className="flex overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm">
@@ -4987,11 +4823,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         Mês
                       </Button>
                     </div>
-
-                    <Button variant="outline" onClick={() => setBulkMode(true)}>
-                      <CheckSquare className="mr-2 h-4 w-4" />
-                      Seleção
-                    </Button>
 
                     <Button 
                       variant="outline" 
@@ -5060,7 +4891,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       Novo Plantão
                     </Button>
                   </>
-                )}
               </div>
             </div>
           </div>
@@ -5180,7 +5010,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         open={dayDialogOpen}
         onOpenChange={(open) => {
           setDayDialogOpen(open);
-          if (!open) setDayDialogSectorId(null);
+          if (!open) {
+            setDayDialogSectorId(null);
+            setDayDialogFocusedShiftId(null);
+          }
         }}
       >
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
@@ -5195,75 +5028,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 )}
               </span>
               <div className="flex flex-wrap items-center justify-end gap-2">
-                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
-                  <>
-                    {/* Select all in this day */}
-                    <Button 
-                      variant="outline" 
+                {selectedDate &&
+                  dayDialogFocusedShiftId &&
+                  getShiftsForDayDialog(selectedDate).length > 1 && (
+                    <Button
+                      variant="outline"
                       size="sm"
-                      onClick={() => {
-                        const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
-                        const allSelected = dayShiftIds.every(id => selectedShiftIds.has(id));
-                        if (allSelected) {
-                          // Deselect all
-                          setSelectedShiftIds(prev => {
-                            const newSet = new Set(prev);
-                            dayShiftIds.forEach(id => newSet.delete(id));
-                            return newSet;
-                          });
-                        } else {
-                          // Select all
-                          setSelectedShiftIds(prev => {
-                            const newSet = new Set(prev);
-                            dayShiftIds.forEach(id => newSet.add(id));
-                            return newSet;
-                          });
-                        }
-                        if (!bulkMode) setBulkMode(true);
-                      }}
+                      onClick={() => setDayDialogFocusedShiftId(null)}
                     >
-                      <CheckSquare className="mr-2 h-4 w-4" />
-                      {(() => {
-                        const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
-                        const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
-                        return selectedCount > 0 
-                          ? `${selectedCount} selecionado(s)` 
-                          : 'Selecionar todos';
-                      })()}
+                      Abrir todos ({getShiftsForDayDialog(selectedDate).length})
                     </Button>
-                    {(() => {
-                      const dayShiftIds = getShiftsForDayDialog(selectedDate).map(s => s.id);
-                      const selectedCount = dayShiftIds.filter(id => selectedShiftIds.has(id)).length;
-                      if (selectedCount > 0) {
-                        return (
-                          <>
-                            <Button 
-                              variant="destructive" 
-                              size="sm"
-                              onClick={() => {
-                                handleBulkDelete();
-                              }}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              Excluir selecionados ({selectedCount})
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                if (selectedDate) openBulkApplySelectedDialog(selectedDate);
-                              }}
-                            >
-                              <Edit className="mr-2 h-4 w-4" />
-                              Editar selecionados ({selectedCount})
-                            </Button>
-                          </>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </>
-                )}
+                  )}
                 {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
                   <Button
                     variant="outline"
@@ -5320,38 +5095,28 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           </DialogHeader>
 
           <div className="space-y-4">
-            {selectedDate && getShiftsForDayDialog(selectedDate).length === 0 ? (
+            {selectedDate && getDisplayedShiftsForDayDialog(selectedDate).length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
                 Nenhum plantão neste dia
               </p>
             ) : (
-              selectedDate && sortShiftsByTimeAndName(getShiftsForDayDialog(selectedDate)).map(shift => {
+              selectedDate && getDisplayedShiftsForDayDialog(selectedDate).map(shift => {
                 const shiftAssignments = getAssignmentsForShift(shift.id);
                 const shiftPendingOffers = getOffersForShift(shift.id);
                 const sectorColor = getSectorColor(shift.sector_id, shift.hospital);
                 const sectorName = getSectorName(shift.sector_id, shift.hospital);
                 const isAvailable = isShiftAvailable(shift);
                 const showSectorName = filterSector === 'all' && !dayDialogSectorId;
-                const isShiftSelected = selectedShiftIds.has(shift.id);
                 
                 return (
                   <Card 
                     key={shift.id}
                     style={{ borderLeft: `4px solid ${sectorColor}` }}
-                    className={isShiftSelected ? 'admin-surface ring-2 ring-destructive' : 'admin-surface'}
+                    className="admin-surface"
                   >
                     <CardHeader className="admin-surface-header py-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3">
-                          {/* Checkbox for selection */}
-                          <Checkbox 
-                            checked={isShiftSelected}
-                            onCheckedChange={() => {
-                              toggleShiftSelection(shift.id);
-                              if (!bulkMode) setBulkMode(true);
-                            }}
-                            className="mt-1"
-                          />
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                             {showSectorName && (
