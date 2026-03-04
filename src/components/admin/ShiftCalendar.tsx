@@ -6511,7 +6511,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Justification Dialog for Acknowledging Conflict */}
       <Dialog open={justificationDialogOpen} onOpenChange={setJustificationDialogOpen}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-600">
               <FileText className="h-5 w-5" />
@@ -6522,13 +6522,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           {pendingAcknowledgeConflict && (
             <div className="space-y-4">
               <div className="admin-block-card border-yellow-200 bg-yellow-50 p-3 dark:bg-yellow-950/20">
-                <p className="font-medium">{pendingAcknowledgeConflict.userName}</p>
+                <p className="font-medium break-words">{pendingAcknowledgeConflict.userName}</p>
                 <p className="text-sm text-muted-foreground">
                   {format(parseISO(pendingAcknowledgeConflict.date), "dd/MM/yyyy", { locale: ptBR })}
                 </p>
                 <div className="mt-2 space-y-1">
                   {pendingAcknowledgeConflict.shifts.map((s, i) => (
-                    <p key={i} className="text-sm">
+                    <p key={i} className="text-sm break-words">
                       • {s.sectorName} ({s.startTime.slice(0,5)} - {s.endTime.slice(0,5)})
                     </p>
                   ))}
@@ -6546,7 +6546,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 />
               </div>
               
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="outline" onClick={() => setJustificationDialogOpen(false)}>
                   Cancelar
                 </Button>
