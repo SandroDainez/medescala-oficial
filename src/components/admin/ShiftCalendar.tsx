@@ -136,6 +136,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [filterSector, setFilterSector] = useState<string>(initialSectorId || searchParams.get('sector') || 'all');
+  const [daySelectedShiftIds, setDaySelectedShiftIds] = useState<Set<string>>(new Set());
 
   // When viewing a specific sector card while filter is "all",
   // keep the day dialog scoped to that sector.
@@ -2325,6 +2326,52 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
+  function toggleDayShiftSelection(shiftId: string) {
+    setDaySelectedShiftIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(shiftId)) next.delete(shiftId);
+      else next.add(shiftId);
+      return next;
+    });
+  }
+
+  function toggleSelectAllDisplayedDayShifts() {
+    if (!selectedDate) return;
+    const displayed = getDisplayedShiftsForDayDialog(selectedDate);
+    if (displayed.length === 0) return;
+    const displayedIds = displayed.map((s) => s.id);
+    const allDisplayedSelected = displayedIds.every((id) => daySelectedShiftIds.has(id));
+
+    setDaySelectedShiftIds((prev) => {
+      const next = new Set(prev);
+      if (allDisplayedSelected) {
+        displayedIds.forEach((id) => next.delete(id));
+      } else {
+        displayedIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  async function handleDeleteSelectedDayShifts() {
+    if (daySelectedShiftIds.size === 0) {
+      notifyWarning('Nenhum plantão selecionado');
+      return;
+    }
+    if (!confirm(`Deseja excluir ${daySelectedShiftIds.size} plantão(ões) selecionado(s)?`)) return;
+
+    const ids = Array.from(daySelectedShiftIds);
+    const { error } = await supabase.from('shifts').delete().in('id', ids);
+    if (error) {
+      notifyError('excluir plantões selecionados', error, 'Não foi possível excluir os plantões selecionados.');
+      return;
+    }
+
+    notifySuccess('Plantões excluídos', `${ids.length} plantão(ões) removido(s).`);
+    setDaySelectedShiftIds(new Set());
+    await fetchData();
+  }
+
   function handleDeleteCurrentScale() {
     if (deletingCurrentScale) return;
     if (filterSector === 'all') {
@@ -3133,6 +3180,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setSelectedDate(date);
     setDayDialogSectorId(sectorId || null);
     setDayDialogFocusedShiftId(focusedShiftId || null);
+    setDaySelectedShiftIds(new Set());
     setDayDialogOpen(true);
   }
 
@@ -5013,6 +5061,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (!open) {
             setDayDialogSectorId(null);
             setDayDialogFocusedShiftId(null);
+            setDaySelectedShiftIds(new Set());
           }
         }}
       >
@@ -5039,6 +5088,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       Abrir todos ({getShiftsForDayDialog(selectedDate).length})
                     </Button>
                   )}
+                {selectedDate && getDisplayedShiftsForDayDialog(selectedDate).length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={toggleSelectAllDisplayedDayShifts}
+                  >
+                    {(() => {
+                      const displayed = getDisplayedShiftsForDayDialog(selectedDate);
+                      const displayedIds = displayed.map((s) => s.id);
+                      const allDisplayedSelected =
+                        displayedIds.length > 0 && displayedIds.every((id) => daySelectedShiftIds.has(id));
+                      return allDisplayedSelected ? 'Desmarcar todos' : `Selecionar todos (${displayedIds.length})`;
+                    })()}
+                  </Button>
+                )}
+                {daySelectedShiftIds.size > 0 && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDeleteSelectedDayShifts}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Excluir selecionados ({daySelectedShiftIds.size})
+                  </Button>
+                )}
                 {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
                   <Button
                     variant="outline"
@@ -5117,6 +5191,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <CardHeader className="admin-surface-header py-3">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3">
+                          <Checkbox
+                            checked={daySelectedShiftIds.has(shift.id)}
+                            onCheckedChange={() => toggleDayShiftSelection(shift.id)}
+                            className="mt-1"
+                          />
                           <div>
                             <div className="flex items-center gap-2 mb-1">
                             {showSectorName && (
