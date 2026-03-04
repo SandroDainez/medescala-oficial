@@ -1766,16 +1766,20 @@ export default function AdminReports() {
                         conflicts.map(conflict => (
                           <TableRow key={conflict.id}>
                             <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
-                            <TableCell className="font-medium">{conflict.plantonista_name}</TableCell>
+                            <TableCell className="font-medium whitespace-normal break-words max-w-[180px] align-top">
+                              {conflict.plantonista_name}
+                            </TableCell>
                             <TableCell>
                               <Badge variant={conflict.resolution_type === 'removed' ? 'destructive' : 'secondary'}>
                                 {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
                               </Badge>
                             </TableCell>
-                            <TableCell className="max-w-[260px] truncate">{conflict.action_taken}</TableCell>
+                            <TableCell className="max-w-[260px] whitespace-normal break-words align-top">
+                              {conflict.action_taken || '-'}
+                            </TableCell>
                             <TableCell>
                               {conflict.removed_sector_name ? (
-                                <div className="text-sm">
+                                <div className="text-sm whitespace-normal break-words max-w-[220px]">
                                   <div>{conflict.removed_sector_name}</div>
                                   {conflict.removed_shift_time && (
                                     <div className="text-muted-foreground text-xs">{conflict.removed_shift_time}</div>
@@ -1787,7 +1791,7 @@ export default function AdminReports() {
                             </TableCell>
                             <TableCell>
                               {conflict.kept_sector_name ? (
-                                <div className="text-sm">
+                                <div className="text-sm whitespace-normal break-words max-w-[220px]">
                                   <div>{conflict.kept_sector_name}</div>
                                   {conflict.kept_shift_time && (
                                     <div className="text-muted-foreground text-xs">{conflict.kept_shift_time}</div>
@@ -1797,8 +1801,12 @@ export default function AdminReports() {
                                 <span className="text-muted-foreground">-</span>
                               )}
                             </TableCell>
-                            <TableCell>{conflict.resolved_by_name}</TableCell>
-                            <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
+                            <TableCell className="whitespace-normal break-words max-w-[160px] align-top">
+                              {conflict.resolved_by_name}
+                            </TableCell>
+                            <TableCell className="max-w-[240px] whitespace-normal break-words align-top">
+                              {conflict.justification || '-'}
+                            </TableCell>
                             <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
                           </TableRow>
                         ))
@@ -1868,16 +1876,20 @@ export default function AdminReports() {
                             />
                           </TableCell>
                           <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
-                          <TableCell className="font-medium">{conflict.plantonista_name}</TableCell>
+                          <TableCell className="font-medium whitespace-normal break-words max-w-[180px] align-top">
+                            {conflict.plantonista_name}
+                          </TableCell>
                           <TableCell>
                             <Badge variant={conflict.resolution_type === 'removed' ? 'destructive' : 'secondary'}>
                               {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
                             </Badge>
                           </TableCell>
-                          <TableCell className="max-w-[260px] truncate">{conflict.action_taken}</TableCell>
+                          <TableCell className="max-w-[260px] whitespace-normal break-words align-top">
+                            {conflict.action_taken || '-'}
+                          </TableCell>
                           <TableCell>
                             {conflict.removed_sector_name ? (
-                              <div className="text-sm">
+                              <div className="text-sm whitespace-normal break-words max-w-[220px]">
                                 <div>{conflict.removed_sector_name}</div>
                                 {conflict.removed_shift_time && (
                                   <div className="text-muted-foreground text-xs">{conflict.removed_shift_time}</div>
@@ -1889,7 +1901,7 @@ export default function AdminReports() {
                           </TableCell>
                           <TableCell>
                             {conflict.kept_sector_name ? (
-                              <div className="text-sm">
+                              <div className="text-sm whitespace-normal break-words max-w-[220px]">
                                 <div>{conflict.kept_sector_name}</div>
                                 {conflict.kept_shift_time && (
                                   <div className="text-muted-foreground text-xs">{conflict.kept_shift_time}</div>
@@ -1899,8 +1911,12 @@ export default function AdminReports() {
                               <span className="text-muted-foreground">-</span>
                             )}
                           </TableCell>
-                          <TableCell>{conflict.resolved_by_name}</TableCell>
-                          <TableCell className="max-w-[200px] truncate">{conflict.justification || '-'}</TableCell>
+                          <TableCell className="whitespace-normal break-words max-w-[160px] align-top">
+                            {conflict.resolved_by_name}
+                          </TableCell>
+                          <TableCell className="max-w-[240px] whitespace-normal break-words align-top">
+                            {conflict.justification || '-'}
+                          </TableCell>
                           <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
                         </TableRow>
                       ))
