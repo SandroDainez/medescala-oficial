@@ -13,7 +13,6 @@ import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
 import { TapSafeButton } from '@/components/TapSafeButton';
-import { clearPwaCacheAndReload } from '@/lib/pwa';
 import {
   Sheet,
   SheetContent,
@@ -837,7 +836,7 @@ export default function UserCalendar() {
     if (isPullRefreshing) return;
     setIsPullRefreshing(true);
     try {
-      await clearPwaCacheAndReload();
+      await fetchData();
     } finally {
       setIsPullRefreshing(false);
     }
@@ -942,11 +941,11 @@ export default function UserCalendar() {
         style={{ height: pullDistance ? Math.max(32, Math.min(pullDistance, 72)) : 0 }}
       >
         {isPullRefreshing
-          ? 'Atualizando aplicativo...'
+          ? 'Atualizando agenda...'
           : pullDistance >= 90
-            ? 'Solte para atualizar o aplicativo'
+            ? 'Solte para atualizar a agenda'
             : pullDistance > 0
-              ? 'Puxe para atualizar o aplicativo'
+              ? 'Puxe para atualizar a agenda'
               : null}
       </div>
       {/* Calendar Header */}

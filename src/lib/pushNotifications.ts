@@ -5,6 +5,7 @@
 
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
+import { getNotificationDestination, NavigableNotification } from '@/lib/notificationNavigation';
 
 interface NotificationPreferences {
   push_enabled: boolean;
@@ -184,29 +185,23 @@ export async function deactivateDeviceToken(userId: string, forceDeactivate: boo
 function handleNotificationAction(data: Record<string, unknown> | undefined): void {
   if (!data) return;
 
-  // Navigate based on notification type
-  const notificationType = data.type as string;
-  const shiftId = data.shift_id as string;
+  const notification: NavigableNotification = {
+    type: typeof data.type === 'string' ? data.type : 'general',
+    shift_assignment_id:
+      typeof data.shift_assignment_id === 'string'
+        ? data.shift_assignment_id
+        : typeof data.origin_assignment_id === 'string'
+          ? data.origin_assignment_id
+          : null,
+  };
 
-  switch (notificationType) {
-    case 'reminder_24h':
-    case 'reminder_2h':
-    case 'shift_start':
-      // Navigate to shift details or calendar
-      if (shiftId) {
-        window.location.href = '/app/agenda';
-      }
-      break;
-    case 'swap_request':
-    case 'swap_accepted':
-    case 'swap_rejected':
-      // Navigate to swaps page
-      window.location.href = '/user/swaps';
-      break;
-    default:
-      // Navigate to notifications
-      window.location.href = '/user/notifications';
+  const destination = getNotificationDestination(notification);
+  if (destination) {
+    window.location.href = destination;
+    return;
   }
+
+  window.location.href = '/app/notifications';
 }
 
 /**

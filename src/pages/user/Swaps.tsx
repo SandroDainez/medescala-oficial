@@ -23,6 +23,16 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TapSafeButton } from '@/components/TapSafeButton';
 import { useUserSwaps } from '@/hooks/useUserSwaps';
+import { ToastAction } from '@/components/ui/toast';
+
+function getConflictDescription(raw: string) {
+  const prefix = 'Conflito ao aceitar troca:';
+  if (raw.includes(prefix)) {
+    const detail = raw.replace(prefix, '').trim();
+    return detail || 'O colega escolhido já está escalado. Ajuste em Trocas e tente novamente.';
+  }
+  return raw;
+}
 import type { SwapAssignment as Assignment, SwapRequestItem as SwapRequest, SwapTenantMember as TenantMember } from '@/services/userSwaps';
 
 type SwapsTab = 'my-shifts' | 'incoming' | 'history';
@@ -356,16 +366,34 @@ export default function UserSwaps() {
       });
       toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Não foi possível aceitar a troca.';
-      const lowerMessage = String(errorMessage || '').toLowerCase();
+      const rawMessage = error instanceof Error ? error.message : String(error ?? 'Não foi possível aceitar a troca.');
+      const lowerMessage = rawMessage.toLowerCase();
       const isConflictError = lowerMessage.includes('conflito') || lowerMessage.includes('horário');
-      const isEligibilityError = lowerMessage.includes('plantonista') || lowerMessage.includes('tenant');
+      const isEligibilityError =
+        lowerMessage.includes('plantonista') ||
+        lowerMessage.includes('tenant') ||
+        lowerMessage.includes('setor');
+      const description = isConflictError
+        ? getConflictDescription(rawMessage)
+        : isEligibilityError
+          ? 'O colega selecionado não está mais elegível para assumir plantões neste hospital.'
+          : rawMessage;
+      const action = isConflictError ? (
+        <ToastAction
+          altText="Abrir Trocas"
+          onClick={() => {
+            navigate('/app/swaps');
+          }}
+        >
+          Abrir Trocas
+        </ToastAction>
+      ) : undefined;
+
       toast({
         title: isConflictError ? 'Troca bloqueada por conflito de horário' : 'Erro ao aceitar troca',
-        description: isEligibilityError
-          ? 'O colega selecionado não está mais elegível para assumir plantões neste hospital.'
-          : errorMessage,
+        description,
         variant: 'destructive',
+        action,
       });
     }
   }
