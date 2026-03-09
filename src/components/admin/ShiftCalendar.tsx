@@ -25,7 +25,7 @@ import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignme
 import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate, addDays, differenceInCalendarDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import * as XLSX from 'xlsx';
 
@@ -186,6 +186,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [replicateWeeks, setReplicateWeeks] = useState(1);
   const [replicateLoading, setReplicateLoading] = useState(false);
   const [bulkEditDialogOpen, setBulkEditDialogOpen] = useState(false);
+  const [deleteDaysDialogOpen, setDeleteDaysDialogOpen] = useState(false);
+  const [deleteDaysStart, setDeleteDaysStart] = useState<Date | null>(null);
+  const [deleteDaysEnd, setDeleteDaysEnd] = useState<Date | null>(null);
+  const [deleteDaysConfirmText, setDeleteDaysConfirmText] = useState('');
+  const [deletingDaysRange, setDeletingDaysRange] = useState(false);
+  const [replicateCustomDayDialogOpen, setReplicateCustomDayDialogOpen] = useState(false);
+  const [replicateCustomDayTargetDate, setReplicateCustomDayTargetDate] = useState<Date | null>(null);
+  const [replicateCustomDayLoading, setReplicateCustomDayLoading] = useState(false);
+  const [replicateWeekDialogOpen, setReplicateWeekDialogOpen] = useState(false);
+  const [replicateWeekSourceStart, setReplicateWeekSourceStart] = useState<Date | null>(null);
+  const [replicateWeekTargetStart, setReplicateWeekTargetStart] = useState<Date | null>(null);
+  const [replicateWeekLoading, setReplicateWeekLoading] = useState(false);
   const [bulkEditSaving, setBulkEditSaving] = useState(false);
   const [bulkEditShifts, setBulkEditShifts] = useState<Shift[]>([]);
   const [deletingDayShifts, setDeletingDayShifts] = useState(false);
@@ -2586,6 +2598,242 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
+  async function replicateShiftToDate(
+    sourceShift: Shift,
+    targetDateStr: string,
+  ): Promise<{
+    shiftErrors: number;
+    assignmentsErrors: number;
+    skippedAssignments: number;
+    assignmentsCreated: number;
+    shiftsCreated: number;
+  }> {
+    const stats = {
+      shiftErrors: 0,
+      assignmentsErrors: 0,
+      skippedAssignments: 0,
+      assignmentsCreated: 0,
+      shiftsCreated: 0,
+    };
+
+    if (!currentTenantId) {
+      stats.shiftErrors = 1;
+      return stats;
+    }
+
+    let newShiftId: string;
+    try {
+      newShiftId = await insertAdminShiftAndGetId({
+        tenant_id: currentTenantId,
+        title: sourceShift.title,
+        hospital: sourceShift.hospital,
+        location: sourceShift.location,
+        shift_date: targetDateStr,
+        start_time: sourceShift.start_time,
+        end_time: sourceShift.end_time,
+        base_value: sourceShift.base_value,
+        notes: sourceShift.notes,
+        sector_id: sourceShift.sector_id,
+        updated_by: user?.id,
+      });
+    } catch (error) {
+      stats.shiftErrors = 1;
+      return stats;
+    }
+
+    stats.shiftsCreated = 1;
+
+    const sourceAssignments = assignments.filter((a) => a.shift_id === sourceShift.id);
+    for (const assignment of sourceAssignments) {
+      if (!isUserAllowedInSector(assignment.user_id, sourceShift.sector_id || null)) {
+        stats.skippedAssignments += 1;
+        continue;
+      }
+
+      try {
+        await cloneAdminAssignmentToShift({
+          tenantId: currentTenantId,
+          targetShiftId: newShiftId,
+          sourceAssignment: assignment,
+          updatedBy: user?.id,
+        });
+        stats.assignmentsCreated += 1;
+      } catch {
+        stats.assignmentsErrors += 1;
+      }
+    }
+
+    return stats;
+  }
+
+  async function handleReplicateDayToTargetDate() {
+    if (!currentTenantId || !selectedDate || !replicateCustomDayTargetDate) return;
+    if (isSameDay(selectedDate, replicateCustomDayTargetDate)) {
+      notifyWarning('Destino inválido', 'Selecione um dia diferente para replicar.');
+      return;
+    }
+
+    const sourceShifts = getShiftsForDayDialog(selectedDate);
+    if (sourceShifts.length === 0) {
+      notifyWarning('Nenhum plantão para replicar', 'Selecione um dia com plantões.');
+      return;
+    }
+
+    setReplicateCustomDayLoading(true);
+    try {
+      const targetDateStr = format(replicateCustomDayTargetDate, 'yyyy-MM-dd');
+      const totalStats = {
+        shifts: 0,
+        shiftErrors: 0,
+        assignments: 0,
+        assignmentErrors: 0,
+        skippedAssignments: 0,
+      };
+
+      for (const shift of sourceShifts) {
+        const stats = await replicateShiftToDate(shift, targetDateStr);
+        totalStats.shifts += stats.shiftsCreated;
+        totalStats.shiftErrors += stats.shiftErrors;
+        totalStats.assignments += stats.assignmentsCreated;
+        totalStats.assignmentErrors += stats.assignmentsErrors;
+        totalStats.skippedAssignments += stats.skippedAssignments;
+      }
+
+      if (totalStats.shiftErrors || totalStats.assignmentErrors) {
+        notifyError(
+          'replicar dia personalizado',
+          `${totalStats.shiftErrors + totalStats.assignmentErrors} pendência(s)`,
+          `Plantões: ${totalStats.shifts} criados (${totalStats.shiftErrors} erro(s)). Atribuições: ${totalStats.assignments} criadas (${totalStats.assignmentErrors} erro(s), ${totalStats.skippedAssignments} ignorada(s)).`,
+        );
+      } else {
+        notifySuccess(
+          'Dia replicado',
+          `Criados ${totalStats.shifts} plantão(ões) em ${format(replicateCustomDayTargetDate, 'EEEE, dd/MM/yyyy', { locale: ptBR })}.`,
+        );
+      }
+
+      setReplicateCustomDayDialogOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      console.error('[ShiftCalendar] replicate custom day failed', error);
+      notifyError('replicar dia personalizado', error, 'Ocorreu um erro ao replicar o dia selecionado.');
+    } finally {
+      setReplicateCustomDayLoading(false);
+    }
+  }
+
+  async function handleReplicateWeekToWeek() {
+    if (!currentTenantId || !replicateWeekSourceStart || !replicateWeekTargetStart) return;
+    const sourceStart = startOfWeek(replicateWeekSourceStart, { weekStartsOn: 1 });
+    const targetStart = startOfWeek(replicateWeekTargetStart, { weekStartsOn: 1 });
+    if (isSameDay(sourceStart, targetStart)) {
+      notifyWarning('Destino inválido', 'Selecione uma semana diferente para replicar.');
+      return;
+    }
+
+    const interval = eachDayOfInterval({ start: sourceStart, end: addDays(sourceStart, 6) });
+    const sourceShifts = shifts.filter((shift) =>
+      interval.some((day) => isSameDay(parseISO(shift.shift_date), day)),
+    );
+    if (sourceShifts.length === 0) {
+      notifyWarning('Nenhum plantão na semana', 'Selecione uma semana com plantões.');
+      return;
+    }
+
+    setReplicateWeekLoading(true);
+    try {
+      const totalStats = {
+        shifts: 0,
+        shiftErrors: 0,
+        assignments: 0,
+        assignmentErrors: 0,
+        skippedAssignments: 0,
+      };
+
+      for (const shift of sourceShifts) {
+        const offset = differenceInCalendarDays(parseISO(shift.shift_date), sourceStart);
+        const targetDate = addDays(targetStart, offset);
+        const stats = await replicateShiftToDate(shift, format(targetDate, 'yyyy-MM-dd'));
+        totalStats.shifts += stats.shiftsCreated;
+        totalStats.shiftErrors += stats.shiftErrors;
+        totalStats.assignments += stats.assignmentsCreated;
+        totalStats.assignmentErrors += stats.assignmentsErrors;
+        totalStats.skippedAssignments += stats.skippedAssignments;
+      }
+
+      if (totalStats.shiftErrors || totalStats.assignmentErrors) {
+        notifyError(
+          'replicar semana',
+          `${totalStats.shiftErrors + totalStats.assignmentErrors} pendência(s)`,
+          `Plantões: ${totalStats.shifts} criados (${totalStats.shiftErrors} erro(s)). Atribuições: ${totalStats.assignments} criadas (${totalStats.assignmentErrors} erro(s), ${totalStats.skippedAssignments} ignorada(s)).`,
+        );
+      } else {
+        notifySuccess(
+          'Semana replicada',
+          `Semana iniciando em ${format(targetStart, 'dd/MM/yyyy')} copiada.`,
+        );
+      }
+
+      setReplicateWeekDialogOpen(false);
+      await fetchData();
+    } catch (error: any) {
+      console.error('[ShiftCalendar] replicate week failed', error);
+      notifyError('replicar semana', error, 'Não foi possível replicar a semana.');
+    } finally {
+      setReplicateWeekLoading(false);
+    }
+  }
+
+  async function handleDeleteDaysRange() {
+    if (!currentTenantId || !deleteDaysStart || !deleteDaysEnd) return;
+    if (deleteDaysConfirmText.trim().toUpperCase() !== 'EXCLUIR') {
+      notifyWarning('Confirmação necessária', 'Digite EXCLUIR para permitir a exclusão.');
+      return;
+    }
+    const interval = eachDayOfInterval({ start: deleteDaysStart, end: deleteDaysEnd });
+    const shiftIdsToDelete = shifts
+      .filter((shift) =>
+        interval.some((day) => isSameDay(parseISO(shift.shift_date), day)),
+      )
+      .map((shift) => shift.id);
+
+    if (shiftIdsToDelete.length === 0) {
+      notifyWarning('Nenhum plantão no período', 'Não há plantões cadastrados nas datas informadas.');
+      return;
+    }
+
+    setDeletingDaysRange(true);
+    try {
+      await deleteAdminShiftsByIds(shiftIdsToDelete);
+      notifySuccess('Dias excluídos', `${shiftIdsToDelete.length} plantão(ões) removido(s).`);
+      setDeleteDaysDialogOpen(false);
+      await fetchData();
+    } catch (error) {
+      notifyError('excluir dias', error, 'Não foi possível remover os plantões selecionados.');
+    } finally {
+    setDeletingDaysRange(false);
+  }
+
+  function openDeleteDaysDialog() {
+    const baseDate = selectedDate || currentDate;
+    setDeleteDaysStart(baseDate);
+    setDeleteDaysEnd(baseDate);
+    setDeleteDaysConfirmText('');
+    setDeleteDaysDialogOpen(true);
+  }
+
+  function openReplicateCustomDayDialog() {
+    setReplicateCustomDayTargetDate(selectedDate ? addDays(selectedDate, 1) : null);
+    setReplicateCustomDayDialogOpen(true);
+  }
+
+  function openReplicateWeekDialog() {
+    setReplicateWeekSourceStart(startOfWeek(selectedDate || currentDate, { weekStartsOn: 1 }));
+    setReplicateWeekTargetStart(null);
+    setReplicateWeekDialogOpen(true);
+  }
+  }
+
   // Copy schedule from current month to target month by DAY OF WEEK + occurrence in month
   // Example: shifts on the 1st Monday of the source month will be copied to the 1st Monday of the target month.
   async function handleCopySchedule() {
@@ -4948,6 +5196,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       {deletingCurrentScale ? 'Excluindo escala...' : 'Excluir Escala'}
                     </Button>
 
+                    <Button
+                      variant="outline"
+                      onClick={openDeleteDaysDialog}
+                      disabled={shifts.length === 0 || deletingDaysRange}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Excluir Dias
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={openReplicateWeekDialog}
+                      disabled={shifts.length === 0}
+                    >
+                      <LayoutGrid className="mr-2 h-4 w-4" />
+                      Replicar Semana
+                    </Button>
+
                     <Button variant="outline" onClick={handlePrintSchedule}>
                       <Printer className="mr-2 h-4 w-4" />
                       Imprimir
@@ -5176,6 +5442,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   >
                     <Repeat className="mr-2 h-4 w-4" />
                     Replicar Dia
+                  </Button>
+                )}
+                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={openReplicateCustomDayDialog}
+                  >
+                    <Copy className="mr-2 h-4 w-4" />
+                    Replicar para outro dia
                   </Button>
                 )}
                 {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
@@ -5452,6 +5728,171 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 );
               })
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={replicateWeekDialogOpen}
+        onOpenChange={(open) => {
+          if (!replicateWeekLoading) {
+            setReplicateWeekDialogOpen(open);
+            if (!open) {
+              setReplicateWeekSourceStart(null);
+              setReplicateWeekTargetStart(null);
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LayoutGrid className="h-5 w-5" />
+              Replicar semana
+            </DialogTitle>
+            <DialogDescription>
+              Escolha uma semana origem e o início da semana destino que deve receber os plantões.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Semana origem</Label>
+                <Input
+                  type="date"
+                  value={replicateWeekSourceStart ? format(replicateWeekSourceStart, 'yyyy-MM-dd') : ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setReplicateWeekSourceStart(value ? parseISO(value) : null);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Semana destino</Label>
+                <Input
+                  type="date"
+                  value={replicateWeekTargetStart ? format(replicateWeekTargetStart, 'yyyy-MM-dd') : ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setReplicateWeekTargetStart(value ? parseISO(value) : null);
+                  }}
+                />
+              </div>
+            </div>
+
+            <div className="admin-block-card border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+              Os plantões de cada dia da semana origem serão transferidos para a mesma posição da semana destino.
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setReplicateWeekDialogOpen(false)}
+                disabled={replicateWeekLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleReplicateWeekToWeek}
+                disabled={
+                  replicateWeekLoading ||
+                  !replicateWeekSourceStart ||
+                  !replicateWeekTargetStart
+                }
+              >
+                {replicateWeekLoading ? 'Replicando...' : 'Replicar semana'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteDaysDialogOpen}
+        onOpenChange={(open) => {
+          if (!deletingDaysRange) {
+            setDeleteDaysDialogOpen(open);
+            if (!open) {
+              setDeleteDaysStart(null);
+              setDeleteDaysEnd(null);
+              setDeleteDaysConfirmText('');
+            }
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" />
+              Excluir dias da escala
+            </DialogTitle>
+            <DialogDescription>
+              Selecione o intervalo de dias que devem ser removidos.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Data inicial</Label>
+                <Input
+                  type="date"
+                  value={deleteDaysStart ? format(deleteDaysStart, 'yyyy-MM-dd') : ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDeleteDaysStart(value ? parseISO(value) : null);
+                  }}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Data final</Label>
+                <Input
+                  type="date"
+                  value={deleteDaysEnd ? format(deleteDaysEnd, 'yyyy-MM-dd') : ''}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setDeleteDaysEnd(value ? parseISO(value) : null);
+                  }}
+                />
+              </div>
+            </div>
+            <div className="rounded-lg border border-border/70 bg-muted/10 p-3 text-sm text-muted-foreground">
+              Esta ação remove todos os plantões cadastrados nesse intervalo. Digite <strong>EXCLUIR</strong> para confirmar.
+            </div>
+            <Input
+              placeholder="Digite EXCLUIR para confirmar"
+              value={deleteDaysConfirmText}
+              onChange={(event) => setDeleteDaysConfirmText(event.target.value)}
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => setDeleteDaysDialogOpen(false)}
+              disabled={deletingDaysRange}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="flex-1"
+              onClick={handleDeleteDaysRange}
+              disabled={
+                deletingDaysRange ||
+                !deleteDaysStart ||
+                !deleteDaysEnd ||
+                deleteDaysConfirmText.trim().toUpperCase() !== 'EXCLUIR'
+              }
+            >
+              {deletingDaysRange ? 'Excluindo...' : 'Excluir dias'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -6930,6 +7371,67 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 disabled={replicateLoading || !selectedDate}
               >
                 {replicateLoading ? 'Replicando...' : `Replicar ${replicateWeeks}x`}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={replicateCustomDayDialogOpen} onOpenChange={(open) => {
+        if (!replicateCustomDayLoading) {
+          setReplicateCustomDayDialogOpen(open);
+          if (!open) {
+            setReplicateCustomDayTargetDate(null);
+          }
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Copy className="h-5 w-5" />
+              Replicar para outro dia
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="admin-block-card p-3">
+              <p className="text-sm text-muted-foreground">Dia base</p>
+              <p className="font-semibold">
+                {selectedDate ? format(selectedDate, "EEEE, dd/MM/yyyy", { locale: ptBR }) : '—'}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Data de destino</Label>
+              <Input
+                type="date"
+                value={replicateCustomDayTargetDate ? format(replicateCustomDayTargetDate, 'yyyy-MM-dd') : ''}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setReplicateCustomDayTargetDate(value ? parseISO(value) : null);
+                }}
+              />
+            </div>
+
+            <div className="admin-block-card border-blue-200 bg-blue-50 p-3 text-xs text-blue-700">
+              Copia horários, setor, observações e atribuições do dia selecionado para outra data.
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setReplicateCustomDayDialogOpen(false)}
+                disabled={replicateCustomDayLoading}
+              >
+                Cancelar
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={handleReplicateDayToTargetDate}
+                disabled={replicateCustomDayLoading || !replicateCustomDayTargetDate}
+              >
+                {replicateCustomDayLoading ? 'Replicando...' : 'Replicar para a data'}
               </Button>
             </div>
           </div>

@@ -95,7 +95,6 @@ export default function UserSettings() {
 
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [cfmLoading, setCfmLoading] = useState(false);
   const [lattesLoading, setLattesLoading] = useState(false);
   const [form, setForm] = useState<SelfForm>(EMPTY_FORM);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -187,65 +186,6 @@ function isValidCurriculumType(file: File): boolean {
     if (!currentTenantId) return;
     void loadSelfProfile();
   }, [currentTenantId, loadSelfProfile]);
-
-  async function lookupCfm() {
-    const normalized = form.crm.trim().toUpperCase();
-    const match = normalized.match(/(\d{3,8})\s*\/?\s*([A-Z]{2})?/);
-    const crm = match?.[1] ?? "";
-    const uf = form.crmUf || match?.[2] || "";
-    if (!crm) {
-      notifyError("CRM inválido", "Informe um CRM válido.");
-      return;
-    }
-
-    setCfmLoading(true);
-    let data: any = null;
-    let error: any = null;
-    try {
-      const response = await supabase.functions.invoke("verify-professional", {
-        body: {
-          crm,
-          uf,
-          tenantId: currentTenantId ?? null,
-          userId: user?.id ?? null,
-        },
-      });
-      data = response.data;
-      error = response.error;
-    } catch (invokeError) {
-      error = invokeError;
-    } finally {
-      setCfmLoading(false);
-    }
-
-    if (error || !data?.ok) {
-      notifyError("Falha na consulta CFM", data?.error || error?.message);
-      return;
-    }
-
-    const doctor = data?.doctor ?? {};
-    const rqeList = normalizeRqeList(doctor.rqeList);
-    const rqeDetails = normalizeRqeDetails(doctor.rqeDetails).map((item) =>
-      item.especialidade ? `${item.rqe} - ${item.especialidade}` : item.rqe,
-    );
-    const mergedRqe = Array.from(new Set([...rqeList, ...rqeDetails]));
-    const autoLattesUrl = String(doctor.lattesUrl ?? "").trim();
-    const autoPhoto = String(doctor.fotoUrl ?? "").trim();
-
-    setForm((prev) => ({
-      ...prev,
-      fullName: prev.fullName.trim() ? prev.fullName : String(doctor.nome ?? "").trim(),
-      rqe: mergedRqe.length
-        ? Array.from(new Set([...prev.rqe.split(/[;,|]/g).map((x) => x.trim()).filter(Boolean), ...mergedRqe])).join(", ")
-        : prev.rqe,
-      lattesUrl: prev.lattesUrl || autoLattesUrl || "",
-      avatarUrl: prev.avatarUrl || autoPhoto || "",
-    }));
-
-    if (autoLattesUrl) {
-      await lookupLattes(autoLattesUrl);
-    }
-  }
 
   async function lookupLattes(sourceOverride?: string) {
     const source = (sourceOverride ?? form.lattesUrl ?? "").trim();
@@ -425,12 +365,7 @@ function isValidCurriculumType(file: File): boolean {
               <Input disabled value={currentTenantName || "Não vinculado"} />
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label>CRM</Label>
-                <Button type="button" size="sm" variant="outline" disabled={cfmLoading} onClick={lookupCfm}>
-                  {cfmLoading ? "Consultando..." : "Consultar CRM/CFM"}
-                </Button>
-              </div>
+              <Label>CRM</Label>
               <Input value={form.crm} onChange={(e) => setForm((prev) => ({ ...prev, crm: e.target.value }))} />
             </div>
             <div className="space-y-2">
