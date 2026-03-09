@@ -9,7 +9,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { 
+import {
   LayoutDashboard, 
   CalendarDays,
   Users, 
@@ -25,6 +25,7 @@ import {
   Shield,
   Bell,
   Hand,
+  Coins,
   ChevronDown,
   ChevronRight,
   MapPin
@@ -57,6 +58,9 @@ function prefetchAdminRoute(path: string) {
   } else if (path.startsWith("/admin/sectors")) {
     key = "sectors";
     loader = () => import("../../pages/admin/Sectors");
+  } else if (path.startsWith("/admin/values")) {
+    key = "values";
+    loader = () => import("../../pages/admin/ShiftValues");
   } else if (path.startsWith("/admin/swaps")) {
     key = "swaps";
     loader = () => import("../../pages/admin/Swaps");
@@ -91,6 +95,7 @@ function prefetchAdminRoute(path: string) {
 const navItems = [
   { to: '/admin/users', label: 'Usuários', icon: Users },
   { to: '/admin/sectors', label: 'Setores', icon: Building2 },
+  { to: '/admin/values', label: 'Valores', icon: Coins },
   { to: '/admin/swaps', label: 'Trocas', icon: ArrowLeftRight },
   { to: '/admin/offers', label: 'Candidaturas', icon: Hand },
   { to: '/admin/checkins', label: 'Check-ins GPS', icon: MapPin },
@@ -130,6 +135,19 @@ export function AdminLayout() {
       fetchSectors();
     }
   }, [currentTenantId, fetchSectors]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileMenuOpen]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -331,7 +349,7 @@ export function AdminLayout() {
                   <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
                     <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                   </div>
-                  <span className="flex-1 font-semibold">{item.label}</span>
+                  <span className="min-w-0 flex-1 truncate font-semibold">{item.label}</span>
                   {showBadge && (
                     <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
                       {badgeCount > 9 ? '9+' : badgeCount}
@@ -365,10 +383,10 @@ export function AdminLayout() {
         {/* Mobile Menu */}
         {mobileMenuOpen && (
           <div 
-            className="fixed inset-x-0 bottom-0 z-[50] bg-background md:hidden animate-fade-in overflow-y-auto"
+            className="fixed inset-0 z-[70] bg-background/95 backdrop-blur-sm md:hidden animate-fade-in overflow-y-auto overflow-x-hidden"
             style={{ top: 'calc(64px + env(safe-area-inset-top))' }}
           >
-            <nav className="flex flex-col gap-1 p-4 pb-safe">
+            <nav className="mx-auto flex w-full max-w-full flex-col gap-1 p-3 pb-safe sm:p-4">
               <div className="mb-4">
                 <TenantSelector />
               </div>
@@ -501,7 +519,7 @@ export function AdminLayout() {
                     <div className="admin-nav-icon dark:bg-slate-800/80 dark:ring-slate-400/30">
                       <item.icon className="h-4 w-4 text-muted-foreground group-hover:text-foreground" />
                     </div>
-                    <span className="flex-1 font-semibold">{item.label}</span>
+                    <span className="min-w-0 flex-1 truncate font-semibold">{item.label}</span>
                     {showBadge && (
                       <Badge variant="destructive" className="h-5 min-w-5 flex items-center justify-center p-0 text-xs animate-pulse">
                         {badgeCount > 9 ? '9+' : badgeCount}

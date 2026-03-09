@@ -23,7 +23,6 @@ const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
 const Install = lazy(() => import("./pages/Install"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
-const ForceChangePassword = lazy(() => import("./pages/ForceChangePassword"));
 
 const AdminLayout = lazy(() =>
   import("./components/layouts/AdminLayout").then((mod) => ({
@@ -34,6 +33,7 @@ const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
 const AdminCalendar = lazy(() => import("./pages/admin/Calendar"));
 const AdminUsers = lazy(() => import("./pages/admin/Users"));
 const AdminSectors = lazy(() => import("./pages/admin/Sectors"));
+const AdminShiftValues = lazy(() => import("./pages/admin/ShiftValues"));
 const AdminSwaps = lazy(() => import("./pages/admin/Swaps"));
 const AdminNotifications = lazy(() => import("./pages/admin/Notifications"));
 const AdminOffers = lazy(() => import("./pages/admin/Offers"));
@@ -65,6 +65,7 @@ function RouteLoadingFallback() {
     const isCalendar = pathname.includes("/admin/calendar");
     const isUsers = pathname.includes("/admin/users");
     const isSectors = pathname.includes("/admin/sectors");
+    const isValues = pathname.includes("/admin/values");
     const isFinancial = pathname.includes("/admin/financial");
     const isReports = pathname.includes("/admin/reports");
 
@@ -116,6 +117,11 @@ function RouteLoadingFallback() {
                 </div>
                 <div className="h-[420px] animate-pulse rounded-2xl border border-border/70 bg-card/60" />
               </div>
+            ) : isValues ? (
+              <div className="space-y-3">
+                <div className="h-16 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+                <div className="h-56 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
+              </div>
             ) : isReports ? (
               <div className="space-y-3">
                 <div className="h-24 animate-pulse rounded-2xl border border-border/70 bg-card/60" />
@@ -147,9 +153,9 @@ function RouteLoadingFallback() {
 const queryClient = new QueryClient();
 
 /**
- * ✅ Gate global para obrigar troca de senha.
- * Se o usuário estiver logado e tiver must_change_password = true,
- * ele só pode ficar em /trocar-senha (e rotas públicas tipo /auth).
+ * Gate global mantido por compatibilidade.
+ * A exigência real de troca de senha acontece no ProtectedRoute e usa /change-password
+ * como rota canônica para evitar drift entre fluxos duplicados.
  */
 function ForcePasswordGate({ children }: { children: React.ReactNode }) {
   // Must-change-password is enforced centrally in ProtectedRoute using profiles.must_change_password.
@@ -284,15 +290,7 @@ const App = () => (
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/privacy" element={<Privacy />} />
 
-                      {/* ✅ NOVA ROTA: troca obrigatória de senha */}
-                      <Route
-                        path="/trocar-senha"
-                        element={
-                          <RequireAuth>
-                            <ForceChangePassword />
-                          </RequireAuth>
-                        }
-                      />
+                      <Route path="/trocar-senha" element={<Navigate to="/change-password" replace />} />
 
                       {/* Admin Routes */}
                       <Route
@@ -310,6 +308,7 @@ const App = () => (
                         <Route path="calendar/:sectorId" element={<AdminCalendar />} />
                         <Route path="users" element={<AdminUsers />} />
                         <Route path="sectors" element={<AdminSectors />} />
+                        <Route path="values" element={<AdminShiftValues />} />
                         <Route path="swaps" element={<AdminSwaps />} />
                         <Route path="offers" element={<AdminOffers />} />
                         <Route path="notifications" element={<AdminNotifications />} />

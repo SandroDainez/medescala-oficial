@@ -21,6 +21,30 @@ function getMonthRange(month: number, year: number): { start: string; end: strin
   return { start: formatDateYMD(start), end: formatDateYMD(end) };
 }
 
+function isNightShift(startTime: string): boolean {
+  if (!startTime) return false;
+  const hour = Number(startTime.split(':')[0]);
+  return hour >= 19 || hour < 7;
+}
+
+function calculateDurationHours(startTime: string, endTime: string): number {
+  if (!startTime || !endTime) return 12;
+  const [startH, startM] = startTime.split(':').map(Number);
+  const [endH, endM] = endTime.split(':').map(Number);
+  let hours = endH - startH;
+  const minutes = endM - startM;
+  if (hours < 0 || (hours === 0 && minutes < 0)) hours += 24;
+  return hours + minutes / 60;
+}
+
+function calculateProRataValue(baseValue: number | null, durationHours: number): number | null {
+  if (baseValue === null) return null;
+  if (baseValue === 0) return 0;
+  const STANDARD_HOURS = 12;
+  if (durationHours === STANDARD_HOURS) return Number(baseValue.toFixed(2));
+  return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
+}
+
 interface Sector {
   id: string;
   name: string;
@@ -173,8 +197,12 @@ export default function UserSectorValuesDialog({
           id: override?.id,
           user_id: m.user_id,
           user_name: m.user_name,
-          day_value: override?.day_value?.toString().replace('.', ',') || '',
-          night_value: override?.night_value?.toString().replace('.', ',') || '',
+          day_value: override?.day_value !== null && override?.day_value !== undefined
+            ? override.day_value.toString().replace('.', ',')
+            : '',
+          night_value: override?.night_value !== null && override?.night_value !== undefined
+            ? override.night_value.toString().replace('.', ',')
+            : '',
           hasOverride: !!override,
         };
       });
@@ -273,44 +301,78 @@ export default function UserSectorValuesDialog({
       }
 
       // =========================================================
-      // Sync Escala: when individual values change, clear assigned_value
-      // so the calendar/finance uses the latest individual/default rules.
-      // - individual NULL (blank) => falls back to sector default
-      // - individual 0 => MUST show 0 (no fallback)
+      // Sync Escala:
+      // - override informado (incluindo 0): grava assigned_value explícito por plantão
+      // - override removido (campos em branco): limpa assigned_value para usar regra padrão
       // =========================================================
       try {
-        const affectedUserIds = new Set<string>();
-        // users with upserted overrides
-        operations.forEach((op) => affectedUserIds.add(op.user_id));
-        // users whose overrides were deleted (cleared)
-        toDelete.forEach((uv) => affectedUserIds.add(uv.user_id));
+        const affectedUserIds = Array.from(
+          new Set<string>([
+            ...operations.map((op) => op.user_id),
+            ...toDelete.map((uv) => uv.user_id),
+          ]),
+        );
 
-        if (affectedUserIds.size > 0) {
+        if (affectedUserIds.length > 0) {
           const { start, end } = getMonthRange(month, year);
 
           const { data: monthShifts, error: shiftsErr } = await supabase
             .from('shifts')
-            .select('id')
+            .select('id, start_time, end_time')
             .eq('tenant_id', tenantId)
             .eq('sector_id', sector.id)
             .gte('shift_date', start)
             .lte('shift_date', end);
 
           if (!shiftsErr && monthShifts && monthShifts.length > 0) {
+            const shiftMetaById = new Map<string, { start_time: string; end_time: string }>(
+              monthShifts.map((s: any) => [s.id, { start_time: s.start_time, end_time: s.end_time }]),
+            );
             const shiftIds = monthShifts.map((s: any) => s.id);
-            const userIdsArr = Array.from(affectedUserIds);
 
-            // Clear assigned_value for affected users in that month/sector.
-            // This makes the UI immediately reflect updated individual rates.
-            const { error: clearErr } = await supabase
+            const { data: monthAssignments, error: assignmentsErr } = await supabase
               .from('shift_assignments')
-              .update({ assigned_value: null, updated_by: userId || null })
+              .select('id, shift_id, user_id')
+              .eq('tenant_id', tenantId)
               .in('shift_id', shiftIds)
-              .in('user_id', userIdsArr)
-              .eq('tenant_id', tenantId);
+              .in('user_id', affectedUserIds);
 
-            if (clearErr) {
-              console.warn('Could not clear assigned_value after saving individual values:', clearErr.message);
+            if (!assignmentsErr && monthAssignments && monthAssignments.length > 0) {
+              const overrideByUser = new Map<string, { day_value: number | null; night_value: number | null }>();
+              operations.forEach((op) => {
+                overrideByUser.set(op.user_id, {
+                  day_value: op.day_value ?? null,
+                  night_value: op.night_value ?? null,
+                });
+              });
+
+              const updates = monthAssignments.map(async (a: any) => {
+                const shiftMeta = shiftMetaById.get(a.shift_id);
+                if (!shiftMeta) return null;
+
+                const override = overrideByUser.get(a.user_id);
+                let nextAssignedValue: number | null = null;
+
+                if (override) {
+                  const base = isNightShift(shiftMeta.start_time) ? override.night_value : override.day_value;
+                  const duration = calculateDurationHours(shiftMeta.start_time, shiftMeta.end_time);
+                  nextAssignedValue = calculateProRataValue(base, duration);
+                } else {
+                  // override removido: deixa null para usar regra padrão
+                  nextAssignedValue = null;
+                }
+
+                return supabase
+                  .from('shift_assignments')
+                  .update({ assigned_value: nextAssignedValue, updated_by: userId || null })
+                  .eq('id', a.id);
+              });
+
+              const results = await Promise.all(updates);
+              const updateErrors = results.filter((r: any) => r?.error);
+              if (updateErrors.length > 0) {
+                console.warn('Some assigned_value sync updates failed:', updateErrors);
+              }
             }
           }
         }

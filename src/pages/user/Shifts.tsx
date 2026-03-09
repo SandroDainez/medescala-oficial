@@ -16,6 +16,8 @@ import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { parseDateOnly } from '@/lib/utils';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
+import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import type { ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { 
   Clock, 
   LogIn, 
@@ -50,7 +52,13 @@ import {
 interface Assignment {
   id: string;
   shift_id?: string;
-  assigned_value: number;
+  user_id: string;
+  profile?: {
+    id: string;
+    name: string | null;
+    full_name: string | null;
+  } | null;
+  assigned_value: number | null;
   checkin_at: string | null;
   checkout_at: string | null;
   status: string;
@@ -88,6 +96,8 @@ export default function UserShifts() {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [showGpsErrorDialog, setShowGpsErrorDialog] = useState(false);
+  const [displayValueByAssignmentId, setDisplayValueByAssignmentId] = useState<Record<string, number | null>>({});
+  const [isPlantonista, setIsPlantonista] = useState<boolean | null>(null);
 
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null);
@@ -100,28 +110,56 @@ export default function UserShifts() {
   useEffect(() => {
     if (user && currentTenantId) {
       setDidAutoSelect(false);
-      fetchData();
+      checkProfileAndLoad();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
+
+  async function checkProfileAndLoad() {
+    if (!user?.id) return;
+    const [{ data: membership }, { data: profile }] = await Promise.all([
+      supabase
+        .from('memberships')
+        .select('active')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id)
+        .eq('active', true)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('profile_type')
+        .eq('id', user.id)
+        .maybeSingle(),
+    ]);
+    const ok = Boolean(membership?.active) && profile?.profile_type === 'plantonista';
+    setIsPlantonista(ok);
+    if (!ok) {
+      setAssignments([]);
+      setDisplayValueByAssignmentId({});
+      setLoading(false);
+      return;
+    }
+    fetchData();
+  }
 
   async function fetchData() {
     if (!currentTenantId || !user) return;
 
     setLoading(true);
 
-    const [assignmentsRes, sectorsRes] = await Promise.all([
+    const [assignmentsRes, sectorsRes, userValuesRes] = await Promise.all([
       supabase
         .from('shift_assignments')
         .select(
-          'id, shift_id, assigned_value, checkin_at, checkout_at, status, shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
+          'id, shift_id, user_id, assigned_value, checkin_at, checkout_at, status, profile:profiles!shift_assignments_user_id_profiles_fkey(id, name, full_name), shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
         )
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id)
+        .in('status', ['assigned', 'confirmed', 'completed', 'cancelled'])
         .order('created_at', { ascending: false }),
       supabase
         .from('sectors')
-        .select('id, name, color, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes, reference_latitude, reference_longitude')
+        .select('id, name, color, default_day_value, default_night_value, checkin_enabled, require_gps_checkin, allowed_checkin_radius_meters, checkin_tolerance_minutes, reference_latitude, reference_longitude')
         .eq('tenant_id', currentTenantId)
         // Importante: não filtrar por "active" aqui.
         // Se um setor foi desativado depois do plantão ser criado,
@@ -129,6 +167,12 @@ export default function UserShifts() {
         // - exibir corretamente o status
         // - permitir check-out quando houver check-in pendente
         // (evita o cenário de "aparece em alguns plantões e outros não").
+        ,
+      supabase
+        .from('user_sector_values')
+        .select('sector_id, user_id, day_value, night_value, month, year')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id),
     ]);
 
     if (assignmentsRes.error) {
@@ -140,28 +184,52 @@ export default function UserShifts() {
       console.error('[UserShifts] Error fetching sectors:', sectorsRes.error);
     }
 
-    // DEBUG: Log raw results to help diagnose RLS issues
-    console.log('[UserShifts] Raw assignments response:', {
-      data: assignmentsRes.data,
-      error: assignmentsRes.error,
-      count: assignmentsRes.data?.length,
-      nullShiftCount: assignmentsRes.data?.filter((a: any) => !a.shift).length
-    });
-
     if (assignmentsRes.data) {
       const allAssignments = assignmentsRes.data as unknown as Assignment[];
       const validAssignments = allAssignments.filter((a) => !!a.shift);
-      
-      // DEBUG: Log filtered results
-      console.log('[UserShifts] Filtered assignments:', {
-        total: allAssignments.length,
-        valid: validAssignments.length,
-        filtered: allAssignments.length - validAssignments.length
-      });
-      
       setAssignments(validAssignments);
+
+      const scheduleShifts: ScheduleShift[] = validAssignments.map((a) => ({
+        id: a.shift_id || '',
+        shift_date: a.shift.shift_date,
+        start_time: a.shift.start_time,
+        end_time: a.shift.end_time,
+        sector_id: a.shift.sector_id ?? null,
+        base_value: null,
+        title: a.shift.title,
+        hospital: a.shift.hospital,
+      }));
+
+      const scheduleAssignments: ScheduleAssignment[] = validAssignments.map((a) => ({
+        id: a.id,
+        shift_id: a.shift_id || '',
+        user_id: user.id,
+        assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+        profile_name: 'Você',
+      }));
+
+      const sectorsLookup: SectorLookup[] = (sectorsRes.data ?? []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        default_day_value: s.default_day_value ?? null,
+        default_night_value: s.default_night_value ?? null,
+      }));
+
+      const entries = mapScheduleToFinancialEntries({
+        shifts: scheduleShifts,
+        assignments: scheduleAssignments,
+        sectors: sectorsLookup,
+        userSectorValues: (userValuesRes.data ?? []) as any[],
+      });
+
+      const valuesMap: Record<string, number | null> = {};
+      entries.forEach((entry) => {
+        valuesMap[entry.id] = entry.value_source === 'invalid' ? null : entry.final_value;
+      });
+      setDisplayValueByAssignmentId(valuesMap);
     } else {
       setAssignments([]);
+      setDisplayValueByAssignmentId({});
     }
 
     if (sectorsRes.data) {
@@ -229,6 +297,7 @@ export default function UserShifts() {
 
   async function handleCheckin(assignment: Assignment) {
     if (!user || !currentTenantId) return;
+    if (assignment.user_id !== user.id) return;
     
     const sector = sectors.find(s => s.id === assignment.shift.sector_id);
     const requiresGps = sector?.require_gps_checkin ?? false;
@@ -252,7 +321,6 @@ export default function UserShifts() {
         return;
       }
       // If GPS is not required, continue without it
-      console.log('GPS not available, continuing without location');
     }
 
     // Validate distance from reference location if GPS is required
@@ -295,6 +363,7 @@ export default function UserShifts() {
 
   async function handleCheckout(assignment: Assignment) {
     if (!user || !currentTenantId) return;
+    if (assignment.user_id !== user.id) return;
     
     const sector = sectors.find(s => s.id === assignment.shift.sector_id);
     const requiresGps = sector?.require_gps_checkin ?? false;
@@ -436,11 +505,12 @@ export default function UserShifts() {
   // Today's shifts that need check-in
   const todayShifts = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
-    return assignments.filter(a => 
+    return assignments.filter((a) => 
+      a.user_id === user?.id &&
       a.shift.shift_date === today && 
       (a.status === 'assigned' || a.status === 'confirmed')
     );
-  }, [assignments]);
+  }, [assignments, user?.id]);
 
   const filteredAssignments = useMemo(() => {
     const inMonth = assignments.filter((a) => {
@@ -497,6 +567,14 @@ export default function UserShifts() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-muted-foreground">Carregando...</div>
+      </div>
+    );
+  }
+
+  if (isPlantonista === false) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-muted-foreground">Conta administrativa não possui escala de plantões no aplicativo.</div>
       </div>
     );
   }
@@ -704,7 +782,7 @@ export default function UserShifts() {
               <Collapsible key={sectorId} open={isOpen} onOpenChange={() => toggleSector(sectorId)}>
                 <Card className="overflow-hidden">
                   <CollapsibleTrigger asChild>
-                    <button className="w-full p-4 flex items-center justify-between hover:bg-muted/50 transition-colors">
+                    <button type="button" className="w-full min-h-12 p-4 flex items-center justify-between hover:bg-muted/50 transition-colors touch-manipulation">
                       <div className="flex items-center gap-3">
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectorInfo.color }} />
                         <span className="font-semibold text-foreground">{sectorInfo.name}</span>
@@ -733,15 +811,18 @@ export default function UserShifts() {
                           const isShiftTomorrow = isTomorrow(shiftDate);
                           const isShiftPast = isPast(shiftDate) && !isShiftToday;
                           const isProcessing = processingId === myAssignment.id;
+                          const isMine = myAssignment.user_id === user?.id;
                           const needsCheckin =
+                            isMine &&
                             !myAssignment?.checkin_at &&
                             myAssignment?.status !== 'completed' &&
                             myAssignment?.status !== 'cancelled';
                           const needsCheckout =
+                            isMine &&
                             !myAssignment?.checkout_at &&
                             (Boolean(myAssignment?.checkin_at) || myAssignment?.status === 'confirmed');
                           const canRequestSwap =
-                            !isShiftPast && (myAssignment.status === 'assigned' || myAssignment.status === 'confirmed');
+                            isMine && !isShiftPast && (myAssignment.status === 'assigned' || myAssignment.status === 'confirmed');
 
                           return (
                             <div 
@@ -780,11 +861,20 @@ export default function UserShifts() {
                                       <MapPin className="h-4 w-4" />
                                       {sectorInfo.name}
                                     </div>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs uppercase tracking-wide">Plantonista:</span>
+                                      <span className="font-medium text-foreground">
+                                        {myAssignment.profile?.full_name ?? myAssignment.profile?.name ?? '—'}
+                                      </span>
+                                    </div>
                                   </div>
 
-                                  {myAssignment?.assigned_value && myAssignment.assigned_value > 0 && (
-                                    <p className="text-sm font-medium text-primary">R$ {Number(myAssignment.assigned_value).toFixed(2)}</p>
-                                  )}
+                                  <p className="text-sm font-medium text-primary">
+                                    {displayValueByAssignmentId[myAssignment.id] !== null &&
+                                    displayValueByAssignmentId[myAssignment.id] !== undefined
+                                      ? `R$ ${Number(displayValueByAssignmentId[myAssignment.id]).toFixed(2)}`
+                                      : 'Sem valor definido'}
+                                  </p>
 
                                   {myAssignment?.checkin_at && (
                                     <div className="flex items-center gap-1 text-xs text-green-600">
@@ -806,6 +896,7 @@ export default function UserShifts() {
                                     {sectorInfo.checkin_enabled && needsCheckin && (
                                       <Button
                                         size="sm"
+                                        className="h-10 px-3 touch-manipulation"
                                         onClick={() => myAssignment && handleCheckin(myAssignment)}
                                         disabled={isProcessing || isShiftPast}
                                         title={isShiftPast ? 'Plantão passado' : undefined}
@@ -823,6 +914,7 @@ export default function UserShifts() {
                                       <Button
                                         size="sm"
                                         variant="outline"
+                                        className="h-10 px-3 touch-manipulation"
                                         onClick={() => myAssignment && handleCheckout(myAssignment)}
                                         // Permitir check-out mesmo em plantões passados se já houve check-in.
                                         disabled={isProcessing || (isShiftPast && !myAssignment?.checkin_at)}
@@ -844,6 +936,7 @@ export default function UserShifts() {
                                     <Button
                                       size="sm"
                                       variant="secondary"
+                                      className="h-10 px-3 touch-manipulation"
                                       onClick={() => navigate(`/app/swaps?assignment=${encodeURIComponent(myAssignment.id)}`)}
                                     >
                                       <ArrowRightLeft className="mr-2 h-4 w-4" />

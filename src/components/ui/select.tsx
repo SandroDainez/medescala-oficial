@@ -63,11 +63,11 @@ const SelectContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className, children, position = "popper", ...props }, ref) => (
   <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
+      <SelectPrimitive.Content
+        ref={ref}
+        className={cn(
         // Use Radix available-height so the menu never overflows the viewport (common inside dialogs).
-        "relative z-[60] max-h-[var(--radix-select-content-available-height)] min-w-[8rem] overflow-hidden rounded-xl border border-border/70 bg-popover/95 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        "relative z-[120] max-h-[min(75dvh,var(--radix-select-content-available-height))] min-w-[8rem] overflow-hidden rounded-xl border border-border/70 bg-popover/95 text-popover-foreground shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
         position === "popper" &&
           "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
         className,
@@ -75,6 +75,7 @@ const SelectContent = React.forwardRef<
       position={position}
       sideOffset={6}
       collisionPadding={12}
+      avoidCollisions
       {...props}
     >
       <SelectScrollUpButton />
@@ -82,7 +83,7 @@ const SelectContent = React.forwardRef<
         className={cn(
           // Ensure long lists are always scrollable (esp. on trackpads where wheel events can
           // otherwise scroll the page behind the portal).
-          "p-1 max-h-[var(--radix-select-content-available-height)] overflow-y-auto",
+          "p-1 max-h-[min(75dvh,var(--radix-select-content-available-height))] overflow-y-auto overscroll-contain",
           position === "popper" && "w-full min-w-[var(--radix-select-trigger-width)]",
         )}
       >

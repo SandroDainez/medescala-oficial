@@ -112,10 +112,27 @@ export function mapScheduleToFinancialEntries(params: {
     const baseKey = `${uv.sector_id}:${uv.user_id}`;
     const key = hasCompetence ? `${baseKey}:${uv.year}:${uv.month}` : baseKey;
     const payload = { day_value: uv.day_value, night_value: uv.night_value };
+
+    // Keep explicit values (including 0) when duplicate rows exist.
+    // Null should not overwrite an explicit value from another row.
+    const mergeKeepingExplicit = (
+      current: { day_value: number | null; night_value: number | null } | undefined,
+      incoming: { day_value: number | null; night_value: number | null }
+    ) => ({
+      day_value:
+        incoming.day_value !== null
+          ? incoming.day_value
+          : (current?.day_value ?? null),
+      night_value:
+        incoming.night_value !== null
+          ? incoming.night_value
+          : (current?.night_value ?? null),
+    });
+
     if (hasCompetence) {
-      userValueMap.set(key, payload);
+      userValueMap.set(key, mergeKeepingExplicit(userValueMap.get(key), payload));
     } else {
-      userValueFallbackMap.set(baseKey, payload);
+      userValueFallbackMap.set(baseKey, mergeKeepingExplicit(userValueFallbackMap.get(baseKey), payload));
     }
   });
 
@@ -185,16 +202,23 @@ export function mapScheduleToFinancialEntries(params: {
       const userOverride = userOverrideKey
         ? userValueMap.get(userOverrideKey) ?? (legacyOverrideKey ? userValueFallbackMap.get(legacyOverrideKey) : undefined)
         : undefined;
-      const individualValue = userOverride 
+      const individualValue = userOverride
         ? (isNight ? userOverride.night_value : userOverride.day_value) 
         : null;
+
+      // Business rule: if there is any individual config row for this plantonista/sector/month,
+      // never trust legacy assigned_value from assignment row.
+      // - explicit zero -> final zero
+      // - explicit non-zero -> final individual value
+      // - blank individual field -> fallback to sector default (or no value), not assigned_value
+      const effectiveAssignedValue = userOverride ? null : a.assigned_value;
 
       // For GABS training sectors, always return no value
       // Otherwise use priority: individual > assigned_value > base_value > sector_default
       // CRITICAL: Pass duration_hours for PRO-RATA calculation to match calendar display
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
-        : getFinalValue(a.assigned_value, shift.base_value, sectorDefaultValue, individualValue, duration_hours);
+        : getFinalValue(effectiveAssignedValue, shift.base_value, sectorDefaultValue, individualValue, duration_hours);
 
       if (debugLogsEnabled) {
         // Log temporário solicitado (em caso real do Financeiro)

@@ -269,6 +269,9 @@ export default function AdminReports() {
     } finally {
       setLoading(false);
     }
+  // Intencional: evitar re-execução infinita ao incluir funções locais mutáveis como dependências.
+  // A execução deste callback é dirigida apenas por filtros/aba.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, currentTenantId, reportType, selectedSector, startDate, endDate]);
 
   async function fetchShiftsReport() {

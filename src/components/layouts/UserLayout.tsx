@@ -67,6 +67,7 @@ export function UserLayout() {
 
   const userInitials = user?.email?.slice(0, 2).toUpperCase() || 'U';
   const userName = profileName || user?.email?.split('@')[0] || 'Usuário';
+  const showBottomNav = !location.pathname.startsWith('/app/calendar');
 
   const headerTitle = useMemo(() => {
     if (location.pathname.startsWith('/app/calendar')) return 'Agenda Geral';
@@ -227,7 +228,7 @@ export function UserLayout() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 rounded-full border border-border px-2 text-[11px] font-semibold"
+              className="h-10 rounded-full border border-border px-3 text-xs font-semibold touch-manipulation"
               onClick={() => navigate('/app')}
             >
               HOJE
@@ -241,7 +242,7 @@ export function UserLayout() {
         className="min-h-[100dvh] overflow-y-auto overflow-x-hidden bg-gradient-to-b from-primary/[0.04] via-background to-background"
         style={{
           paddingTop: mobileHeaderOffset,
-          paddingBottom: 'calc(78px + env(safe-area-inset-bottom))',
+          paddingBottom: showBottomNav ? 'calc(78px + env(safe-area-inset-bottom))' : 'env(safe-area-inset-bottom)',
         }}
       >
         <div className="mx-auto w-full max-w-7xl px-3 py-4 sm:px-6 lg:px-8">
@@ -251,7 +252,7 @@ export function UserLayout() {
 
       <nav className={cn(
         'fixed bottom-0 left-0 right-0 z-[95] border-t border-border/70 bg-card/95 px-3 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 backdrop-blur',
-        sheetOpen && 'hidden'
+        (!showBottomNav || sheetOpen) && 'hidden'
       )}>
         <div className="grid grid-cols-3 gap-2">
           {bottomNavItems.map((item) => {
@@ -261,7 +262,7 @@ export function UserLayout() {
                 key={item.to}
                 onClick={() => navigate(item.to)}
                 className={cn(
-                  'flex h-11 items-center justify-center gap-1 rounded-xl border text-xs font-semibold transition-colors',
+                  'flex h-12 items-center justify-center gap-1 rounded-xl border text-xs font-semibold transition-colors touch-manipulation',
                   isActive
                     ? 'border-primary bg-primary text-primary-foreground'
                     : 'border-border bg-background text-foreground hover:bg-accent'

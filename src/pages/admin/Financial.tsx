@@ -62,6 +62,7 @@ function getSectorDefaultReferenceValue(entry: Pick<FinancialEntry, 'sector_id' 
 // ============================================================
 export default function AdminFinancial() {
   const { currentTenantId } = useTenant();
+  const actionButtonClass = 'h-8 px-3';
   
   // Raw data from DB
   const [rawEntries, setRawEntries] = useState<RawShiftEntry[]>([]);
@@ -78,10 +79,7 @@ export default function AdminFinancial() {
   
   // Audit mode
   const [auditMode, setAuditMode] = useState(false);
-  
-  // Expand/collapse
-  const [expandedPlantonistas, setExpandedPlantonistas] = useState<Set<string>>(new Set());
-  const [expandedSectors, setExpandedSectors] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState('plantonistas_tabela');
 
   // Modal de detalhamento (tabela por plantonista)
   const [selectedPlantonista, setSelectedPlantonista] = useState<PlantonistaReport | null>(null);
@@ -388,7 +386,10 @@ export default function AdminFinancial() {
       }>;
 
       // Ensure assignments match ONLY the fetched shifts (important when sector filter is active).
-      const assignmentsScoped = assignmentsRaw.filter((a) => shiftIdSet.has(a.shift_id));
+      const activeStatuses = new Set(['assigned', 'confirmed', 'completed']);
+      const assignmentsScoped = assignmentsRaw.filter(
+        (a) => shiftIdSet.has(a.shift_id) && activeStatuses.has(a.status)
+      );
       const sectors = sectorsRes.data ?? [];
       const userValuesRaw = (userValuesRes.data ?? []) as Array<{
         sector_id: string;
@@ -433,12 +434,6 @@ export default function AdminFinancial() {
         year: uv.year,
       }));
 
-      // Debug: Log raw assignments to verify values are coming from DB correctly
-      console.log('[AdminFinancial] Raw assignments sample:', assignmentsRaw.slice(0, 5).map(a => ({
-        name: a.name,
-        assigned_value: a.assigned_value,
-      })));
-
       const mapped = mapScheduleToFinancialEntries({
         shifts: shifts as unknown as ScheduleShift[],
         assignments: assignmentsScoped.map(
@@ -454,14 +449,6 @@ export default function AdminFinancial() {
         userSectorValues: userValues,
         tenantSlug: slug ?? undefined,
       });
-
-      // Debug: Log mapped entries to verify final values
-      console.log('[AdminFinancial] Mapped entries sample:', mapped.slice(0, 5).map(e => ({
-        assignee_name: e.assignee_name,
-        assigned_value: e.assigned_value,
-        final_value: e.final_value,
-        value_source: e.value_source,
-      })));
 
       setRawEntries(mapped);
     } catch (err) {
@@ -521,19 +508,6 @@ export default function AdminFinancial() {
 
   // Filtered entries
   const filteredEntries = useMemo(() => {
-    console.log('[filteredEntries] filterSetor:', filterSetor, 'filterPlantonista:', filterPlantonista);
-    console.log('[filteredEntries] rawEntries count:', rawEntries.length);
-    
-    // Log vagos before filtering
-    const vagosBeforeFilter = rawEntries.filter(e => e.assignee_id === 'unassigned');
-    if (vagosBeforeFilter.length > 0) {
-      console.log('[filteredEntries] VAGOS before filter:', vagosBeforeFilter.map(e => ({
-        date: e.shift_date,
-        sector_id: e.sector_id,
-        sector_name: e.sector_name,
-      })));
-    }
-    
     const result = rawEntries.filter(e => {
       if (filterSetor !== 'all' && e.sector_id !== filterSetor) return false;
       if (filterPlantonista !== 'all' && e.assignee_id !== filterPlantonista) return false;
@@ -542,19 +516,6 @@ export default function AdminFinancial() {
       if (filterSetor !== 'all' && filterPlantonista === 'all' && e.assignee_id === 'unassigned') return false;
       return true;
     });
-    
-    // Log vagos after filtering
-    const vagosAfterFilter = result.filter(e => e.assignee_id === 'unassigned');
-    if (vagosAfterFilter.length > 0) {
-      console.log('[filteredEntries] VAGOS after filter (THESE WILL SHOW):', vagosAfterFilter.map(e => ({
-        date: e.shift_date,
-        sector_id: e.sector_id,
-        sector_name: e.sector_name,
-      })));
-    }
-    
-    console.log('[filteredEntries] Result count:', result.length);
-    
     return result;
   }, [rawEntries, filterSetor, filterPlantonista]);
 
@@ -576,24 +537,7 @@ export default function AdminFinancial() {
     return buildAuditInfo(filteredEntries);
   }, [filteredEntries]);
 
-
-  // Toggle helpers
-  function togglePlantonista(id: string) {
-    setExpandedPlantonistas(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
-    });
-  }
-  function toggleSector(id: string) {
-    setExpandedSectors(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(id)) newSet.delete(id);
-      else newSet.add(id);
-      return newSet;
-    });
-  }
+  const showGlobalExportActions = activeTab !== 'rentabilidade';
 
   // Export CSV
   // Export CSV - Dia a Dia (detailed)
@@ -1235,6 +1179,7 @@ export default function AdminFinancial() {
           <Button 
             variant="outline" 
             size="sm" 
+            className={actionButtonClass}
             onClick={fetchData}
             disabled={loading}
           >
@@ -1248,52 +1193,56 @@ export default function AdminFinancial() {
               Auditoria
             </Label>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Download className="h-4 w-4 mr-2" />
-                Exportar CSV
-                <ChevronDown className="h-4 w-4 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={exportCSVPlantonistas}>
-                <Users className="h-4 w-4 mr-2" />
-                Totais por Plantonista
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={exportCSVSectores}>
-                <Building className="h-4 w-4 mr-2" />
-                Totais por Setor
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={exportCSVDiario}>
-                <Table2 className="h-4 w-4 mr-2" />
-                Dia a Dia (Detalhado)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm">
-                <Printer className="h-4 w-4 mr-2" />
-                Imprimir
-                <ChevronDown className="h-4 w-4 ml-1" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handlePrintPlantonistas}>
-                <Users className="h-4 w-4 mr-2" />
-                Totais por Plantonista
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handlePrintSetores}>
-                <Building className="h-4 w-4 mr-2" />
-                Totais por Setor
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handlePrintDiario}>
-                <Table2 className="h-4 w-4 mr-2" />
-                Dia a Dia (Detalhado)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {showGlobalExportActions && (
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className={actionButtonClass}>
+                    <Download className="h-4 w-4 mr-2" />
+                    Exportar
+                    <ChevronDown className="h-4 w-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportCSVPlantonistas}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Totais por Plantonista
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportCSVSectores}>
+                    <Building className="h-4 w-4 mr-2" />
+                    Totais por Setor
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportCSVDiario}>
+                    <Table2 className="h-4 w-4 mr-2" />
+                    Dia a Dia (Detalhado)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className={actionButtonClass}>
+                    <Printer className="h-4 w-4 mr-2" />
+                    Imprimir
+                    <ChevronDown className="h-4 w-4 ml-1" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handlePrintPlantonistas}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Totais por Plantonista
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handlePrintSetores}>
+                    <Building className="h-4 w-4 mr-2" />
+                    Totais por Setor
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handlePrintDiario}>
+                    <Table2 className="h-4 w-4 mr-2" />
+                    Dia a Dia (Detalhado)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </div>
 
@@ -1316,8 +1265,8 @@ export default function AdminFinancial() {
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={setThisMonth}>Este mês</Button>
-              <Button variant="outline" size="sm" onClick={setLastMonth}>Mês anterior</Button>
+              <Button variant="outline" size="sm" className={actionButtonClass} onClick={setThisMonth}>Este mês</Button>
+              <Button variant="outline" size="sm" className={actionButtonClass} onClick={setLastMonth}>Mês anterior</Button>
             </div>
           </div>
           <div className="flex flex-wrap gap-4">
@@ -1494,7 +1443,7 @@ export default function AdminFinancial() {
       )}
 
       {/* TABS: Plantonistas | Balanço dos Setores */}
-      <Tabs defaultValue="plantonistas_tabela" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="plantonistas_tabela">Plantonistas</TabsTrigger>
           <TabsTrigger value="setores_tabela" className="flex items-center gap-1">
@@ -1503,7 +1452,7 @@ export default function AdminFinancial() {
           </TabsTrigger>
           <TabsTrigger value="rentabilidade" className="flex items-center gap-1">
             <Calculator className="h-3 w-3" />
-            Balanço dos Setores
+            Rentabilidade
           </TabsTrigger>
         </TabsList>
 
@@ -1519,7 +1468,19 @@ export default function AdminFinancial() {
           ) : (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Plantonistas — totais do período</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg">Plantonistas — totais do período</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={exportCSVPlantonistas}>
+                      <Download className="h-4 w-4 mr-1" />
+                      Exportar
+                    </Button>
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={handlePrintPlantonistas}>
+                      <Printer className="h-4 w-4 mr-1" />
+                      Imprimir
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="max-h-[70vh] overflow-y-auto">
@@ -1575,8 +1536,8 @@ export default function AdminFinancial() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="outline" size="sm" onClick={() => setSelectedPlantonista(p)}>
-                              Ver plantões
+                            <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => setSelectedPlantonista(p)}>
+                              Detalhar
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -1596,11 +1557,11 @@ export default function AdminFinancial() {
                     {selectedPlantonista?.assignee_name}
                   </DialogTitle>
                   <div className="flex gap-2 mr-8">
-                    <Button variant="outline" size="sm" onClick={() => selectedPlantonista && exportPlantonistaCSV(selectedPlantonista)}>
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => selectedPlantonista && exportPlantonistaCSV(selectedPlantonista)}>
                       <Download className="h-4 w-4 mr-1" />
                       CSV
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => selectedPlantonista && printPlantonistaDetail(selectedPlantonista)}>
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => selectedPlantonista && printPlantonistaDetail(selectedPlantonista)}>
                       <Printer className="h-4 w-4 mr-1" />
                       Imprimir
                     </Button>
@@ -1675,7 +1636,19 @@ export default function AdminFinancial() {
           ) : (
             <Card>
               <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Setores — totais do período</CardTitle>
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-lg">Setores — totais do período</CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={exportCSVSectores}>
+                      <Download className="h-4 w-4 mr-1" />
+                      Exportar
+                    </Button>
+                    <Button variant="outline" size="sm" className={actionButtonClass} onClick={handlePrintSetores}>
+                      <Printer className="h-4 w-4 mr-1" />
+                      Imprimir
+                    </Button>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="p-0">
                 <div className="max-h-[70vh] overflow-y-auto">
@@ -1713,8 +1686,8 @@ export default function AdminFinancial() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="outline" size="sm" onClick={() => setSelectedSectorReport(s)}>
-                              Ver detalhes
+                            <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => setSelectedSectorReport(s)}>
+                              Detalhar
                             </Button>
                           </TableCell>
                         </TableRow>

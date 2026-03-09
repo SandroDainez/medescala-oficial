@@ -8,7 +8,11 @@
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "test": "vitest run",
+    "check:core": "npm run lint && npm run build",
+    "check:all": "npm run lint && npm run test && npm run build",
+    "preview": "vite preview",
+    "audit:daily": "node scripts/audit/run-audit.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
@@ -88,7 +92,8 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
-    "vite": "^5.4.19"
+    "vite": "^5.4.19",
+    "vitest": "^4.0.18"
   },
   "overrides": {
     "@eslint-community/eslint-utils": "^4.9.1"

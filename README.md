@@ -66,6 +66,12 @@ Alguns alertas recorrentes na área de Segurança são **intencionais** e fazem 
 
 - Veja o documento: `docs/SECURITY_DECISIONS.md`
 
+## Auditoria diária autônoma
+
+- Execução automática diária + execução manual: `.github/workflows/daily-audit.yml`
+- Script de varredura: `scripts/audit/run-audit.mjs`
+- Guia de configuração: `docs/DAILY_AUDIT.md`
+
 ## How can I deploy this project?
 
 Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.

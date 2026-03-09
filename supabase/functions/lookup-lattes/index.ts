@@ -83,12 +83,12 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const input = normalizeText(body.lattes);
     if (!input) {
-      return json({ ok: false, error: "Informe URL ou ID do Lattes." }, 400);
+      return json({ ok: false, error: "Informe URL ou ID do Lattes." });
     }
 
     const id = extractLattesId(input);
     if (!id) {
-      return json({ ok: false, error: "Não foi possível identificar o ID do Lattes." }, 400);
+      return json({ ok: false, error: "Não foi possível identificar o ID do Lattes." });
     }
 
     const canonicalUrl = `http://lattes.cnpq.br/${id}`;

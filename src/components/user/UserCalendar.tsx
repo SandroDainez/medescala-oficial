@@ -13,6 +13,7 @@ import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
 import { generateICSFile, shareICSFile } from '@/lib/calendarExport';
 import { TapSafeButton } from '@/components/TapSafeButton';
+import { clearPwaCacheAndReload } from '@/lib/pwa';
 import {
   Sheet,
   SheetContent,
@@ -96,6 +97,11 @@ export default function UserCalendar() {
   const [swapReason, setSwapReason] = useState('');
   const [submittingSwap, setSubmittingSwap] = useState(false);
   const [currentUserDisplayName, setCurrentUserDisplayName] = useState('Um usuário');
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPullRefreshing, setIsPullRefreshing] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const pullStartYRef = useRef<number | null>(null);
+  const pullActiveRef = useRef(false);
 
   const enrichMembersWithFullNames = useCallback(async (members: TenantMember[]) => {
     if (!members.length) return members;
@@ -177,21 +183,21 @@ export default function UserCalendar() {
           .lte('shift_date', endStr)
       : Promise.resolve({ data: [], error: null } as any);
 
-    // Use RPC to get roster with names (avoids RLS issues on mobile)
-    const rosterPromise = supabase.rpc('get_shift_roster', {
+    // Use assignments range RPC (same source used in admin/financial) for robust roster loading
+    const assignmentsRangePromise = supabase.rpc('get_shift_assignments_range', {
       _tenant_id: currentTenantId,
       _start: startStr,
       _end: endStr,
     });
 
-    const [sectorShiftsRes, myShiftsRes, rosterRes] = await Promise.all([
+    const [sectorShiftsRes, myShiftsRes, assignmentsRangeRes] = await Promise.all([
       sectorShiftsPromise,
       myShiftsPromise,
-      rosterPromise,
+      assignmentsRangePromise,
     ]);
 
-    if (rosterRes.error) {
-      console.error('get_shift_roster error:', rosterRes.error);
+    if (assignmentsRangeRes.error) {
+      console.error('get_shift_assignments_range error:', assignmentsRangeRes.error);
       toast({
         title: 'Não foi possível carregar os nomes',
         description: 'Verifique sua conexão e tente novamente.',
@@ -199,8 +205,10 @@ export default function UserCalendar() {
       });
     }
     const rosterMap = new Map<string, { user_id: string; status: string; name: string | null }[]>();
-    if (rosterRes.data) {
-      (rosterRes.data as { shift_id: string; user_id: string; status: string; name: string | null }[]).forEach(r => {
+    if (assignmentsRangeRes.data) {
+      (assignmentsRangeRes.data as { shift_id: string; user_id: string; status: string; name: string | null }[])
+        .filter((r) => ['assigned', 'confirmed', 'completed'].includes(r.status))
+        .forEach(r => {
         if (!rosterMap.has(r.shift_id)) {
           rosterMap.set(r.shift_id, []);
         }
@@ -229,18 +237,13 @@ export default function UserCalendar() {
     const mergedShiftsMap = new Map<string, Shift>();
     (sectorShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
     (myShiftsRes.data ?? []).forEach((s: any) => mergedShiftsMap.set(s.id, s));
-    const rosterShiftIds = new Set<string>(
-      (rosterRes.data as { shift_id: string }[] | null | undefined)?.map((r) => r.shift_id).filter(Boolean) ?? []
-    );
-
     const mergedShifts = Array.from(mergedShiftsMap.values())
       .filter((shift) => {
         if (!shift?.id || !shift?.shift_date) return false;
         if (!(shift.shift_date >= startStr && shift.shift_date <= endStr)) return false;
-        // Exibe no calendário do usuário apenas plantões realmente na escala:
-        // - atribuídos ao próprio usuário, ou
-        // - com roster (alguém escalado).
-        return myShiftIdsLocal.includes(shift.id) || rosterShiftIds.has(shift.id);
+        // "Todos" deve mostrar todos os plantões dos setores do usuário no período,
+        // mesmo quando o roster estiver vazio/parcial.
+        return true;
       })
       .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`));
 
@@ -275,7 +278,9 @@ export default function UserCalendar() {
       const visibleShiftIds = new Set(mergedShifts.map((s) => s.id));
       rosterMap.forEach((roster, shiftId) => {
         if (!visibleShiftIds.has(shiftId)) return;
-        roster.forEach((r, idx) => {
+        roster
+          .filter((r) => r.status !== 'cancelled')
+          .forEach((r, idx) => {
           const resolvedName = fullNameByUserId.get(r.user_id) || r.name || null;
           enrichedAssignments.push({
             id: `${shiftId}-${idx}`,
@@ -285,7 +290,7 @@ export default function UserCalendar() {
             status: r.status,
             profile: { name: resolvedName, full_name: resolvedName },
           });
-        });
+          });
       });
       setAssignments(enrichedAssignments);
     }
@@ -401,9 +406,20 @@ export default function UserCalendar() {
   }
 
   // Detect only the current user's overlaps (same date + overlapping times)
-  function detectMyConflictShiftIds(list: Shift[]) {
+  function detectMyConflicts(list: Shift[]) {
     const groupedByDate: Record<string, Shift[]> = {};
     const conflictIds = new Set<string>();
+    const details: Array<{
+      date: string;
+      shifts: Array<{
+        id: string;
+        title: string;
+        hospital: string;
+        sectorName: string;
+        start_time: string;
+        end_time: string;
+      }>;
+    }> = [];
 
     list.forEach((shift) => {
       if (!groupedByDate[shift.shift_date]) groupedByDate[shift.shift_date] = [];
@@ -428,12 +444,33 @@ export default function UserCalendar() {
           if (overlaps) {
             conflictIds.add(a.id);
             conflictIds.add(b.id);
+            details.push({
+              date: a.shift_date,
+              shifts: [
+                {
+                  id: a.id,
+                  title: a.title,
+                  hospital: a.hospital,
+                  sectorName: a.sector?.name || 'Sem setor',
+                  start_time: a.start_time,
+                  end_time: a.end_time,
+                },
+                {
+                  id: b.id,
+                  title: b.title,
+                  hospital: b.hospital,
+                  sectorName: b.sector?.name || 'Sem setor',
+                  start_time: b.start_time,
+                  end_time: b.end_time,
+                },
+              ],
+            });
           }
         }
       }
     });
 
-    return conflictIds;
+    return { conflictIds, details };
   }
 
   // ====== SWAP REQUEST FUNCTIONS ======
@@ -481,6 +518,46 @@ export default function UserCalendar() {
       return;
     }
 
+    const { data: eligibleMemberships, error: eligibleMembershipsError } = await supabase
+      .from('memberships')
+      .select('user_id, role, active')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true)
+      .eq('role', 'user')
+      .in('user_id', sectorUserIds);
+
+    if (eligibleMembershipsError) {
+      console.error('[UserCalendar] memberships eligibility error:', eligibleMembershipsError);
+    }
+
+    const { data: profilesData, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, full_name, name, profile_type')
+      .in('id', sectorUserIds);
+
+    if (profilesError) {
+      console.error('[UserCalendar] profiles eligibility error:', profilesError);
+    }
+
+    const eligibleMembershipIds = new Set(
+      ((eligibleMemberships ?? []) as Array<{ user_id: string }>).map((item) => item.user_id).filter(Boolean)
+    );
+    const eligibleNameMap = new Map(
+      ((profilesData ?? []) as any[])
+        .filter((item) => item?.profile_type === 'plantonista')
+        .map((item) => [item.id as string, (item.full_name?.trim() || item.name?.trim() || 'Sem nome') as string])
+    );
+
+    const eligibleUserIds = sectorUserIds.filter(
+      (id) => eligibleMembershipIds.has(id) && eligibleNameMap.has(id) && id !== user.id
+    );
+
+    if (eligibleUserIds.length === 0) {
+      setTenantMembers([]);
+      setLoadingMembers(false);
+      return;
+    }
+
     // Now get names for those users
     const { data: allMembers, error: nmError } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
 
@@ -493,7 +570,11 @@ export default function UserCalendar() {
 
     // Filter to only sector members, excluding current user
     const filtered = (allMembers as TenantMember[])
-      .filter((m) => sectorUserIds.includes(m.user_id) && m.user_id !== user.id);
+      .filter((m) => eligibleUserIds.includes(m.user_id) && m.user_id !== user.id)
+      .map((m) => ({
+        ...m,
+        name: eligibleNameMap.get(m.user_id) || m.name,
+      }));
 
     setTenantMembers(await enrichMembersWithFullNames(filtered));
     setLoadingMembers(false);
@@ -667,7 +748,7 @@ export default function UserCalendar() {
   
   // For "Meus Plantões" tab, show ALL user's shifts for the month
   const myMonthShifts = shifts.filter(s => isMyShift(s.id));
-  const myConflictShiftIds = detectMyConflictShiftIds(myMonthShifts);
+  const { conflictIds: myConflictShiftIds, details: myConflictDetails } = detectMyConflicts(myMonthShifts);
   const myConflictsCount = myConflictShiftIds.size;
   
   const filteredShifts = activeTab === 'meus'
@@ -752,6 +833,57 @@ export default function UserCalendar() {
   const groupedBySectorWithDates = groupBySectorWithDates(myMonthShifts);
   const hasAnyShiftsForSelectedDate = activeTab === 'meus' ? myMonthShifts.length > 0 : selectedDateShifts.length > 0;
 
+  async function handlePullRefresh() {
+    if (isPullRefreshing) return;
+    setIsPullRefreshing(true);
+    try {
+      await clearPwaCacheAndReload();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }
+
+  function getScrollContainer() {
+    return rootRef.current?.closest('main');
+  }
+
+  function handleTouchStart(event: React.TouchEvent<HTMLDivElement>) {
+    const scrollContainer = getScrollContainer();
+    if (!scrollContainer || scrollContainer.scrollTop > 0 || isPullRefreshing) {
+      pullStartYRef.current = null;
+      pullActiveRef.current = false;
+      return;
+    }
+
+    pullStartYRef.current = event.touches[0]?.clientY ?? null;
+    pullActiveRef.current = true;
+  }
+
+  function handleTouchMove(event: React.TouchEvent<HTMLDivElement>) {
+    if (!pullActiveRef.current || pullStartYRef.current === null) return;
+    const currentY = event.touches[0]?.clientY ?? pullStartYRef.current;
+    const delta = currentY - pullStartYRef.current;
+    if (delta <= 0) {
+      setPullDistance(0);
+      return;
+    }
+    const nextDistance = Math.min(delta, 140);
+    setPullDistance(nextDistance);
+    if (nextDistance > 10) {
+      event.preventDefault();
+    }
+  }
+
+  function handleTouchEnd() {
+    const shouldRefresh = pullDistance >= 90;
+    pullStartYRef.current = null;
+    pullActiveRef.current = false;
+    setPullDistance(0);
+    if (shouldRefresh) {
+      void handlePullRefresh();
+    }
+  }
+
   // Export to calendar function
   async function handleExportToCalendar() {
     if (myMonthShifts.length === 0) {
@@ -797,7 +929,26 @@ export default function UserCalendar() {
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background w-full max-w-full overflow-x-hidden">
+    <div
+      ref={rootRef}
+      className="flex-1 flex flex-col bg-background w-full max-w-full overflow-x-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+    >
+      <div
+        className="flex items-center justify-center overflow-hidden text-xs text-muted-foreground transition-all"
+        style={{ height: pullDistance ? Math.max(32, Math.min(pullDistance, 72)) : 0 }}
+      >
+        {isPullRefreshing
+          ? 'Atualizando aplicativo...'
+          : pullDistance >= 90
+            ? 'Solte para atualizar o aplicativo'
+            : pullDistance > 0
+              ? 'Puxe para atualizar o aplicativo'
+              : null}
+      </div>
       {/* Calendar Header */}
       <div className="flex items-center justify-between px-4 py-4 border-b bg-card min-h-[60px]">
         <Button 
@@ -851,7 +1002,7 @@ export default function UserCalendar() {
               key={index}
               onClick={() => setSelectedDate(date)}
               className={cn(
-                "relative flex flex-col items-center justify-center py-3 border-b border-r border-border/30 transition-colors",
+                "relative flex flex-col items-center justify-center py-3 border-b border-r border-border/30 transition-colors touch-manipulation",
                 !isCurrentMonth && "opacity-40",
                 isSelected && "bg-primary text-primary-foreground",
                 !isSelected && isTodayDate && "bg-accent",
@@ -901,7 +1052,7 @@ export default function UserCalendar() {
         {/* Panel Toggle */}
         <button 
           onClick={() => setPanelExpanded(!panelExpanded)}
-          className="w-full flex justify-center py-2 border-b"
+          className="w-full flex justify-center py-2 border-b touch-manipulation"
         >
           <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
         </button>
@@ -911,7 +1062,7 @@ export default function UserCalendar() {
           <button
             onClick={() => setActiveTab('todos')}
             className={cn(
-              "flex-1 py-3 text-sm font-medium transition-colors",
+              "flex-1 h-11 text-sm font-medium transition-colors touch-manipulation",
               activeTab === 'todos' 
                 ? "bg-primary text-primary-foreground" 
                 : "text-muted-foreground hover:bg-accent"
@@ -922,7 +1073,7 @@ export default function UserCalendar() {
           <button
             onClick={() => setActiveTab('meus')}
             className={cn(
-              "flex-1 py-3 text-sm font-medium transition-colors border-l border-r",
+              "flex-1 h-11 text-sm font-medium transition-colors border-l border-r touch-manipulation",
               activeTab === 'meus' 
                 ? "bg-primary text-primary-foreground" 
                 : "text-muted-foreground hover:bg-accent"
@@ -943,8 +1094,32 @@ export default function UserCalendar() {
           </span>
         </div>
         {myConflictsCount > 0 && (
-          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-800 dark:text-amber-300">
-            Você tem {myConflictsCount} plantão(ões) com conflito de horário no mesmo dia.
+          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
+            <div>
+              Você tem {myConflictsCount} plantão(ões) com conflito de horário no mesmo dia.
+            </div>
+            <div className="space-y-2">
+              {myConflictDetails.slice(0, 3).map((conflict, index) => (
+                <div key={`${conflict.date}-${index}`} className="rounded-md border border-amber-500/20 bg-background/70 p-2">
+                  <div className="font-semibold">
+                    {format(parseDateOnly(conflict.date), "dd/MM/yyyy", { locale: ptBR })}
+                  </div>
+                  {conflict.shifts.map((shift) => (
+                    <div key={shift.id} className="mt-1">
+                      {shift.sectorName} • {shift.start_time.slice(0, 5)}-{shift.end_time.slice(0, 5)} • {shift.hospital}
+                    </div>
+                  ))}
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 border-amber-500/40 bg-background/80 text-amber-900 hover:bg-background dark:text-amber-200"
+                onClick={() => navigate('/app/swaps')}
+              >
+                Resolver em Trocas
+              </Button>
+            </div>
           </div>
         )}
 

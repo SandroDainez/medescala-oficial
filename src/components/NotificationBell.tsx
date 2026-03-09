@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,19 +12,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  read_at: string | null;
-  created_at: string;
-}
+import { getNotificationDestination } from '@/lib/notificationNavigation';
+import { useUserNotifications } from '@/hooks/useUserNotifications';
 
 const typeColors: Record<string, string> = {
   shift: 'bg-blue-500',
@@ -44,104 +37,28 @@ const typeColors: Record<string, string> = {
 
 export function NotificationBell() {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useUserNotifications({
+    userId: user?.id,
+    limit: 20,
+  });
 
-  const fetchNotifications = useCallback(async () => {
-    if (!user) return;
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(20);
+  async function openNotification(notification: (typeof notifications)[number]) {
+    const destination = getNotificationDestination(notification);
 
-    if (data) {
-      setNotifications(data);
-      setUnreadCount(data.filter((n) => !n.read_at).length);
+    if (!notification.read_at) {
+      await markAsRead(notification.id);
     }
-  }, [user]);
 
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      
-      // Subscribe to notification changes (INSERT and DELETE)
-      const channel = supabase
-        .channel('notifications')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            setNotifications((prev) => [payload.new as Notification, ...prev]);
-            setUnreadCount((prev) => prev + 1);
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            const deletedId = (payload.old as any)?.id;
-            if (!deletedId) {
-              // Fallback: alguns setups podem não enviar o id no payload.old
-              // (ex: replica identity). Faz refetch para manter a UI consistente.
-              fetchNotifications();
-              return;
-            }
+    setOpen(false);
 
-            setNotifications((prev) => {
-              const deleted = prev.find((n) => n.id === deletedId);
-              if (deleted && !deleted.read_at) {
-                setUnreadCount((c) => Math.max(0, c - 1));
-              }
-              return prev.filter((n) => n.id !== deletedId);
-            });
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    if (destination) {
+      navigate(destination);
+      return;
     }
-  }, [user, fetchNotifications]);
 
-  async function markAsRead(id: string) {
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('id', id);
-
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read_at: new Date().toISOString() } : n))
-    );
-    setUnreadCount((prev) => Math.max(0, prev - 1));
-  }
-
-  async function markAllAsRead() {
-    const unreadIds = notifications.filter((n) => !n.read_at).map((n) => n.id);
-    if (unreadIds.length === 0) return;
-
-    await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .in('id', unreadIds);
-
-    setNotifications((prev) =>
-      prev.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() }))
-    );
-    setUnreadCount(0);
+    navigate('/app/notifications');
   }
 
   return (
@@ -163,7 +80,12 @@ export function NotificationBell() {
         <DropdownMenuLabel className="flex items-center justify-between">
           <span>Notificações</span>
           {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="text-xs h-auto p-1" onClick={markAllAsRead}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-auto p-1"
+              onClick={() => void markAllAsRead()}
+            >
               Marcar todas como lidas
             </Button>
           )}
@@ -181,7 +103,9 @@ export function NotificationBell() {
                 className={`flex flex-col items-start gap-1 p-3 cursor-pointer ${
                   !notification.read_at ? 'bg-accent/50' : ''
                 }`}
-                onClick={() => !notification.read_at && markAsRead(notification.id)}
+                onClick={() => {
+                  void openNotification(notification);
+                }}
               >
                 <div className="flex items-center gap-2 w-full">
                   <div className={`w-2 h-2 rounded-full ${typeColors[notification.type] || 'bg-gray-500'}`} />

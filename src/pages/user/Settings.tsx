@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -103,25 +103,47 @@ export default function UserSettings() {
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
   const curriculumInputRef = useRef<HTMLInputElement | null>(null);
 
-  function notifyError(title: string, description?: string) {
+  const notifyError = useCallback((title: string, description?: string) => {
     toast({ title, description, variant: "destructive" });
-  }
+  }, [toast]);
 
-  function notifySuccess(title: string, description?: string) {
+  const notifySuccess = useCallback((title: string, description?: string) => {
     toast({ title, description });
-  }
+  }, [toast]);
 
-  async function fileToBase64(file: File): Promise<string> {
+async function fileToBase64(file: File): Promise<string> {
     const arrayBuffer = await file.arrayBuffer();
     let binary = "";
     const bytes = new Uint8Array(arrayBuffer);
     for (let index = 0; index < bytes.length; index += 1) {
       binary += String.fromCharCode(bytes[index]);
     }
-    return btoa(binary);
-  }
+  return btoa(binary);
+}
 
-  async function loadSelfProfile() {
+function getFileExtension(fileName: string): string {
+  const trimmed = String(fileName ?? "").trim().toLowerCase();
+  const dot = trimmed.lastIndexOf(".");
+  if (dot < 0) return "";
+  return trimmed.slice(dot);
+}
+
+function isValidCurriculumType(file: File): boolean {
+  const validMimeTypes = new Set([
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ]);
+  const validExtensions = new Set([".pdf", ".doc", ".docx"]);
+  const normalizedType = String(file.type ?? "").trim().toLowerCase();
+  const extension = getFileExtension(file.name);
+  if (normalizedType && normalizedType !== "application/octet-stream") {
+    return validMimeTypes.has(normalizedType);
+  }
+  return validExtensions.has(extension);
+}
+
+  const loadSelfProfile = useCallback(async () => {
     if (!currentTenantId) return;
 
     setLoadingProfile(true);
@@ -159,12 +181,12 @@ export default function UserSettings() {
       curriculumPath: String(media.curriculumPath ?? "").trim(),
       curriculumFileName: String(media.curriculumFileName ?? "").trim(),
     });
-  }
+  }, [currentTenantId, notifyError, user?.email]);
 
   useEffect(() => {
     if (!currentTenantId) return;
     void loadSelfProfile();
-  }, [currentTenantId]);
+  }, [currentTenantId, loadSelfProfile]);
 
   async function lookupCfm() {
     const normalized = form.crm.trim().toUpperCase();
@@ -445,6 +467,16 @@ export default function UserSettings() {
               onChange={(event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
+                if (!isValidCurriculumType(file)) {
+                  notifyError("Formato inválido", "Use PDF, DOC ou DOCX para o currículo.");
+                  event.currentTarget.value = "";
+                  return;
+                }
+                if (file.size > 10 * 1024 * 1024) {
+                  notifyError("Arquivo grande", "O currículo deve ter no máximo 10MB.");
+                  event.currentTarget.value = "";
+                  return;
+                }
                 setCurriculumFile(file);
                 setForm((prev) => ({
                   ...prev,

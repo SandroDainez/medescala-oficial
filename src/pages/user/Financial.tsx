@@ -46,6 +46,7 @@ export default function UserFinancial() {
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [didAutoSelect, setDidAutoSelect] = useState(false);
   const [allAssignmentDates, setAllAssignmentDates] = useState<string[]>([]);
+  const [isPlantonista, setIsPlantonista] = useState<boolean | null>(null);
 
   const now = new Date();
   const effectiveMonth = selectedMonth ?? (now.getMonth() + 1); // 1-12
@@ -83,10 +84,37 @@ export default function UserFinancial() {
   useEffect(() => {
     if (user && currentTenantId) {
       setDidAutoSelect(false);
-      fetchAllDates();
+      checkProfileAndLoad();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
+
+  async function checkProfileAndLoad() {
+    if (!user?.id) return;
+    const [{ data: membership }, { data: profile }] = await Promise.all([
+      supabase
+        .from('memberships')
+        .select('active')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id)
+        .eq('active', true)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('profile_type')
+        .eq('id', user.id)
+        .maybeSingle(),
+    ]);
+    const ok = Boolean(membership?.active) && profile?.profile_type === 'plantonista';
+    setIsPlantonista(ok);
+    if (!ok) {
+      setLoading(false);
+      setSelectedMonth(now.getMonth() + 1);
+      setSelectedYear(now.getFullYear());
+      return;
+    }
+    fetchAllDates();
+  }
 
   useEffect(() => {
     if (user && currentTenantId && selectedMonth !== null && selectedYear !== null) {
@@ -143,8 +171,8 @@ export default function UserFinancial() {
     const endDate = new Date(selectedYear, selectedMonth, 0).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
 
-    // Fetch assignments and user's individual overrides in parallel
-    const [assignmentsRes, userValuesRes] = await Promise.all([
+    // Keep financial source aligned with calendar/shifts to avoid divergence
+    const [assignmentsRes, userValuesRes, sectorsRes] = await Promise.all([
       supabase
         .from('shift_assignments')
         .select(`
@@ -168,15 +196,17 @@ export default function UserFinancial() {
         .eq('user_id', user.id)
         .in('status', ['assigned', 'confirmed', 'completed'])
         .gte('shift.shift_date', startDate)
-        .lte('shift.shift_date', endDate)
-        .lte('shift.shift_date', today),
+        .lte('shift.shift_date', endDate),
       supabase
         .from('user_sector_values')
-        .select('sector_id, user_id, day_value, night_value')
+        .select('sector_id, user_id, day_value, night_value, month, year')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id)
-        .eq('month', effectiveMonth)
-        .eq('year', effectiveYear),
+        .or(`and(month.eq.${effectiveMonth},year.eq.${effectiveYear}),and(month.is.null,year.is.null)`),
+      supabase
+        .from('sectors')
+        .select('id, name, default_day_value, default_night_value')
+        .eq('tenant_id', currentTenantId),
     ]);
 
     const { data: assignments, error } = assignmentsRes;
@@ -185,6 +215,8 @@ export default function UserFinancial() {
       user_id: string;
       day_value: number | null;
       night_value: number | null;
+      month?: number | null;
+      year?: number | null;
     }>;
 
     if (error) {
@@ -200,14 +232,6 @@ export default function UserFinancial() {
       .eq('month', selectedMonth)
       .eq('year', selectedYear)
       .maybeSingle();
-
-    // DEBUG: Log raw financial query results
-    console.log('[UserFinancial] Raw query results:', {
-      assignments: assignments?.length ?? 0,
-      error: error?.message ?? null,
-      firstAssignment: assignments?.[0] ?? null,
-      nullShifts: assignments?.filter((a: any) => !a.shift)?.length ?? 0,
-    });
 
     if (assignments && assignments.length > 0) {
       // Normaliza a partir da MESMA fonte da Escala
@@ -233,14 +257,12 @@ export default function UserFinancial() {
         profile_name: undefined, // user view doesn't need this
       }));
 
-      const sectors: SectorLookup[] = Array.from(
-        new Map(
-          assignments
-            .map((a: any) => a.shift?.sector)
-            .filter(Boolean)
-            .map((sec: any) => [sec.id, { id: sec.id, name: sec.name }])
-        ).values()
-      );
+      const sectors: SectorLookup[] = (sectorsRes.data ?? []).map((sec: any) => ({
+        id: sec.id,
+        name: sec.name,
+        default_day_value: sec.default_day_value ?? null,
+        default_night_value: sec.default_night_value ?? null,
+      }));
 
       const mappedEntries = mapScheduleToFinancialEntries({
         shifts: scheduleShifts,
@@ -301,6 +323,10 @@ export default function UserFinancial() {
   // Show loading while month/year are being auto-selected
   if (loading || selectedMonth === null || selectedYear === null) {
     return <div className="text-muted-foreground p-4">Carregando...</div>;
+  }
+
+  if (isPlantonista === false) {
+    return <div className="text-muted-foreground p-4">Conta administrativa não possui extrato de plantões.</div>;
   }
 
   return (

@@ -140,8 +140,8 @@ function findStringByKeyFragment(input: unknown, fragments: string[], depth = 0)
 
 function collectRqeFromText(input: string, bucket: Set<string>) {
   const patterns = [
-    /\bRQE(?:S)?\b[\s:#-]*([0-9A-Z\/,\s;|EeOUou-]{1,80})/gi,
-    /\bREG(?:ISTRO)?[\s_-]*DE[\s_-]*QUALIFICA[CÇ][AÃ]O(?:[\s_-]*DE[\s_-]*ESPECIALISTA)?\b[\s:#-]*([0-9A-Z\/,\s;|EeOUou-]{1,80})/gi,
+    /\bRQE(?:S)?\b[\s:#-]*([0-9A-Z/,\s;|EeOUou-]{1,80})/gi,
+    /\bREG(?:ISTRO)?[\s_-]*DE[\s_-]*QUALIFICA[CÇ][AÃ]O(?:[\s_-]*DE[\s_-]*ESPECIALISTA)?\b[\s:#-]*([0-9A-Z/,\s;|EeOUou-]{1,80})/gi,
     /"NU[_-]?(?:RQE|REG(?:ISTRO)?[_-]?QUAL(?:IFICACAO)?)"\s*:\s*"([^"]{1,80})"/gi,
     /"RQE"\s*:\s*"([^"]{1,80})"/gi,
     /"(?:NR|NUMERO|NUMBER)?[_-]?(?:RQE|REGISTRO[_-]?ESPECIAL(?:ISTA)?)"\s*:\s*"([^"]{1,80})"/gi,
@@ -196,13 +196,13 @@ function collectRqeSpecialtyFromText(input: string): RqeDetail[] {
   const patterns: Array<{ pattern: RegExp; rqeIndex: number; specIndex: number }> = [
     {
       // "RQE 58201 - ANESTESIOLOGIA"
-      pattern: /\bRQE(?:S)?\b[\s:#-]*(\d{1,8}(?:\/[A-Z]{2})?)\s*[-–—:]\s*([A-ZÀ-Ú][A-ZÀ-Ú\s\-]{2,80})/gi,
+      pattern: /\bRQE(?:S)?\b[\s:#-]*(\d{1,8}(?:\/[A-Z]{2})?)\s*[-–—:]\s*([A-ZÀ-Ú][A-ZÀ-Ú\s-]{2,80})/gi,
       rqeIndex: 1,
       specIndex: 2,
     },
     {
       // "ANESTESIOLOGIA - RQE 58201"
-      pattern: /\b([A-ZÀ-Ú][A-ZÀ-Ú\s\-]{2,80})\s*[-–—:]\s*\bRQE(?:S)?\b[\s:#-]*(\d{1,8}(?:\/[A-Z]{2})?)/gi,
+      pattern: /\b([A-ZÀ-Ú][A-ZÀ-Ú\s-]{2,80})\s*[-–—:]\s*\bRQE(?:S)?\b[\s:#-]*(\d{1,8}(?:\/[A-Z]{2})?)/gi,
       rqeIndex: 2,
       specIndex: 1,
     },

@@ -13,6 +13,9 @@ import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { DashboardCharts } from '@/components/admin/DashboardCharts';
 import { AnimatedNumber } from '@/components/AnimatedContainer';
+import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
+import type { ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import {
   Calendar,
   Users,
@@ -215,7 +218,7 @@ export default function AdminDashboard() {
       const monthStart = startOfMonth(currentDate);
       const monthEnd = endOfMonth(currentDate);
 
-      const [shiftsRes, sectorsRes, membersRes, sectorMembershipsRes, swapsRes, monthShiftsRes, monthShiftsFullRes] = await Promise.all([
+      const [shiftsRes, sectorsRes, membersRes, sectorMembershipsRes, swapsRes, monthShiftsRes, monthShiftsFullRes, userValuesRes] = await Promise.all([
         supabase
           .from('shifts')
           .select('*, sector:sectors(*)')
@@ -264,6 +267,12 @@ export default function AdminDashboard() {
           .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
           .lte('shift_date', format(monthEnd, 'yyyy-MM-dd'))
           .order('shift_date'),
+        supabase
+          .from('user_sector_values')
+          .select('sector_id, user_id, day_value, night_value, month, year')
+          .eq('tenant_id', currentTenantId)
+          .eq('month', monthStart.getMonth() + 1)
+          .eq('year', monthStart.getFullYear()),
       ]);
 
       if (sectorsRes.data) setSectors(sectorsRes.data);
@@ -303,81 +312,97 @@ export default function AdminDashboard() {
           });
         
         if (monthAssignmentsData) {
-          // Mapear o resultado da RPC para o formato esperado pelo ShiftAssignment
-          // A RPC retorna { id, shift_id, user_id, assigned_value, status, name }
-          // Precisamos converter 'name' para 'profile: { name }'
-          const mappedAssignments: ShiftAssignment[] = (monthAssignmentsData as any[]).map(a => ({
+          const activeStatuses = new Set(['assigned', 'confirmed', 'completed']);
+          const shiftsForMonth = (monthShiftsFullRes.data ?? []) as unknown as Shift[];
+          const monthAssignmentsActive = (monthAssignmentsData as any[]).filter((a) => activeStatuses.has(a.status));
+
+          const scheduleShifts: ScheduleShift[] = shiftsForMonth.map((s) => ({
+            id: s.id,
+            shift_date: s.shift_date,
+            start_time: s.start_time,
+            end_time: s.end_time,
+            sector_id: s.sector_id ?? null,
+            base_value: s.base_value ?? null,
+            title: s.title,
+            hospital: s.hospital,
+          }));
+
+          const scheduleAssignments: ScheduleAssignment[] = monthAssignmentsActive.map((a) => ({
             id: a.id,
             shift_id: a.shift_id,
             user_id: a.user_id,
-            assigned_value: a.assigned_value ?? null,
-            status: a.status,
-            profile: { name: a.name }
+            assigned_value: a.assigned_value !== null ? Number(a.assigned_value) : null,
+            profile_name: a.name ?? null,
           }));
-          setMonthAssignmentsForCharts(mappedAssignments);
+
+          const sectorsLookup: SectorLookup[] = (sectorsRes.data ?? []).map((s: any) => ({
+            id: s.id,
+            name: s.name,
+            default_day_value: s.default_day_value ?? null,
+            default_night_value: s.default_night_value ?? null,
+          }));
+
+          const mappedEntries = mapScheduleToFinancialEntries({
+            shifts: scheduleShifts,
+            assignments: scheduleAssignments,
+            sectors: sectorsLookup,
+            userSectorValues: (userValuesRes.data ?? []) as any[],
+          });
+
+          const { grandTotals, plantonistaReports } = aggregateFinancial(mappedEntries);
+
+          const financialSummary: FinancialSummary[] = plantonistaReports
+            .filter((p) => p.assignee_id !== 'unassigned')
+            .map((p) => ({
+              user_id: p.assignee_id,
+              user_name: p.assignee_name,
+              total_shifts: p.total_shifts,
+              total_value: p.total_to_receive,
+              sectors: p.sectors.map((s) => s.sector_name),
+            }))
+            .sort((a, b) => a.user_name.localeCompare(b.user_name, 'pt-BR'));
+
+          setFinancialData(financialSummary);
+
+          const chartAssignments: ShiftAssignment[] = mappedEntries
+            .filter((e) => e.assignee_id !== 'unassigned')
+            .map((e) => ({
+              id: e.id,
+              shift_id: e.shift_id,
+              user_id: e.assignee_id,
+              assigned_value: e.final_value,
+              status: 'assigned',
+              profile: { name: e.assignee_name },
+            }));
+          setMonthAssignmentsForCharts(chartAssignments);
+
+          setStats({
+            totalShifts: monthShiftsRes.data?.length || 0,
+            totalUsers: (membersRes.data || []).filter((m: any) => m.active).length,
+            pendingSwaps: (swapsRes.data || []).length,
+            monthlyValue: grandTotals.totalValue,
+          });
         } else {
           setMonthAssignmentsForCharts([]);
+          setFinancialData([]);
+          setStats({
+            totalShifts: monthShiftsRes.data?.length || 0,
+            totalUsers: (membersRes.data || []).filter((m: any) => m.active).length,
+            pendingSwaps: (swapsRes.data || []).length,
+            monthlyValue: 0,
+          });
         }
       } else {
         setMonthShifts([]);
         setMonthAssignmentsForCharts([]);
-      }
-
-      // Calculate financial data for the month
-      const { data: monthAssignments } = await supabase
-        .from('shift_assignments')
-        .select(`
-          user_id, assigned_value,
-          profile:profiles!shift_assignments_user_id_profiles_fkey(name),
-          shift:shifts!inner(shift_date, base_value, sector_id, sector:sectors(name))
-        `)
-        .eq('tenant_id', currentTenantId)
-        .gte('shift.shift_date', format(monthStart, 'yyyy-MM-dd'))
-        .lte('shift.shift_date', format(monthEnd, 'yyyy-MM-dd'));
-
-      const summaryMap = new Map<string, FinancialSummary>();
-      if (monthAssignments) {
-        monthAssignments.forEach((a: any) => {
-          const existing = summaryMap.get(a.user_id) || {
-            user_id: a.user_id,
-            user_name: a.profile?.name || 'Sem nome',
-            total_shifts: 0,
-            total_value: 0,
-            sectors: [],
-          };
-          
-          existing.total_shifts++;
-          // Usar assigned_value se disponível, senão usar base_value do shift
-          const value = a.assigned_value != null 
-            ? Number(a.assigned_value) 
-            : Number(a.shift?.base_value || 0);
-          existing.total_value += value;
-          
-          const sectorName = a.shift?.sector?.name;
-          if (sectorName && !existing.sectors.includes(sectorName)) {
-            existing.sectors.push(sectorName);
-          }
-          
-          summaryMap.set(a.user_id, existing);
+        setFinancialData([]);
+        setStats({
+          totalShifts: monthShiftsRes.data?.length || 0,
+          totalUsers: (membersRes.data || []).filter((m: any) => m.active).length,
+          pendingSwaps: (swapsRes.data || []).length,
+          monthlyValue: 0,
         });
       }
-
-      const financialSummary = Array.from(summaryMap.values()).sort((a, b) =>
-        a.user_name.localeCompare(b.user_name, 'pt-BR')
-      );
-      setFinancialData(financialSummary);
-
-      // Calculate stats
-      const totalMonthlyValue = (summaryMap.size > 0
-        ? Array.from(summaryMap.values()).reduce((sum, f) => sum + f.total_value, 0)
-        : 0);
-      
-      setStats({
-        totalShifts: monthShiftsRes.data?.length || 0,
-        totalUsers: (membersRes.data || []).filter((m: any) => m.active).length,
-        pendingSwaps: (swapsRes.data || []).length,
-        monthlyValue: totalMonthlyValue,
-      });
     } catch (error: any) {
       console.error('[Dashboard] erro ao carregar dados:', error);
       toast({
@@ -388,7 +413,7 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [currentTenantId, currentDate, viewMode]);
+  }, [currentTenantId, currentDate, viewMode, toast]);
 
   useEffect(() => {
     if (currentTenantId) {
@@ -667,7 +692,7 @@ export default function AdminDashboard() {
                 assignments={monthAssignmentsForCharts}
                 sectors={sectors}
                 members={members
-                  .filter(m => m.active)
+                  .filter(m => m.active && m.role === 'user')
                   .map(m => ({ id: m.user_id, name: m.profile?.name || null, full_name: m.profile?.full_name || null }))}
                 sectorMemberships={sectorMemberships}
                 currentMonth={currentDate}

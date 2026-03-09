@@ -1,203 +1,88 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { Hand, Check, X, Clock, Calendar, User, Building, CheckCircle, XCircle, Trash2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAdminOffers } from '@/hooks/useAdminOffers';
+import type { AdminShiftOffer as ShiftOffer } from '@/services/adminOffers';
 
-interface ShiftOffer {
-  id: string;
-  status: string;
-  message: string | null;
-  created_at: string;
-  reviewed_at: string | null;
-  user_id: string;
-  shift_id: string;
-  user: { name: string } | null;
-  shift: {
-    id: string;
-    title: string;
-    hospital: string;
-    shift_date: string;
-    start_time: string;
-    end_time: string;
-    base_value: number | null;
-    sector: { name: string; color: string } | null;
-  } | null;
+function formatOfferLocation(offer: ShiftOffer) {
+  if (!offer.shift) return 'Local não informado';
+
+  const hospital = offer.shift.hospital || 'Hospital não informado';
+  const sector = offer.shift.sector?.name;
+
+  return sector ? `${hospital} • ${sector}` : hospital;
+}
+
+function formatOfferSchedule(offer: ShiftOffer) {
+  if (!offer.shift) return 'Data e horário não informados';
+
+  return `${format(parseISO(offer.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} • ${offer.shift.start_time.slice(0, 5)} - ${offer.shift.end_time.slice(0, 5)}`;
 }
 
 export default function AdminOffers() {
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
-  
-  const [loading, setLoading] = useState(true);
-  const [offers, setOffers] = useState<ShiftOffer[]>([]);
+  const { offers, isLoading, approveOffer, rejectOffer, deleteOffers, isProcessingOffer } = useAdminOffers({
+    tenantId: currentTenantId,
+    reviewerId: user?.id,
+  });
   const [selectedOffer, setSelectedOffer] = useState<ShiftOffer | null>(null);
-  const [processing, setProcessing] = useState(false);
   const [selectedForDelete, setSelectedForDelete] = useState<Set<string>>(new Set());
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
-  const fetchOffers = useCallback(async () => {
-    if (!currentTenantId) return;
-    setLoading(true);
-
-    const { data, error } = await supabase
-      .from('shift_offers')
-      .select(`
-        id, status, message, created_at, reviewed_at, user_id, shift_id,
-        user:profiles!shift_offers_user_id_fkey(name),
-        shift:shifts(id, title, hospital, shift_date, start_time, end_time, base_value, sector:sectors(name, color))
-      `)
-      .eq('tenant_id', currentTenantId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching offers:', error);
-    } else {
-      setOffers(data as unknown as ShiftOffer[]);
-    }
-    
-    setLoading(false);
-  }, [currentTenantId]);
-
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchOffers();
-    }
-  }, [currentTenantId, fetchOffers]);
-
   async function handleApprove(offer: ShiftOffer) {
-    if (!user || !currentTenantId) return;
-    setProcessing(true);
-
-    // 1. Update offer status to 'accepted' (valid values: pending, accepted, rejected)
-    const { error: offerError } = await supabase
-      .from('shift_offers')
-      .update({
-        status: 'accepted',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id,
-      })
-      .eq('id', offer.id);
-
-    if (offerError) {
-      toast({ title: 'Erro', description: offerError.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
-    }
-
-    // 2. Create shift assignment
-    const { error: assignError } = await supabase
-      .from('shift_assignments')
-      .insert({
-        tenant_id: currentTenantId,
-        shift_id: offer.shift_id,
-        user_id: offer.user_id,
-        assigned_value: offer.shift?.base_value || null,
-        status: 'assigned',
-        created_by: user.id,
+    try {
+      await approveOffer(offer);
+      setSelectedOffer(null);
+      toast({ title: 'Oferta aceita!', description: 'O plantonista foi atribuído ao plantão.' });
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível aprovar a candidatura.',
+        variant: 'destructive',
       });
-
-    if (assignError) {
-      toast({ title: 'Erro ao atribuir plantão', description: assignError.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
     }
-
-    // 3. Reject other pending offers for the same shift
-    await supabase
-      .from('shift_offers')
-      .update({
-        status: 'rejected',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id,
-      })
-      .eq('shift_id', offer.shift_id)
-      .eq('status', 'pending')
-      .neq('id', offer.id);
-
-    // 4. Create notification for the user
-    await supabase
-      .from('notifications')
-      .insert({
-        tenant_id: currentTenantId,
-        user_id: offer.user_id,
-        type: 'shift',
-        title: 'Oferta Aceita!',
-        message: `Sua solicitação para a oferta "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} foi aceita!`,
-        shift_assignment_id: null,
-      });
-
-    setProcessing(false);
-    setSelectedOffer(null);
-    toast({ title: 'Oferta aceita!', description: 'O plantonista foi atribuído ao plantão.' });
-    fetchOffers();
   }
 
   async function handleReject(offer: ShiftOffer) {
-    if (!user || !currentTenantId) return;
-    setProcessing(true);
-
-    const { error } = await supabase
-      .from('shift_offers')
-      .update({
-        status: 'rejected',
-        reviewed_at: new Date().toISOString(),
-        reviewed_by: user.id,
-      })
-      .eq('id', offer.id);
-
-    if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    } else {
-      // Notify user
-      await supabase
-        .from('notifications')
-        .insert({
-          tenant_id: currentTenantId,
-          user_id: offer.user_id,
-          type: 'shift',
-          title: 'Oferta Recusada',
-          message: `Sua solicitação para a oferta "${offer.shift?.title}" em ${format(parseISO(offer.shift?.shift_date || ''), 'dd/MM')} foi recusada.`,
-        });
-
+    try {
+      await rejectOffer(offer);
       toast({ title: 'Oferta recusada' });
-      fetchOffers();
+      setSelectedOffer(null);
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível recusar a candidatura.',
+        variant: 'destructive',
+      });
     }
-    
-    setProcessing(false);
-    setSelectedOffer(null);
   }
 
   async function handleDeleteSelected() {
     if (selectedForDelete.size === 0) return;
-    setProcessing(true);
-
-    const { error } = await supabase
-      .from('shift_offers')
-      .delete()
-      .in('id', Array.from(selectedForDelete));
-
-    if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await deleteOffers(Array.from(selectedForDelete));
       toast({ title: `${selectedForDelete.size} oferta(s) excluída(s)` });
       setSelectedForDelete(new Set());
-      fetchOffers();
+    } catch (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error instanceof Error ? error.message : 'Não foi possível excluir as candidaturas.',
+        variant: 'destructive',
+      });
     }
-    
-    setProcessing(false);
     setDeleteDialogOpen(false);
   }
 
@@ -236,7 +121,7 @@ export default function AdminOffers() {
     rejected: 'Rejeitado',
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -293,6 +178,7 @@ export default function AdminOffers() {
                     <TableRow>
                       <TableHead>Plantonista</TableHead>
                       <TableHead>Plantão</TableHead>
+                      <TableHead>Onde</TableHead>
                       <TableHead>Data/Horário</TableHead>
                       <TableHead>Valor</TableHead>
                       <TableHead>Mensagem</TableHead>
@@ -328,10 +214,13 @@ export default function AdminOffers() {
                         </TableCell>
                         <TableCell>
                           <div className="text-sm">
-                            <p>{offer.shift && format(parseISO(offer.shift.shift_date), 'dd/MM/yyyy')}</p>
-                            <p className="text-muted-foreground">
-                              {offer.shift?.start_time.slice(0, 5)} - {offer.shift?.end_time.slice(0, 5)}
-                            </p>
+                            <p className="font-medium">{formatOfferLocation(offer)}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <p>{offer.shift && format(parseISO(offer.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}</p>
+                            <p className="text-muted-foreground">{offer.shift?.start_time.slice(0, 5)} - {offer.shift?.end_time.slice(0, 5)}</p>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -362,7 +251,7 @@ export default function AdminOffers() {
                               variant="outline"
                               className="text-green-600 hover:bg-green-50"
                               onClick={() => handleApprove(offer)}
-                              disabled={processing}
+                              disabled={isProcessingOffer}
                             >
                               <Check className="h-4 w-4 mr-1" />
                               Aprovar
@@ -372,7 +261,7 @@ export default function AdminOffers() {
                               variant="outline"
                               className="text-red-600 hover:bg-red-50"
                               onClick={() => setSelectedOffer(offer)}
-                              disabled={processing}
+                              disabled={isProcessingOffer}
                             >
                               <X className="h-4 w-4 mr-1" />
                               Rejeitar
@@ -426,7 +315,9 @@ export default function AdminOffers() {
                         <TableHead>Status</TableHead>
                         <TableHead>Plantonista</TableHead>
                         <TableHead>Plantão</TableHead>
-                        <TableHead>Data</TableHead>
+                        <TableHead>Onde</TableHead>
+                        <TableHead>Data/Horário</TableHead>
+                        <TableHead>Mensagem</TableHead>
                         <TableHead>Processada em</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -452,9 +343,38 @@ export default function AdminOffers() {
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">{offer.user?.name || 'N/A'}</TableCell>
-                          <TableCell>{offer.shift?.title}</TableCell>
                           <TableCell>
-                            {offer.shift && format(parseISO(offer.shift.shift_date), 'dd/MM/yyyy')}
+                            <div className="space-y-1">
+                              <div className="font-medium">{offer.shift?.title}</div>
+                              {offer.shift?.sector?.name && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs"
+                                  style={{ borderColor: offer.shift.sector.color || '#22c55e' }}
+                                >
+                                  {offer.shift.sector.name}
+                                </Badge>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-muted-foreground">
+                              <div className="font-medium text-foreground">{formatOfferLocation(offer)}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-sm text-muted-foreground">
+                              <div>{formatOfferSchedule(offer)}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="max-w-[220px]">
+                            {offer.message ? (
+                              <p className="truncate text-sm" title={offer.message}>
+                                "{offer.message}"
+                              </p>
+                            ) : (
+                              <span className="text-muted-foreground text-sm italic">Sem mensagem</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             {offer.reviewed_at && format(parseISO(offer.reviewed_at), "dd/MM HH:mm")}
@@ -489,9 +409,9 @@ export default function AdminOffers() {
             <Button 
               variant="destructive" 
               onClick={() => selectedOffer && handleReject(selectedOffer)}
-              disabled={processing}
+              disabled={isProcessingOffer}
             >
-              {processing ? 'Processando...' : 'Confirmar Rejeição'}
+              {isProcessingOffer ? 'Processando...' : 'Confirmar Rejeição'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -517,9 +437,9 @@ export default function AdminOffers() {
             <Button 
               variant="destructive" 
               onClick={handleDeleteSelected}
-              disabled={processing}
+              disabled={isProcessingOffer}
             >
-              {processing ? 'Excluindo...' : 'Confirmar Exclusão'}
+              {isProcessingOffer ? 'Excluindo...' : 'Confirmar Exclusão'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -7,53 +7,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Check, X, ArrowLeftRight, Hand, Clock, MapPin, Calendar, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-interface SwapRequest {
-  id: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  reason: string | null;
-  admin_notes: string | null;
-  created_at: string;
-  requester_id?: string;
-  target_user_id?: string | null;
-  reviewed_at?: string | null;
-  requester: { name: string | null };
-  target_user: { name: string | null } | null;
-  origin_assignment: { shift: { title: string; hospital: string; shift_date: string; start_time: string; end_time: string } };
-}
-
-interface ShiftOffer {
-  id: string;
-  shift_id: string;
-  user_id: string;
-  message: string | null;
-  status: 'pending' | 'accepted' | 'rejected';
-  created_at: string;
-  profile: { name: string | null };
-  shift: { 
-    title: string; 
-    hospital: string; 
-    shift_date: string; 
-    start_time: string; 
-    end_time: string;
-    sector: { name: string; color: string | null } | null;
-  };
-}
+import { useAdminSwaps } from '@/hooks/useAdminSwaps';
+import type { AdminSwapOffer as ShiftOffer, AdminSwapRequest as SwapRequest } from '@/services/adminSwaps';
 
 export default function AdminSwaps() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
-  const [swaps, setSwaps] = useState<SwapRequest[]>([]);
-  const [offers, setOffers] = useState<ShiftOffer[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { swaps, offers, isLoading, decideSwap, decideOffer, deleteSwaps, deleteOffers, isProcessingAdminSwaps } =
+    useAdminSwaps({
+      tenantId: currentTenantId,
+      reviewerId: user?.id,
+    });
   const [selectedSwap, setSelectedSwap] = useState<SwapRequest | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<ShiftOffer | null>(null);
   const [adminNotes, setAdminNotes] = useState('');
@@ -65,177 +36,37 @@ export default function AdminSwaps() {
   const [deleteSwapsDialogOpen, setDeleteSwapsDialogOpen] = useState(false);
   const [deleteOffersDialogOpen, setDeleteOffersDialogOpen] = useState(false);
 
-  const fetchSwaps = useCallback(async () => {
-    if (!currentTenantId) return;
-    const { data } = await supabase
-      .from('swap_requests')
-      .select(`
-        id, status, reason, admin_notes, created_at, requester_id, target_user_id, reviewed_at,
-        requester:profiles!swap_requests_requester_id_profiles_fkey(name), 
-        target_user:profiles!swap_requests_target_user_id_profiles_fkey(name), 
-        origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
-          shift:shifts(title, hospital, shift_date, start_time, end_time)
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .order('created_at', { ascending: false });
-    if (data) setSwaps(data as unknown as SwapRequest[]);
-    setLoading(false);
-  }, [currentTenantId]);
-
-  const fetchOffers = useCallback(async () => {
-    if (!currentTenantId) return;
-    const { data } = await supabase
-      .from('shift_offers')
-      .select(`
-        id, shift_id, user_id, message, status, created_at,
-        profile:profiles!shift_offers_user_id_fkey(name),
-        shift:shifts!shift_offers_shift_id_fkey(
-          title, hospital, shift_date, start_time, end_time,
-          sector:sectors(name, color)
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .order('created_at', { ascending: false });
-    if (data) setOffers(data as unknown as ShiftOffer[]);
-  }, [currentTenantId]);
-
-  useEffect(() => {
-    if (currentTenantId) {
-      fetchSwaps();
-      fetchOffers();
-    }
-  }, [currentTenantId, fetchSwaps, fetchOffers]);
-
   async function handleSwapAction(action: 'approved' | 'rejected') {
     if (!selectedSwap || !currentTenantId) return;
-    const decision = action === 'approved' ? 'approved' : 'rejected';
-    const { error: decideError } = await supabase.rpc('decide_swap_request', {
-      _swap_request_id: selectedSwap.id,
-      _decision: decision,
-    });
-    
-    if (decideError) {
-      toast({ title: 'Erro', description: decideError.message, variant: 'destructive' });
-      return;
-    }
-
-    const { error: notesError } = await supabase
-      .from('swap_requests')
-      .update({
-        admin_notes: adminNotes || null,
-      })
-      .eq('id', selectedSwap.id);
-
-    if (notesError) {
-      toast({ title: 'Aviso', description: `Troca processada, mas não foi possível salvar observações: ${notesError.message}`, variant: 'destructive' });
-    } else {
+    try {
+      await decideSwap({ swap: selectedSwap, action, adminNotes });
       toast({ title: action === 'approved' ? 'Troca aprovada!' : 'Troca rejeitada!' });
+      setSwapDialogOpen(false);
+      setSelectedSwap(null);
+      setAdminNotes('');
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível processar a troca.',
+        variant: 'destructive',
+      });
     }
-
-    const shiftTitle = selectedSwap.origin_assignment?.shift?.title || 'plantão';
-    const shiftDate = selectedSwap.origin_assignment?.shift?.shift_date
-      ? format(new Date(selectedSwap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })
-      : '';
-
-    const recipients = [
-      selectedSwap.requester_id,
-      selectedSwap.target_user_id,
-    ].filter((id): id is string => Boolean(id));
-
-    if (recipients.length > 0) {
-      await supabase.from('notifications').insert(
-        recipients.map((recipientId) => ({
-          tenant_id: currentTenantId,
-          user_id: recipientId,
-          type: 'swap_request_update',
-          title: action === 'approved' ? 'Troca aprovada pela administração' : 'Troca recusada pela administração',
-          message:
-            action === 'approved'
-              ? `A troca do ${shiftTitle}${shiftDate ? ` (${shiftDate})` : ''} foi aprovada pela administração.`
-              : `A troca do ${shiftTitle}${shiftDate ? ` (${shiftDate})` : ''} foi recusada pela administração.`,
-        })),
-      );
-    }
-
-    fetchSwaps();
-    setSwapDialogOpen(false);
-    setSelectedSwap(null);
-    setAdminNotes('');
   }
 
   async function handleOfferAction(action: 'accepted' | 'rejected') {
     if (!selectedOffer || !currentTenantId) return;
-    
-    const { error: updateError } = await supabase
-      .from('shift_offers')
-      .update({ 
-        status: action, 
-        reviewed_by: user?.id, 
-        reviewed_at: new Date().toISOString() 
-      })
-      .eq('id', selectedOffer.id);
-    
-    if (updateError) {
-      toast({ title: 'Erro', description: updateError.message, variant: 'destructive' });
-      return;
+    try {
+      await decideOffer({ offer: selectedOffer, action });
+      toast({ title: action === 'accepted' ? 'Oferta aceita! Plantonista atribuído.' : 'Oferta rejeitada!' });
+      setOfferDialogOpen(false);
+      setSelectedOffer(null);
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível processar a candidatura.',
+        variant: 'destructive',
+      });
     }
-
-    // If accepted, create the shift assignment
-    if (action === 'accepted') {
-      // First, get the shift details to get base_value
-      const { data: shiftData } = await supabase
-        .from('shifts')
-        .select('base_value')
-        .eq('id', selectedOffer.shift_id)
-        .single();
-
-      // Create the assignment
-      const { error: assignError } = await supabase
-        .from('shift_assignments')
-        .insert({
-          tenant_id: currentTenantId,
-          shift_id: selectedOffer.shift_id,
-          user_id: selectedOffer.user_id,
-          assigned_value: shiftData?.base_value || null,
-          created_by: user?.id,
-        });
-
-      if (assignError) {
-        // Check if it's a duplicate
-        if (assignError.code === '23505') {
-          toast({ title: 'Aviso', description: 'Este plantonista já está atribuído a este plantão', variant: 'destructive' });
-        } else {
-          toast({ title: 'Erro ao atribuir', description: assignError.message, variant: 'destructive' });
-        }
-      } else {
-        // Update shift notes to remove [DISPONÍVEL] status
-        await supabase
-          .from('shifts')
-          .update({ 
-            notes: null,
-            updated_by: user?.id 
-          })
-          .eq('id', selectedOffer.shift_id);
-        
-        // Reject all other pending offers for the same shift
-        await supabase
-          .from('shift_offers')
-          .update({ 
-            status: 'rejected', 
-            reviewed_by: user?.id, 
-            reviewed_at: new Date().toISOString() 
-          })
-          .eq('shift_id', selectedOffer.shift_id)
-          .eq('status', 'pending')
-          .neq('id', selectedOffer.id);
-      }
-    }
-
-    toast({ title: action === 'accepted' ? 'Oferta aceita! Plantonista atribuído.' : 'Oferta rejeitada!' });
-    fetchOffers();
-    setOfferDialogOpen(false);
-    setSelectedOffer(null);
   }
 
   function openSwapDialog(swap: SwapRequest, action: 'approve' | 'reject') {
@@ -254,18 +85,16 @@ export default function AdminSwaps() {
   // Delete functions for offers
   async function handleDeleteOffers() {
     if (selectedOffersForDelete.size === 0) return;
-
-    const { error } = await supabase
-      .from('shift_offers')
-      .delete()
-      .in('id', Array.from(selectedOffersForDelete));
-
-    if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await deleteOffers(Array.from(selectedOffersForDelete));
       toast({ title: `${selectedOffersForDelete.size} oferta(s) excluída(s)` });
       setSelectedOffersForDelete(new Set());
-      fetchOffers();
+    } catch (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error instanceof Error ? error.message : 'Não foi possível excluir as candidaturas.',
+        variant: 'destructive',
+      });
     }
     setDeleteOffersDialogOpen(false);
   }
@@ -273,18 +102,16 @@ export default function AdminSwaps() {
   // Delete functions for swaps
   async function handleDeleteSwaps() {
     if (selectedSwapsForDelete.size === 0) return;
-
-    const { error } = await supabase
-      .from('swap_requests')
-      .delete()
-      .in('id', Array.from(selectedSwapsForDelete));
-
-    if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await deleteSwaps(Array.from(selectedSwapsForDelete));
       toast({ title: `${selectedSwapsForDelete.size} troca(s) excluída(s)` });
       setSelectedSwapsForDelete(new Set());
-      fetchSwaps();
+    } catch (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error instanceof Error ? error.message : 'Não foi possível excluir as trocas.',
+        variant: 'destructive',
+      });
     }
     setDeleteSwapsDialogOpen(false);
   }
@@ -350,7 +177,7 @@ export default function AdminSwaps() {
   const pendingSwaps = swaps.filter(s => s.status === 'pending');
   const pendingOffers = offers.filter(o => o.status === 'pending');
 
-  if (loading) return <div className="text-muted-foreground">Carregando...</div>;
+  if (isLoading) return <div className="text-muted-foreground">Carregando...</div>;
 
   return (
     <div className="space-y-6">
@@ -588,14 +415,32 @@ export default function AdminSwaps() {
                           {swap.target_user?.name || 'N/A'}
                         </TableCell>
                         <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
-                            <div className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {swap.origin_assignment?.shift?.shift_date && 
-                                format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
+                            <div className="space-y-1">
+                              <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Calendar className="h-3 w-3" />
+                                {swap.origin_assignment?.shift?.shift_date && 
+                                  format(new Date(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}
+                                <Clock className="h-3 w-3 ml-2" />
+                                {swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}
+                              </div>
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {swap.origin_assignment?.shift?.hospital || 'Hospital não informado'}
+                              </div>
+                              {swap.origin_assignment?.shift?.sector?.name && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs"
+                                  style={{
+                                    borderColor: swap.origin_assignment.shift.sector.color || '#a855f7',
+                                    backgroundColor: `${swap.origin_assignment.shift.sector.color || '#a855f7'}20`,
+                                  }}
+                                >
+                                  {swap.origin_assignment.shift.sector.name}
+                                </Badge>
+                              )}
                             </div>
-                          </div>
                         </TableCell>
                         <TableCell className="max-w-[200px]">
                           {swap.reason ? (
@@ -668,6 +513,20 @@ export default function AdminSwaps() {
                   <span className="font-medium">Plantão:</span>
                   <span>{selectedSwap.origin_assignment?.shift?.title}</span>
                 </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">Onde:</span>
+                  <span>{selectedSwap.origin_assignment?.shift?.hospital || 'Hospital não informado'}</span>
+                </div>
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="font-medium">Horário:</span>
+                  <span>{selectedSwap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {selectedSwap.origin_assignment?.shift?.end_time?.slice(0, 5)}</span>
+                </div>
+                {selectedSwap.origin_assignment?.shift?.sector?.name && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="font-medium">Setor:</span>
+                    <span>{selectedSwap.origin_assignment.shift.sector.name}</span>
+                  </div>
+                )}
                 {selectedSwap.reason && (
                   <div className="text-sm">
                     <span className="font-medium">Motivo:</span>

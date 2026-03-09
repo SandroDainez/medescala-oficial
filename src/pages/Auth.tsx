@@ -257,7 +257,7 @@ export default function Auth() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="flex min-h-[100dvh] w-full overflow-x-hidden">
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/95 via-primary/90 to-primary/85">
           <div
@@ -292,8 +292,9 @@ export default function Auth() {
         </div>
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-4 bg-background">
-        <div className="w-full max-w-md">
+      <div className="flex-1 bg-background p-3 sm:p-4">
+        <div className="mx-auto flex min-h-[100dvh] w-full max-w-md items-center justify-center py-4 sm:py-6">
+        <div className="w-full">
           <div className="lg:hidden mb-8 text-center">
             <Link to="/" className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors mb-6">
               <ArrowLeft className="h-5 w-5" />
@@ -307,7 +308,7 @@ export default function Auth() {
             </div>
           </div>
 
-          <Card className="border-0 shadow-xl">
+          <Card className="border-0 shadow-xl max-w-full">
             <CardHeader className="text-center pb-2">
               <CardTitle className="text-2xl font-bold text-foreground">Bem-vindo!</CardTitle>
               <CardDescription>Acesse sua conta ou crie uma nova</CardDescription>
@@ -320,7 +321,7 @@ export default function Auth() {
                 </TabsList>
 
                 <TabsContent value="signin">
-                  <div className="flex gap-2 mb-6">
+                  <div className="mb-6 grid grid-cols-2 gap-2">
                     <Button type="button" variant={loginMethod === 'email' ? 'default' : 'outline'} className="flex-1 gap-2" onClick={() => setLoginMethod('email')}>
                       <Mail className="h-4 w-4" />
                       Email
@@ -413,19 +414,20 @@ export default function Auth() {
             </CardContent>
           </Card>
 
-          <p className="text-center text-sm text-muted-foreground mt-6">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
             Ao continuar, você concorda com nossos <a href="/terms" className="text-primary hover:underline">Termos de Uso</a> e <a href="/privacy" className="text-primary hover:underline">Política de Privacidade</a>.
           </p>
+        </div>
         </div>
       </div>
 
       <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Recuperar senha</DialogTitle>
           </DialogHeader>
 
-          <div className="flex gap-2 mb-2">
+          <div className="mb-2 grid grid-cols-2 gap-2">
             <Button type="button" variant={forgotMethod === 'email' ? 'default' : 'outline'} className="flex-1" onClick={() => setForgotMethod('email')}>
               Email
             </Button>
@@ -447,11 +449,11 @@ export default function Auth() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setForgotOpen(false)} disabled={forgotLoading}>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setForgotOpen(false)} disabled={forgotLoading}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={forgotLoading}>
+              <Button type="submit" className="w-full sm:w-auto" disabled={forgotLoading}>
                 {forgotLoading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />

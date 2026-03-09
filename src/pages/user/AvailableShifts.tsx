@@ -1,179 +1,57 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, MapPin, DollarSign, Hand, CheckCircle, XCircle, Loader2, Building } from 'lucide-react';
-import { format, parseISO, isAfter, startOfDay } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-interface AvailableShift {
-  id: string;
-  title: string;
-  hospital: string;
-  location: string | null;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  base_value: number | null;
-  sector_id?: string | null;
-  sector: { id: string; name: string; color: string } | null;
-}
-
-interface MyOffer {
-  id: string;
-  status: string;
-  message: string | null;
-  created_at: string;
-  reviewed_at: string | null;
-  shift: {
-    id: string;
-    title: string;
-    hospital: string;
-    shift_date: string;
-    start_time: string;
-    end_time: string;
-    base_value: number | null;
-    sector: { name: string; color: string } | null;
-  } | null;
-}
+import { ToastAction } from '@/components/ui/toast';
+import { useUserOffers } from '@/hooks/useUserOffers';
+import type { AvailableShift } from '@/services/userOffers';
 
 export default function UserAvailableShifts() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
-  
-  const [loading, setLoading] = useState(true);
-  const [availableShifts, setAvailableShifts] = useState<AvailableShift[]>([]);
-  const [myOffers, setMyOffers] = useState<MyOffer[]>([]);
-  const [myAssignedShiftIds, setMyAssignedShiftIds] = useState<Set<string>>(new Set());
-  const [memberSectorIds, setMemberSectorIds] = useState<Set<string>>(new Set());
+  const {
+    availableShifts,
+    myOffers,
+    memberSectorIds,
+    isLoading,
+    claimShift,
+    cancelOffer: cancelUserOffer,
+    isSubmitting,
+  } = useUserOffers({
+    userId: user?.id,
+    tenantId: currentTenantId,
+  });
   
   // Dialog state
   const [selectedShift, setSelectedShift] = useState<AvailableShift | null>(null);
   const [offerMessage, setOfferMessage] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    if (!user || !currentTenantId) return;
-    setLoading(true);
-
-    const today = startOfDay(new Date()).toISOString().split('T')[0];
-
-    // Fetch all future shifts
-    const { data: shiftsData } = await supabase
-      .from('shifts')
-      .select(`
-        id, title, hospital, location, shift_date, start_time, end_time, base_value, sector_id,
-        sector:sectors(id, name, color)
-      `)
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', today)
-      .order('shift_date', { ascending: true });
-
-    // Load sectors where current user belongs.
-    const { data: membershipData } = await supabase
-      .from('sector_memberships')
-      .select('sector_id')
-      .eq('tenant_id', currentTenantId)
-      .eq('user_id', user.id);
-
-    const allowedSectorIds = new Set((membershipData ?? []).map((m: { sector_id: string }) => m.sector_id));
-    setMemberSectorIds(allowedSectorIds);
-
-    // Get taken shifts via security-definer function (works for tenant members)
-    const end = format(new Date(new Date().setMonth(new Date().getMonth() + 12)), 'yyyy-MM-dd');
-    const { data: rosterData, error: rosterError } = await supabase.rpc('get_shift_roster', {
-      _tenant_id: currentTenantId,
-      _start: today,
-      _end: end,
-    });
-
-    if (rosterError) {
-      console.error('Error loading shift roster:', rosterError);
-      toast({
-        title: 'Erro ao carregar plantões disponíveis',
-        description: rosterError.message,
-        variant: 'destructive',
-      });
-    }
-
-    const takenShiftIds = new Set(
-      (rosterData || [])
-        .filter((r: { shift_id: string; status?: string | null }) => r.status !== 'cancelled')
-        .map((r: { shift_id: string }) => r.shift_id)
-    );
-
-    // Check which of those are mine (for badge display purposes)
-    const { data: myAssignmentsData } = await supabase
-      .from('shift_assignments')
-      .select('shift_id')
-      .eq('user_id', user.id)
-      .in('status', ['assigned', 'confirmed', 'completed']);
-
-    const myAssigned = new Set((myAssignmentsData || []).map((a) => a.shift_id));
-    setMyAssignedShiftIds(myAssigned);
-
-    // Filter to only available shifts (not taken) and only sectors where the user belongs.
-    const available = (shiftsData || [])
-      .filter((s) => !takenShiftIds.has(s.id))
-      .filter((s) => !!s.sector_id && allowedSectorIds.has(s.sector_id))
-      .map((s) => ({
-        ...s,
-        sector: s.sector as AvailableShift['sector'],
-      }));
-
-    setAvailableShifts(available);
-
-    // Fetch my offers
-    const { data: offersData } = await supabase
-      .from('shift_offers')
-      .select(`
-        id, status, message, created_at, reviewed_at,
-        shift:shifts(id, title, hospital, shift_date, start_time, end_time, base_value, sector:sectors(name, color))
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (offersData) {
-      setMyOffers(offersData as unknown as MyOffer[]);
-    }
-
-    setLoading(false);
-  }, [user, currentTenantId, toast]);
+  const [activeTab, setActiveTab] = useState<'available' | 'myoffers'>('available');
 
   useEffect(() => {
-    if (user && currentTenantId) {
-      fetchData();
+    const tab = searchParams.get('tab');
+    if (tab === 'available' || tab === 'myoffers') {
+      setActiveTab(tab);
     }
-  }, [user, currentTenantId, fetchData]);
+  }, [searchParams]);
 
   async function submitOffer() {
     if (!user || !currentTenantId || !selectedShift) return;
-    
-    setSubmitting(true);
-
-    // Get user's name for the notification
-    const { data: profileData } = await supabase
-      .from('profiles')
-      .select('name')
-      .eq('id', user.id)
-      .single();
-    
-    const userName = profileData?.name || 'Um plantonista';
 
     const shiftSectorId = selectedShift.sector?.id ?? selectedShift.sector_id ?? null;
     if (!shiftSectorId || !memberSectorIds.has(shiftSectorId)) {
-      setSubmitting(false);
       toast({
         title: 'Sem permissão',
         description: 'Você só pode aceitar plantões do setor em que está cadastrado.',
@@ -182,92 +60,54 @@ export default function UserAvailableShifts() {
       return;
     }
 
-    const { error } = await (supabase as any).rpc('claim_open_shift', {
-      _shift_id: selectedShift.id,
-      _message: offerMessage.trim() || null,
-    });
-
-    if (error) {
+    try {
+      await claimShift({
+        shift: selectedShift,
+        offerMessage,
+        memberSectorIds,
+      });
+    } catch (error) {
       console.error('Error claiming shift:', error);
-      setSubmitting(false);
-      const backendMessage = String(error.message || '');
+      const backendMessage = error instanceof Error ? String(error.message || '') : '';
       const isConflictError =
         backendMessage.toLowerCase().includes('conflito de horário') ||
         backendMessage.toLowerCase().includes('conflito de horario');
       toast({
         title: isConflictError ? 'Candidatura bloqueada por conflito' : 'Erro ao aceitar plantão',
         description: isConflictError
-          ? 'Você já possui plantão nesse dia/horário. Ajuste primeiro em Trocas e tente novamente.'
-          : error.message,
+          ? `Você já possui outro plantão que conflita com "${selectedShift.title}" em ${format(parseISO(selectedShift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}, das ${selectedShift.start_time.slice(0, 5)} às ${selectedShift.end_time.slice(0, 5)}. Ajuste primeiro em Trocas e tente novamente.`
+          : backendMessage,
         variant: 'destructive',
+        action: isConflictError ? (
+          <ToastAction altText="Abrir Trocas" onClick={() => navigate('/app/swaps')}>
+            Abrir Trocas
+          </ToastAction>
+        ) : undefined,
       });
       return;
     }
 
-    // Notify admins that a user accepted and was assigned to the shift.
-    const { data: admins } = await supabase
-      .from('memberships')
-      .select('user_id')
-      .eq('tenant_id', currentTenantId)
-      .eq('role', 'admin')
-      .eq('active', true);
-
-    if (admins && admins.length > 0) {
-      const shiftDate = format(parseISO(selectedShift.shift_date), 'dd/MM/yyyy', { locale: ptBR });
-      const shiftTime = `${selectedShift.start_time.slice(0, 5)} - ${selectedShift.end_time.slice(0, 5)}`;
-      
-      const messageText = offerMessage.trim() 
-        ? `${userName} aceitou o plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).\n\nMensagem: "${offerMessage.trim()}"`
-        : `${userName} aceitou o plantão "${selectedShift.title}" em ${shiftDate} (${shiftTime}).`;
-
-      const notifications = admins.map(admin => ({
-        tenant_id: currentTenantId,
-        user_id: admin.user_id,
-        type: 'offer',
-        title: 'Plantão aceito por plantonista',
-        message: messageText,
-      }));
-
-      await supabase.from('notifications').insert(notifications);
-    }
-
-    setSubmitting(false);
     toast({
       title: 'Plantão aceito!',
       description: 'Seu nome já entrou na escala desse plantão.',
     });
 
-    // Atualiza imediatamente na tela: remove dos disponíveis e marca como atribuído.
-    setAvailableShifts((prev) => prev.filter((shift) => shift.id !== selectedShift.id));
-    setMyAssignedShiftIds((prev) => {
-      const next = new Set(prev);
-      next.add(selectedShift.id);
-      return next;
-    });
-
     setSelectedShift(null);
     setOfferMessage('');
-    fetchData();
 
-    // Após aceitar, leva direto para a agenda (escala) do usuário.
     navigate('/app/calendar');
   }
 
   async function cancelOffer(offerId: string) {
-    const { error } = await supabase
-      .from('shift_offers')
-      .delete()
-      .eq('id', offerId);
-
-    if (error) {
+    try {
+      await cancelUserOffer(offerId);
+      toast({ title: 'Solicitação cancelada' });
+    } catch (error) {
       toast({
         title: 'Erro ao cancelar',
-        description: error.message,
+        description: error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.',
         variant: 'destructive',
       });
-    } else {
-      toast({ title: 'Solicitação cancelada' });
-      fetchData();
     }
   }
 
@@ -288,7 +128,7 @@ export default function UserAvailableShifts() {
     rejected: 'Recusada',
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -307,7 +147,7 @@ export default function UserAvailableShifts() {
         <p className="text-sm text-muted-foreground">Plantões disponíveis dos setores em que você está cadastrado</p>
       </div>
 
-      <Tabs defaultValue="available" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'available' | 'myoffers')} className="space-y-4">
         <TabsList className="w-full">
           <TabsTrigger value="available" className="flex-1">
             Disponíveis ({availableShifts.length})
@@ -529,6 +369,16 @@ export default function UserAvailableShifts() {
                               <Clock className="h-4 w-4" />
                               {offer.shift.start_time.slice(0, 5)} - {offer.shift.end_time.slice(0, 5)}
                             </div>
+                            <div className="flex items-center gap-2">
+                              <Building className="h-4 w-4" />
+                              {offer.shift.hospital}
+                            </div>
+                            {offer.shift.sector?.name && (
+                              <div className="flex items-center gap-2">
+                                <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: offer.shift.sector.color || '#94a3b8' }} />
+                                {offer.shift.sector.name}
+                              </div>
+                            )}
                           </div>
                           {offer.message && (
                             <p className="mt-2 text-sm italic text-muted-foreground">
@@ -625,8 +475,8 @@ export default function UserAvailableShifts() {
             <Button variant="outline" onClick={() => setSelectedShift(null)}>
               Cancelar
             </Button>
-            <Button onClick={submitOffer} disabled={submitting}>
-              {submitting ? (
+            <Button onClick={submitOffer} disabled={isSubmitting}>
+              {isSubmitting ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Candidatando...

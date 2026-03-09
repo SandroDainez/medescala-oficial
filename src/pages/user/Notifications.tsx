@@ -1,135 +1,56 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Bell, Check, CheckCheck, Calendar, ArrowLeftRight, DollarSign, AlertCircle, Trash2, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-
-interface Notification {
-  id: string;
-  type: string;
-  title: string;
-  message: string;
-  read_at: string | null;
-  created_at: string;
-  shift_assignment_id: string | null;
-}
+import { getNotificationDestination } from '@/lib/notificationNavigation';
+import { useUserNotifications } from '@/hooks/useUserNotifications';
 
 export default function UserNotifications() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    markAsRead,
+    markAllAsRead,
+    deleteNotifications,
+  } = useUserNotifications({
+    userId: user?.id,
+    tenantId: currentTenantId,
+    limit: 200,
+  });
 
-  const fetchNotifications = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-
-    const query = supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(200);
-
-    const { data, error } = currentTenantId
-      ? await query.eq('tenant_id', currentTenantId)
-      : await query;
-
-    if (!error && data) {
-      setNotifications(data);
+  async function handleOpenNotification(notification: (typeof notifications)[number]) {
+    if (selectionMode) {
+      toggleSelection(notification.id);
+      return;
     }
-    setLoading(false);
-  }, [user, currentTenantId]);
 
-  useEffect(() => {
-    if (user && currentTenantId) {
-      fetchNotifications();
-      
-      // Subscribe to DELETE events to sync when admin removes notifications
-      const channel = supabase
-        .channel('user-notifications-sync')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            setNotifications((prev) => [payload.new as Notification, ...prev]);
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: 'DELETE',
-            schema: 'public',
-            table: 'notifications',
-            filter: `user_id=eq.${user.id}`,
-          },
-          (payload) => {
-            const deletedId = (payload.old as any)?.id;
-            if (!deletedId) {
-              // Fallback: garante consistência caso o payload.old venha sem id
-              fetchNotifications();
-              return;
-            }
-
-            setNotifications((prev) => prev.filter((n) => n.id !== deletedId));
-            setSelectedIds((prev) => {
-              const next = new Set(prev);
-              next.delete(deletedId);
-              return next;
-            });
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
+    if (!notification.read_at) {
+      await markAsRead(notification.id);
     }
-  }, [user, currentTenantId, fetchNotifications]);
 
-  async function markAsRead(id: string) {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .eq('id', id);
-
-    if (!error) {
-      setNotifications(prev =>
-        prev.map(n => n.id === id ? { ...n, read_at: new Date().toISOString() } : n)
-      );
+    const destination = getNotificationDestination(notification);
+    if (destination) {
+      navigate(destination);
+      return;
     }
-  }
 
-  async function markAllAsRead() {
-    const unreadIds = notifications.filter(n => !n.read_at).map(n => n.id);
-    if (unreadIds.length === 0) return;
-
-    const { error } = await supabase
-      .from('notifications')
-      .update({ read_at: new Date().toISOString() })
-      .in('id', unreadIds);
-
-    if (!error) {
-      setNotifications(prev =>
-        prev.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }))
-      );
-    }
+    navigate('/app/notifications');
   }
 
   function toggleSelection(id: string) {
@@ -163,27 +84,22 @@ export default function UserNotifications() {
     setDeleting(true);
     const idsToDelete = Array.from(selectedIds);
 
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .in('id', idsToDelete);
-
-    setDeleting(false);
-
-    if (error) {
-      toast({
-        title: 'Erro ao excluir',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } else {
-      setNotifications(prev => prev.filter(n => !selectedIds.has(n.id)));
+    try {
+      await deleteNotifications(idsToDelete);
       setSelectedIds(new Set());
       setSelectionMode(false);
       toast({
         title: 'Notificações excluídas',
         description: `${idsToDelete.length} notificação(ões) removida(s).`,
       });
+    } catch (error) {
+      toast({
+        title: 'Erro ao excluir',
+        description: error instanceof Error ? error.message : 'Não foi possível excluir as notificações.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -209,9 +125,7 @@ export default function UserNotifications() {
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.read_at).length;
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -260,7 +174,7 @@ export default function UserNotifications() {
                 </Button>
               )}
               {unreadCount > 0 && (
-                <Button variant="outline" size="sm" onClick={markAllAsRead}>
+                <Button variant="outline" size="sm" onClick={() => void markAllAsRead()}>
                   <CheckCheck className="h-4 w-4 mr-2" />
                   Marcar todas
                 </Button>
@@ -285,7 +199,9 @@ export default function UserNotifications() {
               className={`cursor-pointer transition-colors ${
                 notification.read_at ? 'opacity-60' : 'border-primary/30 bg-primary/5'
               } ${selectedIds.has(notification.id) ? 'ring-2 ring-primary' : ''}`}
-              onClick={() => selectionMode && toggleSelection(notification.id)}
+              onClick={() => {
+                void handleOpenNotification(notification);
+              }}
             >
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
@@ -310,7 +226,7 @@ export default function UserNotifications() {
                           className="h-6 w-6 shrink-0"
                           onClick={(e) => {
                             e.stopPropagation();
-                            markAsRead(notification.id);
+                            void markAsRead(notification.id);
                           }}
                         >
                           <Check className="h-4 w-4" />

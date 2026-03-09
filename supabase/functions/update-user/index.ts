@@ -273,6 +273,20 @@ function extFromType(contentType: string | null): string {
   return map[contentType] ?? "bin";
 }
 
+function typeFromFileName(fileName: string | null): string | null {
+  if (!fileName) return null;
+  const lower = fileName.trim().toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  return null;
+}
+
 async function ensureBucket(admin: ReturnType<typeof createClient>) {
   const { data: bucket } = await admin.storage.getBucket(USER_ASSETS_BUCKET);
   if (bucket) return;
@@ -301,7 +315,12 @@ async function uploadAsset(
 ): Promise<{ path: string; signedUrl: string | null; fileName: string | null }> {
   const normalizedBase64 = normalizeBase64(base64);
   const bytes = Uint8Array.from(atob(normalizedBase64), (char) => char.charCodeAt(0));
-  const extension = extFromType(contentType);
+  const normalizedType = normalizeText(contentType)?.toLowerCase() ?? null;
+  const effectiveType =
+    normalizedType && normalizedType !== "application/octet-stream"
+      ? normalizedType
+      : typeFromFileName(fileNameRaw);
+  const extension = extFromType(effectiveType);
   const safeName = toSafeFileName(fileNameRaw ?? `${kind}.${extension}`);
   const path = `${tenantId}/${userId}/${kind}/${Date.now()}-${safeName}`;
 
@@ -309,7 +328,7 @@ async function uploadAsset(
   const { error: uploadError } = await admin.storage
     .from(USER_ASSETS_BUCKET)
     .upload(path, bytes, {
-      contentType: contentType ?? undefined,
+      contentType: effectiveType ?? undefined,
       upsert: true,
     });
 

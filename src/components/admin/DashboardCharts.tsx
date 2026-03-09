@@ -1,5 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   BarChart,
   Bar,
@@ -29,6 +30,7 @@ interface ShiftAssignment {
   shift_id: string;
   user_id: string;
   assigned_value: number | null;
+  profile?: { name: string | null } | null;
 }
 
 interface SectorMembership {
@@ -65,9 +67,17 @@ function formatCurrency(value: number) {
   return value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function shiftValueToReceive(assignedValue: number | null, shiftBaseValue: number | null | undefined) {
+function truncateName(name: string, maxLength: number) {
+  if (!name) return 'Sem nome';
+  if (name.length <= maxLength) return name;
+  return `${name.slice(0, Math.max(0, maxLength - 1))}…`;
+}
+
+function shiftValueToReceive(assignedValue: number | null, _shiftBaseValue: number | null | undefined) {
+  // Dashboard now receives normalized values from the unified financial mapper.
+  // Avoid fallback to shift base value here to prevent double counting/divergence.
   if (assignedValue !== null && assignedValue !== undefined) return Number(assignedValue);
-  return Number(shiftBaseValue ?? 0);
+  return 0;
 }
 
 export function DashboardCharts({
@@ -77,6 +87,9 @@ export function DashboardCharts({
   members,
   sectorMemberships,
 }: DashboardChartsProps) {
+  const [selectedChartKey, setSelectedChartKey] = useState<string>('geral:plantoes');
+  const allowedChartUserIds = useMemo(() => new Set(members.map((m) => m.id)), [members]);
+
   const memberNameById = useMemo(() => {
     const map = new Map<string, string>();
     for (const m of members) {
@@ -85,6 +98,19 @@ export function DashboardCharts({
     }
     return map;
   }, [members]);
+
+  const assignmentNameByUserId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const assignment of assignments) {
+      if (!allowedChartUserIds.has(assignment.user_id)) continue;
+      const name = assignment.profile?.name?.trim();
+      if (!name) continue;
+      if (!map.has(assignment.user_id)) {
+        map.set(assignment.user_id, name);
+      }
+    }
+    return map;
+  }, [assignments, allowedChartUserIds]);
 
   const shiftById = useMemo(() => {
     const map = new Map<string, Shift>();
@@ -108,6 +134,7 @@ export function DashboardCharts({
         const allowedUsers = allowedUsersBySector.get(sector.id);
 
         for (const assignment of assignments) {
+          if (!allowedChartUserIds.has(assignment.user_id)) continue;
           const shift = shiftById.get(assignment.shift_id);
           if (!shift || shift.sector_id !== sector.id) continue;
 
@@ -117,7 +144,7 @@ export function DashboardCharts({
           const key = assignment.user_id;
           const existing = userMap.get(key) ?? {
             user_id: key,
-            name: memberNameById.get(key) ?? 'Sem nome',
+            name: assignmentNameByUserId.get(key) ?? memberNameById.get(key) ?? 'Sem nome',
             plantoes: 0,
             valor: 0,
           };
@@ -141,7 +168,7 @@ export function DashboardCharts({
         };
       })
       .filter((sector) => sector.userData.length > 0);
-  }, [sectors, allowedUsersBySector, assignments, shiftById, memberNameById]);
+  }, [sectors, allowedUsersBySector, assignments, shiftById, memberNameById, assignmentNameByUserId, allowedChartUserIds]);
 
   const generalByUser = useMemo<UserMetric[]>(() => {
     const userMap = new Map<string, UserMetric>();
@@ -167,6 +194,52 @@ export function DashboardCharts({
       valor: generalByUser.reduce((sum, user) => sum + user.valor, 0),
     };
   }, [generalByUser]);
+
+  const chartOptions = useMemo(() => {
+    const options: Array<{ key: string; label: string }> = [
+      { key: 'geral:plantoes', label: 'Geral - Plantões por Plantonista' },
+      { key: 'geral:valor', label: 'Geral - Valor por Plantonista' },
+    ];
+    for (const sector of sectorMetrics) {
+      options.push({ key: `setor:${sector.sectorId}:plantoes`, label: `${sector.sectorName} - Plantões` });
+      options.push({ key: `setor:${sector.sectorId}:valor`, label: `${sector.sectorName} - Valor` });
+    }
+    return options;
+  }, [sectorMetrics]);
+
+  useEffect(() => {
+    if (!chartOptions.some((option) => option.key === selectedChartKey)) {
+      setSelectedChartKey('geral:plantoes');
+    }
+  }, [chartOptions, selectedChartKey]);
+
+  const selectedChart = useMemo(() => {
+    if (selectedChartKey.startsWith('setor:')) {
+      const [, sectorId, metric] = selectedChartKey.split(':');
+      const sector = sectorMetrics.find((item) => item.sectorId === sectorId);
+      if (sector) {
+        return {
+          title: metric === 'valor' ? `Valor a receber no setor` : `Plantões no setor`,
+          description: `${sector.sectorName} · ${sector.userData.length} participantes`,
+          data: sector.userData,
+          dataKey: metric === 'valor' ? 'valor' : 'plantoes',
+          barColor: metric === 'valor' ? 'hsl(142, 76%, 36%)' : sector.sectorColor,
+          useCurrencyTooltip: metric === 'valor',
+          yWidth: 180,
+        } as const;
+      }
+    }
+
+    return {
+      title: selectedChartKey === 'geral:valor' ? 'Valor a Receber por Plantonista' : 'Plantões por Plantonista',
+      description: 'Soma de todos os setores',
+      data: generalByUser,
+      dataKey: selectedChartKey === 'geral:valor' ? 'valor' : 'plantoes',
+      barColor: selectedChartKey === 'geral:valor' ? 'hsl(142, 76%, 36%)' : 'hsl(45, 100%, 51%)',
+      useCurrencyTooltip: selectedChartKey === 'geral:valor',
+      yWidth: 220,
+    } as const;
+  }, [selectedChartKey, sectorMetrics, generalByUser]);
 
   if (shifts.length === 0) {
     return (
@@ -211,78 +284,52 @@ export function DashboardCharts({
             </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <p className="text-sm font-medium mb-2">Plantões por Plantonista</p>
-              <ResponsiveContainer width="100%" height={Math.max(260, generalByUser.length * 32)}>
-                <BarChart data={generalByUser} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                  <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                  <Tooltip />
-                  <Bar dataKey="plantoes" fill="hsl(45, 100%, 51%)" name="Plantões" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            <div>
-              <p className="text-sm font-medium mb-2">Valor a Receber por Plantonista</p>
-              <ResponsiveContainer width="100%" height={Math.max(260, generalByUser.length * 32)}>
-                <BarChart data={generalByUser} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                  <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                  <Tooltip content={currencyTooltip} />
-                  <Bar dataKey="valor" fill="hsl(142, 76%, 36%)" name="A receber (R$)" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {sectorMetrics.map((sector) => (
-          <Card key={sector.sectorId} className="card-elevated">
+          <Card className="border-border/60">
             <CardHeader className="pb-2">
-              <CardTitle className="text-base flex items-center gap-2">
-                <Building className="h-4 w-4" style={{ color: sector.sectorColor }} />
-                {sector.sectorName}
-              </CardTitle>
-              <CardDescription>
-                Participantes do setor: {sector.userData.length} • Plantões: {sector.totalPlantoes} • A receber: R$ {formatCurrency(sector.totalValor)}
-              </CardDescription>
+              <CardTitle className="text-sm">Selecionar gráfico</CardTitle>
+              <CardDescription>Mostra apenas o gráfico escolhido</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <p className="text-sm font-medium mb-2">Plantões no setor</p>
-                <ResponsiveContainer width="100%" height={Math.max(220, sector.userData.length * 32)}>
-                  <BarChart data={sector.userData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                    <YAxis type="category" dataKey="name" width={130} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                    <Tooltip />
-                    <Bar dataKey="plantoes" fill={sector.sectorColor} name="Plantões" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+            <CardContent className="space-y-3">
+              <Select value={selectedChartKey} onValueChange={setSelectedChartKey}>
+                <SelectTrigger className="w-full md:w-[420px]">
+                  <SelectValue placeholder="Selecione o gráfico" />
+                </SelectTrigger>
+                <SelectContent>
+                  {chartOptions.map((option) => (
+                    <SelectItem key={option.key} value={option.key}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
               <div>
-                <p className="text-sm font-medium mb-2">Valor a receber no setor</p>
-                <ResponsiveContainer width="100%" height={Math.max(220, sector.userData.length * 32)}>
-                  <BarChart data={sector.userData} layout="vertical">
+                <p className="text-sm font-medium mb-1">{selectedChart.title}</p>
+                <p className="text-xs text-muted-foreground mb-2">{selectedChart.description}</p>
+                <ResponsiveContainer width="100%" height={Math.max(260, selectedChart.data.length * 32)}>
+                  <BarChart data={selectedChart.data} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                    <YAxis type="category" dataKey="name" width={130} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                    <Tooltip content={currencyTooltip} />
-                    <Bar dataKey="valor" fill="hsl(142, 76%, 36%)" name="A receber (R$)" radius={[0, 4, 4, 0]} />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      width={selectedChart.yWidth}
+                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                      tickFormatter={(value: string) => truncateName(value, selectedChart.yWidth > 200 ? 28 : 20)}
+                    />
+                    <Tooltip content={selectedChart.useCurrencyTooltip ? currencyTooltip : undefined} />
+                    <Bar
+                      dataKey={selectedChart.dataKey}
+                      fill={selectedChart.barColor}
+                      radius={[0, 4, 4, 0]}
+                    />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             </CardContent>
           </Card>
-        ))}
-      </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

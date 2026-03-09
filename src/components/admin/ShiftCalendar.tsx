@@ -12,9 +12,17 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
-import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload } from 'lucide-react';
+import { buildBulkEditAddedMovement, buildBulkEditRemovedMovement, buildBulkEditShiftPayload, buildBulkEditStatusNotes, buildBulkShiftUpdatePayload, collectBulkApplyTargetShifts, createBulkEditDrafts, findInvalidBulkAssigneeShift, getBulkApplyEffectiveTimes, getBulkEditAssignmentMode, hasBulkApplyChanges, normalizeBulkEditAssignmentChoice } from '@/lib/adminBulkEdit';
+import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload, DollarSign, UserCog } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
+import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
+import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
+import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteAllAdminConflictHistory, fetchAdminConflictHistory, resolveAdminProfileId } from '@/services/adminConflicts';
+import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
+import { fetchAdminScheduleData } from '@/services/adminScheduleData';
+import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
+import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate } from 'date-fns';
@@ -63,7 +71,7 @@ interface ShiftOffer {
 
 interface Member {
   user_id: string;
-  profile: { id: string; name: string | null; full_name?: string | null } | null;
+  profile: { id: string; name: string | null; full_name?: string | null; profile_type?: string | null } | null;
 }
 
 interface SectorMembership {
@@ -151,6 +159,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [transferDialogOpen, setTransferDialogOpen] = useState(false);
   const [dayDialogOpen, setDayDialogOpen] = useState(false);
+  const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
+  const [userValuesDialogOpen, setUserValuesDialogOpen] = useState(false);
+  const [selectedSectorForValues, setSelectedSectorForValues] = useState<Sector | null>(null);
+  const [selectedSectorForUserValues, setSelectedSectorForUserValues] = useState<Sector | null>(null);
+  const [focusBaseValueOnEdit, setFocusBaseValueOnEdit] = useState(false);
   const [editingShift, setEditingShift] = useState<Shift | null>(null);
 
   // Prevent immediate re-open after a programmatic close (e.g. focus/trigger quirks)
@@ -405,17 +418,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     );
   }
 
-  async function resolveExistingProfileId(userId: string | null | undefined): Promise<string | null> {
-    if (!userId) return null;
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('id', userId)
-      .maybeSingle();
-    if (error || !data?.id) return null;
-    return data.id;
-  }
-
   // Bulk edit (apply same changes to selected shifts)
   const [bulkApplyDialogOpen, setBulkApplyDialogOpen] = useState(false);
   const [bulkApplyData, setBulkApplyData] = useState({
@@ -497,205 +499,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const isStale = () => requestId !== fetchRequestIdRef.current;
     setLoading(true);
 
-    let start: Date, end: Date;
-    if (viewMode === 'month') {
-      start = startOfMonth(currentDate);
-      end = endOfMonth(currentDate);
-    } else {
-      start = startOfWeek(currentDate, { weekStartsOn: 1 });
-      end = endOfWeek(currentDate, { weekStartsOn: 1 });
-    }
-
-    const startStr = format(start, 'yyyy-MM-dd');
-    const endStr = format(end, 'yyyy-MM-dd');
-
     try {
-      const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
-        supabase
-          .from('shifts')
-          .select('*')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', startStr)
-          .lte('shift_date', endStr)
-          .order('shift_date', { ascending: true })
-          .order('start_time', { ascending: true }),
-        filterSector && filterSector !== 'all'
-  ? supabase
-     .from('sector_memberships')
-.select(`
-  user_id,
-  profile:profiles!sector_memberships_user_id_fkey(id, name, full_name)
-`)
-.eq('tenant_id', currentTenantId)
-.eq('sector_id', filterSector)
-
-  : supabase
-      .from('memberships')
-      .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name)')
-      .eq('tenant_id', currentTenantId)
-      .eq('active', true),
-
-        supabase
-          .from('sectors')
-          .select('*')
-          .eq('tenant_id', currentTenantId)
-          .eq('active', true)
-          .order('name'),
-        supabase
-          .from('sector_memberships')
-          .select('id, sector_id, user_id')
-          .eq('tenant_id', currentTenantId),
-      ]);
-
-      if (sectorsRes.error) throw sectorsRes.error;
-      if (sectorMembershipsRes.error) throw sectorMembershipsRes.error;
-      if (membersRes.error) throw membersRes.error;
-      if (shiftsRes.error) throw shiftsRes.error;
-      if (isStale()) return;
-
-      setSectors((sectorsRes.data ?? []) as Sector[]);
-      setSectorMemberships(sectorMembershipsRes.data ?? []);
-      const loadedMembers = ((membersRes.data ?? []) as unknown as Member[]);
-      setMembers(loadedMembers);
-      const memberDisplayNameByUserId = new Map<string, string>();
-      for (const member of loadedMembers) {
-        const displayName = member.profile?.full_name?.trim() || member.profile?.name?.trim();
-        if (member.user_id && displayName) {
-          memberDisplayNameByUserId.set(member.user_id, displayName);
-        }
-      }
-
-      // Fetch user sector values for individual pricing (scoped to current month/year)
-      const currentMonth = currentDate.getMonth() + 1; // 1-12
-      const currentYear = currentDate.getFullYear();
-      const { data: userValuesData } = await supabase
-        .from('user_sector_values')
-        .select('*')
-        .eq('tenant_id', currentTenantId)
-        .eq('month', currentMonth)
-        .eq('year', currentYear);
-      
-      const valuesMap = new Map<string, { day_value: number | null; night_value: number | null }>();
-      (userValuesData ?? []).forEach((uv: any) => {
-        const key = `${uv.sector_id}:${uv.user_id}`;
-        valuesMap.set(key, { day_value: uv.day_value, night_value: uv.night_value });
+      const result = await fetchAdminScheduleData({
+        tenantId: currentTenantId,
+        userId: user.id,
+        currentDate,
+        viewMode,
+        filterSector,
       });
       if (isStale()) return;
-      setUserSectorValues(valuesMap);
 
-      const nextShifts = (shiftsRes.data ?? []) as Shift[];
-      setShifts(nextShifts);
-
-      // Fetch assignments/offers by date range (avoids huge URL `in.(...ids...)` -> 400)
-      // If RPC fails transiently, DO NOT wipe existing names; keep last good state and notify.
-      const [assignmentsRes, offersRes, resolutionsRes] = await Promise.all([
-        supabase.rpc('get_shift_assignments_range', {
-          _tenant_id: currentTenantId,
-          _start: startStr,
-          _end: endStr,
-        }),
-        supabase.rpc('get_shift_offers_pending_range', {
-          _tenant_id: currentTenantId,
-          _start: startStr,
-          _end: endStr,
-        }),
-        supabase
-          .from('conflict_resolutions')
-          .select('conflict_date, plantonista_id')
-          .eq('tenant_id', currentTenantId)
-          .gte('conflict_date', startStr)
-          .lte('conflict_date', endStr),
-      ]);
-
-      if (assignmentsRes.error) {
-        console.error('[ShiftCalendar] get_shift_assignments_range error', assignmentsRes.error);
-        notifyError(
-          'carregar plantonistas',
-          assignmentsRes.error,
-          'Não foi possível carregar os plantonistas agora. Tentaremos novamente automaticamente.',
-        );
-        // Retry once after a short delay
-        setTimeout(() => {
-          if (currentTenantId && user?.id) fetchData();
-        }, 1200);
-      } else {
-        let mapped = ((assignmentsRes.data ?? []) as any[]).map((row) => {
-          const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
-          const resolvedFullName = row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
-          const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
-          return {
-          id: row.id,
-          shift_id: row.shift_id,
-          user_id: row.user_id,
-          assigned_value: row.assigned_value,
-          status: row.status,
-          profile: { name: resolvedName, full_name: resolvedFullName },
-        };
-      });
-
-        // Guard against transient empty RPC snapshots by confirming via direct table query.
-        if (mapped.length === 0 && nextShifts.length > 0) {
-          const shiftIds = nextShifts.map((s) => s.id);
-          const direct = await supabase
-            .from('shift_assignments')
-            .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
-            .in('shift_id', shiftIds);
-
-          if (!direct.error) {
-            mapped = ((direct.data || []) as any[]).map((row) => ({
-              id: row.id,
-              shift_id: row.shift_id,
-              user_id: row.user_id,
-              assigned_value: row.assigned_value,
-              status: row.status,
-              profile: {
-                name: row.profile?.name ?? null,
-                full_name: row.profile?.full_name ?? null,
-              },
-            }));
-          }
-        }
-
-        if (!isStale()) {
-          setAssignments(mapped as unknown as ShiftAssignment[]);
-        }
-      }
-
-      if (offersRes.error) {
-        console.error('[ShiftCalendar] get_shift_offers_pending_range error', offersRes.error);
-        // Offers are secondary; keep previous state silently.
-      } else {
-        const mapped = ((offersRes.data ?? []) as any[]).map((row) => {
-          const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
-          const resolvedFullName = row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
-          const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
-          return {
-          id: row.id,
-          shift_id: row.shift_id,
-          user_id: row.user_id,
-          status: row.status,
-          message: row.message,
-          profile: { name: resolvedName, full_name: resolvedFullName },
-        };
-      });
-        if (!isStale()) {
-          setShiftOffers(mapped as unknown as ShiftOffer[]);
-        }
-      }
-
-      // Persist resolved conflicts across reloads/navigation:
-      // any conflict with (plantonista_id + conflict_date) already resolved should stay suppressed.
-      if (!resolutionsRes.error && !isStale()) {
-        const resolvedKeys = new Set<string>();
-        for (const row of (resolutionsRes.data || []) as Array<{ conflict_date: string; plantonista_id: string | null }>) {
-          if (row.plantonista_id && row.conflict_date) {
-            resolvedKeys.add(`${row.plantonista_id}_${row.conflict_date}`);
-          }
-        }
-        setAcknowledgedConflicts(resolvedKeys);
-      } else if (resolutionsRes.error) {
-        console.error('[ShiftCalendar] conflict_resolutions fetch error', resolutionsRes.error);
-      }
+      setSectors(result.sectors as Sector[]);
+      setSectorMemberships(result.sectorMemberships);
+      setMembers(result.members as Member[]);
+      setUserSectorValues(result.userSectorValues);
+      setShifts(result.shifts as Shift[]);
+      setAssignments(result.assignments as unknown as ShiftAssignment[]);
+      setShiftOffers(result.offers as unknown as ShiftOffer[]);
+      setAcknowledgedConflicts(result.acknowledgedConflictKeys);
     } catch (error: any) {
       console.error('[ShiftCalendar] fetchData error', error);
       notifyError('carregar calendário', error, 'Erro desconhecido');
@@ -754,6 +575,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return isNight ? (userValue.night_value ?? null) : (userValue.day_value ?? null);
   }
 
+  function hasUserSectorOverride(sectorId: string | null, userId: string | null): boolean {
+    if (!sectorId || !userId) return false;
+    return userSectorValues.has(`${sectorId}:${userId}`);
+  }
+
 
   // ==========================================
   // FUNÇÕES DE CÁLCULO DE VALOR - USA LIB CENTRALIZADA
@@ -789,8 +615,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
    * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
    * 
    * PRIORIDADE (consistente com Financeiro):
-   * 1. assigned_value (editado na Escala) - USAR COMO ESTÁ (já pró-rata)
-   * 2. Individual (user_sector_values) - APLICAR PRÓ-RATA
+   * 1. Individual (user_sector_values) - APLICAR PRÓ-RATA (inclui zero explícito)
+   * 2. assigned_value (editado na Escala) - USAR COMO ESTÁ (já pró-rata)
    * 3. Padrão do setor - APLICAR PRÓ-RATA
    * 
    * Esta função é usada em:
@@ -804,18 +630,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   ): { value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none'; durationHours: number } {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
 
-    // PRIORIDADE 1: assigned_value (editado na Escala)
-    // USAR COMO ESTÁ - já foi calculado com pró-rata no momento do save
-    if (assignment.assigned_value !== null) {
-      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
-    }
-
-    // PRIORIDADE 2: Valor individual (user_sector_values)
+    // PRIORIDADE 1: Valor individual (user_sector_values)
+    // IMPORTANTE: quando existir override individual (inclusive 0), ele deve prevalecer
+    // sobre assigned_value legado para manter a escala alinhada ao financeiro.
     // Aplicar pró-rata pois é valor base de 12h
     const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
-    if (userValue !== null) {
+    const hasIndividualOverride = hasUserSectorOverride(shift.sector_id, assignment.user_id);
+    if (hasIndividualOverride) {
       if (userValue === 0) return { value: 0, source: 'individual', durationHours: duration };
-      return { value: calculateProRataValue(userValue, duration), source: 'individual', durationHours: duration };
+      if (userValue !== null) {
+        return { value: calculateProRataValue(userValue, duration), source: 'individual', durationHours: duration };
+      }
+      // Se existe registro individual mas campo está em branco, ignora assigned_value legado
+      // e cai para padrão do setor (ou sem valor).
+    }
+
+    // PRIORIDADE 2: assigned_value (editado na Escala)
+    // USAR COMO ESTÁ - já foi calculado com pró-rata no momento do save
+    if (!hasIndividualOverride && assignment.assigned_value !== null) {
+      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
     }
 
     // PRIORIDADE 3: Valor padrão do setor
@@ -996,7 +829,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const raw = String(value ?? '').trim();
     if (!raw) return null;
 
-    const br = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    const br = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
     if (br) {
       const day = Number(br[1]);
       const month = Number(br[2]);
@@ -1005,7 +838,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       if (!Number.isNaN(date.getTime())) return format(date, 'yyyy-MM-dd');
     }
 
-    const iso = raw.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+    const iso = raw.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/);
     if (iso) {
       const year = Number(iso[1]);
       const month = Number(iso[2]);
@@ -1078,7 +911,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return null;
     };
 
-    const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~\-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
+    const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
     let baseYear = currentDate.getFullYear();
     let periodStart: Date | null = null;
     let periodEnd: Date | null = null;
@@ -1144,7 +977,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           const raw = String(rawMatrix[rr]?.[c] ?? '').trim();
           if (!raw) continue;
 
-          const rangeMatches = Array.from(raw.matchAll(/(\d{1,2}:\d{2})\s*[~\-]\s*(\d{1,2}:\d{2})/g));
+          const rangeMatches = Array.from(raw.matchAll(/(\d{1,2}:\d{2})\s*[~-]\s*(\d{1,2}:\d{2})/g));
           if (rangeMatches.length > 0) {
             const first = rangeMatches[0];
             const start = parseImportTime(first[1]);
@@ -1443,7 +1276,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const unmatchedNames = new Set<string>();
 
       for (const row of importPreviewRows) {
-        const shiftId = await insertShiftAndGetId({
+        const shiftId = await insertAdminShiftAndGetId({
           tenant_id: currentTenantId,
           title: row.title,
           hospital: row.hospital,
@@ -1481,23 +1314,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             applyProRata: true,
           });
 
-          const { error: assignErr } = await supabase
-            .from('shift_assignments')
-            .upsert(
-              {
-                tenant_id: currentTenantId,
-                shift_id: shiftId,
-                user_id: member.user_id,
-                assigned_value: assignedValue,
-                updated_by: user?.id,
-              },
-              { onConflict: 'shift_id,user_id' },
-            );
-
-          if (assignErr) {
-            unmatchedNames.add(`${importedName} (erro de vínculo)`);
-          } else {
+          try {
+            await upsertAdminAssignment({
+              tenantId: currentTenantId,
+              shiftId,
+              userId: member.user_id,
+              assignedValue,
+              updatedBy: user?.id,
+            });
             assignedCount += 1;
+          } catch {
+            unmatchedNames.add(`${importedName} (erro de vínculo)`);
           }
         }
       }
@@ -1558,7 +1385,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Check for individual plantonista value first
     if (params.user_id && params.user_id !== 'vago' && params.user_id !== 'disponivel') {
       const userValue = getUserSectorValue(params.sector_id, params.user_id, params.start_time);
-      if (userValue !== null && userValue > 0) {
+      // 0 é valor explícito e deve prevalecer sobre padrão do setor.
+      if (userValue !== null) {
         return shouldApplyProRata ? calculateProRataValue(userValue, duration) : userValue;
       }
     }
@@ -1572,59 +1400,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
     
     return null;
-  }
-
-  // --- Reliable writes helpers (professional-grade) ---
-  // PostgREST may return 204 even when the write succeeds (no representation returned).
-  // We confirm the write via a follow-up SELECT to avoid "false failure" toasts.
-  async function confirmShiftExists(shiftId: string): Promise<boolean> {
-    const { data, error } = await supabase.from('shifts').select('id').eq('id', shiftId).maybeSingle();
-    if (error) return false;
-    return !!data?.id;
-  }
-
-  async function insertShiftAndGetId(payload: {
-    tenant_id: string;
-    title: string;
-    hospital: string;
-    location: string | null;
-    shift_date: string;
-    start_time: string;
-    end_time: string;
-    base_value: number | null;
-    notes: string | null;
-    sector_id: string | null;
-    created_by?: string | null;
-    updated_by?: string | null;
-  }): Promise<string> {
-    const { data, error } = await supabase
-      .from('shifts')
-      .insert(payload)
-      .select('id')
-      .maybeSingle();
-
-    if (error) throw error;
-    if (data?.id) return data.id;
-
-    // Fallback: fetch the most recent matching shift
-    const { data: found, error: findErr } = await supabase
-      .from('shifts')
-      .select('id')
-      .eq('tenant_id', payload.tenant_id)
-      .eq('shift_date', payload.shift_date)
-      .eq('start_time', payload.start_time)
-      .eq('end_time', payload.end_time)
-      .eq('hospital', payload.hospital)
-      .eq('sector_id', payload.sector_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (findErr || !found?.id) {
-      throw new Error('Plantão criado, mas não foi possível confirmar o ID.');
-    }
-
-    return found.id;
   }
 
   // Filter shifts by sector
@@ -1667,17 +1442,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (shiftIds.length === 0) return;
     const uniqueIds = Array.from(new Set(shiftIds));
 
-    const { data, error } = await supabase
-      .from('shift_assignments')
-      .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
-      .in('shift_id', uniqueIds);
-
-    if (error) {
+    let data: any[] = [];
+    try {
+      data = await fetchAdminAssignmentsByShiftIds(uniqueIds);
+    } catch (error) {
       console.error('[ShiftCalendar] refreshAssignmentsForShiftIds error', error);
       return;
     }
 
-    const mapped = ((data || []) as any[]).map((row) => ({
+    const allowedUserIds = new Set(members.map((m) => m.user_id));
+    const mapped = ((data || []) as any[])
+      .filter((row) => allowedUserIds.has(row.user_id))
+      .map((row) => ({
       id: row.id,
       shift_id: row.shift_id,
       user_id: row.user_id,
@@ -1708,14 +1484,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     );
     if (dayShiftIds.size === 0) return;
 
-    const { data, error } = await supabase.rpc('get_shift_assignments_range', {
-      _tenant_id: currentTenantId,
-      _start: dayStr,
-      _end: dayStr,
-    });
-
     // Build mapped rows from RPC when available.
-    let mapped: ShiftAssignment[] = ((data ?? []) as any[]).map((row) => {
+    const allowedUserIds = new Set(members.map((m) => m.user_id));
+    let data: any[] = [];
+    let error: unknown = null;
+    try {
+      data = await fetchAdminAssignmentRange({
+        tenantId: currentTenantId,
+        start: dayStr,
+        end: dayStr,
+      });
+    } catch (rpcError) {
+      error = rpcError;
+    }
+
+    let mapped: ShiftAssignment[] = ((data ?? []) as any[])
+      .filter((row) => allowedUserIds.has(row.user_id))
+      .map((row) => {
       const member = members.find((m) => m.user_id === row.user_id);
       const fallbackName = getMemberDisplayName(member);
       const resolvedFullName = row.full_name ?? null;
@@ -1737,17 +1522,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         console.error('[ShiftCalendar] refreshAssignmentsForDate rpc error', error);
       }
 
-      const direct = await supabase
-        .from('shift_assignments')
-        .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
-        .in('shift_id', Array.from(dayShiftIds));
-
-      if (direct.error) {
-        console.error('[ShiftCalendar] refreshAssignmentsForDate fallback error', direct.error);
+      let direct: any[] = [];
+      try {
+        direct = await fetchAdminAssignmentsByShiftIds(Array.from(dayShiftIds));
+      } catch (directError) {
+        console.error('[ShiftCalendar] refreshAssignmentsForDate fallback error', directError);
         return;
       }
 
-      mapped = ((direct.data || []) as any[]).map((row) => ({
+      mapped = (direct as any[])
+        .filter((row) => allowedUserIds.has(row.user_id))
+        .map((row) => ({
         id: row.id,
         shift_id: row.shift_id,
         user_id: row.user_id,
@@ -1808,9 +1593,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return getMemberDisplayName(member);
   }
 
-  function getUserSectorIds(userId: string): string[] {
+  const getUserSectorIds = useCallback((userId: string): string[] => {
     return sectorMemberships.filter((sm) => sm.user_id === userId).map((sm) => sm.sector_id);
-  }
+  }, [sectorMemberships]);
 
   function openTransferDialog(assignment: ShiftAssignment, sourceShift: Shift) {
     const userId = assignment.user_id;
@@ -1847,7 +1632,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .filter((s) => memberSectors.has(s.id))
       .filter((s) => s.id !== transferSourceShift.sector_id)
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [transferAssignment, transferSourceShift, sectorMemberships, sectors]);
+  }, [transferAssignment, transferSourceShift, getUserSectorIds, sectors]);
 
   const transferTargetCandidates = useMemo(() => {
     if (!transferAssignment || !transferSourceShift || !transferTargetSectorId) return [];
@@ -1957,21 +1742,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     if (editingShift) {
       // UPDATE
-      // PostgREST can return 204 (no body) even when update succeeded.
-      // So we treat "no returned row" as "unknown" and confirm with a follow-up SELECT.
-      const { data: updatedShift, error } = await supabase
-        .from('shifts')
-        .update(shiftUpdateData)
-        .eq('id', editingShift.id)
-        .select('id')
-        .maybeSingle();
-
-      if (error) {
+      try {
+        await updateAdminShiftById(editingShift.id, shiftUpdateData);
+      } catch (error) {
         notifyError('atualizar plantão', error, 'Não foi possível atualizar o plantão.');
         return;
       }
 
-      const confirmed = updatedShift?.id ? true : await confirmShiftExists(editingShift.id);
+      const confirmed = await confirmAdminShiftExists(editingShift.id);
       if (!confirmed) {
         notifyError('salvar plantão', 'Atualização bloqueada (permissão/tenant).');
         return;
@@ -2005,13 +1783,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (currentAssignment) {
             if (currentAssignment.user_id === formData.assigned_user_id) {
               // Same user - just update value
-              const { data: updData, error: updErr } = await supabase
-                .from('shift_assignments')
-                .update({ assigned_value: assignedValue, updated_by: user?.id })
-                .eq('id', currentAssignment.id)
-                .select('id')
-                .maybeSingle();
-              if (updErr) throw updErr;
+              const updData = await updateAdminAssignmentValue({
+                assignmentId: currentAssignment.id,
+                assignedValue,
+                updatedBy: user?.id,
+              });
               if (!updData) throw new Error('Atualização do plantonista bloqueada (permissão/tenant).');
             } else {
               // Different user - this is a TRANSFER
@@ -2019,31 +1795,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               const newUserMember = members.find(m => m.user_id === formData.assigned_user_id);
               const newUserName = newUserMember?.profile?.name || 'Desconhecido';
               
-              const { data: upData, error: upErr } = await supabase
-                .from('shift_assignments')
-                .upsert(
-                  {
-                    tenant_id: currentTenantId,
-                    shift_id: editingShift.id,
-                    user_id: formData.assigned_user_id,
-                    assigned_value: assignedValue,
-                    updated_by: user?.id,
-                  },
-                  { onConflict: 'shift_id,user_id' }
-                )
-                .select('id');
-              if (upErr) throw upErr;
-              if (!upData || upData.length === 0) {
+              const upData = await upsertAdminAssignment({
+                tenantId: currentTenantId,
+                shiftId: editingShift.id,
+                userId: formData.assigned_user_id,
+                assignedValue,
+                updatedBy: user?.id,
+              });
+              if (!upData?.id) {
                 throw new Error('Não foi possível salvar o plantonista (permissão/tenant).');
               }
 
-              const { data: delData, error: delErr } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('id', currentAssignment.id)
-                .select('id');
-              if (delErr) throw delErr;
-              if (!delData || delData.length === 0) {
+              const deletedRows = await deleteAdminAssignment(currentAssignment.id);
+              if (deletedRows.length === 0) {
                 throw new Error('Não foi possível remover o plantonista anterior (permissão/tenant).');
               }
 
@@ -2087,21 +1851,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             }
           } else {
             // No previous assignment - this is an ADD
-            const { data: upData, error: upErr } = await supabase
-              .from('shift_assignments')
-              .upsert(
-                {
-                  tenant_id: currentTenantId,
-                  shift_id: editingShift.id,
-                  user_id: formData.assigned_user_id,
-                  assigned_value: assignedValue,
-                  updated_by: user?.id,
-                },
-                { onConflict: 'shift_id,user_id' }
-              )
-              .select('id');
-            if (upErr) throw upErr;
-            if (!upData || upData.length === 0) {
+            const upData = await upsertAdminAssignment({
+              tenantId: currentTenantId,
+              shiftId: editingShift.id,
+              userId: formData.assigned_user_id,
+              assignedValue,
+              updatedBy: user?.id,
+            });
+            if (!upData?.id) {
               throw new Error('Não foi possível salvar o plantonista (permissão/tenant).');
             }
 
@@ -2142,13 +1899,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               performed_by: user?.id ?? '',
             });
 
-            const { data: delData, error: delErr } = await supabase
-              .from('shift_assignments')
-              .delete()
-              .eq('id', currentAssignment.id)
-              .select('id');
-            if (delErr) throw delErr;
-            if (!delData || delData.length === 0) {
+            const deletedRows = await deleteAdminAssignment(currentAssignment.id);
+            if (deletedRows.length === 0) {
               throw new Error('Não foi possível remover o plantonista (permissão/tenant).');
             }
           }
@@ -2173,7 +1925,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           let duplicatedShiftId: string | null = null;
           try {
-            duplicatedShiftId = await insertShiftAndGetId(duplicatedShiftData as any);
+            duplicatedShiftId = await insertAdminShiftAndGetId(duplicatedShiftData as any);
           } catch (dupError) {
             console.error(`Error duplicating shift for week ${week}:`, dupError);
             continue;
@@ -2196,18 +1948,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               applyProRata: true,
             });
 
-            await supabase
-              .from('shift_assignments')
-              .upsert(
-                {
-                  tenant_id: currentTenantId,
-                  shift_id: duplicatedShiftId,
-                  user_id: formData.assigned_user_id,
-                  assigned_value: assignedValue,
-                  updated_by: user?.id,
-                },
-                { onConflict: 'shift_id,user_id' }
-              );
+            await upsertAdminAssignment({
+              tenantId: currentTenantId,
+              shiftId: duplicatedShiftId,
+              userId: formData.assigned_user_id,
+              assignedValue,
+              updatedBy: user?.id,
+            });
           }
         }
 
@@ -2279,7 +2026,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           let createdShiftId: string;
             try {
-              createdShiftId = await insertShiftAndGetId({
+              createdShiftId = await insertAdminShiftAndGetId({
                 ...shiftInsertData,
                 shift_date: weekDate,
                 start_time: row.start_time,
@@ -2321,20 +2068,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               applyProRata: true,
             });
 
-            const { error: assignErr } = await supabase
-              .from('shift_assignments')
-              .upsert(
-                {
-                  tenant_id: currentTenantId,
-                  shift_id: createdShiftId,
-                  user_id: rowAssigned,
-                  assigned_value: rowAssignedValue,
-                  updated_by: user?.id,
-                },
-                { onConflict: 'shift_id,user_id' }
-              );
-
-            if (assignErr) {
+            try {
+              await upsertAdminAssignment({
+                tenantId: currentTenantId,
+                shiftId: createdShiftId,
+                userId: rowAssigned,
+                assignedValue: rowAssignedValue,
+                updatedBy: user?.id,
+              });
+            } catch (assignErr) {
               console.error('[ShiftCalendar] assignment failed:', assignErr);
               errorsCount++;
             }
@@ -2421,13 +2163,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         updated_by: user?.id,
       };
 
-      const { data: newShift, error } = await supabase
-        .from('shifts')
-        .insert(shiftData)
-        .select()
-        .single();
-
-      if (error) {
+      let newShiftId: string;
+      try {
+        newShiftId = await insertAdminShiftAndGetId(shiftData);
+      } catch (error) {
         errorCount++;
         continue;
       }
@@ -2437,7 +2176,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       if (formData.assigned_user_id && 
           formData.assigned_user_id !== 'vago' && 
           formData.assigned_user_id !== 'disponivel' && 
-          newShift) {
+          newShiftId) {
         if (!isUserAllowedInSector(formData.assigned_user_id, formData.sector_id || null)) {
           errorCount++;
           continue;
@@ -2453,13 +2192,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           applyProRata: true,
         });
 
-        await supabase.from('shift_assignments').upsert({
-          tenant_id: currentTenantId,
-          shift_id: newShift.id,
-          user_id: formData.assigned_user_id,
-          assigned_value: assignedValue,
-          updated_by: user?.id,
-        }, { onConflict: 'shift_id,user_id' });
+        try {
+          await upsertAdminAssignment({
+            tenantId: currentTenantId,
+            shiftId: newShiftId,
+            userId: formData.assigned_user_id,
+            assignedValue,
+            updatedBy: user?.id,
+          });
+        } catch {
+          errorCount++;
+        }
       }
     }
 
@@ -2494,14 +2237,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleDeleteShift(id: string) {
     if (!confirm('Deseja excluir este plantão e todas as atribuições?')) return;
 
-    const { error } = await supabase.from('shifts').delete().eq('id', id);
-    if (error) {
+    try {
+      await deleteAdminShiftById(id);
+    } catch (error) {
       notifyError('excluir plantão', error, 'Não foi possível excluir o plantão.');
-    } else {
-      notifySuccess('Exclusão de plantão');
-      await fetchData();
-      closeDayDialog();
+      return;
     }
+
+    notifySuccess('Exclusão de plantão');
+    await fetchData();
+    closeDayDialog();
   }
 
   async function handleDeleteDayShifts() {
@@ -2522,11 +2267,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     try {
       // Primary path: single bulk delete for better performance.
-      const { error: bulkError } = await supabase.from('shifts').delete().in('id', ids);
-
-      if (!bulkError) {
+      try {
+        await deleteAdminShiftsByIds(ids);
         notifySuccess('Exclusão do dia', `${dayShifts.length} plantão(ões) excluído(s).`);
-      } else {
+      } catch (bulkError: any) {
         // Fallback path: delete one by one to avoid transient/batch-specific failures.
         console.warn('[ShiftCalendar] bulk day delete failed, trying per-shift fallback:', bulkError);
 
@@ -2534,11 +2278,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const failures: string[] = [];
 
         for (const shiftId of ids) {
-          const { error: singleError } = await supabase.from('shifts').delete().eq('id', shiftId);
-          if (singleError) {
-            failures.push(singleError.message || 'Falha desconhecida');
-          } else {
+          try {
+            await deleteAdminShiftById(shiftId);
             deletedCount += 1;
+          } catch (singleError: any) {
+            failures.push(singleError?.message || 'Falha desconhecida');
           }
         }
 
@@ -2611,34 +2355,42 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     let assignedCheckError: any = null;
 
     if (dayStr && currentTenantId) {
-      const rpcRes = await supabase.rpc('get_shift_assignments_range', {
-        _tenant_id: currentTenantId,
-        _start: dayStr,
-        _end: dayStr,
-      });
-      if (rpcRes.error) {
-        assignedCheckError = rpcRes.error;
-      } else {
-        assignedRows = ((rpcRes.data ?? []) as any[]).map((row) => ({ shift_id: row.shift_id }));
+      try {
+        const rangeRows = await fetchAdminAssignmentRange({
+          tenantId: currentTenantId,
+          start: dayStr,
+          end: dayStr,
+        });
+        assignedRows = (rangeRows as any[]).map((row) => ({ shift_id: row.shift_id }));
+      } catch (error) {
+        assignedCheckError = error;
       }
     }
 
     // Fallback for safety if RPC is unavailable.
     if (assignedRows.length === 0) {
-      const tableRes = await supabase
-        .from('shift_assignments')
-        .select('shift_id')
-        .in('shift_id', ids);
-      if (tableRes.error && assignedCheckError) {
+      try {
+        const tableRows = await fetchAdminAssignmentsByShiftIds(ids);
+        assignedRows = (tableRows || []) as Array<{ shift_id: string }>;
+      } catch (tableError) {
+        if (assignedCheckError) {
+          notifyError(
+            'validar exclusão',
+            assignedCheckError,
+            'Não foi possível validar os plantonistas antes de excluir.',
+          );
+          return;
+        }
+        notifyError('validar exclusão', tableError, 'Não foi possível validar os plantonistas antes de excluir.');
+        return;
+      }
+      if (assignedRows.length === 0 && assignedCheckError) {
         notifyError(
           'validar exclusão',
           assignedCheckError,
           'Não foi possível validar os plantonistas antes de excluir.',
         );
         return;
-      }
-      if (!tableRes.error) {
-        assignedRows = (tableRes.data || []) as Array<{ shift_id: string }>;
       }
     }
 
@@ -2666,8 +2418,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
     }
 
-    const { error } = await supabase.from('shifts').delete().in('id', idsToDelete);
-    if (error) {
+    try {
+      await deleteAdminShiftsByIds(idsToDelete);
+    } catch (error) {
       notifyError('excluir plantões selecionados', error, 'Não foi possível excluir os plantões selecionados.');
       return;
     }
@@ -2725,8 +2478,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const ids = deleteScaleContext.ids;
 
     try {
-      const { error: bulkError } = await supabase.from('shifts').delete().in('id', ids);
-      if (bulkError) {
+      try {
+        await deleteAdminShiftsByIds(ids);
+      } catch (bulkError) {
         notifyError('excluir escala do período', bulkError, 'Não foi possível excluir a escala inteira.');
         return;
       }
@@ -2768,9 +2522,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const targetDateStr = format(targetDate, 'yyyy-MM-dd');
 
         for (const sourceShift of dayShifts) {
-          const { data: newShift, error: shiftError } = await supabase
-            .from('shifts')
-            .insert({
+          let newShiftId: string;
+          try {
+            newShiftId = await insertAdminShiftAndGetId({
               tenant_id: currentTenantId,
               title: sourceShift.title,
               hospital: sourceShift.hospital,
@@ -2782,11 +2536,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               notes: sourceShift.notes,
               sector_id: sourceShift.sector_id,
               updated_by: user.id,
-            })
-            .select('id')
-            .single();
-
-          if (shiftError || !newShift?.id) {
+            });
+          } catch {
             shiftErrorsCount++;
             continue;
           }
@@ -2800,24 +2551,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               continue;
             }
 
-            const { error: assignmentError } = await supabase
-              .from('shift_assignments')
-              .upsert(
-                {
-                  tenant_id: currentTenantId,
-                  shift_id: newShift.id,
-                  user_id: assignment.user_id,
-                  assigned_value: assignment.assigned_value,
-                  status: assignment.status || 'assigned',
-                  updated_by: user.id,
-                },
-                { onConflict: 'shift_id,user_id' }
-              );
-
-            if (assignmentError) {
-              assignmentErrorsCount++;
-            } else {
+            try {
+              await cloneAdminAssignmentToShift({
+                tenantId: currentTenantId,
+                targetShiftId: newShiftId,
+                sourceAssignment: assignment,
+                updatedBy: user.id,
+              });
               createdAssignmentsCount++;
+            } catch {
+              assignmentErrorsCount++;
             }
           }
         }
@@ -2855,21 +2598,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const sourceMonthEnd = endOfMonth(currentDate);
 
       // Always fetch the full source month (the UI might be on week view, which only loads a subset)
-      const shiftsRes = await supabase
-        .from('shifts')
-        .select('*')
-        .eq('tenant_id', currentTenantId)
-        .gte('shift_date', format(sourceMonthStart, 'yyyy-MM-dd'))
-        .lte('shift_date', format(sourceMonthEnd, 'yyyy-MM-dd'))
-        .order('shift_date', { ascending: true })
-        .order('start_time', { ascending: true });
-
-      if (shiftsRes.error) {
-        notifyError('carregar plantões', shiftsRes.error, 'Não foi possível carregar os plantões para cópia.');
+      let monthShifts: Shift[] = [];
+      try {
+        monthShifts = (await fetchAdminShiftsInRange({
+          tenantId: currentTenantId,
+          start: format(sourceMonthStart, 'yyyy-MM-dd'),
+          end: format(sourceMonthEnd, 'yyyy-MM-dd'),
+        })) as Shift[];
+      } catch (error) {
+        notifyError('carregar plantões', error, 'Não foi possível carregar os plantões para cópia.');
         return;
       }
-
-      const monthShifts = (shiftsRes.data || []) as Shift[];
       const shiftsToProcess = filterSector === 'all' ? monthShifts : monthShifts.filter(s => s.sector_id === filterSector);
 
       if (shiftsToProcess.length === 0) {
@@ -2879,17 +2618,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       // Fetch assignments for the source shifts we will copy
       const sourceShiftIds = shiftsToProcess.map(s => s.id);
-      const assignmentsRes = await supabase
-        .from('shift_assignments')
-        .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-        .in('shift_id', sourceShiftIds);
-
-      if (assignmentsRes.error) {
-        notifyError('carregar atribuições', assignmentsRes.error, 'Não foi possível carregar as atribuições para cópia.');
+      let sourceAssignments: ShiftAssignment[] = [];
+      try {
+        sourceAssignments = (await fetchAdminAssignmentsByShiftIds(sourceShiftIds)) as unknown as ShiftAssignment[];
+      } catch (error) {
+        notifyError('carregar atribuições', error, 'Não foi possível carregar as atribuições para cópia.');
         return;
       }
-
-      const sourceAssignments = (assignmentsRes.data || []) as unknown as ShiftAssignment[];
       const assignmentsByShiftId = new Map<string, ShiftAssignment[]>();
       for (const a of sourceAssignments) {
         if (!assignmentsByShiftId.has(a.shift_id)) assignmentsByShiftId.set(a.shift_id, []);
@@ -2948,9 +2683,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           const newShiftDateStr = format(targetDate, 'yyyy-MM-dd');
 
           for (const shift of sourceShiftsForThatDay) {
-            const { data: newShift, error } = await supabase
-              .from('shifts')
-              .insert({
+            let newShiftId: string;
+            try {
+              newShiftId = await insertAdminShiftAndGetId({
                 tenant_id: currentTenantId,
                 title: shift.title,
                 hospital: shift.hospital,
@@ -2962,11 +2697,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 notes: shift.notes,
                 sector_id: shift.sector_id,
                 updated_by: user?.id,
-              })
-              .select()
-              .single();
-
-            if (error) {
+              });
+            } catch {
               errorCount++;
               continue;
             }
@@ -2975,14 +2707,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
             const shiftAssignments = assignmentsByShiftId.get(shift.id) || [];
             for (const assignment of shiftAssignments) {
-              await supabase.from('shift_assignments').upsert({
-                tenant_id: currentTenantId,
-                shift_id: newShift.id,
-                user_id: assignment.user_id,
-                assigned_value: assignment.assigned_value,
-                status: 'assigned',
-                updated_by: user?.id,
-              }, { onConflict: 'shift_id,user_id' });
+              try {
+                await cloneAdminAssignmentToShift({
+                  tenantId: currentTenantId,
+                  targetShiftId: newShiftId,
+                  sourceAssignment: assignment,
+                  updatedBy: user?.id,
+                });
+              } catch {
+                errorCount++;
+              }
             }
           }
         }
@@ -3032,44 +2766,45 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Check if there's already an assignment (to determine if this is an add or update)
     const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
     
-    const { error } = await supabase.from('shift_assignments').upsert({
-      tenant_id: currentTenantId,
-      shift_id: selectedShift.id,
-      user_id: assignData.user_id,
-      assigned_value: assignedValue,
-      updated_by: user?.id,
-    }, { onConflict: 'shift_id,user_id' });
-
-    if (error) {
+    try {
+      await upsertAdminAssignment({
+        tenantId: currentTenantId,
+        shiftId: selectedShift.id,
+        userId: assignData.user_id,
+        assignedValue,
+        updatedBy: user?.id,
+      });
+    } catch (error: any) {
       if (error.code === '23505') {
         notifyWarning('Usuário já atribuído', 'Usuário já atribuído a este plantão.');
       } else {
         notifyError('atribuir plantonista', error, 'Não foi possível atribuir o plantonista.');
       }
-    } else {
-      // Record the movement if this is a new assignment (not an update) and schedule is finalized
-      if (!existingAssignment && user?.id) {
-        const assignedMember = members.find(m => m.user_id === assignData.user_id);
-        const shiftDate = parseISO(selectedShift.shift_date);
-        await recordScheduleMovement({
-          tenant_id: currentTenantId,
-          month: shiftDate.getMonth() + 1,
-          year: shiftDate.getFullYear(),
-          user_id: assignData.user_id,
-          user_name: assignedMember?.profile?.name || 'Desconhecido',
-          movement_type: 'added',
-          destination_sector_id: selectedShift.sector_id || null,
-          destination_sector_name: getSectorName(selectedShift.sector_id, selectedShift.hospital),
-          destination_shift_date: selectedShift.shift_date,
-          destination_shift_time: `${selectedShift.start_time.slice(0, 5)}-${selectedShift.end_time.slice(0, 5)}`,
-          performed_by: user.id,
-        });
-      }
-      notifySuccess('Atribuição de plantonista');
-      fetchData();
-      setAssignDialogOpen(false);
-      setAssignData({ user_id: '', assigned_value: '' });
+      return;
     }
+
+    // Record the movement if this is a new assignment (not an update) and schedule is finalized
+    if (!existingAssignment && user?.id) {
+      const assignedMember = members.find(m => m.user_id === assignData.user_id);
+      const shiftDate = parseISO(selectedShift.shift_date);
+      await recordScheduleMovement({
+        tenant_id: currentTenantId,
+        month: shiftDate.getMonth() + 1,
+        year: shiftDate.getFullYear(),
+        user_id: assignData.user_id,
+        user_name: assignedMember?.profile?.name || 'Desconhecido',
+        movement_type: 'added',
+        destination_sector_id: selectedShift.sector_id || null,
+        destination_sector_name: getSectorName(selectedShift.sector_id, selectedShift.hospital),
+        destination_shift_date: selectedShift.shift_date,
+        destination_shift_time: `${selectedShift.start_time.slice(0, 5)}-${selectedShift.end_time.slice(0, 5)}`,
+        performed_by: user.id,
+      });
+    }
+    notifySuccess('Atribuição de plantonista');
+    fetchData();
+    setAssignDialogOpen(false);
+    setAssignData({ user_id: '', assigned_value: '' });
   }
 
   async function handleRemoveAssignment(assignmentId: string, shiftId?: string) {
@@ -3080,31 +2815,33 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const relatedShift = shiftId ? shifts.find(s => s.id === shiftId) : 
       (assignmentToRemove ? shifts.find(s => s.id === assignmentToRemove.shift_id) : null);
     
-    const { error } = await supabase.from('shift_assignments').delete().eq('id', assignmentId);
-    if (error) {
+    try {
+      await deleteAdminAssignment(assignmentId);
+    } catch (error) {
       notifyError('remover plantonista', error, 'Não foi possível remover o plantonista do plantão.');
-    } else {
-      // Record the movement if schedule is finalized
-      if (assignmentToRemove && relatedShift && currentTenantId && user?.id) {
-        const shiftDate = parseISO(relatedShift.shift_date);
-        await recordScheduleMovement({
-          tenant_id: currentTenantId,
-          month: shiftDate.getMonth() + 1,
-          year: shiftDate.getFullYear(),
-          user_id: assignmentToRemove.user_id,
-          user_name: assignmentToRemove.profile?.name || 'Desconhecido',
-          movement_type: 'removed',
-          source_sector_id: relatedShift.sector_id || null,
-          source_sector_name: getSectorName(relatedShift.sector_id, relatedShift.hospital),
-          source_shift_date: relatedShift.shift_date,
-          source_shift_time: `${relatedShift.start_time.slice(0, 5)}-${relatedShift.end_time.slice(0, 5)}`,
-          source_assignment_id: assignmentId,
-          performed_by: user.id,
-        });
-      }
-      notifySuccess('Plantonista removido do plantão');
-      fetchData();
+      return;
     }
+
+    // Record the movement if schedule is finalized
+    if (assignmentToRemove && relatedShift && currentTenantId && user?.id) {
+      const shiftDate = parseISO(relatedShift.shift_date);
+      await recordScheduleMovement({
+        tenant_id: currentTenantId,
+        month: shiftDate.getMonth() + 1,
+        year: shiftDate.getFullYear(),
+        user_id: assignmentToRemove.user_id,
+        user_name: assignmentToRemove.profile?.name || 'Desconhecido',
+        movement_type: 'removed',
+        source_sector_id: relatedShift.sector_id || null,
+        source_sector_name: getSectorName(relatedShift.sector_id, relatedShift.hospital),
+        source_shift_date: relatedShift.shift_date,
+        source_shift_time: `${relatedShift.start_time.slice(0, 5)}-${relatedShift.end_time.slice(0, 5)}`,
+        source_assignment_id: assignmentId,
+        performed_by: user.id,
+      });
+    }
+    notifySuccess('Plantonista removido do plantão');
+    fetchData();
   }
 
   async function handleTransferAssignment() {
@@ -3157,33 +2894,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               applyProRata: true,
             });
 
-      const { data: inserted, error: insertError } = await supabase
-        .from('shift_assignments')
-        .upsert(
-          {
-            tenant_id: currentTenantId,
-            shift_id: targetShift.id,
-            user_id: userId,
-            assigned_value: assignedValueForTarget,
-            updated_by: user.id,
-          },
-          { onConflict: 'shift_id,user_id' }
-        )
-        .select('id')
-        .single();
-
-      if (insertError || !inserted?.id) throw insertError || new Error('Falha ao criar atribuição no destino');
-
-      const { data: deletedRows, error: deleteError } = await supabase
-        .from('shift_assignments')
-        .delete()
-        .eq('id', transferAssignment.id)
-        .select('id');
-
-      if (deleteError) throw deleteError;
-      if (!deletedRows || deletedRows.length === 0) {
-        throw new Error('Não foi possível remover a atribuição de origem.');
-      }
+      const { insertedId } = await transferAdminAssignment({
+        tenantId: currentTenantId,
+        sourceAssignmentId: transferAssignment.id,
+        targetShiftId: targetShift.id,
+        userId,
+        assignedValue: assignedValueForTarget,
+        updatedBy: user.id,
+      });
 
       const userName = getAssignmentName(transferAssignment);
       const shiftDate = parseISO(transferSourceShift.shift_date);
@@ -3203,7 +2921,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         destination_sector_name: getSectorName(targetShift.sector_id, targetShift.hospital),
         destination_shift_date: targetShift.shift_date,
         destination_shift_time: `${targetShift.start_time.slice(0, 5)}-${targetShift.end_time.slice(0, 5)}`,
-        destination_assignment_id: inserted.id,
+        destination_assignment_id: insertedId,
         reason: 'Transferência manual entre setores (admin)',
         performed_by: user.id,
       });
@@ -3227,49 +2945,31 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!currentTenantId || !user?.id) return;
 
     try {
-      // Create assignment for the offered plantonista
-      const { error: assignError } = await supabase.from('shift_assignments').upsert({
-        tenant_id: currentTenantId,
-        shift_id: offer.shift_id,
-        user_id: offer.user_id,
-        // Keep null so the value is always derived consistently (individual/base/sector) with pro-rata.
-        assigned_value: null,
-        updated_by: user.id,
-      }, { onConflict: 'shift_id,user_id' });
-
-      if (assignError) {
+      try {
+        await upsertAdminAssignment({
+          tenantId: currentTenantId,
+          shiftId: offer.shift_id,
+          userId: offer.user_id,
+          assignedValue: null,
+          updatedBy: user.id,
+        });
+      } catch (assignError) {
         notifyError('aceitar oferta', assignError, 'Não foi possível aceitar a oferta.');
         return;
       }
 
-      // Update this offer to accepted
-      await supabase
-        .from('shift_offers')
-        .update({ 
-          status: 'accepted', 
-          reviewed_by: user.id, 
-          reviewed_at: new Date().toISOString() 
-        })
-        .eq('id', offer.id);
-
-      // Reject other pending offers for this shift
-      await supabase
-        .from('shift_offers')
-        .update({ 
-          status: 'rejected', 
-          reviewed_by: user.id, 
-          reviewed_at: new Date().toISOString() 
-        })
-        .eq('shift_id', offer.shift_id)
-        .eq('status', 'pending')
-        .neq('id', offer.id);
+      await acceptAdminShiftOffer({
+        offerId: offer.id,
+        shiftId: offer.shift_id,
+        reviewerId: user.id,
+      });
 
       // Remove [DISPONÍVEL] from shift notes
       const updatedNotes = stripShiftStatusTags(shift.notes);
-      await supabase
-        .from('shifts')
-        .update({ notes: updatedNotes || null, updated_by: user.id })
-        .eq('id', shift.id);
+      await updateAdminShiftById(shift.id, {
+        notes: updatedNotes || null,
+        updated_by: user.id,
+      });
 
       notifySuccess('Oferta aceita', `${getOfferName(offer)} foi atribuído ao plantão.`);
       fetchData();
@@ -3282,21 +2982,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleRejectOffer(offerId: string) {
     if (!user?.id) return;
 
-    const { error } = await supabase
-      .from('shift_offers')
-      .update({ 
-        status: 'rejected', 
-        reviewed_by: user.id, 
-        reviewed_at: new Date().toISOString() 
-      })
-      .eq('id', offerId);
-
-    if (error) {
+    try {
+      await rejectAdminShiftOffer({
+        offerId,
+        reviewerId: user.id,
+      });
+    } catch (error) {
       notifyError('rejeitar oferta', error, 'Não foi possível rejeitar a oferta.');
-    } else {
-      notifySuccess('Oferta rejeitada');
-      fetchData();
+      return;
     }
+
+    notifySuccess('Oferta rejeitada');
+    fetchData();
   }
 
   const [recalculateLoading, setRecalculateLoading] = useState(false);
@@ -3392,17 +3089,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         debugInfo.push(`${assignment.user_id.slice(0, 8)}: ${source} -> assigned_value = null`);
 
         // Update the assignment
-        const { error } = await supabase
-          .from('shift_assignments')
-          .update({ 
-            assigned_value: null,
-            updated_by: user.id 
-          })
-          .eq('id', assignment.id);
-
-        if (!error) {
+        try {
+          await updateAdminAssignmentValue({
+            assignmentId: assignment.id,
+            assignedValue: null,
+            updatedBy: user.id,
+          });
           updatedCount++;
-        } else {
+        } catch (error) {
           console.error('Error updating assignment:', assignment.id, error);
         }
       }
@@ -3558,6 +3252,39 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setShiftDialogOpen(true);
   }
 
+  function openQuickValueEdit(shift: Shift) {
+    setFocusBaseValueOnEdit(true);
+    openEditShift(shift);
+  }
+
+  function openSectorValuesFromCalendar() {
+    if (filterSector === 'all') {
+      notifyWarning('Selecione um setor', 'Escolha um setor específico para configurar valores.');
+      return;
+    }
+    const sector = sectors.find((s) => s.id === filterSector) || null;
+    if (!sector) {
+      notifyWarning('Setor não encontrado', 'Não foi possível localizar o setor selecionado.');
+      return;
+    }
+    setSelectedSectorForValues(sector);
+    setValuesDialogOpen(true);
+  }
+
+  function openUserValuesFromCalendar() {
+    if (filterSector === 'all') {
+      notifyWarning('Selecione um setor', 'Escolha um setor específico para configurar valores individuais.');
+      return;
+    }
+    const sector = sectors.find((s) => s.id === filterSector) || null;
+    if (!sector) {
+      notifyWarning('Setor não encontrado', 'Não foi possível localizar o setor selecionado.');
+      return;
+    }
+    setSelectedSectorForUserValues(sector);
+    setUserValuesDialogOpen(true);
+  }
+
   function closeShiftDialog() {
     // Guard against immediate reopen caused by click-through/focus restore quirks.
     // Common culprit: user submits with Enter, dialog closes, focus returns to the trigger,
@@ -3583,6 +3310,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }, 800);
 
     setShiftDialogOpen(false);
+    setFocusBaseValueOnEdit(false);
     setEditingShift(null);
     setMultiShifts([]);
     setFormData({
@@ -3603,6 +3331,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       use_sector_default: true,
     });
   }
+
+  useEffect(() => {
+    if (!shiftDialogOpen || !focusBaseValueOnEdit) return;
+    const timeoutId = window.setTimeout(() => {
+      const baseValueInput = document.getElementById('base_value') as HTMLInputElement | null;
+      if (!baseValueInput) return;
+      baseValueInput.focus();
+      baseValueInput.select();
+    }, 80);
+    return () => window.clearTimeout(timeoutId);
+  }, [shiftDialogOpen, focusBaseValueOnEdit, editingShift?.id]);
 
   function closeBulkEditDialog() {
     // The bulk edit dialog is typically opened from a button in the day dialog.
@@ -3647,37 +3386,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (dayShifts.length === 0) return;
 
     setBulkEditShifts(dayShifts);
-    setBulkEditData(
-      dayShifts.map((shift) => {
-        const currentAssignment = assignments.find((a) => a.shift_id === shift.id);
-        return {
-          id: shift.id,
-          hospital: shift.hospital,
-          location: shift.location || '',
-          start_time: shift.start_time.slice(0, 5),
-          end_time: shift.end_time.slice(0, 5),
-          base_value: formatMoneyInput(shift.base_value),
-          notes: shift.notes || '',
-          sector_id: shift.sector_id || '',
-          // Keep assignee unchanged unless admin explicitly chooses a new value.
-          assigned_user_id: '__keep__',
-        };
-      })
-    );
+    setBulkEditData(createBulkEditDrafts(dayShifts, formatMoneyInput));
     setBulkEditDialogOpen(true);
   }
   async function handleBulkApplySave(e: React.FormEvent) {
     e.preventDefault();
     if (!user?.id || !currentTenantId) return;
 
-    const hasAnyChange =
-      bulkApplyData.title.trim() ||
-      bulkApplyData.start_time ||
-      bulkApplyData.end_time ||
-      bulkApplyData.base_value.trim() ||
-      bulkApplyData.assigned_user_id;
-
-    if (!hasAnyChange) {
+    if (!hasBulkApplyChanges(bulkApplyData)) {
       notifyWarning('Nada para aplicar', 'Preencha ao menos um campo para aplicar aos selecionados.');
       return;
     }
@@ -3687,31 +3403,24 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     try {
       const hasRawValue = !!bulkApplyData.base_value.trim();
+      const { selected: selectedBulkShifts, byId: selectedBulkShiftMap } = collectBulkApplyTargetShifts(shiftIds, shifts);
 
-      const shiftUpdate: Partial<Pick<Shift, 'title' | 'start_time' | 'end_time'>> & { updated_by: string } = {
-        updated_by: user.id,
-      };
-
-      if (bulkApplyData.title.trim()) shiftUpdate.title = bulkApplyData.title.trim();
-      if (bulkApplyData.start_time) shiftUpdate.start_time = bulkApplyData.start_time;
-      if (bulkApplyData.end_time) shiftUpdate.end_time = bulkApplyData.end_time;
+      const shiftUpdate = buildBulkShiftUpdatePayload(bulkApplyData, user.id);
       const needsShiftUpdate = Object.keys(shiftUpdate).length > 1;
 
       if (needsShiftUpdate && !hasRawValue) {
         // When there's no value to calculate, we can safely update in bulk.
-        const { error } = await supabase.from('shifts').update(shiftUpdate).in('id', shiftIds);
-        if (error) throw error;
+        await updateAdminShiftsByIds(shiftIds, shiftUpdate);
       }
 
       if (hasRawValue) {
         // Value needs pro-rata calculation per shift (6h/12h/24h), so update per-row.
         await Promise.all(
           shiftIds.map(async (shiftId) => {
-            const s = shifts.find((x) => x.id === shiftId);
+            const s = selectedBulkShiftMap.get(shiftId);
             if (!s) return;
 
-            const start_time = bulkApplyData.start_time || s.start_time.slice(0, 5);
-            const end_time = bulkApplyData.end_time || s.end_time.slice(0, 5);
+            const { start_time, end_time } = getBulkApplyEffectiveTimes(bulkApplyData, s);
 
             const base_value = resolveValue({
               raw: bulkApplyData.base_value,
@@ -3727,21 +3436,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               base_value,
             };
 
-            const { error } = await supabase.from('shifts').update(payload).eq('id', shiftId);
-            if (error) throw error;
+            await updateAdminShiftById(shiftId, payload);
           })
         );
       }
 
-      // Assignment (plantonista) update
+        // Assignment (plantonista) update
       if (bulkApplyData.assigned_user_id) {
         if (bulkApplyData.assigned_user_id === '__clear__') {
-          const { error } = await supabase.from('shift_assignments').delete().in('shift_id', shiftIds);
-          if (error) throw error;
+          await deleteAdminAssignmentsByShiftIds(shiftIds);
         } else {
-          const invalidShift = shiftIds
-            .map((shiftId) => shifts.find((x) => x.id === shiftId))
-            .find((s) => s && !isUserAllowedInSector(bulkApplyData.assigned_user_id, s.sector_id || null));
+          const invalidShift = findInvalidBulkAssigneeShift(
+            selectedBulkShifts,
+            bulkApplyData.assigned_user_id,
+            isUserAllowedInSector,
+          );
 
           if (invalidShift) {
             throw new Error('Selecione um plantonista que pertença ao setor de todos os plantões selecionados.');
@@ -3749,11 +3458,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           await Promise.all(
             shiftIds.map(async (shiftId) => {
-              const s = shifts.find((x) => x.id === shiftId);
+              const s = selectedBulkShiftMap.get(shiftId);
               if (!s) return;
 
-              const start_time = bulkApplyData.start_time || s.start_time.slice(0, 5);
-              const end_time = bulkApplyData.end_time || s.end_time.slice(0, 5);
+              const { start_time, end_time } = getBulkApplyEffectiveTimes(bulkApplyData, s);
 
               // To avoid unique constraint issues (shift_id,user_id), treat bulk-apply assignee as a replace:
               // 1) remove existing assignees for the shift
@@ -3771,24 +3479,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   })
                 : undefined;
 
-              const { error: delErr } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('shift_id', shiftId);
-              if (delErr) throw delErr;
-
-              const upsertPayload: any = {
-                tenant_id: currentTenantId,
-                shift_id: shiftId,
-                user_id: bulkApplyData.assigned_user_id,
-                assigned_value: valueToApplyFinal ?? null,
-                updated_by: user.id,
-              };
-
-              const { error: upErr } = await supabase
-                .from('shift_assignments')
-                .insert(upsertPayload);
-              if (upErr) throw upErr;
+              await deleteAdminAssignmentsByShiftIds([shiftId]);
+              await upsertAdminAssignment({
+                tenantId: currentTenantId,
+                shiftId,
+                userId: bulkApplyData.assigned_user_id,
+                assignedValue: valueToApplyFinal ?? null,
+                updatedBy: user.id,
+              });
             })
           );
         }
@@ -3808,6 +3506,125 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }
 
+  async function applyBulkEditAssignment(params: {
+    editData: BulkEditShiftData;
+    originalShift: Shift;
+    assignmentChoice: string;
+    assignmentMode: ReturnType<typeof getBulkEditAssignmentMode>;
+  }) {
+    const { editData, originalShift, assignmentChoice, assignmentMode } = params;
+    const currentAssignment = assignments.find((a) => a.shift_id === editData.id);
+
+    if (assignmentMode === 'keep') return;
+
+    if (assignmentMode === 'user') {
+      const assignedValue = resolveValue({
+        raw: editData.base_value,
+        sector_id: editData.sector_id || null,
+        start_time: editData.start_time,
+        end_time: editData.end_time,
+        user_id: assignmentChoice,
+        useSectorDefault: false,
+        applyProRata: true,
+      });
+
+      if (currentAssignment) {
+        if (currentAssignment.user_id === assignmentChoice) {
+          await updateAdminAssignmentValue({
+            assignmentId: currentAssignment.id,
+            assignedValue,
+            updatedBy: user!.id,
+          });
+        } else {
+          const oldUserName = getAssignmentName(currentAssignment);
+          const newUserMember = members.find((m) => m.user_id === assignmentChoice);
+          const newUserName = newUserMember?.profile?.name || 'Desconhecido';
+          const sourceSectorName = getSectorName(originalShift.sector_id, originalShift.hospital);
+
+          await upsertAdminAssignment({
+            tenantId: currentTenantId!,
+            shiftId: editData.id,
+            userId: assignmentChoice,
+            assignedValue,
+            updatedBy: user!.id,
+          });
+
+          await deleteAdminAssignment(currentAssignment.id);
+
+          await recordScheduleMovement(
+            buildBulkEditRemovedMovement({
+              tenantId: currentTenantId!,
+              userId: currentAssignment.user_id,
+              userName: oldUserName,
+              assignmentId: currentAssignment.id,
+              performedBy: user!.id,
+              source: originalShift,
+              sourceSectorName,
+              reason: `Substituído por ${newUserName}`,
+            }),
+          );
+
+          await recordScheduleMovement(
+            buildBulkEditAddedMovement({
+              tenantId: currentTenantId!,
+              userId: assignmentChoice,
+              userName: newUserName,
+              performedBy: user!.id,
+              destination: originalShift,
+              destinationSectorName: sourceSectorName,
+              reason: `Substituiu ${oldUserName}`,
+            }),
+          );
+        }
+      } else {
+        const newUserMember = members.find((m) => m.user_id === assignmentChoice);
+
+        await upsertAdminAssignment({
+          tenantId: currentTenantId!,
+          shiftId: editData.id,
+          userId: assignmentChoice,
+          assignedValue,
+          updatedBy: user!.id,
+        });
+
+        await recordScheduleMovement(
+          buildBulkEditAddedMovement({
+            tenantId: currentTenantId!,
+            userId: assignmentChoice,
+            userName: newUserMember?.profile?.name || 'Desconhecido',
+            performedBy: user!.id,
+            destination: originalShift,
+            destinationSectorName: getSectorName(originalShift.sector_id, originalShift.hospital),
+          }),
+        );
+      }
+
+      const cleanedNotes = stripShiftStatusTags(editData.notes);
+      await updateAdminShiftById(editData.id, { notes: cleanedNotes || null });
+      return;
+    }
+
+    if (currentAssignment) {
+      await recordScheduleMovement(
+        buildBulkEditRemovedMovement({
+          tenantId: currentTenantId!,
+          userId: currentAssignment.user_id,
+          userName: getAssignmentName(currentAssignment),
+          assignmentId: currentAssignment.id,
+          performedBy: user!.id,
+          source: originalShift,
+          sourceSectorName: getSectorName(originalShift.sector_id, originalShift.hospital),
+        }),
+      );
+
+      await deleteAdminAssignment(currentAssignment.id);
+    }
+
+    const statusChoice = assignmentMode === 'available' ? 'disponivel' : 'vago';
+    const newNotes = buildBulkEditStatusNotes(stripShiftStatusTags(editData.notes), statusChoice);
+    await updateAdminShiftById(editData.id, { notes: newNotes || null });
+  }
+
   async function handleBulkEditSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user?.id || !currentTenantId || bulkEditSaving) return;
@@ -3820,12 +3637,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       for (const editData of bulkEditData) {
         const originalShift = bulkEditShifts.find(s => s.id === editData.id);
         if (!originalShift) continue;
-        const assignmentChoice = editData.assigned_user_id || '__keep__';
+        const assignmentChoice = normalizeBulkEditAssignmentChoice(editData.assigned_user_id);
+        const assignmentMode = getBulkEditAssignmentMode(assignmentChoice);
 
         if (
-          assignmentChoice !== '__keep__' &&
-          assignmentChoice !== 'vago' &&
-          assignmentChoice !== 'disponivel' &&
+          assignmentMode === 'user' &&
           !isUserAllowedInSector(assignmentChoice, editData.sector_id || null)
         ) {
           notifyWarning(
@@ -3837,29 +3653,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
 
         // Update the shift
-        const { error: shiftError } = await supabase
-          .from('shifts')
-          .update({
-            hospital: editData.hospital,
-            location: editData.location || null,
-            start_time: editData.start_time,
-            end_time: editData.end_time,
-            base_value: resolveValue({
+        try {
+          const resolvedBaseValue = resolveValue({
               raw: editData.base_value,
               sector_id: editData.sector_id || null,
               start_time: editData.start_time,
               end_time: editData.end_time,
               useSectorDefault: false,
               applyProRata: true,
-            }),
-            notes: editData.notes || null,
-            sector_id: editData.sector_id || null,
-            title: generateShiftTitle(editData.start_time, editData.end_time),
-            updated_by: user.id,
-          })
-          .eq('id', editData.id);
+            });
 
-        if (shiftError) {
+          await updateAdminShiftById(
+            editData.id,
+            buildBulkEditShiftPayload({
+              data: editData,
+              updatedBy: user.id,
+              title: generateShiftTitle(editData.start_time, editData.end_time),
+              resolvedBaseValue,
+            }),
+          );
+        } catch (shiftError) {
           console.error('Error updating shift:', shiftError);
           errorCount++;
           continue;
@@ -3867,197 +3680,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         // Handle assignment changes
         try {
-          const currentAssignment = assignments.find(a => a.shift_id === editData.id);
-
-          if (assignmentChoice === '__keep__') {
-            // Keep current assignment status untouched.
-          } else if (assignmentChoice !== 'vago' && assignmentChoice !== 'disponivel') {
-            const assignedValue = resolveValue({
-              raw: editData.base_value,
-              sector_id: editData.sector_id || null,
-              start_time: editData.start_time,
-              end_time: editData.end_time,
-              user_id: assignmentChoice,
-              useSectorDefault: false,
-              applyProRata: true,
-            });
-
-            if (currentAssignment) {
-              if (currentAssignment.user_id === assignmentChoice) {
-                // Same user - just update value
-                const { error: updErr } = await supabase
-                  .from('shift_assignments')
-                  .update({ assigned_value: assignedValue, updated_by: user.id })
-                  .eq('id', currentAssignment.id);
-                if (updErr) throw updErr;
-              } else {
-                // Different user - this is a SUBSTITUTION (not a transfer)
-                // The old user is REMOVED, the new user is ADDED
-                const oldUserName = getAssignmentName(currentAssignment);
-                const newUserMember = members.find(m => m.user_id === assignmentChoice);
-                const newUserName = newUserMember?.profile?.name || 'Desconhecido';
-                
-                const { error: upErr } = await supabase
-                  .from('shift_assignments')
-                  .insert(
-                    {
-                      tenant_id: currentTenantId,
-                      shift_id: editData.id,
-                      user_id: assignmentChoice,
-                      assigned_value: assignedValue,
-                      updated_by: user.id,
-                    }
-                  );
-                if (upErr) throw upErr;
-
-                const { error: delErr } = await supabase
-                  .from('shift_assignments')
-                  .delete()
-                  .eq('id', currentAssignment.id);
-                if (delErr) throw delErr;
-
-                // Record the REMOVAL of the old user (substitution means they're out, not transferred)
-                const shiftDate = parseISO(originalShift.shift_date);
-                await recordScheduleMovement({
-                  tenant_id: currentTenantId,
-                  month: shiftDate.getMonth() + 1,
-                  year: shiftDate.getFullYear(),
-                  user_id: currentAssignment.user_id,
-                  user_name: oldUserName,
-                  movement_type: 'removed',
-                  source_sector_id: originalShift.sector_id || null,
-                  source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
-                  source_shift_date: originalShift.shift_date,
-                  source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
-                  source_assignment_id: currentAssignment.id,
-                  reason: `Substituído por ${newUserName}`,
-                  performed_by: user.id,
-                });
-
-                // Record the ADDITION of the new user
-                await recordScheduleMovement({
-                  tenant_id: currentTenantId,
-                  month: shiftDate.getMonth() + 1,
-                  year: shiftDate.getFullYear(),
-                  user_id: assignmentChoice,
-                  user_name: newUserName,
-                  movement_type: 'added',
-                  destination_sector_id: originalShift.sector_id || null,
-                  destination_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
-                  destination_shift_date: originalShift.shift_date,
-                  destination_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
-                  reason: `Substituiu ${oldUserName}`,
-                  performed_by: user.id,
-                });
-              }
-            } else {
-              // No previous assignment - this is an ADD
-              const { error: upErr } = await supabase
-                .from('shift_assignments')
-                .insert(
-                  {
-                    tenant_id: currentTenantId,
-                    shift_id: editData.id,
-                    user_id: assignmentChoice,
-                    assigned_value: assignedValue,
-                    updated_by: user.id,
-                  }
-                );
-              if (upErr) throw upErr;
-
-              // Record the addition
-              const newUserMember = members.find(m => m.user_id === assignmentChoice);
-              const shiftDate = parseISO(originalShift.shift_date);
-              await recordScheduleMovement({
-                tenant_id: currentTenantId,
-                month: shiftDate.getMonth() + 1,
-                year: shiftDate.getFullYear(),
-                user_id: assignmentChoice,
-                user_name: newUserMember?.profile?.name || 'Desconhecido',
-                movement_type: 'added',
-                destination_sector_id: originalShift.sector_id || null,
-                destination_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
-                destination_shift_date: originalShift.shift_date,
-                destination_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
-                performed_by: user.id,
-              });
-            }
-
-            const cleanedNotes = stripShiftStatusTags(editData.notes);
-            const { error: noteErr } = await supabase
-              .from('shifts')
-              .update({ notes: cleanedNotes || null })
-              .eq('id', editData.id);
-            if (noteErr) throw noteErr;
-          } else if (assignmentChoice === 'disponivel') {
-            // Make available - remove assignment if exists
-            if (currentAssignment) {
-              // Record the removal before deleting
-              const shiftDate = parseISO(originalShift.shift_date);
-              await recordScheduleMovement({
-                tenant_id: currentTenantId,
-                month: shiftDate.getMonth() + 1,
-                year: shiftDate.getFullYear(),
-                user_id: currentAssignment.user_id,
-                user_name: getAssignmentName(currentAssignment),
-                movement_type: 'removed',
-                source_sector_id: originalShift.sector_id || null,
-                source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
-                source_shift_date: originalShift.shift_date,
-                source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
-                source_assignment_id: currentAssignment.id,
-                performed_by: user.id,
-              });
-
-              const { error: delErr } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('id', currentAssignment.id);
-              if (delErr) throw delErr;
-            }
-
-            // Add [DISPONÍVEL] tag
-            const newNotes = `[DISPONÍVEL] ${stripShiftStatusTags(editData.notes)}`.trim();
-
-            const { error: noteErr } = await supabase
-              .from('shifts')
-              .update({ notes: newNotes })
-              .eq('id', editData.id);
-            if (noteErr) throw noteErr;
-          } else {
-            // Vago - remove assignment if exists
-            if (currentAssignment) {
-              // Record the removal before deleting
-              const shiftDate = parseISO(originalShift.shift_date);
-              await recordScheduleMovement({
-                tenant_id: currentTenantId,
-                month: shiftDate.getMonth() + 1,
-                year: shiftDate.getFullYear(),
-                user_id: currentAssignment.user_id,
-                user_name: getAssignmentName(currentAssignment),
-                movement_type: 'removed',
-                source_sector_id: originalShift.sector_id || null,
-                source_sector_name: getSectorName(originalShift.sector_id, originalShift.hospital),
-                source_shift_date: originalShift.shift_date,
-                source_shift_time: `${originalShift.start_time.slice(0, 5)}-${originalShift.end_time.slice(0, 5)}`,
-                source_assignment_id: currentAssignment.id,
-                performed_by: user.id,
-              });
-
-              const { error: delErr } = await supabase
-                .from('shift_assignments')
-                .delete()
-                .eq('id', currentAssignment.id);
-              if (delErr) throw delErr;
-            }
-
-            const newNotes = `[VAGO] ${stripShiftStatusTags(editData.notes)}`.trim();
-            const { error: noteErr } = await supabase
-              .from('shifts')
-              .update({ notes: newNotes || null })
-              .eq('id', editData.id);
-            if (noteErr) throw noteErr;
-          }
+          await applyBulkEditAssignment({
+            editData,
+            originalShift,
+            assignmentChoice,
+            assignmentMode,
+          });
         } catch (assignmentError: any) {
           const errorMessage = formatSupabaseError(assignmentError);
           console.error('[ShiftCalendar] bulk edit assignment failed:', assignmentError, errorMessage);
@@ -4181,6 +3809,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             openDayView(day, options?.sectorContextId, shift.id);
                           }}
                         >
+                          <div className="mb-1 flex items-center justify-between gap-1">
+                            <button
+                              type="button"
+                              className="rounded border border-border/70 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-background"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openQuickValueEdit(shift);
+                              }}
+                            >
+                              Ajustar valor
+                            </button>
+                            <span className="text-[10px] font-semibold text-foreground">
+                              R$ {(getShiftDisplayValue(shift) ?? 0).toFixed(2)}
+                            </span>
+                          </div>
                           {showSectorName && (
                             <div className="flex items-center gap-1">
                               {isNight ? (
@@ -4798,23 +4441,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
 
     const [resolvedById, plantonistaProfileId] = await Promise.all([
-      resolveExistingProfileId(user.id),
-      resolveExistingProfileId(pendingAcknowledgeConflict.userId),
+      resolveAdminProfileId(user.id),
+      resolveAdminProfileId(pendingAcknowledgeConflict.userId),
     ]);
 
-    // Save to conflict_resolutions table
-    const { error } = await supabase.from('conflict_resolutions').insert({
-      tenant_id: currentTenantId,
-      conflict_date: pendingAcknowledgeConflict.date,
-      plantonista_id: plantonistaProfileId,
-      plantonista_name: pendingAcknowledgeConflict.userName,
-      resolution_type: 'acknowledged',
-      justification: justificationText.trim(),
-      conflict_details: pendingAcknowledgeConflict.shifts,
-      resolved_by: resolvedById,
-    });
-
-    if (error) {
+    try {
+      await createAdminConflictResolution({
+        tenant_id: currentTenantId,
+        conflict_date: pendingAcknowledgeConflict.date,
+        plantonista_id: plantonistaProfileId,
+        plantonista_name: pendingAcknowledgeConflict.userName,
+        resolution_type: 'acknowledged',
+        justification: justificationText.trim(),
+        conflict_details: pendingAcknowledgeConflict.shifts,
+        resolved_by: resolvedById,
+      });
+    } catch (error) {
       notifyError('salvar resolução de conflito', error, 'Não foi possível salvar a resolução.');
       return;
     }
@@ -4845,40 +4487,39 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     
     const { conflict, assignmentToRemove, assignmentToKeep } = pendingRemoval;
     const [resolvedById, plantonistaProfileId] = await Promise.all([
-      resolveExistingProfileId(user.id),
-      resolveExistingProfileId(conflict.userId),
+      resolveAdminProfileId(user.id),
+      resolveAdminProfileId(conflict.userId),
     ]);
 
     // Delete the assignment
-    const { error: deleteError } = await supabase
-      .from('shift_assignments')
-      .delete()
-      .eq('id', assignmentToRemove.assignmentId);
-
-    if (deleteError) {
+    try {
+      await deleteAdminAssignment(assignmentToRemove.assignmentId);
+    } catch (deleteError) {
       notifyError('remover atribuição', deleteError, 'Não foi possível remover a atribuição.');
       return;
     }
 
-    // Save to conflict_resolutions table
-    const { error: insertError } = await supabase.from('conflict_resolutions').insert({
-      tenant_id: currentTenantId,
-      conflict_date: conflict.date,
-      plantonista_id: plantonistaProfileId,
-      plantonista_name: conflict.userName,
-      resolution_type: 'removed',
-      removed_sector_name: assignmentToRemove.sectorName,
-      removed_shift_time: `${assignmentToRemove.startTime.slice(0,5)} - ${assignmentToRemove.endTime.slice(0,5)}`,
-      removed_assignment_id: assignmentToRemove.assignmentId,
-      kept_sector_name: assignmentToKeep.sectorName,
-      kept_shift_time: `${assignmentToKeep.startTime.slice(0,5)} - ${assignmentToKeep.endTime.slice(0,5)}`,
-      kept_assignment_id: assignmentToKeep.assignmentId,
-      conflict_details: conflict.shifts,
-      resolved_by: resolvedById,
-    });
-
-    const historySaved = !insertError;
-    if (insertError) console.error('Erro ao registrar resolução:', insertError);
+    let historySaved = true;
+    try {
+      await createAdminConflictResolution({
+        tenant_id: currentTenantId,
+        conflict_date: conflict.date,
+        plantonista_id: plantonistaProfileId,
+        plantonista_name: conflict.userName,
+        resolution_type: 'removed',
+        removed_sector_name: assignmentToRemove.sectorName,
+        removed_shift_time: `${assignmentToRemove.startTime.slice(0,5)} - ${assignmentToRemove.endTime.slice(0,5)}`,
+        removed_assignment_id: assignmentToRemove.assignmentId,
+        kept_sector_name: assignmentToKeep.sectorName,
+        kept_shift_time: `${assignmentToKeep.startTime.slice(0,5)} - ${assignmentToKeep.endTime.slice(0,5)}`,
+        kept_assignment_id: assignmentToKeep.assignmentId,
+        conflict_details: conflict.shifts,
+        resolved_by: resolvedById,
+      });
+    } catch (insertError) {
+      historySaved = false;
+      console.error('Erro ao registrar resolução:', insertError);
+    }
 
     setRemoveConfirmDialogOpen(false);
     setPendingRemoval(null);
@@ -4897,18 +4538,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function fetchConflictHistory() {
     if (!currentTenantId) return;
     setLoadingHistory(true);
-    
-    const { data, error } = await supabase
-      .from('conflict_resolutions')
-      .select('*, resolved_by_profile:profiles!conflict_resolutions_resolved_by_fkey(full_name, name)')
-      .eq('tenant_id', currentTenantId)
-      .order('resolved_at', { ascending: false })
-      .limit(100);
-    
-    if (error) {
-      notifyError('carregar histórico', error, 'Não foi possível carregar o histórico de conflitos.');
-    } else {
+
+    try {
+      const data = await fetchAdminConflictHistory(currentTenantId);
       setConflictHistory(data || []);
+    } catch (error) {
+      notifyError('carregar histórico', error, 'Não foi possível carregar o histórico de conflitos.');
     }
     setLoadingHistory(false);
   }
@@ -4943,13 +4578,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!confirm(`Deseja excluir ${ids.length} evento(s) do histórico de conflitos?`)) return;
 
     setDeletingConflictHistory(true);
-    const { error } = await supabase
-      .from('conflict_resolutions')
-      .delete()
-      .eq('tenant_id', currentTenantId)
-      .in('id', ids);
-
-    if (error) {
+    try {
+      await deleteAdminConflictHistoryByIds({
+        tenantId: currentTenantId,
+        ids,
+      });
+    } catch (error) {
       notifyError('excluir histórico', error, 'Não foi possível excluir os eventos selecionados.');
       setDeletingConflictHistory(false);
       return;
@@ -4967,12 +4601,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!confirm(`Deseja excluir TODO o histórico de conflitos (${conflictHistory.length} evento(s))?`)) return;
 
     setDeletingConflictHistory(true);
-    const { error } = await supabase
-      .from('conflict_resolutions')
-      .delete()
-      .eq('tenant_id', currentTenantId);
-
-    if (error) {
+    try {
+      await deleteAllAdminConflictHistory(currentTenantId);
+    } catch (error) {
       notifyError('limpar histórico', error, 'Não foi possível limpar o histórico.');
       setDeletingConflictHistory(false);
       return;
@@ -4987,17 +4618,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleRemoveConflictAssignment(assignmentId: string) {
     if (!user?.id) return;
     
-    const { error } = await supabase
-      .from('shift_assignments')
-      .delete()
-      .eq('id', assignmentId);
-
-    if (error) {
+    try {
+      await deleteAdminAssignment(assignmentId);
+    } catch (error) {
       notifyError('remover atribuição', error, 'Não foi possível remover a atribuição.');
-    } else {
-      notifySuccess('Atribuição removida', 'O conflito foi resolvido.');
-      fetchData();
+      return;
     }
+
+    notifySuccess('Atribuição removida', 'O conflito foi resolvido.');
+    fetchData();
   }
 
   if (loading) {
@@ -5284,6 +4913,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     </Button>
 
                     <Button
+                      variant="outline"
+                      onClick={openSectorValuesFromCalendar}
+                      disabled={filterSector === 'all'}
+                      title={filterSector === 'all' ? 'Selecione um setor para editar valores' : 'Configurar valores padrão do setor'}
+                    >
+                      <DollarSign className="mr-2 h-4 w-4" />
+                      Valores do Setor
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      onClick={openUserValuesFromCalendar}
+                      disabled={filterSector === 'all'}
+                      title={filterSector === 'all' ? 'Selecione um setor para editar valores individuais' : 'Configurar valores individuais'}
+                    >
+                      <UserCog className="mr-2 h-4 w-4" />
+                      Valores Individuais
+                    </Button>
+
+                    <Button
                       variant="destructive"
                       onClick={handleDeleteCurrentScale}
                       disabled={deletingCurrentScale}
@@ -5436,6 +5085,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       </div>
 
       {/* Day Detail Dialog */}
+      <SectorValuesDialog
+        open={valuesDialogOpen}
+        onOpenChange={setValuesDialogOpen}
+        sector={selectedSectorForValues}
+        tenantId={currentTenantId || ''}
+        userId={user?.id}
+        onSuccess={fetchData}
+      />
+
+      <UserSectorValuesDialog
+        open={userValuesDialogOpen}
+        onOpenChange={setUserValuesDialogOpen}
+        sector={selectedSectorForUserValues}
+        tenantId={currentTenantId || ''}
+        userId={user?.id}
+        month={currentDate.getMonth() + 1}
+        year={currentDate.getFullYear()}
+        onSuccess={fetchData}
+      />
+
+      {/* Day Detail Dialog */}
       <Dialog
         open={dayDialogOpen}
         onOpenChange={(open) => {
@@ -5579,6 +5249,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             className="mt-1"
                           />
                           <div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="mb-2 h-7 px-2 text-xs"
+                              onClick={() => openQuickValueEdit(shift)}
+                            >
+                              Ajustar valor
+                            </Button>
                             <div className="flex items-center gap-2 mb-1">
                             {showSectorName && (
                               <Badge 

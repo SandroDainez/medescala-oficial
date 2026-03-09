@@ -128,14 +128,15 @@ export default function SectorValuesDialog({
         // 1) Update shifts base_value (by day/night with pro-rata)
         const { data: shifts, error: shiftsError } = await supabase
           .from('shifts')
-          .select('id, start_time, end_time')
+          .select('id, start_time, end_time, base_value')
           .eq('tenant_id', tenantId)
           .eq('sector_id', sector.id);
 
         if (shiftsError) throw shiftsError;
 
         if (shifts && shifts.length > 0) {
-          const shiftUpdates = shifts.map((s) => {
+          const shiftsToUpdate = shifts.filter((s: any) => s.base_value === null);
+          const shiftUpdates = shiftsToUpdate.map((s: any) => {
             const isNight = isNightShift(s.start_time);
             const baseValue = isNight ? nightVal : dayVal; // Base 12h value
             const duration = calculateDurationHours(s.start_time, s.end_time);
@@ -155,6 +156,7 @@ export default function SectorValuesDialog({
           .from('shift_assignments')
           .select(`
             id,
+            assigned_value,
             shift:shifts!inner(
               id,
               sector_id,
@@ -168,7 +170,9 @@ export default function SectorValuesDialog({
         if (fetchError) throw fetchError;
 
         if (assignments && assignments.length > 0) {
-          const updates = assignments.map(async (assignment) => {
+          // Preserve explicit manual values (including zero). Apply defaults only when value is truly undefined (null).
+          const assignmentsToUpdate = assignments.filter((assignment: any) => assignment.assigned_value === null);
+          const updates = assignmentsToUpdate.map(async (assignment: any) => {
             const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string; end_time: string };
             const isNight = isNightShift(shift.start_time);
             const baseValue = isNight ? nightVal : dayVal; // Base 12h value

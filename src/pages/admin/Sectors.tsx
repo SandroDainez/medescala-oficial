@@ -14,9 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
-import { Plus, Pencil, Trash2, Users, Building2, Calendar, DollarSign, UserCog, RefreshCw, MapPin, Clock, LocateFixed, ExternalLink } from 'lucide-react';
-import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
-import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
+import { Plus, Pencil, Trash2, Users, Building2, Calendar, RefreshCw, MapPin, Clock, LocateFixed, ExternalLink } from 'lucide-react';
 
 interface Sector {
   id: string;
@@ -77,20 +75,12 @@ export default function AdminSectors() {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
-  const [valuesDialogOpen, setValuesDialogOpen] = useState(false);
-  const [userValuesDialogOpen, setUserValuesDialogOpen] = useState(false);
   const [editingSector, setEditingSector] = useState<Sector | null>(null);
   const [selectedSector, setSelectedSector] = useState<Sector | null>(null);
-  const [selectedSectorForValues, setSelectedSectorForValues] = useState<Sector | null>(null);
-  const [selectedSectorForUserValues, setSelectedSectorForUserValues] = useState<Sector | null>(null);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
   const [selectedSectorForCheckin, setSelectedSectorForCheckin] = useState<Sector | null>(null);
   const [selectedConfigSectorId, setSelectedConfigSectorId] = useState<string>('');
-  
-  // Month/Year for individual values dialog
-  const [userValuesMonth, setUserValuesMonth] = useState<number>(new Date().getMonth() + 1);
-  const [userValuesYear, setUserValuesYear] = useState<number>(new Date().getFullYear());
   
   const [checkinSettings, setCheckinSettings] = useState({
     checkin_enabled: false,
@@ -319,16 +309,6 @@ export default function AdminSectors() {
     return sectorMemberships.filter(sm => sm.sector_id === sectorId).length;
   }
 
-  function openValuesDialog(sector: Sector) {
-    setSelectedSectorForValues(sector);
-    setValuesDialogOpen(true);
-  }
-
-  function openUserValuesDialog(sector: Sector) {
-    setSelectedSectorForUserValues(sector);
-    setUserValuesDialogOpen(true);
-  }
-
   function openCheckinDialog(sector: Sector) {
     setSelectedSectorForCheckin(sector);
     setCheckinSettings({
@@ -531,99 +511,8 @@ export default function AdminSectors() {
         </Card>
       </div>
 
-      {/* Dedicated cards for Values and GPS Check-ins */}
-      <div className="grid gap-5 lg:grid-cols-2">
-        <Card className="card-elevated border-border/60">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              Valores de Plantões
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Configure valores padrão e individuais por setor em um bloco dedicado.
-            </p>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Setor</Label>
-              <Select
-                value={selectedConfigSectorId}
-                onValueChange={setSelectedConfigSectorId}
-              >
-                <SelectTrigger className="h-10 w-full rounded-xl">
-                  <SelectValue placeholder="Selecione o setor" />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-border/70 p-2">
-                  {sectors.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                onClick={() => selectedConfigSector && openValuesDialog(selectedConfigSector)}
-                disabled={!selectedConfigSector}
-              >
-                <DollarSign className="mr-1 h-4 w-4" />
-                Valores Padrão
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => selectedConfigSector && openUserValuesDialog(selectedConfigSector)}
-                disabled={!selectedConfigSector}
-              >
-                <UserCog className="mr-1 h-4 w-4" />
-                Valores Individuais
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">Mês/Ano dos individuais:</span>
-              <Select
-                value={String(userValuesMonth)}
-                onValueChange={(value) => setUserValuesMonth(Number(value))}
-              >
-                <SelectTrigger className="h-8 w-[88px] rounded-lg text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-border/70 p-2">
-                  <SelectItem value="1">Jan</SelectItem>
-                  <SelectItem value="2">Fev</SelectItem>
-                  <SelectItem value="3">Mar</SelectItem>
-                  <SelectItem value="4">Abr</SelectItem>
-                  <SelectItem value="5">Mai</SelectItem>
-                  <SelectItem value="6">Jun</SelectItem>
-                  <SelectItem value="7">Jul</SelectItem>
-                  <SelectItem value="8">Ago</SelectItem>
-                  <SelectItem value="9">Set</SelectItem>
-                  <SelectItem value="10">Out</SelectItem>
-                  <SelectItem value="11">Nov</SelectItem>
-                  <SelectItem value="12">Dez</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select
-                value={String(userValuesYear)}
-                onValueChange={(value) => setUserValuesYear(Number(value))}
-              >
-                <SelectTrigger className="h-8 w-[92px] rounded-lg text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="rounded-xl border-border/70 p-2">
-                  {[new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1].map(y => (
-                    <SelectItem key={y} value={String(y)}>
-                      {y}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
+      {/* Dedicated card for GPS Check-ins */}
+      <div className="grid gap-5">
         <Card className="card-elevated border-border/60">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -895,28 +784,6 @@ export default function AdminSectors() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Sector Values Dialog */}
-      <SectorValuesDialog
-        open={valuesDialogOpen}
-        onOpenChange={setValuesDialogOpen}
-        sector={selectedSectorForValues}
-        tenantId={currentTenantId || ''}
-        userId={user?.id}
-        onSuccess={fetchData}
-      />
-
-      {/* Individual User Sector Values Dialog */}
-      <UserSectorValuesDialog
-        open={userValuesDialogOpen}
-        onOpenChange={setUserValuesDialogOpen}
-        sector={selectedSectorForUserValues}
-        tenantId={currentTenantId || ''}
-        userId={user?.id}
-        month={userValuesMonth}
-        year={userValuesYear}
-        onSuccess={fetchData}
-      />
 
       {/* Check-in Configuration Dialog */}
       <Dialog open={checkinDialogOpen} onOpenChange={setCheckinDialogOpen}>

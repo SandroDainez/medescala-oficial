@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
@@ -23,64 +22,34 @@ import { ArrowRightLeft, Send, Calendar, Clock, Check, X, User, Inbox, History }
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { TapSafeButton } from '@/components/TapSafeButton';
+import { useUserSwaps } from '@/hooks/useUserSwaps';
+import type { SwapAssignment as Assignment, SwapRequestItem as SwapRequest, SwapTenantMember as TenantMember } from '@/services/userSwaps';
 
-interface Assignment {
-  id: string;
-  shift_id: string;
-  status?: string;
-  shift: {
-    title: string;
-    hospital: string;
-    shift_date: string;
-    start_time: string;
-    end_time: string;
-    sector_id: string | null;
-    sector?: { name: string; color: string | null } | null;
-  };
-}
-
-interface TenantMember {
-  user_id: string;
-  name: string;
-}
-
-interface SwapRequest {
-  id: string;
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled';
-  reason: string | null;
-  created_at: string;
-  requester_id: string;
-  target_user_id: string | null;
-  origin_assignment_id: string;
-  requester: { name: string | null };
-  target_user: { name: string | null } | null;
-  origin_assignment: {
-    id: string;
-    user_id: string;
-    shift: {
-      id: string;
-      title: string;
-      hospital: string;
-      shift_date: string;
-      start_time: string;
-      end_time: string;
-      sector_id?: string | null;
-      sector?: { name: string; color: string | null } | null;
-    };
-  };
-}
+type SwapsTab = 'my-shifts' | 'incoming' | 'history';
 
 export default function UserSwaps() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
-
-  const [myAssignments, setMyAssignments] = useState<Assignment[]>([]);
-  const [tenantMembers, setTenantMembers] = useState<TenantMember[]>([]);
+  const {
+    myAssignments,
+    tenantMembers,
+    mySwapRequests,
+    incomingSwapRequests,
+    currentUserDisplayName,
+    loadSectorMembers,
+    submitSwap,
+    decideSwap,
+    cancelSwap,
+    isLoading,
+    isSubmittingSwap,
+    isDecidingSwap,
+    isCancellingSwap,
+  } = useUserSwaps({
+    userId: user?.id,
+    tenantId: currentTenantId,
+  });
   const [sectorMembers, setSectorMembers] = useState<TenantMember[]>([]);
-  const [mySwapRequests, setMySwapRequests] = useState<SwapRequest[]>([]);
-  const [incomingSwapRequests, setIncomingSwapRequests] = useState<SwapRequest[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadingSectorMembers, setLoadingSectorMembers] = useState(false);
 
   const now = new Date();
@@ -95,8 +64,8 @@ export default function UserSwaps() {
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [selectedTargetUser, setSelectedTargetUser] = useState<TenantMember | null>(null);
   const [reason, setReason] = useState('');
-  const [processing, setProcessing] = useState(false);
-  const [currentUserDisplayName, setCurrentUserDisplayName] = useState('Um usuário');
+  const [activeTab, setActiveTab] = useState<SwapsTab>('my-shifts');
+  const processing = isSubmittingSwap || isDecidingSwap || isCancellingSwap;
 
   const monthOptions = useMemo(
     () => [
@@ -165,6 +134,13 @@ export default function UserSwaps() {
   }, [myAssignments, didAutoSelect]);
 
   useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'incoming' || tab === 'history' || tab === 'my-shifts') {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
     const assignmentId = searchParams.get('assignment');
     if (!assignmentId || myAssignments.length === 0) return;
 
@@ -182,6 +158,23 @@ export default function UserSwaps() {
     setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myAssignments, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const originAssignmentId = searchParams.get('origin_assignment_id');
+    if (!originAssignmentId) return;
+
+    const incomingMatch = incomingSwapRequests.find((swap) => swap.origin_assignment_id === originAssignmentId);
+    if (incomingMatch?.origin_assignment?.shift?.shift_date) {
+      setActiveTab('incoming');
+      setSelectedDay(incomingMatch.origin_assignment.shift.shift_date);
+      return;
+    }
+
+    const historyMatch = mySwapRequests.find((swap) => swap.origin_assignment_id === originAssignmentId);
+    if (historyMatch) {
+      setActiveTab('history');
+    }
+  }, [incomingSwapRequests, mySwapRequests, searchParams]);
 
   const availableDays = useMemo(() => {
     const unique = Array.from(new Set(monthAssignments.map((a) => a.shift.shift_date))).sort();
@@ -290,306 +283,12 @@ export default function UserSwaps() {
   useEffect(() => {
     if (user && currentTenantId) {
       setDidAutoSelect(false);
-      fetchData();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, currentTenantId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadCurrentUserDisplayName() {
-      if (!user?.id) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('full_name, name')
-        .eq('id', user.id)
-        .maybeSingle();
-
-      if (cancelled) return;
-
-      const fullName = (data as any)?.full_name?.trim();
-      const shortName = (data as any)?.name?.trim();
-      setCurrentUserDisplayName(fullName || shortName || 'Um usuário');
-    }
-
-    loadCurrentUserDisplayName();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
 
   useEffect(() => {
     setSelectedDay('all');
   }, [effectiveMonth, effectiveYear]);
-
-  async function fetchData() {
-    setLoading(true);
-    await Promise.all([
-      fetchMyAssignments(),
-      fetchTenantMembers(),
-      fetchMySwapRequests(),
-      fetchIncomingSwapRequests(),
-    ]);
-    setLoading(false);
-  }
-
-  async function fetchMyAssignments() {
-    if (!currentTenantId || !user) return;
-    const today = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('shift_assignments')
-      .select(`
-        id, shift_id, status,
-        shift:shifts(
-          id, title, hospital, shift_date, start_time, end_time, sector_id,
-          sector:sectors(name, color)
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('user_id', user.id)
-      .in('status', ['assigned', 'confirmed']);
-
-    if (error) {
-      console.error('[UserSwaps] Error fetching assignments:', error);
-      toast({ title: 'Erro ao carregar plantões', description: error.message, variant: 'destructive' });
-      setMyAssignments([]);
-      return;
-    }
-
-    if (data) {
-      const validAssignments = (data as any[])
-        .filter((a) =>
-          a.shift !== null &&
-          a.shift.shift_date >= today &&
-          a.status !== 'cancelled'
-        )
-        .sort((a, b) => a.shift.shift_date.localeCompare(b.shift.shift_date)) as unknown as Assignment[];
-      setMyAssignments(validAssignments);
-    } else {
-      setMyAssignments([]);
-    }
-  }
-
-  async function fetchTenantMembers() {
-    // This function now returns all tenant members - filtering by sector happens in fetchSectorMembers
-    if (!currentTenantId || !user) return;
-    const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
-    if (error) {
-      console.error('[UserSwaps] get_tenant_member_names error:', error);
-      toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
-      setTenantMembers([]);
-      return;
-    }
-    if (data) {
-      const baseMembers = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
-      const memberIds = baseMembers.map((m) => m.user_id);
-      let fullNameMap = new Map<string, string>();
-
-      if (memberIds.length) {
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, full_name, name')
-          .in('id', memberIds);
-
-        fullNameMap = new Map(
-          ((profilesData as any[]) ?? []).map((p: any) => [
-            p.id,
-            (p.full_name?.trim() || p.name?.trim() || '').toString(),
-          ])
-        );
-      }
-
-      const normalizedMembers = baseMembers.map((m) => ({
-        ...m,
-        name: fullNameMap.get(m.user_id) || m.name,
-      }));
-
-      setTenantMembers(normalizedMembers);
-    }
-  }
-
-  async function enrichMembersWithFullNames(members: TenantMember[]): Promise<TenantMember[]> {
-    if (!members.length) return members;
-    const memberIds = members.map((m) => m.user_id);
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('id, full_name, name')
-      .in('id', memberIds);
-
-    const fullNameMap = new Map(
-      ((profilesData as any[]) ?? []).map((p: any) => [
-        p.id,
-        (p.full_name?.trim() || p.name?.trim() || '').toString(),
-      ])
-    );
-
-    return members.map((m) => ({
-      ...m,
-      name: fullNameMap.get(m.user_id) || m.name,
-    }));
-  }
-
-  // Fetch members of a specific sector for swap filtering
-  async function fetchSectorMembers(sectorId: string): Promise<TenantMember[]> {
-    if (!currentTenantId || !user || !sectorId) return [];
-
-    // 1) Get user_ids that belong to the sector
-    const { data: membershipsData, error: membershipsError } = await supabase
-      .from('sector_memberships')
-      .select('user_id')
-      .eq('tenant_id', currentTenantId)
-      .eq('sector_id', sectorId);
-
-    if (membershipsError) {
-      console.error('[UserSwaps] fetchSectorMembers sector_memberships error:', membershipsError);
-      return [...tenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    }
-
-    const sectorUserIds = Array.from(
-      new Set((membershipsData ?? []).map((m: any) => m.user_id).filter(Boolean))
-    ) as string[];
-    if (sectorUserIds.length === 0) {
-      // Fallback defensivo: se o setor ainda não tem vínculos, permite selecionar membros do tenant.
-      return [...tenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-    }
-
-    // 2) Cross with tenantMembers (RPC) to ensure we only show ACTIVE tenant members
-    //    and avoid leaking names through joins that can behave differently under restrictive RLS.
-    let activeTenantMembers = tenantMembers;
-    if (activeTenantMembers.length === 0) {
-      // In case the user clicks before fetchTenantMembers finished.
-      const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
-      if (!error && data) {
-        activeTenantMembers = await enrichMembersWithFullNames(
-          (data as TenantMember[]).filter((m) => m.user_id !== user.id)
-        );
-        setTenantMembers(activeTenantMembers);
-      }
-    }
-
-    const allowedIds = new Set(sectorUserIds);
-    const filteredBySector = activeTenantMembers
-      .filter((m) => m.user_id !== user.id)
-      .filter((m) => allowedIds.has(m.user_id))
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-
-    if (filteredBySector.length > 0) return filteredBySector;
-
-    // Fallback 2: tenta resolver nomes direto em profiles para os IDs do setor
-    const { data: profilesData } = await supabase
-      .from('profiles')
-      .select('id, full_name, name')
-      .in('id', sectorUserIds);
-
-    const fromProfiles = ((profilesData as any[]) ?? [])
-      .map((p: any) => ({
-        user_id: p.id as string,
-        name: (p.full_name?.trim() || p.name?.trim() || 'Sem nome') as string,
-      }))
-      .filter((m) => m.user_id !== user.id)
-      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-
-    if (fromProfiles.length > 0) return fromProfiles;
-
-    // Fallback final: não bloqueia o fluxo de troca
-    return [...activeTenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }
-
-  async function fetchMySwapRequests() {
-    if (!currentTenantId || !user) return;
-    const { data } = await supabase
-      .from('swap_requests')
-      .select(`
-        id, status, reason, created_at, requester_id, target_user_id, origin_assignment_id,
-        requester:profiles!swap_requests_requester_id_profiles_fkey(name),
-        target_user:profiles!swap_requests_target_user_id_profiles_fkey(name),
-        origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
-          id, user_id,
-          shift:shifts(
-            id, title, hospital, shift_date, start_time, end_time, sector_id,
-            sector:sectors(name, color)
-          )
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('requester_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (data) setMySwapRequests(data as unknown as SwapRequest[]);
-  }
-
-  async function fetchIncomingSwapRequests() {
-    if (!currentTenantId || !user) return;
-    const { data } = await supabase
-      .from('swap_requests')
-      .select(`
-        id, status, reason, created_at, requester_id, target_user_id, origin_assignment_id,
-        requester:profiles!swap_requests_requester_id_profiles_fkey(name),
-        target_user:profiles!swap_requests_target_user_id_profiles_fkey(name),
-        origin_assignment:shift_assignments!swap_requests_origin_assignment_id_fkey(
-          id, user_id,
-          shift:shifts(
-            id, title, hospital, shift_date, start_time, end_time, sector_id,
-            sector:sectors(name, color)
-          )
-        )
-      `)
-      .eq('tenant_id', currentTenantId)
-      .eq('target_user_id', user.id)
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false });
-
-    if (data) setIncomingSwapRequests(data as unknown as SwapRequest[]);
-  }
-
-  async function notifyTenantAdmins(params: {
-    type: string;
-    title: string;
-    message: string;
-    shiftAssignmentId?: string | null;
-    excludeUserIds?: string[];
-  }) {
-    if (!currentTenantId) return;
-    const exclude = new Set(params.excludeUserIds ?? []);
-
-    try {
-      const { data: adminsData, error: adminsError } = await supabase
-        .from('memberships')
-        .select('user_id')
-        .eq('tenant_id', currentTenantId)
-        .eq('role', 'admin')
-        .eq('active', true);
-
-      if (adminsError) {
-        console.error('[UserSwaps] Error fetching tenant admins:', adminsError);
-        return;
-      }
-
-      const adminUserIds = (adminsData ?? [])
-        .map((a: any) => a.user_id as string)
-        .filter(Boolean)
-        .filter((id: string) => !exclude.has(id));
-
-      if (!adminUserIds.length) return;
-
-      const payload = adminUserIds.map((adminUserId) => ({
-        tenant_id: currentTenantId,
-        user_id: adminUserId,
-        shift_assignment_id: params.shiftAssignmentId ?? null,
-        type: params.type,
-        title: params.title,
-        message: params.message,
-      }));
-
-      const { error } = await supabase.from('notifications').insert(payload);
-      if (error) console.error('[UserSwaps] Error notifying admins:', error);
-    } catch (err) {
-      console.error('[UserSwaps] notifyTenantAdmins catch:', err);
-    }
-  }
 
   async function handleShiftClick(assignment: Assignment) {
     setSelectedAssignment(assignment);
@@ -600,11 +299,20 @@ export default function UserSwaps() {
     
     if (sectorId) {
       setLoadingSectorMembers(true);
-      const members = await fetchSectorMembers(sectorId);
-      setSectorMembers(members);
-      setLoadingSectorMembers(false);
+      try {
+        const members = await loadSectorMembers(sectorId, tenantMembers);
+        setSectorMembers(members);
+      } catch (error) {
+        toast({
+          title: 'Erro ao carregar colegas',
+          description: error instanceof Error ? error.message : 'Não foi possível carregar colegas elegíveis.',
+          variant: 'destructive',
+        });
+        setSectorMembers([]);
+      } finally {
+        setLoadingSectorMembers(false);
+      }
     } else {
-      // If no sector, fallback to all tenant members
       setSectorMembers(tenantMembers);
     }
   }
@@ -617,153 +325,79 @@ export default function UserSwaps() {
 
   async function handleSubmitSwapRequest() {
     if (!selectedAssignment || !selectedTargetUser || !currentTenantId || !user) return;
-
-    setProcessing(true);
-
-    const { data: createdSwap, error: swapError } = await supabase
-      .from('swap_requests')
-      .insert({
-        tenant_id: currentTenantId,
-        origin_assignment_id: selectedAssignment.id,
-        requester_id: user.id,
-        target_user_id: selectedTargetUser.user_id,
-        reason: reason || null,
-      })
-      .select()
-      .single();
-
-    if (swapError) {
-      toast({ title: 'Erro', description: swapError.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
-    }
-
-    const { error: notifyError } = await supabase
-      .from('notifications')
-      .insert({
-        tenant_id: currentTenantId,
-        user_id: selectedTargetUser.user_id,
-        shift_assignment_id: selectedAssignment.id,
-        type: 'swap_request',
-        title: 'Solicitação de Troca de Plantão',
-        message: `${currentUserDisplayName || 'Um colega'} quer passar o plantão "${selectedAssignment.shift.title}" do dia ${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} para você. Acesse a área de Trocas para aceitar ou recusar.`,
+    try {
+      await submitSwap({
+        currentUserDisplayName,
+        selectedAssignment,
+        selectedTargetUser,
+        reason,
       });
-
-    if (notifyError) {
-      console.error('[UserSwaps] Error sending notification:', notifyError);
+      toast({ title: 'Solicitação enviada!', description: `Aguardando ${selectedTargetUser.name} aceitar.` });
+      setConfirmDialogOpen(false);
+      setSelectedAssignment(null);
+      setSelectedTargetUser(null);
+      setReason('');
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível enviar a solicitação.',
+        variant: 'destructive',
+      });
     }
-
-    // Notifica admins do tenant (visibilidade/auditoria)
-    await notifyTenantAdmins({
-      type: 'swap_request_admin',
-      title: 'Troca de plantão solicitada',
-      message: `${currentUserDisplayName || 'Um usuário'} solicitou passar o plantão "${selectedAssignment.shift.title}" (${format(parseDateOnly(selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}) para ${selectedTargetUser.name}.`,
-      shiftAssignmentId: selectedAssignment.id,
-      excludeUserIds: [user.id],
-    });
-
-    toast({ title: 'Solicitação enviada!', description: `Aguardando ${selectedTargetUser.name} aceitar.` });
-
-    setConfirmDialogOpen(false);
-    setSelectedAssignment(null);
-    setSelectedTargetUser(null);
-    setReason('');
-    setProcessing(false);
-
-    fetchData();
   }
 
   async function handleAcceptSwap(swap: SwapRequest) {
     if (!currentTenantId || !user) return;
-
-    setProcessing(true);
-
-    const { error } = await supabase.rpc('decide_swap_request', {
-      _swap_request_id: swap.id,
-      _decision: 'approved',
-    });
-
-    if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
+    try {
+      await decideSwap({
+        currentUserDisplayName,
+        swap,
+        decision: 'approved',
+      });
+      toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Não foi possível aceitar a troca.';
+      const lowerMessage = String(errorMessage || '').toLowerCase();
+      const isConflictError = lowerMessage.includes('conflito') || lowerMessage.includes('horário');
+      const isEligibilityError = lowerMessage.includes('plantonista') || lowerMessage.includes('tenant');
+      toast({
+        title: isConflictError ? 'Troca bloqueada por conflito de horário' : 'Erro ao aceitar troca',
+        description: isEligibilityError
+          ? 'O colega selecionado não está mais elegível para assumir plantões neste hospital.'
+          : errorMessage,
+        variant: 'destructive',
+      });
     }
-
-    toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
-
-    // Notifica solicitante e admins
-    await supabase.from('notifications').insert({
-      tenant_id: currentTenantId,
-      user_id: swap.requester_id,
-      shift_assignment_id: swap.origin_assignment_id,
-      type: 'swap_request_update',
-      title: 'Troca aceita',
-      message: `Seu pedido para passar o plantão "${swap.origin_assignment?.shift?.title}" (${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi aceito.`,
-    });
-
-    await notifyTenantAdmins({
-      type: 'swap_request_update_admin',
-      title: 'Troca aceita',
-      message: `Troca concluída automaticamente. Solicitante: ${swap.requester?.name || 'N/A'}. Aceitou: ${currentUserDisplayName || 'N/A'}. Plantão: "${swap.origin_assignment?.shift?.title}" em ${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : 'N/A'} (${swap.origin_assignment?.shift?.start_time?.slice(0, 5)}-${swap.origin_assignment?.shift?.end_time?.slice(0, 5)}). Processado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}.`,
-      shiftAssignmentId: swap.origin_assignment_id,
-      excludeUserIds: [user.id],
-    });
-
-    setProcessing(false);
-    fetchData();
   }
 
   async function handleRejectSwap(swap: SwapRequest) {
     if (!currentTenantId || !user) return;
-
-    setProcessing(true);
-
-    const { error } = await supabase.rpc('decide_swap_request', {
-      _swap_request_id: swap.id,
-      _decision: 'rejected',
-    });
-
-    if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-      setProcessing(false);
-      return;
+    try {
+      await decideSwap({
+        currentUserDisplayName,
+        swap,
+        decision: 'rejected',
+      });
+      toast({ title: 'Troca recusada.' });
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível recusar a troca.',
+        variant: 'destructive',
+      });
     }
-
-    toast({ title: 'Troca recusada.' });
-
-    // Notifica solicitante e admins
-    await supabase.from('notifications').insert({
-      tenant_id: currentTenantId,
-      user_id: swap.requester_id,
-      shift_assignment_id: swap.origin_assignment_id,
-      type: 'swap_request_update',
-      title: 'Troca recusada',
-      message: `Seu pedido para passar o plantão "${swap.origin_assignment?.shift?.title}" (${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi recusado.`,
-    });
-
-    await notifyTenantAdmins({
-      type: 'swap_request_update_admin',
-      title: 'Troca recusada',
-      message: `Troca recusada. Solicitante: ${swap.requester?.name || 'N/A'}. Recusou: ${currentUserDisplayName || 'N/A'}. Plantão: "${swap.origin_assignment?.shift?.title}" em ${swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : 'N/A'} (${swap.origin_assignment?.shift?.start_time?.slice(0, 5)}-${swap.origin_assignment?.shift?.end_time?.slice(0, 5)}). Processado em ${format(new Date(), 'dd/MM/yyyy HH:mm', { locale: ptBR })}.`,
-      shiftAssignmentId: swap.origin_assignment_id,
-      excludeUserIds: [user.id],
-    });
-
-    setProcessing(false);
-    fetchData();
   }
 
   async function handleCancelRequest(swapId: string) {
-    const { error } = await supabase
-      .from('swap_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', swapId);
-
-    if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
-    } else {
+    try {
+      await cancelSwap(swapId);
       toast({ title: 'Solicitação cancelada.' });
-      fetchData();
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.',
+        variant: 'destructive',
+      });
     }
   }
 
@@ -781,7 +415,7 @@ export default function UserSwaps() {
     cancelled: 'Cancelada',
   };
 
-  if (loading) return <div className="text-muted-foreground">Carregando...</div>;
+  if (isLoading) return <div className="text-muted-foreground">Carregando...</div>;
 
   return (
     <div className="space-y-4 sm:space-y-6 w-full max-w-full overflow-x-hidden">
@@ -790,7 +424,7 @@ export default function UserSwaps() {
         <p className="text-sm text-muted-foreground">Passe ou troque plantões com colegas</p>
       </div>
 
-      <Tabs defaultValue="my-shifts" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SwapsTab)} className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="my-shifts" className="flex items-center gap-2">
             <Send className="h-4 w-4" />
@@ -973,7 +607,14 @@ export default function UserSwaps() {
 
                             <div className="grid gap-3">
                               {sectorGroup.requests.map((swap) => (
-                                <div key={swap.id} className="rounded-lg border p-3">
+                                <div
+                                  key={swap.id}
+                                  className={`rounded-lg border p-3 ${
+                                    searchParams.get('origin_assignment_id') === swap.origin_assignment_id
+                                      ? 'border-primary ring-2 ring-primary/20'
+                                      : ''
+                                  }`}
+                                >
                                   <div className="space-y-2">
                                     <div className="flex items-center gap-2">
                                       <User className="h-4 w-4 text-primary" />
@@ -982,6 +623,9 @@ export default function UserSwaps() {
                                     </div>
                                     <div className="pl-6 space-y-1">
                                       <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
+                                      <div className="text-sm text-muted-foreground">
+                                        {swap.origin_assignment?.shift?.hospital || 'Hospital não informado'}
+                                      </div>
                                       <div className="text-sm text-muted-foreground flex items-center gap-1">
                                         <Clock className="h-3 w-3" />
                                         {swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}
@@ -1033,7 +677,14 @@ export default function UserSwaps() {
               ) : (
                 <div className="grid gap-3">
                   {mySwapRequests.map((swap) => (
-                    <div key={swap.id} className="p-4 border rounded-lg">
+                    <div
+                      key={swap.id}
+                      className={`p-4 border rounded-lg ${
+                        searchParams.get('origin_assignment_id') === swap.origin_assignment_id
+                          ? 'border-primary ring-2 ring-primary/20'
+                          : ''
+                      }`}
+                    >
                       <div className="flex items-start justify-between">
                         <div className="space-y-1">
                           <div className="font-medium">{swap.origin_assignment?.shift?.title}</div>
@@ -1045,6 +696,22 @@ export default function UserSwaps() {
                           <div className="text-sm text-muted-foreground">
                             Para: <span className="font-medium">{swap.target_user?.name || 'N/A'}</span>
                           </div>
+                          <div className="text-sm text-muted-foreground">
+                            Local: <span className="font-medium">{swap.origin_assignment?.shift?.hospital || 'Hospital não informado'}</span>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Horário: <span className="font-medium">{swap.origin_assignment?.shift?.start_time?.slice(0, 5)} - {swap.origin_assignment?.shift?.end_time?.slice(0, 5)}</span>
+                          </div>
+                          {swap.origin_assignment?.shift?.sector?.name && (
+                            <div className="text-sm text-muted-foreground">
+                              Setor: <span className="font-medium">{swap.origin_assignment.shift.sector.name}</span>
+                            </div>
+                          )}
+                          {swap.reason && (
+                            <div className="text-sm text-muted-foreground italic">
+                              "{swap.reason}"
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-2">
                           <Badge className={statusColors[swap.status]} variant="outline">

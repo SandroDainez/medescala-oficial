@@ -32,6 +32,7 @@ export default function UserHome() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const [loading, setLoading] = useState(true);
+  const [isPlantonista, setIsPlantonista] = useState<boolean | null>(null);
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [year, setYear] = useState(new Date().getFullYear());
 
@@ -72,9 +73,35 @@ export default function UserHome() {
 
   useEffect(() => {
     if (!user?.id || !currentTenantId) return;
-    fetchData();
+    checkProfileAndLoad();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, currentTenantId, month, year]);
+
+  async function checkProfileAndLoad() {
+    if (!user?.id) return;
+    const [{ data: membership }, { data: profile }] = await Promise.all([
+      supabase
+        .from('memberships')
+        .select('active')
+        .eq('tenant_id', currentTenantId)
+        .eq('user_id', user.id)
+        .eq('active', true)
+        .maybeSingle(),
+      supabase
+        .from('profiles')
+        .select('profile_type')
+        .eq('id', user.id)
+        .maybeSingle(),
+    ]);
+    const ok = Boolean(membership?.active) && profile?.profile_type === 'plantonista';
+    setIsPlantonista(ok);
+    if (!ok) {
+      setLoading(false);
+      setMonthSummary({ shifts: 0, hours: 0, value: 0, unpriced: 0 });
+      return;
+    }
+    fetchData();
+  }
 
   async function fetchData() {
     if (!user?.id || !currentTenantId) return;
@@ -231,7 +258,11 @@ export default function UserHome() {
           _end: end,
         }),
       ]);
-      const takenIds = new Set(((rosterRes.data ?? []) as any[]).map((r) => r.shift_id));
+      const takenIds = new Set(
+        ((rosterRes.data ?? []) as any[])
+          .filter((r) => r.status !== 'cancelled')
+          .map((r) => r.shift_id)
+      );
       const openCount = ((shiftsRes.data ?? []) as any[]).filter((s) => !takenIds.has(s.id)).length;
       setAvailableInMySectors(openCount);
     } else {
@@ -254,6 +285,13 @@ export default function UserHome() {
 
   return (
     <div className="space-y-4">
+      {isPlantonista === false && (
+        <Card className="border-border/60">
+          <CardContent className="p-4 text-sm text-muted-foreground">
+            Conta administrativa sem visão de plantões no aplicativo do usuário.
+          </CardContent>
+        </Card>
+      )}
       <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-card to-primary/[0.05] shadow-sm">
         <CardContent className="space-y-3 p-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -302,16 +340,16 @@ export default function UserHome() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/calendar')}>
+            <Button variant="outline" className="h-11 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10 touch-manipulation" onClick={() => navigate('/app/calendar')}>
               <CalendarDays className="h-4 w-4" /> Agenda Geral
             </Button>
-            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/shifts')}>
+            <Button variant="outline" className="h-11 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10 touch-manipulation" onClick={() => navigate('/app/shifts')}>
               <Clock3 className="h-4 w-4" /> Minha Agenda
             </Button>
-            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/financial')}>
+            <Button variant="outline" className="h-11 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10 touch-manipulation" onClick={() => navigate('/app/financial')}>
               <Wallet className="h-4 w-4" /> Financeiro
             </Button>
-            <Button variant="outline" className="h-10 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10" onClick={() => navigate('/app/swaps')}>
+            <Button variant="outline" className="h-11 justify-start rounded-2xl gap-2 border-primary/30 bg-background/80 hover:bg-primary/10 touch-manipulation" onClick={() => navigate('/app/swaps')}>
               <ArrowLeftRight className="h-4 w-4" /> Trocas
             </Button>
           </div>
@@ -342,14 +380,14 @@ export default function UserHome() {
         <Card className="border-primary/20 bg-card/90 shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-base">Atenção</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/notifications')}>
+            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/notifications')}>
               <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Não lidas</span><Badge>{unreadNotifications}</Badge>
             </button>
-            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/swaps')}>
+            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/swaps')}>
               <span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas para responder</span><Badge>{pendingIncomingSwaps}</Badge>
             </button>
-            <div className="flex items-center justify-between rounded-lg border border-border/60 px-2 py-2"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas aguardando colega</span><Badge>{pendingOutgoingSwaps}</Badge></div>
-            <button className="flex w-full items-center justify-between rounded-lg border border-border/60 px-2 py-2 text-left hover:bg-accent/30" onClick={() => navigate('/app/available')}>
+            <div className="flex min-h-11 items-center justify-between rounded-lg border border-border/60 px-3 py-2.5"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas aguardando colega</span><Badge>{pendingOutgoingSwaps}</Badge></div>
+            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/available')}>
               <span className="flex items-center gap-2"><Hand className="h-4 w-4" /> Plantões disponíveis no meu setor</span><Badge>{availableInMySectors}</Badge>
             </button>
             {monthSummary.unpriced > 0 && (
@@ -367,9 +405,10 @@ export default function UserHome() {
           ) : (
             upcomingShifts.map((s) => (
               <button
+                type="button"
                 key={s.id}
                 onClick={() => navigate('/app/shifts')}
-                className="flex w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40"
+                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40 touch-manipulation"
               >
                 <div>
                   <p className="text-sm font-semibold">{s.title}</p>
