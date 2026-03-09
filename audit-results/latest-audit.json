@@ -1,0 +1,107 @@
+{
+  "executedAt": "2026-03-07T07:56:43.424Z",
+  "status": "failed",
+  "summary": {
+    "critical": 7,
+    "warning": 0,
+    "total": 7
+  },
+  "routeChecks": [
+    {
+      "path": "/",
+      "ok": false,
+      "status": null
+    },
+    {
+      "path": "/auth",
+      "ok": false,
+      "status": null
+    },
+    {
+      "path": "/admin",
+      "ok": false,
+      "status": null
+    },
+    {
+      "path": "/admin/financial",
+      "ok": false,
+      "status": null
+    },
+    {
+      "path": "/admin/sectors",
+      "ok": false,
+      "status": null
+    },
+    {
+      "path": "/user/shifts",
+      "ok": false,
+      "status": null
+    }
+  ],
+  "metrics": {},
+  "issues": [
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /",
+      "context": {
+        "url": "https://app.medescalas.com.br/",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /auth",
+      "context": {
+        "url": "https://app.medescalas.com.br/auth",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /admin",
+      "context": {
+        "url": "https://app.medescalas.com.br/admin",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /admin/financial",
+      "context": {
+        "url": "https://app.medescalas.com.br/admin/financial",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /admin/sectors",
+      "context": {
+        "url": "https://app.medescalas.com.br/admin/sectors",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "APP_ROUTE_FETCH_FAILED",
+      "message": "Falha ao acessar rota /user/shifts",
+      "context": {
+        "url": "https://app.medescalas.com.br/user/shifts",
+        "error": "fetch failed"
+      }
+    },
+    {
+      "severity": "critical",
+      "code": "MISSING_SUPABASE_CONFIG",
+      "message": "SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY ausentes. Auditoria de dados não executada.",
+      "context": {
+        "hasSupabaseUrl": false,
+        "hasServiceRoleKey": false
+      }
+    }
+  ]
+}
