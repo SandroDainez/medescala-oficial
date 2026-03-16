@@ -6257,26 +6257,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <Label htmlFor="end_time">Término</Label>
                 <Input
                   id="end_time"
-                  type="text"
-                  placeholder="Ex: 12:00"
+                  type="time"
                   value={formData.end_time}
                   onChange={(e) => {
-                    let value = e.target.value;
-                    value = value.replace(/[^\d:]/g, '');
-                    if (!value.includes(':') && value.length > 2) {
-                      value = `${value.slice(0, 2)}:${value.slice(2)}`;
-                    }
-                    const colonIndex = value.indexOf(':');
-                    if (colonIndex !== -1) {
-                      value = `${value.slice(0, colonIndex + 1)}${value
-                        .slice(colonIndex + 1)
-                        .replace(/:/g, '')}`;
-                    }
-                    if (value.length > 5) value = value.slice(0, 5);
-                    const hasFullTime = /^\d{2}:\d{2}$/.test(value);
+                    const value = e.target.value;
                     setFormData((prev) => {
                       const nextDuration =
-                        hasFullTime && prev.start_time
+                        value && prev.start_time
                           ? durationToInputValue(calculateDurationHours(prev.start_time, value))
                           : prev.duration_hours;
                       return { ...prev, end_time: value, duration_hours: nextDuration };
