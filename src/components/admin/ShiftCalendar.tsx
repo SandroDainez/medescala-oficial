@@ -618,10 +618,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return Number(((baseValue / STANDARD_SHIFT_HOURS) * durationHours).toFixed(2));
   }
 
-function durationToInputValue(hours: number): string {
-  if (!Number.isFinite(hours) || hours <= 0) return '';
-  return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
-}
+  function durationToInputValue(hours: number): string {
+    if (!Number.isFinite(hours) || hours <= 0) return '';
+    return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
+  }
+
+  function formatTimeMask(value: string): string {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    if (!digits) return '';
+    if (digits.length <= 2) return digits;
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  }
 
   /**
    * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
@@ -6257,16 +6264,18 @@ function durationToInputValue(hours: number): string {
                 <Label htmlFor="end_time">Término</Label>
                 <Input
                   id="end_time"
-                  type="time"
+                  type="text"
+                  placeholder="Ex: 12:00"
                   value={formData.end_time}
                   onChange={(e) => {
-                    const nextEnd = e.target.value;
+                    const formatted = formatTimeMask(e.target.value);
+                    const hasFullTime = /^\d{2}:\d{2}$/.test(formatted);
                     setFormData((prev) => {
                       const nextDuration =
-                        prev.start_time && nextEnd
-                          ? durationToInputValue(calculateDurationHours(prev.start_time, nextEnd))
+                        hasFullTime && prev.start_time
+                          ? durationToInputValue(calculateDurationHours(prev.start_time, formatted))
                           : prev.duration_hours;
-                      return { ...prev, end_time: nextEnd, duration_hours: nextDuration };
+                      return { ...prev, end_time: formatted, duration_hours: nextDuration };
                     });
                   }}
                   required
