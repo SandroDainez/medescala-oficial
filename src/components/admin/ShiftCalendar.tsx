@@ -623,17 +623,6 @@ function durationToInputValue(hours: number): string {
   return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
 }
 
-function formatTimeInput(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  if (!digits) return '';
-  const hours = digits.slice(0, 2).padStart(2, '0');
-  const minutes = digits.length > 2 ? digits.slice(2).padEnd(2, '0') : '';
-  if (minutes) {
-    return `${hours}:${minutes}`;
-  }
-  return hours;
-}
-
   /**
    * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
    * 
@@ -6268,18 +6257,16 @@ function formatTimeInput(value: string): string {
                 <Label htmlFor="end_time">Término</Label>
                 <Input
                   id="end_time"
-                  type="text"
-                  placeholder="Ex: 12:00"
+                  type="time"
                   value={formData.end_time}
                   onChange={(e) => {
-                    const formatted = formatTimeInput(e.target.value);
-                    const hasFullTime = /^\d{2}:\d{2}$/.test(formatted);
+                    const nextEnd = e.target.value;
                     setFormData((prev) => {
                       const nextDuration =
-                        hasFullTime && prev.start_time
-                          ? durationToInputValue(calculateDurationHours(prev.start_time, formatted))
+                        prev.start_time && nextEnd
+                          ? durationToInputValue(calculateDurationHours(prev.start_time, nextEnd))
                           : prev.duration_hours;
-                      return { ...prev, end_time: formatted, duration_hours: nextDuration };
+                      return { ...prev, end_time: nextEnd, duration_hours: nextDuration };
                     });
                   }}
                   required
