@@ -6263,6 +6263,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   onChange={(e) => {
                     let value = e.target.value;
                     value = value.replace(/[^\d:]/g, '');
+                    if (!value.includes(':') && value.length > 2) {
+                      value = `${value.slice(0, 2)}:${value.slice(2)}`;
+                    }
                     const colonIndex = value.indexOf(':');
                     if (colonIndex !== -1) {
                       value = `${value.slice(0, colonIndex + 1)}${value
