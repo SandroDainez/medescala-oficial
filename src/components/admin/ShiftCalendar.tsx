@@ -623,13 +623,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
   }
 
-  function formatTimeMask(value: string): string {
-    const digits = value.replace(/\D/g, '').slice(0, 4);
-    if (!digits) return '';
-    if (digits.length <= 2) return digits;
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  }
-
   /**
    * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
    * 
@@ -6268,14 +6261,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   placeholder="Ex: 12:00"
                   value={formData.end_time}
                   onChange={(e) => {
-                    const formatted = formatTimeMask(e.target.value);
-                    const hasFullTime = /^\d{2}:\d{2}$/.test(formatted);
+                    let value = e.target.value;
+                    value = value.replace(/[^\d:]/g, '');
+                    const colonIndex = value.indexOf(':');
+                    if (colonIndex !== -1) {
+                      value = `${value.slice(0, colonIndex + 1)}${value
+                        .slice(colonIndex + 1)
+                        .replace(/:/g, '')}`;
+                    }
+                    if (value.length > 5) value = value.slice(0, 5);
+                    const hasFullTime = /^\d{2}:\d{2}$/.test(value);
                     setFormData((prev) => {
                       const nextDuration =
                         hasFullTime && prev.start_time
-                          ? durationToInputValue(calculateDurationHours(prev.start_time, formatted))
+                          ? durationToInputValue(calculateDurationHours(prev.start_time, value))
                           : prev.duration_hours;
-                      return { ...prev, end_time: formatted, duration_hours: nextDuration };
+                      return { ...prev, end_time: value, duration_hours: nextDuration };
                     });
                   }}
                   required
