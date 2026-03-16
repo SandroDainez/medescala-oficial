@@ -16,6 +16,37 @@ import { ptBR } from 'date-fns/locale';
 import { useAdminSwaps } from '@/hooks/useAdminSwaps';
 import type { AdminSwapOffer as ShiftOffer, AdminSwapRequest as SwapRequest } from '@/services/adminSwaps';
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    const message = String((error as { message?: unknown }).message ?? '').trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
+function formatSwapApprovalError(error: unknown) {
+  const rawMessage = getErrorMessage(error, 'Não foi possível processar a troca.');
+  const lowerMessage = rawMessage.toLowerCase();
+  const isConflictError = lowerMessage.includes('conflito') || lowerMessage.includes('horário');
+  const isEligibilityError =
+    lowerMessage.includes('plantonista') ||
+    lowerMessage.includes('tenant') ||
+    lowerMessage.includes('setor');
+
+  if (isConflictError) {
+    const prefix = 'Conflito ao aceitar troca:';
+    const detail = rawMessage.includes(prefix) ? rawMessage.replace(prefix, '').trim() : rawMessage;
+    return detail || 'O colega escolhido já está escalado. Ajuste em Trocas e tente novamente.';
+  }
+
+  if (isEligibilityError) {
+    return 'O colega escolhido não está mais elegível para assumir este plantão.';
+  }
+
+  return rawMessage;
+}
+
 export default function AdminSwaps() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
@@ -47,7 +78,7 @@ export default function AdminSwaps() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível processar a troca.',
+        description: formatSwapApprovalError(error),
         variant: 'destructive',
       });
     }
@@ -497,6 +528,9 @@ export default function AdminSwaps() {
             <DialogTitle>
               {actionType === 'approve' ? 'Aprovar Troca' : 'Rejeitar Troca'}
             </DialogTitle>
+            <DialogDescription>
+              Revise os dados da solicitação antes de confirmar a decisão administrativa.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {selectedSwap && (
@@ -572,6 +606,9 @@ export default function AdminSwaps() {
             <DialogTitle>
               {actionType === 'approve' ? 'Aceitar Oferta' : 'Rejeitar Oferta'}
             </DialogTitle>
+            <DialogDescription>
+              Confirme se o plantonista e o plantão estão corretos antes de concluir a ação.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             {selectedOffer && (

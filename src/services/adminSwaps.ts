@@ -134,17 +134,33 @@ export async function decideAdminOffer(params: {
   offer: AdminSwapOffer;
   action: 'accepted' | 'rejected';
 }) {
-  const { error: updateError } = await supabase
-    .from('shift_offers')
-    .update({
-      status: params.action,
-      reviewed_by: params.reviewerId,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq('id', params.offer.id);
-  if (updateError) throw updateError;
-
   if (params.action === 'accepted') {
+    const { data: existingAssignments, error: existingAssignmentsError } = await supabase
+      .from('shift_assignments')
+      .select('id, user_id, status')
+      .eq('shift_id', params.offer.shift_id)
+      .in('status', ['assigned', 'confirmed', 'completed']);
+
+    if (existingAssignmentsError) throw existingAssignmentsError;
+
+    const activeAssignments = (existingAssignments ?? []) as Array<{ id: string; user_id: string; status: string }>;
+    const assignedToAnotherUser = activeAssignments.some((assignment) => assignment.user_id !== params.offer.user_id);
+    const alreadyAssignedToSameUser = activeAssignments.some((assignment) => assignment.user_id === params.offer.user_id);
+
+    if (assignedToAnotherUser) {
+      throw new Error('Este plantão já foi preenchido por outro plantonista.');
+    }
+
+    const { error: updateError } = await supabase
+      .from('shift_offers')
+      .update({
+        status: params.action,
+        reviewed_by: params.reviewerId,
+        reviewed_at: new Date().toISOString(),
+      })
+      .eq('id', params.offer.id);
+    if (updateError) throw updateError;
+
     const { data: shiftData, error: shiftError } = await supabase
       .from('shifts')
       .select('base_value')
@@ -152,16 +168,19 @@ export async function decideAdminOffer(params: {
       .single();
     if (shiftError) throw shiftError;
 
-    const { error: assignError } = await supabase
-      .from('shift_assignments')
-      .insert({
-        tenant_id: params.tenantId,
-        shift_id: params.offer.shift_id,
-        user_id: params.offer.user_id,
-        assigned_value: shiftData?.base_value || null,
-        created_by: params.reviewerId,
-      });
-    if (assignError) throw assignError;
+    if (!alreadyAssignedToSameUser) {
+      const { error: assignError } = await supabase
+        .from('shift_assignments')
+        .insert({
+          tenant_id: params.tenantId,
+          shift_id: params.offer.shift_id,
+          user_id: params.offer.user_id,
+          assigned_value: shiftData?.base_value || null,
+          status: 'assigned',
+          updated_by: params.reviewerId,
+        });
+      if (assignError) throw assignError;
+    }
 
     const { error: shiftUpdateError } = await supabase
       .from('shifts')
@@ -183,7 +202,20 @@ export async function decideAdminOffer(params: {
       .eq('status', 'pending')
       .neq('id', params.offer.id);
     if (rejectOthersError) throw rejectOthersError;
+
+    return;
   }
+
+  const { error: updateError } = await supabase
+    .from('shift_offers')
+    .update({
+      status: params.action,
+      reviewed_by: params.reviewerId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', params.offer.id);
+  if (updateError) throw updateError;
+
 }
 
 export async function deleteAdminSwaps(ids: string[]) {

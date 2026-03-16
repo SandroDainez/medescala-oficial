@@ -1616,11 +1616,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       sectors
         .filter((s) => s.id !== sourceShift.sector_id)
         .find((s) => memberSectors.has(s.id))?.id || '';
+    const firstAllowedTargetShiftId =
+      shifts
+        .filter((s) => s.id !== sourceShift.id)
+        .filter((s) => s.shift_date === sourceShift.shift_date)
+        .filter((s) => s.sector_id === firstAllowedSectorId)
+        .filter((s) => !assignments.some((a) => a.shift_id === s.id && a.user_id === userId))
+        .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`))[0]?.id || '';
 
     setTransferAssignment(assignment);
     setTransferSourceShift(sourceShift);
     setTransferTargetSectorId(firstAllowedSectorId);
-    setTransferTargetShiftId('');
+    setTransferTargetShiftId(firstAllowedTargetShiftId);
     setTransferDialogOpen(true);
   }
 
@@ -2811,7 +2818,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     } catch (error) {
       notifyError('excluir dias', error, 'Não foi possível remover os plantões selecionados.');
     } finally {
-    setDeletingDaysRange(false);
+      setDeletingDaysRange(false);
+    }
   }
 
   function openDeleteDaysDialog() {
@@ -2831,7 +2839,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     setReplicateWeekSourceStart(startOfWeek(selectedDate || currentDate, { weekStartsOn: 1 }));
     setReplicateWeekTargetStart(null);
     setReplicateWeekDialogOpen(true);
-  }
   }
 
   // Copy schedule from current month to target month by DAY OF WEEK + occurrence in month
@@ -4560,6 +4567,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }[];
   }
 
+  function buildConflictKey(userId: string, date: string, conflictShifts: ShiftConflict['shifts']): string {
+    const assignmentIds = conflictShifts
+      .map((shift) => shift.assignmentId)
+      .filter(Boolean)
+      .sort();
+
+    if (assignmentIds.length > 1) {
+      return `${userId}_${date}_${assignmentIds.join('|')}`;
+    }
+
+    return `${userId}_${date}`;
+  }
+
   // Detect conflicts: same person assigned to overlapping shifts on the same date
   function detectConflicts(): ShiftConflict[] {
     const conflicts: ShiftConflict[] = [];
@@ -4637,7 +4657,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         if (overlappingShifts.length > 1) {
           conflicts.push({
-            id: key,
+            id: buildConflictKey(data.userId, data.date, overlappingShifts),
             userId: data.userId,
             userName: data.userName,
             date: data.date,
@@ -5180,40 +5200,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       Valores Individuais
                     </Button>
 
-                    <Button
-                      variant="destructive"
-                      onClick={handleDeleteCurrentScale}
-                      disabled={deletingCurrentScale}
-                      title={
-                        filterSector === 'all'
-                          ? 'Selecione um setor para excluir a escala'
-                          : filteredShifts.length === 0
-                            ? 'Não há plantões no período atual para excluir'
-                            : 'Excluir todos os plantões do período atual'
-                      }
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      {deletingCurrentScale ? 'Excluindo escala...' : 'Excluir Escala'}
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={openDeleteDaysDialog}
-                      disabled={shifts.length === 0 || deletingDaysRange}
-                    >
-                      <Trash2 className="mr-2 h-4 w-4" />
-                      Excluir Dias
-                    </Button>
-
-                    <Button
-                      variant="outline"
-                      onClick={openReplicateWeekDialog}
-                      disabled={shifts.length === 0}
-                    >
-                      <LayoutGrid className="mr-2 h-4 w-4" />
-                      Replicar Semana
-                    </Button>
-
                     <Button variant="outline" onClick={handlePrintSchedule}>
                       <Printer className="mr-2 h-4 w-4" />
                       Imprimir
@@ -5237,6 +5223,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     </Button>
                   </>
               </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card/60 p-2">
+              <span className="px-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Acoes da Escala
+              </span>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteCurrentScale}
+                disabled={deletingCurrentScale}
+                title={
+                  filterSector === 'all'
+                    ? 'Selecione um setor para excluir a escala'
+                    : filteredShifts.length === 0
+                      ? 'Não há plantões no período atual para excluir'
+                      : 'Excluir todos os plantões do período atual'
+                }
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                {deletingCurrentScale ? 'Excluindo escala...' : 'Excluir Escala'}
+              </Button>
             </div>
           </div>
 
@@ -5435,29 +5442,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setReplicateWeeks(1);
-                      setReplicateDayDialogOpen(true);
-                    }}
-                  >
-                    <Repeat className="mr-2 h-4 w-4" />
-                    Replicar Dia
-                  </Button>
-                )}
-                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={openReplicateCustomDayDialog}
-                  >
-                    <Copy className="mr-2 h-4 w-4" />
-                    Replicar para outro dia
-                  </Button>
-                )}
-                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
-                  <Button
-                    variant="outline"
-                    size="sm"
                     disabled={bulkEditTriggerDisabled}
                     onClick={() => {
                       if (bulkEditTriggerDisabled) return;
@@ -5468,19 +5452,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   >
                     <Edit className="mr-2 h-4 w-4" />
                     Editar Todos ({getShiftsForDayDialog(selectedDate).length})
-                  </Button>
-                )}
-                {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    disabled={deletingDayShifts}
-                    onClick={handleDeleteDayShifts}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    {deletingDayShifts
-                      ? 'Excluindo...'
-                      : `Excluir Dia (${getShiftsForDayDialog(selectedDate).length})`}
                   </Button>
                 )}
                 <Button
@@ -5497,6 +5468,62 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           </DialogHeader>
 
           <div className="space-y-4">
+            {selectedDate && getShiftsForDayDialog(selectedDate).length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-muted/20 px-3 py-2">
+                <span className="pr-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Acoes Deste Dia
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setReplicateWeeks(1);
+                    setReplicateDayDialogOpen(true);
+                  }}
+                >
+                  <Repeat className="mr-2 h-4 w-4" />
+                  Replicar Dia
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openReplicateCustomDayDialog}
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Replicar para outro dia
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openReplicateWeekDialog}
+                  disabled={shifts.length === 0}
+                >
+                  <LayoutGrid className="mr-2 h-4 w-4" />
+                  Replicar Semana
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={deletingDayShifts}
+                  onClick={handleDeleteDayShifts}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {deletingDayShifts
+                    ? 'Excluindo...'
+                    : `Excluir Dia (${getShiftsForDayDialog(selectedDate).length})`}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={openDeleteDaysDialog}
+                  disabled={shifts.length === 0 || deletingDaysRange}
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  Excluir Dias
+                </Button>
+              </div>
+            )}
+
             {selectedDate && getDisplayedShiftsForDayDialog(selectedDate).length === 0 ? (
               <p className="text-muted-foreground text-center py-8">
                 Nenhum plantão neste dia
@@ -5934,7 +5961,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 value={transferTargetSectorId}
                 onValueChange={(value) => {
                   setTransferTargetSectorId(value);
-                  setTransferTargetShiftId('');
+                  const firstTargetShiftId =
+                    shifts
+                      .filter((s) => s.id !== transferSourceShift?.id)
+                      .filter((s) => s.shift_date === transferSourceShift?.shift_date)
+                      .filter((s) => s.sector_id === value)
+                      .filter((s) => !assignments.some((a) => a.shift_id === s.id && a.user_id === transferAssignment?.user_id))
+                      .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`))[0]?.id || '';
+                  setTransferTargetShiftId(firstTargetShiftId);
                 }}
               >
                 <SelectTrigger className={SQUARE_SELECT_TRIGGER_CLASS}>
@@ -5957,6 +5991,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
             <div className="space-y-2">
               <Label>Horário no setor de destino</Label>
+              <p className="text-xs text-muted-foreground">
+                Ao trocar o setor, o primeiro horário compatível é selecionado automaticamente.
+              </p>
               <Select value={transferTargetShiftId} onValueChange={setTransferTargetShiftId}>
                 <SelectTrigger className={SQUARE_SELECT_TRIGGER_CLASS} disabled={!transferTargetSectorId}>
                   <SelectValue placeholder="Selecione o horário do plantão" />
@@ -6220,15 +6257,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <Label htmlFor="end_time">Término</Label>
                 <Input
                   id="end_time"
-                  type="time"
+                  type="text"
+                  placeholder="Ex: 12:00"
                   value={formData.end_time}
                   onChange={(e) => {
-                    const nextEnd = e.target.value;
+                    const rawValue = e.target.value;
+                    const normalized = rawValue.replace(/[^\d:]/g, '').slice(0, 5);
+                    const hasFullTime = /^\d{1,2}:\d{2}$/.test(normalized);
                     setFormData((prev) => {
-                      const nextDuration = prev.start_time
-                        ? durationToInputValue(calculateDurationHours(prev.start_time, nextEnd))
-                        : prev.duration_hours;
-                      return { ...prev, end_time: nextEnd, duration_hours: nextDuration };
+                      const nextDuration =
+                        hasFullTime && prev.start_time
+                          ? durationToInputValue(calculateDurationHours(prev.start_time, normalized))
+                          : prev.duration_hours;
+                      return { ...prev, end_time: normalized, duration_hours: nextDuration };
                     });
                   }}
                   required

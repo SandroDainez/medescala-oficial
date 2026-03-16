@@ -44,6 +44,22 @@ export async function approveAdminOffer(params: {
 }) {
   const { offer, tenantId, reviewerId } = params;
 
+  const { data: existingAssignments, error: existingAssignmentsError } = await supabase
+    .from('shift_assignments')
+    .select('id, user_id, status')
+    .eq('shift_id', offer.shift_id)
+    .in('status', ['assigned', 'confirmed', 'completed']);
+
+  if (existingAssignmentsError) throw existingAssignmentsError;
+
+  const activeAssignments = (existingAssignments ?? []) as Array<{ id: string; user_id: string; status: string }>;
+  const assignedToAnotherUser = activeAssignments.some((assignment) => assignment.user_id !== offer.user_id);
+  const alreadyAssignedToSameUser = activeAssignments.some((assignment) => assignment.user_id === offer.user_id);
+
+  if (assignedToAnotherUser) {
+    throw new Error('Este plantão já foi preenchido por outro plantonista.');
+  }
+
   const { error: offerError } = await supabase
     .from('shift_offers')
     .update({
@@ -55,18 +71,20 @@ export async function approveAdminOffer(params: {
 
   if (offerError) throw offerError;
 
-  const { error: assignError } = await supabase
-    .from('shift_assignments')
-    .insert({
-      tenant_id: tenantId,
-      shift_id: offer.shift_id,
-      user_id: offer.user_id,
-      assigned_value: offer.shift?.base_value || null,
-      status: 'assigned',
-      created_by: reviewerId,
-    });
+  if (!alreadyAssignedToSameUser) {
+    const { error: assignError } = await supabase
+      .from('shift_assignments')
+      .insert({
+        tenant_id: tenantId,
+        shift_id: offer.shift_id,
+        user_id: offer.user_id,
+        assigned_value: offer.shift?.base_value || null,
+        status: 'assigned',
+        updated_by: reviewerId,
+      });
 
-  if (assignError) throw assignError;
+    if (assignError) throw assignError;
+  }
 
   const { error: rejectOthersError } = await supabase
     .from('shift_offers')

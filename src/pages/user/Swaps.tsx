@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -33,11 +33,25 @@ function getConflictDescription(raw: string) {
   }
   return raw;
 }
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const parts = [candidate.message, candidate.details, candidate.hint, candidate.code]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(' | ');
+  }
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
+}
 import type { SwapAssignment as Assignment, SwapRequestItem as SwapRequest, SwapTenantMember as TenantMember } from '@/services/userSwaps';
 
 type SwapsTab = 'my-shifts' | 'incoming' | 'history';
 
 export default function UserSwaps() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
@@ -350,7 +364,7 @@ export default function UserSwaps() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível enviar a solicitação.',
+        description: getErrorMessage(error, 'Não foi possível enviar a solicitação.'),
         variant: 'destructive',
       });
     }
@@ -366,7 +380,7 @@ export default function UserSwaps() {
       });
       toast({ title: 'Troca aceita!', description: 'O plantão foi transferido para você.' });
     } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : String(error ?? 'Não foi possível aceitar a troca.');
+      const rawMessage = getErrorMessage(error, 'Não foi possível aceitar a troca.');
       const lowerMessage = rawMessage.toLowerCase();
       const isConflictError = lowerMessage.includes('conflito') || lowerMessage.includes('horário');
       const isEligibilityError =
@@ -410,7 +424,7 @@ export default function UserSwaps() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível recusar a troca.',
+        description: getErrorMessage(error, 'Não foi possível recusar a troca.'),
         variant: 'destructive',
       });
     }
@@ -423,7 +437,7 @@ export default function UserSwaps() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.',
+        description: getErrorMessage(error, 'Não foi possível cancelar a solicitação.'),
         variant: 'destructive',
       });
     }

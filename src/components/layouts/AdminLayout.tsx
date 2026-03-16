@@ -9,6 +9,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { importWithChunkRecovery } from '@/lib/chunkRecovery';
 import {
   LayoutDashboard, 
   CalendarDays,
@@ -48,43 +49,43 @@ function prefetchAdminRoute(path: string) {
 
   if (path === "/admin" || path.startsWith("/admin/dashboard")) {
     key = "dashboard";
-    loader = () => import("../../pages/admin/Dashboard");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Dashboard"));
   } else if (path.startsWith("/admin/calendar")) {
     key = "calendar";
-    loader = () => import("../../pages/admin/Calendar");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Calendar"));
   } else if (path.startsWith("/admin/users")) {
     key = "users";
-    loader = () => import("../../pages/admin/Users");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Users"));
   } else if (path.startsWith("/admin/sectors")) {
     key = "sectors";
-    loader = () => import("../../pages/admin/Sectors");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Sectors"));
   } else if (path.startsWith("/admin/values")) {
     key = "values";
-    loader = () => import("../../pages/admin/ShiftValues");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/ShiftValues"));
   } else if (path.startsWith("/admin/swaps")) {
     key = "swaps";
-    loader = () => import("../../pages/admin/Swaps");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Swaps"));
   } else if (path.startsWith("/admin/offers")) {
     key = "offers";
-    loader = () => import("../../pages/admin/Offers");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Offers"));
   } else if (path.startsWith("/admin/checkins")) {
     key = "checkins";
-    loader = () => import("../../pages/admin/CheckinReport");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/CheckinReport"));
   } else if (path.startsWith("/admin/notifications")) {
     key = "notifications";
-    loader = () => import("../../pages/admin/Notifications");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Notifications"));
   } else if (path.startsWith("/admin/financial")) {
     key = "financial";
-    loader = () => import("../../pages/admin/Financial");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Financial"));
   } else if (path.startsWith("/admin/reports")) {
     key = "reports";
-    loader = () => import("../../pages/admin/Reports");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Reports"));
   } else if (path.startsWith("/admin/subscription")) {
     key = "subscription";
-    loader = () => import("../../pages/admin/Subscription");
+    loader = () => importWithChunkRecovery(() => import("../../pages/admin/Subscription"));
   } else if (path.startsWith("/super-admin")) {
     key = "super-admin";
-    loader = () => import("../../pages/SuperAdmin");
+    loader = () => importWithChunkRecovery(() => import("../../pages/SuperAdmin"));
   }
 
   if (!key || !loader || prefetchedAdminRoutes.has(key)) return;

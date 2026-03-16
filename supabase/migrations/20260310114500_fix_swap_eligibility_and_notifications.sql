@@ -1,5 +1,42 @@
 BEGIN;
 
+CREATE OR REPLACE FUNCTION public.get_eligible_swap_sector_members(_tenant_id uuid, _sector_id uuid)
+RETURNS TABLE(user_id uuid, name text)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN;
+  END IF;
+
+  IF NOT public.is_tenant_member(auth.uid(), _tenant_id) THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    p.id AS user_id,
+    COALESCE(NULLIF(trim(p.full_name), ''), NULLIF(trim(p.name), ''), 'Sem nome') AS name
+  FROM public.sector_memberships sm
+  JOIN public.memberships m
+    ON m.tenant_id = sm.tenant_id
+   AND m.user_id = sm.user_id
+   AND m.active = true
+   AND m.role <> 'admin'
+   AND m.role <> 'owner'
+  JOIN public.profiles p
+    ON p.id = sm.user_id
+  WHERE sm.tenant_id = _tenant_id
+    AND sm.sector_id = _sector_id
+    AND sm.user_id <> auth.uid()
+    AND COALESCE(NULLIF(trim(p.profile_type), ''), 'plantonista') = 'plantonista'
+  ORDER BY COALESCE(NULLIF(trim(p.full_name), ''), NULLIF(trim(p.name), ''), 'Sem nome');
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.validate_swap_request_by_sector()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -41,6 +78,8 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = NEW.tenant_id
@@ -58,6 +97,8 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = NEW.tenant_id
@@ -87,8 +128,6 @@ DECLARE
   v_assignment_user_id uuid;
   v_shift_date date;
   v_shift_sector_id uuid;
-  v_shift_title text;
-  v_shift_hospital text;
   v_shift_start_minutes integer;
   v_shift_end_minutes integer;
   v_conflict_title text;
@@ -126,16 +165,12 @@ BEGIN
     sa.user_id,
     s.shift_date,
     s.sector_id,
-    s.title,
-    s.hospital,
     (split_part(s.start_time::text, ':', 1)::int * 60 + split_part(s.start_time::text, ':', 2)::int),
     (split_part(s.end_time::text, ':', 1)::int * 60 + split_part(s.end_time::text, ':', 2)::int)
   INTO
     v_assignment_user_id,
     v_shift_date,
     v_shift_sector_id,
-    v_shift_title,
-    v_shift_hospital,
     v_shift_start_minutes,
     v_shift_end_minutes
   FROM public.shift_assignments sa
@@ -167,6 +202,8 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = v_tenant_id
@@ -184,6 +221,8 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = v_tenant_id
@@ -260,7 +299,5 @@ BEGIN
   RETURN true;
 END;
 $$;
-
-GRANT EXECUTE ON FUNCTION public.decide_swap_request(uuid, text) TO authenticated;
 
 COMMIT;

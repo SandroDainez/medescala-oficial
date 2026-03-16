@@ -87,8 +87,6 @@ DECLARE
   v_assignment_user_id uuid;
   v_shift_date date;
   v_shift_sector_id uuid;
-  v_shift_title text;
-  v_shift_hospital text;
   v_shift_start_minutes integer;
   v_shift_end_minutes integer;
   v_conflict_title text;
@@ -126,16 +124,12 @@ BEGIN
     sa.user_id,
     s.shift_date,
     s.sector_id,
-    s.title,
-    s.hospital,
     (split_part(s.start_time::text, ':', 1)::int * 60 + split_part(s.start_time::text, ':', 2)::int),
     (split_part(s.end_time::text, ':', 1)::int * 60 + split_part(s.end_time::text, ':', 2)::int)
   INTO
     v_assignment_user_id,
     v_shift_date,
     v_shift_sector_id,
-    v_shift_title,
-    v_shift_hospital,
     v_shift_start_minutes,
     v_shift_end_minutes
   FROM public.shift_assignments sa

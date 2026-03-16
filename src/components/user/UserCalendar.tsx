@@ -1110,14 +1110,9 @@ export default function UserCalendar() {
                   ))}
                 </div>
               ))}
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 border-amber-500/40 bg-background/80 text-amber-900 hover:bg-background dark:text-amber-200"
-                onClick={() => navigate('/app/swaps')}
-              >
-                Resolver em Trocas
-              </Button>
+              <div className="text-[11px] text-amber-900 dark:text-amber-200">
+                Esse aviso e apenas informativo. A regularizacao do conflito deve ser feita pelo administrativo.
+              </div>
             </div>
           </div>
         )}

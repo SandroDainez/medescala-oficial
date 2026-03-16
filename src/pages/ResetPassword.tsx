@@ -21,6 +21,7 @@ export default function ResetPassword() {
   const [loading, setLoading] = useState(false);
   const [isValidLink, setIsValidLink] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if we have a valid recovery session
@@ -48,6 +49,24 @@ export default function ResetPassword() {
 
         // 2) PKCE/code format: /reset-password?code=...
         const queryParams = new URLSearchParams(window.location.search);
+        const inviteTokenParam = queryParams.get('invite_token');
+        if (inviteTokenParam) {
+          const { data, error } = await supabase.functions.invoke('accept-invite-password', {
+            body: {
+              inviteToken: inviteTokenParam,
+              validateOnly: true,
+            },
+          });
+
+          if (!error && !data?.error) {
+            setInviteToken(inviteTokenParam);
+            setIsValidLink(true);
+          } else {
+            setIsValidLink(false);
+          }
+          return;
+        }
+
         const token = queryParams.get('token');
         const queryType = queryParams.get('type') || 'recovery';
 
@@ -130,10 +149,17 @@ export default function ResetPassword() {
 
     setLoading(true);
 
-    const { error } = await supabase.auth.updateUser({
-      password: newPassword,
-      data: { must_change_password: false },
-    });
+    const { error } = inviteToken
+      ? await supabase.functions.invoke('accept-invite-password', {
+          body: {
+            inviteToken,
+            password: newPassword,
+          },
+        })
+      : await supabase.auth.updateUser({
+          password: newPassword,
+          data: { must_change_password: false },
+        });
 
     setLoading(false);
 
@@ -158,13 +184,15 @@ export default function ResetPassword() {
       return;
     }
 
-    // Also update must_change_password flag if applicable
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      await supabase
-        .from('profiles')
-        .update({ must_change_password: false })
-        .eq('id', user.id);
+    if (!inviteToken) {
+      // Also update must_change_password flag if applicable
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        await supabase
+          .from('profiles')
+          .update({ must_change_password: false })
+          .eq('id', user.id);
+      }
     }
 
     toast({
@@ -172,8 +200,9 @@ export default function ResetPassword() {
       description: 'Você será redirecionado para o login.',
     });
 
-    // Sign out and redirect to login
-    await supabase.auth.signOut();
+    if (!inviteToken) {
+      await supabase.auth.signOut();
+    }
     navigate('/auth');
   }
 

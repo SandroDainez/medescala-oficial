@@ -15,6 +15,7 @@ interface AccessStatus {
   isUnlimited: boolean;
   trialEndsAt: string | null;
   daysRemaining: number | null;
+  checkFailed: boolean;
 }
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
@@ -48,6 +49,15 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
 
         if (accessError) {
           console.warn('ProtectedRoute: failed to fetch tenant access status:', accessError);
+          setAccessStatus({
+            mustChangePassword: false,
+            isAccessActive: false,
+            isUnlimited: false,
+            trialEndsAt: null,
+            daysRemaining: null,
+            checkFailed: true,
+          });
+          return;
         }
 
         const accessData = tenantAccess?.[0];
@@ -67,16 +77,17 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
           isUnlimited: accessData?.is_unlimited ?? false,
           trialEndsAt: accessData?.trial_ends_at ?? null,
           daysRemaining: accessData?.days_remaining ?? null,
+          checkFailed: false,
         });
       } catch (error) {
         console.error('Error checking access status:', error);
-        // Default to allowing access on unexpected errors
         setAccessStatus({
           mustChangePassword: false,
-          isAccessActive: true,
+          isAccessActive: false,
           isUnlimited: false,
           trialEndsAt: null,
           daysRemaining: null,
+          checkFailed: true,
         });
       }
 
@@ -118,6 +129,19 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
   }
 
   // Check if trial expired
+  if (accessStatus?.checkFailed) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
+        <div className="max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-foreground">Não foi possível validar seu acesso</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Houve uma falha ao consultar o status do hospital/serviço. Atualize a página e tente novamente.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (accessStatus && !accessStatus.isAccessActive) {
     return <Navigate to="/trial-expired" replace />;
   }

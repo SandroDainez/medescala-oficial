@@ -12,7 +12,6 @@ import { useToast } from '@/hooks/use-toast';
 import { Calendar, Clock, MapPin, DollarSign, Hand, CheckCircle, XCircle, Loader2, Building } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ToastAction } from '@/components/ui/toast';
 import { useUserOffers } from '@/hooks/useUserOffers';
 import type { AvailableShift } from '@/services/userOffers';
 
@@ -75,14 +74,9 @@ export default function UserAvailableShifts() {
       toast({
         title: isConflictError ? 'Candidatura bloqueada por conflito' : 'Erro ao aceitar plantão',
         description: isConflictError
-          ? `Você já possui outro plantão que conflita com "${selectedShift.title}" em ${format(parseISO(selectedShift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}, das ${selectedShift.start_time.slice(0, 5)} às ${selectedShift.end_time.slice(0, 5)}. Ajuste primeiro em Trocas e tente novamente.`
+          ? `Você já possui outro plantão que conflita com "${selectedShift.title}" em ${format(parseISO(selectedShift.shift_date), 'dd/MM/yyyy', { locale: ptBR })}, das ${selectedShift.start_time.slice(0, 5)} às ${selectedShift.end_time.slice(0, 5)}. O administrativo precisa regularizar esse conflito antes de liberar novas alocações.`
           : backendMessage,
         variant: 'destructive',
-        action: isConflictError ? (
-          <ToastAction altText="Abrir Trocas" onClick={() => navigate('/app/swaps')}>
-            Abrir Trocas
-          </ToastAction>
-        ) : undefined,
       });
       return;
     }

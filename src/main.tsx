@@ -5,6 +5,9 @@ import "./index.css";
 import { registerSW } from "virtual:pwa-register";
 import { clearPwaCacheAndReload } from "@/lib/pwa";
 
+sessionStorage.removeItem("medescala_chunk_recovering");
+sessionStorage.removeItem("medescala_chunk_retry_done");
+
 const updateSW = registerSW({
   immediate: true,
   onNeedRefresh() {

@@ -1,77 +1,5 @@
 BEGIN;
 
-CREATE OR REPLACE FUNCTION public.validate_swap_request_by_sector()
-RETURNS trigger
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $$
-DECLARE
-  v_shift_sector_id uuid;
-  v_assignment_user_id uuid;
-BEGIN
-  IF NEW.origin_assignment_id IS NULL OR NEW.requester_id IS NULL OR NEW.target_user_id IS NULL THEN
-    RAISE EXCEPTION 'Dados obrigatórios da troca ausentes';
-  END IF;
-
-  SELECT sa.user_id, s.sector_id
-    INTO v_assignment_user_id, v_shift_sector_id
-  FROM public.shift_assignments sa
-  JOIN public.shifts s ON s.id = sa.shift_id
-  WHERE sa.id = NEW.origin_assignment_id
-    AND sa.tenant_id = NEW.tenant_id
-  LIMIT 1;
-
-  IF v_assignment_user_id IS NULL THEN
-    RAISE EXCEPTION 'Plantão de origem não encontrado';
-  END IF;
-
-  IF v_assignment_user_id <> NEW.requester_id THEN
-    RAISE EXCEPTION 'A troca só pode ser criada pelo dono do plantão';
-  END IF;
-
-  IF v_shift_sector_id IS NULL THEN
-    RAISE EXCEPTION 'Troca exige setor definido no plantão';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.sector_memberships sm
-    JOIN public.memberships m
-      ON m.tenant_id = sm.tenant_id
-     AND m.user_id = sm.user_id
-     AND m.active = true
-    JOIN public.profiles p
-      ON p.id = sm.user_id
-    WHERE sm.tenant_id = NEW.tenant_id
-      AND sm.sector_id = v_shift_sector_id
-      AND sm.user_id = NEW.requester_id
-      AND p.profile_type = 'plantonista'
-  ) THEN
-    RAISE EXCEPTION 'Solicitante não está apto para plantões neste setor';
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1
-    FROM public.sector_memberships sm
-    JOIN public.memberships m
-      ON m.tenant_id = sm.tenant_id
-     AND m.user_id = sm.user_id
-     AND m.active = true
-    JOIN public.profiles p
-      ON p.id = sm.user_id
-    WHERE sm.tenant_id = NEW.tenant_id
-      AND sm.sector_id = v_shift_sector_id
-      AND sm.user_id = NEW.target_user_id
-      AND p.profile_type = 'plantonista'
-  ) THEN
-    RAISE EXCEPTION 'Destino da troca precisa ser um plantonista ativo do mesmo setor';
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
 CREATE OR REPLACE FUNCTION public.decide_swap_request(_swap_request_id uuid, _decision text)
 RETURNS boolean
 LANGUAGE plpgsql
@@ -241,8 +169,7 @@ BEGIN
   SET status = _decision::public.swap_status,
       reviewed_at = now(),
       reviewed_by = auth.uid(),
-      updated_at = now(),
-      updated_by = auth.uid()
+      updated_at = now()
   WHERE id = _swap_request_id;
 
   IF _decision = 'approved' THEN

@@ -74,6 +74,44 @@ export interface AdminScheduleFetchResult {
   acknowledgedConflictKeys: Set<string>;
 }
 
+function safeParseConflictDetails(details: unknown): Array<Record<string, unknown>> {
+  if (!details) return [];
+  if (Array.isArray(details)) return details as Array<Record<string, unknown>>;
+  if (typeof details === 'string') {
+    try {
+      const parsed = JSON.parse(details);
+      return Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function buildStoredConflictKey(params: {
+  plantonistaId: string | null;
+  conflictDate: string | null;
+  conflictDetails: unknown;
+}) {
+  const assignmentIds = safeParseConflictDetails(params.conflictDetails)
+    .map((item) => {
+      const value = item.assignmentId ?? item.assignment_id;
+      return typeof value === 'string' ? value : null;
+    })
+    .filter((value): value is string => Boolean(value))
+    .sort();
+
+  if (params.plantonistaId && params.conflictDate && assignmentIds.length > 1) {
+    return `${params.plantonistaId}_${params.conflictDate}_${assignmentIds.join('|')}`;
+  }
+
+  if (params.plantonistaId && params.conflictDate) {
+    return `${params.plantonistaId}_${params.conflictDate}`;
+  }
+
+  return null;
+}
+
 export async function fetchAdminScheduleData({
   tenantId,
   userId,
@@ -181,7 +219,7 @@ export async function fetchAdminScheduleData({
     }),
     supabase
       .from('conflict_resolutions')
-      .select('conflict_date, plantonista_id')
+      .select('conflict_date, plantonista_id, conflict_details')
       .eq('tenant_id', tenantId)
       .gte('conflict_date', startStr)
       .lte('conflict_date', endStr),
@@ -247,9 +285,14 @@ export async function fetchAdminScheduleData({
   }) as ScheduleOffer[];
 
   const acknowledgedConflictKeys = new Set<string>();
-  for (const row of (resolutionsRes.data ?? []) as Array<{ conflict_date: string; plantonista_id: string | null }>) {
-    if (row.plantonista_id && row.conflict_date) {
-      acknowledgedConflictKeys.add(`${row.plantonista_id}_${row.conflict_date}`);
+  for (const row of (resolutionsRes.data ?? []) as Array<{ conflict_date: string | null; plantonista_id: string | null; conflict_details: unknown }>) {
+    const key = buildStoredConflictKey({
+      plantonistaId: row.plantonista_id,
+      conflictDate: row.conflict_date,
+      conflictDetails: row.conflict_details,
+    });
+    if (key) {
+      acknowledgedConflictKeys.add(key);
     }
   }
 

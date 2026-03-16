@@ -10,53 +10,56 @@ import { useTenant } from "@/hooks/useTenant";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { importWithChunkRecovery } from "@/lib/chunkRecovery";
 
-const Landing = lazy(() => import("./pages/Landing"));
-const Auth = lazy(() => import("./pages/Auth"));
-const Onboarding = lazy(() => import("./pages/Onboarding"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazy(() => import("./pages/ResetPassword"));
-const ChangePassword = lazy(() => import("./pages/ChangePassword"));
-const TrialExpired = lazy(() => import("./pages/TrialExpired"));
-const SuperAdmin = lazy(() => import("./pages/SuperAdmin"));
-const Install = lazy(() => import("./pages/Install"));
-const Terms = lazy(() => import("./pages/Terms"));
-const Privacy = lazy(() => import("./pages/Privacy"));
+const lazyRoute = <T,>(loader: () => Promise<T>) => lazy(() => importWithChunkRecovery(loader));
 
-const AdminLayout = lazy(() =>
+const Landing = lazyRoute(() => import("./pages/Landing"));
+const Auth = lazyRoute(() => import("./pages/Auth"));
+const Onboarding = lazyRoute(() => import("./pages/Onboarding"));
+const NotFound = lazyRoute(() => import("./pages/NotFound"));
+const ForgotPassword = lazyRoute(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazyRoute(() => import("./pages/ResetPassword"));
+const ChangePassword = lazyRoute(() => import("./pages/ChangePassword"));
+const TrialExpired = lazyRoute(() => import("./pages/TrialExpired"));
+const SuperAdmin = lazyRoute(() => import("./pages/SuperAdmin"));
+const Install = lazyRoute(() => import("./pages/Install"));
+const Terms = lazyRoute(() => import("./pages/Terms"));
+const Privacy = lazyRoute(() => import("./pages/Privacy"));
+
+const AdminLayout = lazyRoute(() =>
   import("./components/layouts/AdminLayout").then((mod) => ({
     default: mod.AdminLayout,
   }))
 );
-const AdminDashboard = lazy(() => import("./pages/admin/Dashboard"));
-const AdminCalendar = lazy(() => import("./pages/admin/Calendar"));
-const AdminUsers = lazy(() => import("./pages/admin/Users"));
-const AdminSectors = lazy(() => import("./pages/admin/Sectors"));
-const AdminShiftValues = lazy(() => import("./pages/admin/ShiftValues"));
-const AdminSwaps = lazy(() => import("./pages/admin/Swaps"));
-const AdminNotifications = lazy(() => import("./pages/admin/Notifications"));
-const AdminOffers = lazy(() => import("./pages/admin/Offers"));
-const AdminFinancial = lazy(() => import("./pages/admin/Financial"));
-const AdminReports = lazy(() => import("./pages/admin/Reports"));
-const AdminSubscription = lazy(() => import("./pages/admin/Subscription"));
-const AdminCheckinReport = lazy(() => import("./pages/admin/CheckinReport"));
+const AdminDashboard = lazyRoute(() => import("./pages/admin/Dashboard"));
+const AdminCalendar = lazyRoute(() => import("./pages/admin/Calendar"));
+const AdminUsers = lazyRoute(() => import("./pages/admin/Users"));
+const AdminSectors = lazyRoute(() => import("./pages/admin/Sectors"));
+const AdminShiftValues = lazyRoute(() => import("./pages/admin/ShiftValues"));
+const AdminSwaps = lazyRoute(() => import("./pages/admin/Swaps"));
+const AdminNotifications = lazyRoute(() => import("./pages/admin/Notifications"));
+const AdminOffers = lazyRoute(() => import("./pages/admin/Offers"));
+const AdminFinancial = lazyRoute(() => import("./pages/admin/Financial"));
+const AdminReports = lazyRoute(() => import("./pages/admin/Reports"));
+const AdminSubscription = lazyRoute(() => import("./pages/admin/Subscription"));
+const AdminCheckinReport = lazyRoute(() => import("./pages/admin/CheckinReport"));
 
-const UserLayout = lazy(() =>
+const UserLayout = lazyRoute(() =>
   import("./components/layouts/UserLayout").then((mod) => ({
     default: mod.UserLayout,
   }))
 );
-const UserCalendar = lazy(() => import("./pages/user/Calendar"));
-const UserHome = lazy(() => import("./pages/user/Home"));
-const UserShifts = lazy(() => import("./pages/user/Shifts"));
-const UserSwaps = lazy(() => import("./pages/user/Swaps"));
-const UserFinancial = lazy(() => import("./pages/user/Financial"));
-const UserNotifications = lazy(() => import("./pages/user/Notifications"));
-const UserSettings = lazy(() => import("./pages/user/Settings"));
-const UserAbout = lazy(() => import("./pages/user/About"));
-const UserFeedback = lazy(() => import("./pages/user/Feedback"));
-const UserAvailableShifts = lazy(() => import("./pages/user/AvailableShifts"));
+const UserCalendar = lazyRoute(() => import("./pages/user/Calendar"));
+const UserHome = lazyRoute(() => import("./pages/user/Home"));
+const UserShifts = lazyRoute(() => import("./pages/user/Shifts"));
+const UserSwaps = lazyRoute(() => import("./pages/user/Swaps"));
+const UserFinancial = lazyRoute(() => import("./pages/user/Financial"));
+const UserNotifications = lazyRoute(() => import("./pages/user/Notifications"));
+const UserSettings = lazyRoute(() => import("./pages/user/Settings"));
+const UserAbout = lazyRoute(() => import("./pages/user/About"));
+const UserFeedback = lazyRoute(() => import("./pages/user/Feedback"));
+const UserAvailableShifts = lazyRoute(() => import("./pages/user/AvailableShifts"));
 
 function RouteLoadingFallback() {
   const { pathname } = useLocation();

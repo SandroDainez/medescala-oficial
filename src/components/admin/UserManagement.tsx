@@ -1009,9 +1009,14 @@ export default function UserManagement() {
 
   function buildInviteText(user: UserRow, resetLink?: string) {
     const loginUrl = buildPublicAppUrl("/auth");
-    const resetUrl = (resetLink || buildPublicAppUrl("/reset-password")).trim();
     const hospitalName = currentTenantName || "MedEscala";
     const displayName = user.full_name || user.name || "Profissional";
+
+    if (!resetLink?.trim()) {
+      return `Olá, ${displayName}!\n\nGere um novo link de convite antes de copiar ou enviar esta mensagem.\n\nDepois do envio, o link correto aparecerá aqui.`;
+    }
+
+    const resetUrl = resetLink.trim();
 
     return `Olá, ${displayName}!\n\nVocê foi convidado para o ${hospitalName} no app MedEscala.\nEmail: ${user.email || "-"}\n\nPrimeiro acesso:\n1) Defina sua senha: ${resetUrl}\n2) Depois faça login: ${loginUrl}`;
   }
@@ -1043,7 +1048,7 @@ export default function UserManagement() {
       return;
     }
     setInviteUser(user);
-    setInviteMessage(buildInviteText(user));
+    setInviteMessage(buildInviteText(user, ""));
     setInviteOpen(true);
   }
 
@@ -1252,7 +1257,13 @@ export default function UserManagement() {
       return;
     }
 
-    const message = buildInviteText(inviteUser, String(data.resetLink));
+    const resetLink = String(data.resetLink).trim();
+    if (!resetLink.includes("invite_token=")) {
+      notifyError("gerar link de convite", "Link retornado sem invite_token", "O convite não foi enviado porque o link gerado está incompleto.");
+      return;
+    }
+
+    const message = buildInviteText(inviteUser, resetLink);
     setInviteMessage(message);
 
     const encoded = encodeURIComponent(message);

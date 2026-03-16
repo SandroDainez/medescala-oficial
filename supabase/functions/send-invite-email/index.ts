@@ -28,9 +28,44 @@ interface InviteEmailRequest {
   sendEmail?: boolean;
 }
 
-function normalizeRedirectUrl(_input: string | undefined, _loginUrl: string): string {
-  // Force canonical production reset route to avoid stale preview domains in invites.
-  return "https://app.medescalas.com.br/reset-password";
+const INVITE_EXPIRATION_HOURS = 48;
+
+function getCanonicalAppOrigin(): string {
+  const configured = (Deno.env.get("APP_PUBLIC_URL") || "https://app.medescalas.com.br").trim();
+  try {
+    return new URL(configured).origin;
+  } catch {
+    return "https://app.medescalas.com.br";
+  }
+}
+
+function normalizeRedirectUrl(input: string | undefined, _loginUrl: string): string {
+  const canonicalOrigin = getCanonicalAppOrigin();
+  const fallback = `${canonicalOrigin}/reset-password`;
+  if (!input) return fallback;
+
+  try {
+    const url = new URL(input);
+    if (url.origin !== canonicalOrigin) return fallback;
+    return `${canonicalOrigin}/reset-password`;
+  } catch {
+    return fallback;
+  }
+}
+
+async function sha256Hex(value: string): Promise<string> {
+  const data = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function generateInviteToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -108,21 +143,55 @@ Deno.serve(async (req: Request): Promise<Response> => {
     }
 
     const safeRedirectUrl = normalizeRedirectUrl(redirectUrl, loginUrl);
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'recovery',
-      email,
-      options: { redirectTo: safeRedirectUrl },
-    });
-    if (linkError) {
-      throw new Error(`Erro ao gerar link de definição de senha: ${linkError.message}`);
+
+    const { data: targetProfile, error: targetProfileError } = await supabaseAdmin
+      .from("profiles")
+      .select("id, email")
+      .eq("email", email.toLowerCase().trim())
+      .maybeSingle();
+
+    if (targetProfileError) {
+      throw new Error(`Erro ao localizar usuário do convite: ${targetProfileError.message}`);
     }
-    const rawActionLink = (linkData.properties as any)?.action_link as string | undefined;
-    const tokenHash = (linkData.properties as any)?.hashed_token as string | undefined;
-    // Use token_hash link as primary to avoid stale redirect_to values from action_link.
-    // ResetPassword page handles token_hash via verifyOtp.
-    const resetLink = tokenHash
-      ? `${safeRedirectUrl}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
-      : (rawActionLink || safeRedirectUrl);
+
+    if (!targetProfile?.id) {
+      throw new Error("Usuário não encontrado. Crie o usuário antes de enviar o convite.");
+    }
+
+    const inviteToken = generateInviteToken();
+    const inviteTokenHash = await sha256Hex(inviteToken);
+
+    const { error: revokePreviousInvitesError } = await supabaseAdmin
+      .from("user_invites")
+      .update({
+        revoked_at: new Date().toISOString(),
+        revoked_by: requester.id,
+      })
+      .eq("tenant_id", tenantId)
+      .eq("user_id", targetProfile.id)
+      .is("used_at", null)
+      .is("revoked_at", null);
+
+    if (revokePreviousInvitesError) {
+      throw new Error(`Erro ao invalidar convite anterior: ${revokePreviousInvitesError.message}`);
+    }
+
+    const { error: inviteInsertError } = await supabaseAdmin
+      .from("user_invites")
+      .insert({
+        tenant_id: tenantId,
+        user_id: targetProfile.id,
+        email: email.toLowerCase().trim(),
+        token_hash: inviteTokenHash,
+        created_by: requester.id,
+        expires_at: new Date(Date.now() + INVITE_EXPIRATION_HOURS * 60 * 60 * 1000).toISOString(),
+      });
+
+    if (inviteInsertError) {
+      throw new Error(`Erro ao criar convite: ${inviteInsertError.message}`);
+    }
+
+    const resetLink = `${safeRedirectUrl}?invite_token=${encodeURIComponent(inviteToken)}`;
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -151,7 +220,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
           
           <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
             <p style="margin: 0; color: #92400e;">
-              <strong>⚠️ Importante:</strong> Por segurança, altere sua senha no primeiro acesso.
+              <strong>⚠️ Importante:</strong> Este link expira em ${INVITE_EXPIRATION_HOURS} horas e deve ser usado para definir sua senha no primeiro acesso.
             </p>
           </div>
           

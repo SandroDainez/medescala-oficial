@@ -71,6 +71,19 @@ const swapRequestSelect = `
   )
 `;
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === 'object' && error !== null) {
+    const candidate = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+    const parts = [candidate.message, candidate.details, candidate.hint, candidate.code]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+    if (parts.length > 0) return parts.join(' | ');
+  }
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
+}
+
 async function getTenantMembers(tenantId: string, userId: string): Promise<SwapTenantMember[]> {
   const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: tenantId });
   if (error) throw error;
@@ -198,61 +211,24 @@ export async function fetchEligibleSectorMembers(
   userId: string,
   tenantId: string,
   sectorId: string,
-  tenantMembers: SwapTenantMember[]
+  _tenantMembers: SwapTenantMember[]
 ): Promise<SwapTenantMember[]> {
-  const { data: membershipsData, error: membershipsError } = await supabase
-    .from('sector_memberships')
-    .select('user_id')
-    .eq('tenant_id', tenantId)
-    .eq('sector_id', sectorId);
+  const { data, error } = await supabase.rpc('get_eligible_swap_sector_members', {
+    _tenant_id: tenantId,
+    _sector_id: sectorId,
+  });
 
-  if (membershipsError) throw membershipsError;
+  if (error) throw error;
 
-  const sectorUserIds = Array.from(
-    new Set((membershipsData ?? []).map((membership: { user_id: string }) => membership.user_id).filter(Boolean))
-  );
-
-  if (sectorUserIds.length === 0) {
-    return [...tenantMembers].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }
-
-  const [eligibleMembershipsResult, eligibleProfilesResult] = await Promise.all([
-    supabase
-      .from('memberships')
-      .select('user_id')
-      .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .eq('role', 'user')
-      .in('user_id', sectorUserIds),
-    supabase
-      .from('profiles')
-      .select('id, full_name, name, profile_type')
-      .in('id', sectorUserIds),
-  ]);
-
-  if (eligibleMembershipsResult.error) throw eligibleMembershipsResult.error;
-  if (eligibleProfilesResult.error) throw eligibleProfilesResult.error;
-
-  const eligibleUserIdsFromMembership = new Set(
-    ((eligibleMembershipsResult.data ?? []) as Array<{ user_id: string }>).map((membership) => membership.user_id)
-  );
-
-  const eligibleNameMap = new Map(
-    ((eligibleProfilesResult.data ?? []) as Array<{ id: string; full_name: string | null; name: string | null; profile_type: string | null }>)
-      .filter((profile) => profile.profile_type === 'plantonista')
-      .map((profile) => [profile.id, (profile.full_name?.trim() || profile.name?.trim() || 'Sem nome') as string])
-  );
-
-  const filteredMembers = tenantMembers
-    .filter((member) => member.user_id !== userId)
-    .filter((member) => eligibleUserIdsFromMembership.has(member.user_id) && eligibleNameMap.has(member.user_id))
+  const eligibleMembers = ((data ?? []) as Array<{ user_id: string; name: string | null }>)
+    .filter((member) => member.user_id && member.user_id !== userId)
     .map((member) => ({
-      ...member,
-      name: eligibleNameMap.get(member.user_id) || member.name,
+      user_id: member.user_id,
+      name: member.name?.trim() || 'Sem nome',
     }))
     .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
 
-  return filteredMembers;
+  return eligibleMembers;
 }
 
 export async function submitSwapRequest(params: {
@@ -274,6 +250,17 @@ export async function submitSwapRequest(params: {
     });
 
   if (swapError) throw swapError;
+
+  const { error: selfNotifyError } = await supabase.from('notifications').insert({
+    tenant_id: params.tenantId,
+    user_id: params.userId,
+    shift_assignment_id: params.selectedAssignment.id,
+    type: 'swap_request_sent',
+    title: 'Solicitação enviada',
+    message: `Seu pedido para passar o plantão "${params.selectedAssignment.shift.title}" do dia ${format(parseDateOnly(params.selectedAssignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR })} foi enviado para ${params.selectedTargetUser.name}.`,
+  });
+
+  if (selfNotifyError) throw selfNotifyError;
 
   const { error: notifyError } = await supabase.from('notifications').insert({
     tenant_id: params.tenantId,
@@ -308,7 +295,9 @@ export async function decideSwapRequest(params: {
     _decision: params.decision,
   });
 
-  if (error) throw error;
+  if (error) {
+    throw new Error(getErrorMessage(error, 'Não foi possível processar a troca.'));
+  }
 
   const decisionTitle = params.decision === 'approved' ? 'Troca aceita' : 'Troca recusada';
   const decisionText = params.decision === 'approved' ? 'aceito' : 'recusado';
@@ -322,7 +311,7 @@ export async function decideSwapRequest(params: {
     message: `Seu pedido para passar o plantão "${params.swap.origin_assignment?.shift?.title}" (${params.swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(params.swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi ${decisionText}.`,
   });
 
-  if (notifyError) throw notifyError;
+  if (notifyError) throw new Error(getErrorMessage(notifyError, 'Não foi possível notificar o solicitante.'));
 
   await notifyTenantAdmins({
     tenantId: params.tenantId,

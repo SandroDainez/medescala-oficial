@@ -1,5 +1,9 @@
 BEGIN;
 
+CREATE UNIQUE INDEX IF NOT EXISTS swap_requests_one_pending_per_assignment_idx
+  ON public.swap_requests (origin_assignment_id)
+  WHERE status = 'pending';
+
 CREATE OR REPLACE FUNCTION public.validate_swap_request_by_sector()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -34,6 +38,16 @@ BEGIN
     RAISE EXCEPTION 'Troca exige setor definido no plantão';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM public.swap_requests sr
+    WHERE sr.tenant_id = NEW.tenant_id
+      AND sr.origin_assignment_id = NEW.origin_assignment_id
+      AND sr.status = 'pending'
+  ) THEN
+    RAISE EXCEPTION 'Já existe uma solicitação pendente para este plantão';
+  END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM public.sector_memberships sm
@@ -41,12 +55,14 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = NEW.tenant_id
       AND sm.sector_id = v_shift_sector_id
       AND sm.user_id = NEW.requester_id
-      AND p.profile_type = 'plantonista'
+      AND COALESCE(NULLIF(trim(p.profile_type), ''), 'plantonista') = 'plantonista'
   ) THEN
     RAISE EXCEPTION 'Solicitante não está apto para plantões neste setor';
   END IF;
@@ -58,12 +74,14 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = NEW.tenant_id
       AND sm.sector_id = v_shift_sector_id
       AND sm.user_id = NEW.target_user_id
-      AND p.profile_type = 'plantonista'
+      AND COALESCE(NULLIF(trim(p.profile_type), ''), 'plantonista') = 'plantonista'
   ) THEN
     RAISE EXCEPTION 'Destino da troca precisa ser um plantonista ativo do mesmo setor';
   END IF;
@@ -87,8 +105,6 @@ DECLARE
   v_assignment_user_id uuid;
   v_shift_date date;
   v_shift_sector_id uuid;
-  v_shift_title text;
-  v_shift_hospital text;
   v_shift_start_minutes integer;
   v_shift_end_minutes integer;
   v_conflict_title text;
@@ -126,16 +142,12 @@ BEGIN
     sa.user_id,
     s.shift_date,
     s.sector_id,
-    s.title,
-    s.hospital,
     (split_part(s.start_time::text, ':', 1)::int * 60 + split_part(s.start_time::text, ':', 2)::int),
     (split_part(s.end_time::text, ':', 1)::int * 60 + split_part(s.end_time::text, ':', 2)::int)
   INTO
     v_assignment_user_id,
     v_shift_date,
     v_shift_sector_id,
-    v_shift_title,
-    v_shift_hospital,
     v_shift_start_minutes,
     v_shift_end_minutes
   FROM public.shift_assignments sa
@@ -167,12 +179,14 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = v_tenant_id
       AND sm.sector_id = v_shift_sector_id
       AND sm.user_id = v_requester_id
-      AND p.profile_type = 'plantonista'
+      AND COALESCE(NULLIF(trim(p.profile_type), ''), 'plantonista') = 'plantonista'
   ) THEN
     RAISE EXCEPTION 'Solicitante não está apto para plantões neste setor';
   END IF;
@@ -184,12 +198,14 @@ BEGIN
       ON m.tenant_id = sm.tenant_id
      AND m.user_id = sm.user_id
      AND m.active = true
+     AND m.role <> 'admin'
+     AND m.role <> 'owner'
     JOIN public.profiles p
       ON p.id = sm.user_id
     WHERE sm.tenant_id = v_tenant_id
       AND sm.sector_id = v_shift_sector_id
       AND sm.user_id = v_target_user_id
-      AND p.profile_type = 'plantonista'
+      AND COALESCE(NULLIF(trim(p.profile_type), ''), 'plantonista') = 'plantonista'
   ) THEN
     RAISE EXCEPTION 'O colega escolhido não é um plantonista ativo do mesmo setor';
   END IF;
@@ -241,8 +257,7 @@ BEGIN
   SET status = _decision::public.swap_status,
       reviewed_at = now(),
       reviewed_by = auth.uid(),
-      updated_at = now(),
-      updated_by = auth.uid()
+      updated_at = now()
   WHERE id = _swap_request_id;
 
   IF _decision = 'approved' THEN
@@ -254,13 +269,21 @@ BEGIN
         updated_by = auth.uid()
     WHERE id = v_origin_assignment_id;
 
+    UPDATE public.swap_requests
+    SET status = 'cancelled'::public.swap_status,
+        reviewed_at = now(),
+        reviewed_by = auth.uid(),
+        updated_at = now()
+    WHERE tenant_id = v_tenant_id
+      AND origin_assignment_id = v_origin_assignment_id
+      AND id <> _swap_request_id
+      AND status = 'pending';
+
     PERFORM set_config('app.bypass_restrict_user_assignment_update', 'false', true);
   END IF;
 
   RETURN true;
 END;
 $$;
-
-GRANT EXECUTE ON FUNCTION public.decide_swap_request(uuid, text) TO authenticated;
 
 COMMIT;

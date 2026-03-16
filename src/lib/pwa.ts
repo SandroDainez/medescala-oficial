@@ -10,6 +10,8 @@ export async function clearPwaCacheAndReload() {
       await Promise.all(keys.map((k) => caches.delete(k)));
     }
   } finally {
-    window.location.reload();
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("_app_reload", Date.now().toString());
+    window.location.replace(nextUrl.toString());
   }
 }

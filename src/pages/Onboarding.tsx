@@ -20,7 +20,6 @@ export default function Onboarding() {
 
   const [tenantName, setTenantName] = useState('');
   const [tenantSlug, setTenantSlug] = useState('');
-  const [inviteCode, setInviteCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -89,70 +88,6 @@ setDialogOpen(false);
 navigate('/admin');
 setLoading(false);
 }
-  async function handleJoinByInvite(e: React.FormEvent) {
-    e.preventDefault();
-    if (!user || !inviteCode) return;
-
-    setLoading(true);
-
-    const { data: tenant, error: tenantError } = await supabase
-      .from('tenants')
-      .select('id, name')
-      .eq('slug', inviteCode.toLowerCase().trim())
-      .maybeSingle();
-
-    if (tenantError || !tenant) {
-      toast({ title: 'Hospital não encontrado', description: 'Verifique o código de convite', variant: 'destructive' });
-      setLoading(false);
-      return;
-    }
-
-    const { data: existing } = await supabase
-      .from('memberships')
-      .select('id')
-      .eq('tenant_id', tenant.id)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (existing) {
-      toast({ title: 'Você já é membro deste hospital' });
-      await refreshMemberships();
-      navigate('/app');
-      setLoading(false);
-      return;
-    }
-
-    const { data: canAdd } = await supabase.rpc('can_add_user_to_tenant', { _tenant_id: tenant.id });
-
-    if (!canAdd) {
-      toast({ 
-        title: 'Limite de usuários atingido', 
-        description: 'Este hospital atingiu o limite de usuários do plano atual',
-        variant: 'destructive' 
-      });
-      setLoading(false);
-      return;
-    }
-
-    const { error: membershipError } = await supabase.from('memberships').insert({
-      tenant_id: tenant.id,
-      user_id: user.id,
-      role: 'user',
-      created_by: user.id,
-    });
-
-    if (membershipError) {
-      toast({ title: 'Erro ao entrar no hospital', description: membershipError.message, variant: 'destructive' });
-      setLoading(false);
-      return;
-    }
-
-    toast({ title: `Bem-vindo ao ${tenant.name}!` });
-    await refreshMemberships();
-    setDialogOpen(false);
-    navigate('/app');
-    setLoading(false);
-  }
 
   const handleLogout = async () => {
     await signOut();
@@ -259,19 +194,16 @@ setLoading(false);
                       <DialogHeader>
                         <DialogTitle>Adicionar Hospital</DialogTitle>
                         <DialogDescription>
-                          Crie um novo hospital ou entre com código de convite
+                          Crie um novo hospital ou aguarde o convite do administrador
                         </DialogDescription>
                       </DialogHeader>
                       <AddHospitalTabs
                         tenantName={tenantName}
                         tenantSlug={tenantSlug}
-                        inviteCode={inviteCode}
                         loading={loading}
                         onNameChange={handleNameChange}
                         onSlugChange={setTenantSlug}
-                        onInviteCodeChange={setInviteCode}
                         onCreateTenant={handleCreateTenant}
-                        onJoinByInvite={handleJoinByInvite}
                       />
                     </DialogContent>
                   </Dialog>
@@ -285,7 +217,7 @@ setLoading(false);
                     Bem-vindo ao MedEscala
                   </h2>
                   <p className="text-muted-foreground mt-2">
-                    Para começar, crie um hospital ou entre em um existente
+                    Para começar, crie um hospital ou aguarde o convite do administrador
                   </p>
                 </div>
 
@@ -321,7 +253,7 @@ setLoading(false);
                       <div className="flex-1 text-left">
                         <h3 className="font-semibold text-lg">Entrar por Convite</h3>
                         <p className="text-sm text-muted-foreground">
-                          Tenho um código de acesso do meu hospital
+                          Meu administrador vai me cadastrar e enviar o convite
                         </p>
                       </div>
                       <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
@@ -334,19 +266,16 @@ setLoading(false);
                     <DialogHeader>
                       <DialogTitle>Configurar Acesso</DialogTitle>
                       <DialogDescription>
-                        Crie um novo hospital ou entre com código de convite
+                        Crie um novo hospital ou aguarde o convite do administrador
                       </DialogDescription>
                     </DialogHeader>
                     <AddHospitalTabs
                       tenantName={tenantName}
                       tenantSlug={tenantSlug}
-                      inviteCode={inviteCode}
                       loading={loading}
                       onNameChange={handleNameChange}
                       onSlugChange={setTenantSlug}
-                      onInviteCodeChange={setInviteCode}
                       onCreateTenant={handleCreateTenant}
-                      onJoinByInvite={handleJoinByInvite}
                     />
                   </DialogContent>
                 </Dialog>
@@ -362,31 +291,25 @@ setLoading(false);
 interface AddHospitalTabsProps {
   tenantName: string;
   tenantSlug: string;
-  inviteCode: string;
   loading: boolean;
   onNameChange: (value: string) => void;
   onSlugChange: (value: string) => void;
-  onInviteCodeChange: (value: string) => void;
   onCreateTenant: (e: React.FormEvent) => void;
-  onJoinByInvite: (e: React.FormEvent) => void;
 }
 
 function AddHospitalTabs({
   tenantName,
   tenantSlug,
-  inviteCode,
   loading,
   onNameChange,
   onSlugChange,
-  onInviteCodeChange,
   onCreateTenant,
-  onJoinByInvite,
 }: AddHospitalTabsProps) {
   return (
     <Tabs defaultValue="create" className="w-full mt-4">
       <TabsList className="grid w-full grid-cols-2">
         <TabsTrigger value="create">Criar Hospital</TabsTrigger>
-        <TabsTrigger value="join">Entrar por Código</TabsTrigger>
+        <TabsTrigger value="join">Receber Convite</TabsTrigger>
       </TabsList>
 
       <TabsContent value="create" className="mt-4">
@@ -421,24 +344,20 @@ function AddHospitalTabs({
       </TabsContent>
 
       <TabsContent value="join" className="mt-4">
-        <form onSubmit={onJoinByInvite} className="space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="inviteCode">Código de Convite</Label>
-            <Input
-              id="inviteCode"
-              value={inviteCode}
-              onChange={(e) => onInviteCodeChange(e.target.value)}
-              placeholder="hospital-santa-maria"
-              required
-            />
+            <Label>Padrão de acesso</Label>
+            <div className="rounded-lg border bg-muted/30 p-4 text-sm text-muted-foreground">
+              O acesso a hospitais existentes agora é feito apenas por cadastro do administrador e convite por e-mail/WhatsApp.
+            </div>
             <p className="text-xs text-muted-foreground">
-              Peça ao administrador do hospital o código de acesso
+              Se você ainda não recebeu seu convite, peça ao administrador para cadastrar seu usuário na tela de usuários.
             </p>
           </div>
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Entrando...' : 'Entrar no Hospital'}
+          <Button type="button" variant="outline" className="w-full" disabled>
+            Aguardando convite do administrador
           </Button>
-        </form>
+        </div>
       </TabsContent>
     </Tabs>
   );
