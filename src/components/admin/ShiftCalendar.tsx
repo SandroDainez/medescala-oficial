@@ -618,10 +618,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return Number(((baseValue / STANDARD_SHIFT_HOURS) * durationHours).toFixed(2));
   }
 
-  function durationToInputValue(hours: number): string {
-    if (!Number.isFinite(hours) || hours <= 0) return '';
-    return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
+function durationToInputValue(hours: number): string {
+  if (!Number.isFinite(hours) || hours <= 0) return '';
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(2);
+}
+
+function formatTimeInput(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (!digits) return '';
+  const hours = digits.slice(0, 2).padStart(2, '0');
+  const minutes = digits.length > 2 ? digits.slice(2).padEnd(2, '0') : '';
+  if (minutes) {
+    return `${hours}:${minutes}`;
   }
+  return hours;
+}
 
   /**
    * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
@@ -6261,15 +6272,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   placeholder="Ex: 12:00"
                   value={formData.end_time}
                   onChange={(e) => {
-                    const rawValue = e.target.value;
-                    const normalized = rawValue.replace(/[^\d:]/g, '').slice(0, 5);
-                    const hasFullTime = /^\d{1,2}:\d{2}$/.test(normalized);
+                    const formatted = formatTimeInput(e.target.value);
+                    const hasFullTime = /^\d{2}:\d{2}$/.test(formatted);
                     setFormData((prev) => {
                       const nextDuration =
                         hasFullTime && prev.start_time
-                          ? durationToInputValue(calculateDurationHours(prev.start_time, normalized))
+                          ? durationToInputValue(calculateDurationHours(prev.start_time, formatted))
                           : prev.duration_hours;
-                      return { ...prev, end_time: normalized, duration_hours: nextDuration };
+                      return { ...prev, end_time: formatted, duration_hours: nextDuration };
                     });
                   }}
                   required
