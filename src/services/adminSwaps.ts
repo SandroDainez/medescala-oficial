@@ -151,35 +151,36 @@ export async function decideAdminOffer(params: {
       throw new Error('Este plantão já foi preenchido por outro plantonista.');
     }
 
-    const { error: updateError } = await supabase
-      .from('shift_offers')
-      .update({
-        status: params.action,
-        reviewed_by: params.reviewerId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', params.offer.id);
-    if (updateError) throw updateError;
-
-    const { data: shiftData, error: shiftError } = await supabase
-      .from('shifts')
-      .select('base_value')
-      .eq('id', params.offer.shift_id)
-      .single();
-    if (shiftError) throw shiftError;
-
     if (!alreadyAssignedToSameUser) {
-      const { error: assignError } = await supabase
-        .from('shift_assignments')
-        .insert({
-          tenant_id: params.tenantId,
-          shift_id: params.offer.shift_id,
-          user_id: params.offer.user_id,
-          assigned_value: shiftData?.base_value || null,
-          status: 'assigned',
-          updated_by: params.reviewerId,
-        });
-      if (assignError) throw assignError;
+      const { error: acceptError } = await supabase.rpc('accept_shift_offer_with_snapshot', {
+        _offer_id: params.offer.id,
+        _reviewer_id: params.reviewerId ?? null,
+      });
+      if (acceptError) throw acceptError;
+    } else {
+      const reviewedAt = new Date().toISOString();
+
+      const { error: updateError } = await supabase
+        .from('shift_offers')
+        .update({
+          status: params.action,
+          reviewed_by: params.reviewerId,
+          reviewed_at: reviewedAt,
+        })
+        .eq('id', params.offer.id);
+      if (updateError) throw updateError;
+
+      const { error: rejectOthersError } = await supabase
+        .from('shift_offers')
+        .update({
+          status: 'rejected',
+          reviewed_by: params.reviewerId,
+          reviewed_at: reviewedAt,
+        })
+        .eq('shift_id', params.offer.shift_id)
+        .eq('status', 'pending')
+        .neq('id', params.offer.id);
+      if (rejectOthersError) throw rejectOthersError;
     }
 
     const { error: shiftUpdateError } = await supabase
@@ -190,18 +191,6 @@ export async function decideAdminOffer(params: {
       })
       .eq('id', params.offer.shift_id);
     if (shiftUpdateError) throw shiftUpdateError;
-
-    const { error: rejectOthersError } = await supabase
-      .from('shift_offers')
-      .update({
-        status: 'rejected',
-        reviewed_by: params.reviewerId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('shift_id', params.offer.shift_id)
-      .eq('status', 'pending')
-      .neq('id', params.offer.id);
-    if (rejectOthersError) throw rejectOthersError;
 
     return;
   }

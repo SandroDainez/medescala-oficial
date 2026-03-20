@@ -1,22 +1,11 @@
 /**
- * REGRA ÚNICA DE CÁLCULO DE VALORES - FONTE DE VERDADE
+ * REGRAS DE VALOR
  * 
- * Este módulo centraliza toda a lógica de cálculo de valores de plantão.
- * DEVE SER USADO EM TODO O SISTEMA para garantir consistência entre:
- * - Card do plantão (ShiftCalendar)
- * - Nome do médico atribuído
- * - Módulo Financeiro
- * - Relatórios
+ * Este módulo agora separa dois conceitos:
+ * - leitura financeira de assignment existente: usar apenas assigned_value
+ * - projeção operacional de valor: pode usar individual/base/setor
  * 
- * PRIORIDADE (nunca muda):
- * 1. assigned_value (valor editado manualmente na Escala) - USAR COMO ESTÁ
- * 2. Individual (user_sector_values) - APLICAR PRÓ-RATA
- * 3. base_value do plantão (shifts.base_value) - USAR COMO ESTÁ
- * 4. Padrão do setor (sectors.default_day/night_value) - APLICAR PRÓ-RATA
- * 
- * REGRA DE PRÓ-RATA:
- * - assigned_value JÁ ESTÁ pró-rata (foi calculado no momento do save)
- * - Individual e Padrão são valores BASE de 12h, precisam de pró-rata na exibição
+ * O financeiro consolidado NÃO deve recalcular assignment histórica.
  */
 
 // Constante padrão: plantão de 12 horas
@@ -79,7 +68,29 @@ export interface ValueResult {
 }
 
 /**
- * FUNÇÃO ÚNICA DE CÁLCULO - USE EM TODO O SISTEMA
+ * Leitura financeira de assignment existente.
+ * Snapshot é a única fonte de verdade.
+ */
+export function calculateAssignedSnapshotValue(assignedValue: number | null): ValueResult {
+  if (assignedValue !== null) {
+    return {
+      finalValue: assignedValue,
+      source: 'assigned',
+      durationHours: STANDARD_SHIFT_HOURS,
+      baseValueUsed: null,
+    };
+  }
+
+  return {
+    finalValue: null,
+    source: 'none',
+    durationHours: STANDARD_SHIFT_HOURS,
+    baseValueUsed: null,
+  };
+}
+
+/**
+ * Projeção operacional para plantão ainda sem snapshot financeiro.
  * 
  * Parâmetros:
  * @param assignedValue - Valor salvo em shift_assignments.assigned_value (já pró-rata)

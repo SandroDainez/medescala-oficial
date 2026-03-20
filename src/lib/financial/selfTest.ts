@@ -12,12 +12,12 @@ export interface FinancialSelfTestResult {
 export function runFinancialSelfTest(): FinancialSelfTestResult {
   const errors: string[] = [];
 
-  // Test scenarios:
-  // A: setor X, João, assigned 500 (uses assigned)
-  // B: setor X, João, no assigned, base 400 (uses base)
-  // C: setor Y, Maria, no assigned and no base (uses sector default night 300)
+  // Test scenarios under snapshot-only finance:
+  // A: setor X, João, assigned 500 (uses assigned snapshot)
+  // B: setor X, João, no assigned, base 400 (must stay unpriced)
+  // C: setor Y, Maria, no assigned and no base (must stay unpriced even with sector default)
   // D: setor Z, Pedro, no assigned, no base, no sector default (unpriced)
-  // E: setor X, Ana, assigned = 0 (INTENTIONALLY ZERO - no fallback to base or default)
+  // E: setor X, Ana, assigned = 0 (INTENTIONAL ZERO - still priced as zero)
   const sectorX: SectorLookup = { id: 'sector-x', name: 'Setor X', default_day_value: 400, default_night_value: 350 };
   const sectorY: SectorLookup = { id: 'sector-y', name: 'Setor Y', default_day_value: null, default_night_value: 300 };
   const sectorZ: SectorLookup = { id: 'sector-z', name: 'Setor Z', default_day_value: null, default_night_value: null };
@@ -92,14 +92,14 @@ export function runFinancialSelfTest(): FinancialSelfTestResult {
   const { grandTotals, plantonistaReports, sectorReports } = aggregateFinancial(entries);
 
   // Expected totals:
-  // João: 500 + 400 = 900
-  // Maria: 300 (sector default night)
-  // Pedro: 0 (unpriced - null)
-  // Ana: 0 (intentionally zero - value is 0, not null)
-  // Total: 1200
-  if (grandTotals.totalValue !== 1200) errors.push(`Total Geral esperado 1200, veio ${grandTotals.totalValue}`);
-  if (grandTotals.unpricedShifts !== 1) errors.push(`Sem valor esperado 1, veio ${grandTotals.unpricedShifts}`);
-  if (grandTotals.paidShifts !== 4) errors.push(`Com valor esperado 4 (inclui Ana com 0), veio ${grandTotals.paidShifts}`);
+  // João: 500 + null = 500
+  // Maria: null
+  // Pedro: null
+  // Ana: 0
+  // Total: 500
+  if (grandTotals.totalValue !== 500) errors.push(`Total Geral esperado 500, veio ${grandTotals.totalValue}`);
+  if (grandTotals.unpricedShifts !== 3) errors.push(`Sem valor esperado 3, veio ${grandTotals.unpricedShifts}`);
+  if (grandTotals.paidShifts !== 2) errors.push(`Com valor esperado 2 (inclui Ana com 0), veio ${grandTotals.paidShifts}`);
 
   const joao = plantonistaReports.find((p) => p.assignee_id === 'joao');
   const maria = plantonistaReports.find((p) => p.assignee_id === 'maria');
@@ -108,12 +108,14 @@ export function runFinancialSelfTest(): FinancialSelfTestResult {
 
   if (!joao) errors.push('João não encontrado');
   else {
-    if (joao.total_to_receive !== 900) errors.push(`João total esperado 900, veio ${joao.total_to_receive}`);
+    if (joao.total_to_receive !== 500) errors.push(`João total esperado 500, veio ${joao.total_to_receive}`);
+    if (joao.unpriced_shifts !== 1) errors.push(`João unpriced esperado 1, veio ${joao.unpriced_shifts}`);
   }
 
   if (!maria) errors.push('Maria não encontrada');
   else {
-    if (maria.total_to_receive !== 300) errors.push(`Maria total esperado 300, veio ${maria.total_to_receive}`);
+    if (maria.total_to_receive !== 0) errors.push(`Maria total esperado 0, veio ${maria.total_to_receive}`);
+    if (maria.unpriced_shifts !== 1) errors.push(`Maria unpriced esperado 1, veio ${maria.unpriced_shifts}`);
   }
 
   if (!pedro) errors.push('Pedro não encontrado');
@@ -134,8 +136,8 @@ export function runFinancialSelfTest(): FinancialSelfTestResult {
 
   if (!setorXReport) errors.push('Setor X não encontrado');
   else {
-    // Setor X: João 500+400 + Ana 0 = 900
-    if (setorXReport.total_value !== 900) errors.push(`Setor X total esperado 900, veio ${setorXReport.total_value}`);
+    // Setor X: João 500 + Ana 0 = 500
+    if (setorXReport.total_value !== 500) errors.push(`Setor X total esperado 500, veio ${setorXReport.total_value}`);
   }
 
   return { ok: errors.length === 0, errors };

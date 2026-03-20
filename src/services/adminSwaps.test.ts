@@ -20,27 +20,20 @@ describe("adminSwaps service", () => {
     vi.clearAllMocks();
   });
 
-  it("assigns accepted offers using updated_by on shift assignments", async () => {
+  it("assigns accepted offers through snapshot rpc", async () => {
     const existingAssignmentsQuery = createSupabaseQueryMock();
-    const offerUpdateQuery = createSupabaseQueryMock();
-    const shiftSelectQuery = createSupabaseQueryMock({ data: { base_value: 950 } });
-    const assignmentInsertQuery = createSupabaseQueryMock();
     const shiftUpdateQuery = createSupabaseQueryMock();
-    const rejectOthersQuery = createSupabaseQueryMock();
 
     existingAssignmentsQuery.in.mockImplementation(async () => ({ data: [], error: null }));
-    offerUpdateQuery.eq.mockImplementation(async () => ({ error: null }));
-    assignmentInsertQuery.insert.mockResolvedValue({ error: null });
     shiftUpdateQuery.eq.mockImplementation(async () => ({ error: null }));
-    rejectOthersQuery.neq.mockImplementation(async () => ({ error: null }));
+    rpcMock.mockResolvedValue({
+      data: [{ assignment_id: "asg-1", assigned_value: 950, value_source: "shift_base" }],
+      error: null,
+    });
 
     fromMock
       .mockReturnValueOnce(existingAssignmentsQuery)
-      .mockReturnValueOnce(offerUpdateQuery)
-      .mockReturnValueOnce(shiftSelectQuery)
-      .mockReturnValueOnce(assignmentInsertQuery)
-      .mockReturnValueOnce(shiftUpdateQuery)
-      .mockReturnValueOnce(rejectOthersQuery);
+      .mockReturnValueOnce(shiftUpdateQuery);
 
     await decideAdminOffer({
       tenantId: "tenant-1",
@@ -65,13 +58,9 @@ describe("adminSwaps service", () => {
       },
     });
 
-    expect(assignmentInsertQuery.insert).toHaveBeenCalledWith({
-      tenant_id: "tenant-1",
-      shift_id: "shift-1",
-      user_id: "user-1",
-      assigned_value: 950,
-      status: "assigned",
-      updated_by: "admin-1",
+    expect(rpcMock).toHaveBeenCalledWith("accept_shift_offer_with_snapshot", {
+      _offer_id: "offer-1",
+      _reviewer_id: "admin-1",
     });
   });
 

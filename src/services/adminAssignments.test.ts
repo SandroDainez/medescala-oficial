@@ -28,8 +28,10 @@ describe("adminAssignments service", () => {
   });
 
   it("upserts an assignment and returns selected row", async () => {
-    const query = createSupabaseQueryMock({ data: { id: "asg-1" } });
-    fromMock.mockReturnValue(query);
+    rpcMock.mockResolvedValue({
+      data: [{ assignment_id: "asg-1", assigned_value: 500, value_source: "manual" }],
+      error: null,
+    });
 
     const result = await upsertAdminAssignment({
       tenantId: "tenant-1",
@@ -39,14 +41,22 @@ describe("adminAssignments service", () => {
       updatedBy: "admin-1",
     });
 
-    expect(fromMock).toHaveBeenCalledWith("shift_assignments");
-    expect(query.upsert).toHaveBeenCalled();
+    expect(rpcMock).toHaveBeenCalledWith("create_assignment_with_snapshot", {
+      _tenant_id: "tenant-1",
+      _shift_id: "shift-1",
+      _user_id: "user-1",
+      _manual_value: 500,
+      _status: "assigned",
+      _performed_by: "admin-1",
+    });
     expect(result).toEqual({ id: "asg-1" });
   });
 
   it("updates assignment value by id", async () => {
-    const query = createSupabaseQueryMock({ data: { id: "asg-2" } });
-    fromMock.mockReturnValue(query);
+    rpcMock.mockResolvedValue({
+      data: [{ assignment_id: "asg-2", assigned_value: null, value_source: null }],
+      error: null,
+    });
 
     const result = await updateAdminAssignmentValue({
       assignmentId: "asg-2",
@@ -54,11 +64,12 @@ describe("adminAssignments service", () => {
       updatedBy: "admin-1",
     });
 
-    expect(query.update).toHaveBeenCalledWith({
-      assigned_value: null,
-      updated_by: "admin-1",
+    expect(rpcMock).toHaveBeenCalledWith("override_assignment_value", {
+      _assignment_id: "asg-2",
+      _new_value: null,
+      _performed_by: "admin-1",
+      _reason: "admin_assignment_update",
     });
-    expect(query.eq).toHaveBeenCalledWith("id", "asg-2");
     expect(result).toEqual({ id: "asg-2" });
   });
 
@@ -108,14 +119,11 @@ describe("adminAssignments service", () => {
     expect(result).toEqual([{ id: "asg-3" }]);
   });
 
-  it("transfers assignment by creating target and deleting source", async () => {
-    const upsertQuery = createSupabaseQueryMock({ data: { id: "new-asg" } });
-    const deleteQuery = createSupabaseQueryMock();
-    deleteQuery.select.mockImplementation(async () => ({ data: [{ id: "old-asg" }], error: null }));
-
-    fromMock
-      .mockReturnValueOnce(upsertQuery)
-      .mockReturnValueOnce(deleteQuery);
+  it("transfers assignment through the preserve-value rpc", async () => {
+    rpcMock.mockResolvedValue({
+      data: [{ inserted_id: "new-asg", assigned_value: 700, value_source: "manual" }],
+      error: null,
+    });
 
     const result = await transferAdminAssignment({
       tenantId: "tenant-1",
@@ -126,6 +134,12 @@ describe("adminAssignments service", () => {
       updatedBy: "admin-1",
     });
 
+    expect(rpcMock).toHaveBeenCalledWith("transfer_assignment_preserving_value", {
+      _source_assignment_id: "old-asg",
+      _target_shift_id: "shift-2",
+      _target_user_id: "user-1",
+      _performed_by: "admin-1",
+    });
     expect(result).toEqual({ insertedId: "new-asg" });
   });
 });

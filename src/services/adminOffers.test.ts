@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createSupabaseQueryMock } from "@/test/supabaseMock";
 
-const { fromMock } = vi.hoisted(() => ({
+const { fromMock, rpcMock } = vi.hoisted(() => ({
   fromMock: vi.fn(),
+  rpcMock: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: fromMock,
+    rpc: rpcMock,
   },
 }));
 
@@ -24,14 +26,7 @@ describe("adminOffers service", () => {
   });
 
   it("accepts an offer and rejects the remaining pending ones", async () => {
-    const acceptQuery = createSupabaseQueryMock();
-    const rejectQuery = createSupabaseQueryMock();
-    acceptQuery.eq.mockImplementation(async () => ({ error: null }));
-    rejectQuery.neq.mockImplementation(async () => ({ error: null }));
-
-    fromMock
-      .mockReturnValueOnce(acceptQuery)
-      .mockReturnValueOnce(rejectQuery);
+    rpcMock.mockResolvedValue({ data: [{ assignment_id: "asg-1" }], error: null });
 
     await acceptAdminShiftOffer({
       offerId: "offer-1",
@@ -39,9 +34,10 @@ describe("adminOffers service", () => {
       reviewerId: "admin-1",
     });
 
-    expect(acceptQuery.eq).toHaveBeenCalledWith("id", "offer-1");
-    expect(rejectQuery.eq).toHaveBeenCalledWith("shift_id", "shift-1");
-    expect(rejectQuery.neq).toHaveBeenCalledWith("id", "offer-1");
+    expect(rpcMock).toHaveBeenCalledWith("accept_shift_offer_with_snapshot", {
+      _offer_id: "offer-1",
+      _reviewer_id: "admin-1",
+    });
   });
 
   it("rejects one offer by id", async () => {
@@ -57,24 +53,19 @@ describe("adminOffers service", () => {
     expect(query.eq).toHaveBeenCalledWith("id", "offer-2");
   });
 
-  it("approves an offer by assigning with updated_by instead of created_by", async () => {
+  it("approves an offer through snapshot rpc", async () => {
     const existingAssignmentsQuery = createSupabaseQueryMock();
-    const offerUpdateQuery = createSupabaseQueryMock();
-    const assignmentInsertQuery = createSupabaseQueryMock();
-    const rejectOthersQuery = createSupabaseQueryMock();
     const notifyQuery = createSupabaseQueryMock();
 
     existingAssignmentsQuery.in.mockImplementation(async () => ({ data: [], error: null }));
-    offerUpdateQuery.eq.mockImplementation(async () => ({ error: null }));
-    assignmentInsertQuery.insert.mockResolvedValue({ error: null });
-    rejectOthersQuery.neq.mockImplementation(async () => ({ error: null }));
     notifyQuery.insert.mockResolvedValue({ error: null });
+    rpcMock.mockResolvedValue({
+      data: [{ assignment_id: "asg-9", assigned_value: 1200, value_source: "shift_base" }],
+      error: null,
+    });
 
     fromMock
       .mockReturnValueOnce(existingAssignmentsQuery)
-      .mockReturnValueOnce(offerUpdateQuery)
-      .mockReturnValueOnce(assignmentInsertQuery)
-      .mockReturnValueOnce(rejectOthersQuery)
       .mockReturnValueOnce(notifyQuery);
 
     await approveAdminOffer({
@@ -102,13 +93,9 @@ describe("adminOffers service", () => {
       },
     });
 
-    expect(assignmentInsertQuery.insert).toHaveBeenCalledWith({
-      tenant_id: "tenant-1",
-      shift_id: "shift-9",
-      user_id: "user-1",
-      assigned_value: 1200,
-      status: "assigned",
-      updated_by: "admin-1",
+    expect(rpcMock).toHaveBeenCalledWith("accept_shift_offer_with_snapshot", {
+      _offer_id: "offer-9",
+      _reviewer_id: "admin-1",
     });
   });
 

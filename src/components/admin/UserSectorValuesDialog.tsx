@@ -362,10 +362,12 @@ export default function UserSectorValuesDialog({
                   nextAssignedValue = null;
                 }
 
-                return supabase
-                  .from('shift_assignments')
-                  .update({ assigned_value: nextAssignedValue, updated_by: userId || null })
-                  .eq('id', a.id);
+                return supabase.rpc('override_assignment_value', {
+                  _assignment_id: a.id,
+                  _new_value: nextAssignedValue,
+                  _performed_by: userId || null,
+                  _reason: 'sync_user_sector_values',
+                });
               });
 
               const results = await Promise.all(updates);

@@ -179,13 +179,12 @@ export default function SectorValuesDialog({
             const duration = calculateDurationHours(shift.start_time, shift.end_time);
             const proRataValue = calculateProRataValue(baseValue, duration);
 
-            return supabase
-              .from('shift_assignments')
-              .update({
-                assigned_value: proRataValue,
-                updated_by: userId,
-              })
-              .eq('id', assignment.id);
+            return supabase.rpc('override_assignment_value', {
+              _assignment_id: assignment.id,
+              _new_value: proRataValue,
+              _performed_by: userId,
+              _reason: 'sync_sector_default_values',
+            });
           });
 
           const results = await Promise.all(updates);

@@ -10,23 +10,22 @@ export async function upsertAdminAssignment(params: {
   assignedValue: number | null;
   updatedBy?: string;
 }) {
-  const { data, error } = await supabase
-    .from('shift_assignments')
-    .upsert(
-      {
-        tenant_id: params.tenantId,
-        shift_id: params.shiftId,
-        user_id: params.userId,
-        assigned_value: params.assignedValue,
-        updated_by: params.updatedBy,
-      },
-      { onConflict: 'shift_id,user_id' }
-    )
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('create_assignment_with_snapshot', {
+    _tenant_id: params.tenantId,
+    _shift_id: params.shiftId,
+    _user_id: params.userId,
+    _manual_value: params.assignedValue,
+    _status: 'assigned',
+    _performed_by: params.updatedBy ?? null,
+  });
 
   if (error) throw error;
-  return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.assignment_id) return null;
+
+  return {
+    id: row.assignment_id,
+  };
 }
 
 export async function updateAdminAssignmentValue(params: {
@@ -34,18 +33,20 @@ export async function updateAdminAssignmentValue(params: {
   assignedValue: number | null;
   updatedBy?: string;
 }) {
-  const { data, error } = await supabase
-    .from('shift_assignments')
-    .update({
-      assigned_value: params.assignedValue,
-      updated_by: params.updatedBy,
-    })
-    .eq('id', params.assignmentId)
-    .select('id')
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('override_assignment_value', {
+    _assignment_id: params.assignmentId,
+    _new_value: params.assignedValue,
+    _performed_by: params.updatedBy ?? null,
+    _reason: 'admin_assignment_update',
+  });
 
   if (error) throw error;
-  return data;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.assignment_id) return null;
+
+  return {
+    id: row.assignment_id,
+  };
 }
 
 export async function deleteAdminAssignment(assignmentId: string) {
@@ -120,24 +121,18 @@ export async function transferAdminAssignment(params: {
   assignedValue: number | null;
   updatedBy: string;
 }) {
-  const inserted = await upsertAdminAssignment({
-    tenantId: params.tenantId,
-    shiftId: params.targetShiftId,
-    userId: params.userId,
-    assignedValue: params.assignedValue,
-    updatedBy: params.updatedBy,
+  const { data, error } = await supabase.rpc('transfer_assignment_preserving_value', {
+    _source_assignment_id: params.sourceAssignmentId,
+    _target_shift_id: params.targetShiftId,
+    _target_user_id: params.userId,
+    _performed_by: params.updatedBy,
   });
 
-  if (!inserted?.id) {
-    throw new Error('Falha ao criar atribuição no destino');
-  }
-
-  const deletedRows = await deleteAdminAssignment(params.sourceAssignmentId);
-  if (deletedRows.length === 0) {
-    throw new Error('Não foi possível remover a atribuição de origem.');
-  }
+  if (error) throw error;
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row?.inserted_id) throw new Error('Falha ao transferir atribuição');
 
   return {
-    insertedId: inserted.id,
+    insertedId: row.inserted_id,
   };
 }

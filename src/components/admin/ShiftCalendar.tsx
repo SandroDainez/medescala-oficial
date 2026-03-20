@@ -110,6 +110,84 @@ const SQUARE_SELECT_CONTENT_CLASS =
 const SQUARE_SELECT_ITEM_CLASS =
   "my-1 rounded-lg border border-border/60 px-2 py-2 text-sm data-[state=checked]:border-primary/70 data-[state=checked]:bg-primary/10";
 
+function normalizeTimeInput(rawValue: string): string {
+  const digits = rawValue.replace(/\D/g, '').slice(0, 4);
+  const typedColon = rawValue.includes(':');
+
+  if (digits.length === 0) return '';
+  if (digits.length < 3) {
+    return typedColon && digits.length === 2 ? `${digits}:` : digits;
+  }
+
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+}
+
+function isCompleteTimeValue(value: string): boolean {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) return false;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
+function finalizeTimeInput(value: string): string {
+  const normalized = normalizeTimeInput(value.trim());
+  if (!isCompleteTimeValue(normalized)) return normalized;
+
+  const [hours, minutes] = normalized.split(':').map(Number);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+function getRequiredTimeError(label: string, value: string): string | null {
+  if (!value.trim()) return `Preencha o horário de ${label}.`;
+  if (!isCompleteTimeValue(value)) return `Preencha o horário de ${label} no formato HH:MM.`;
+  return null;
+}
+
+function getOptionalTimeError(label: string, value: string): string | null {
+  if (!value.trim()) return null;
+  if (!isCompleteTimeValue(value)) return `Preencha o horário de ${label} no formato HH:MM.`;
+  return null;
+}
+
+interface ShiftTimeInputProps {
+  id?: string;
+  value: string;
+  onChange: (value: string) => void;
+  required?: boolean;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+}
+
+function ShiftTimeInput({
+  id,
+  value,
+  onChange,
+  required,
+  className,
+  placeholder = 'HH:MM',
+  disabled,
+}: ShiftTimeInputProps) {
+  return (
+    <Input
+      id={id}
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      placeholder={placeholder}
+      value={value}
+      onChange={(e) => onChange(normalizeTimeInput(e.target.value))}
+      onBlur={() => onChange(finalizeTimeInput(value))}
+      required={required}
+      className={className}
+      disabled={disabled}
+      maxLength={5}
+    />
+  );
+}
+
 export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentTenantId } = useTenant();
@@ -561,7 +639,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Check if shift is nocturnal (7h-19h = diurno, 19h-7h = noturno)
   function isNightShift(startTime: string, endTime: string): boolean {
+    if (!startTime) return false;
     const startHour = parseInt(startTime.split(':')[0], 10);
+    if (!Number.isFinite(startHour)) return false;
     // 19h-7h = noturno (horário de início >= 19 ou < 7)
     return startHour >= 19 || startHour < 7;
   }
@@ -601,7 +681,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const STANDARD_SHIFT_HOURS = 12;
   
   function calculateDurationHours(startTime: string, endTime: string): number {
-    if (!startTime || !endTime) return STANDARD_SHIFT_HOURS;
+    if (!isCompleteTimeValue(startTime) || !isCompleteTimeValue(endTime)) return STANDARD_SHIFT_HOURS;
     const [startH, startM] = startTime.split(':').map(Number);
     const [endH, endM] = endTime.split(':').map(Number);
     let hours = endH - startH;
@@ -1712,6 +1792,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     e.preventDefault();
     if (!currentTenantId) return;
 
+    const startTimeError = getRequiredTimeError('início', formData.start_time);
+    const endTimeError = getRequiredTimeError('término', formData.end_time);
+    if (startTimeError || endTimeError) {
+      notifyWarning('Horário inválido', startTimeError || endTimeError || undefined);
+      return;
+    }
+
     // Generate title automatically based on time and assignment type
     const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     
@@ -2032,6 +2119,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const rows = (useMultiRows ? multiShifts : typedRows)
         .slice(0, quantity);
 
+      const invalidRowIndex = rows.findIndex(
+        (row) => !isCompleteTimeValue(row.start_time) || !isCompleteTimeValue(row.end_time),
+      );
+      if (invalidRowIndex >= 0) {
+        notifyWarning(
+          'Horário inválido',
+          `Revise os horários do plantão ${invalidRowIndex + 1}. Use o formato HH:MM.`,
+        );
+        return;
+      }
+
       for (let week = 0; week <= repeatWeeks; week++) {
         const weekDate = format(addWeeks(baseDate, week), 'yyyy-MM-dd');
 
@@ -2147,6 +2245,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleBulkCreate(e: React.FormEvent) {
     e.preventDefault();
     if (!currentTenantId || selectedDates.size === 0) return;
+
+    const startTimeError = getRequiredTimeError('início', formData.start_time);
+    const endTimeError = getRequiredTimeError('término', formData.end_time);
+    if (startTimeError || endTimeError) {
+      notifyWarning('Horário inválido', startTimeError || endTimeError || undefined);
+      return;
+    }
 
     const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     let shiftNotes = formData.notes || '';
@@ -3200,19 +3305,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!currentTenantId || !user?.id) return;
 
     try {
-      try {
-        await upsertAdminAssignment({
-          tenantId: currentTenantId,
-          shiftId: offer.shift_id,
-          userId: offer.user_id,
-          assignedValue: null,
-          updatedBy: user.id,
-        });
-      } catch (assignError) {
-        notifyError('aceitar oferta', assignError, 'Não foi possível aceitar a oferta.');
-        return;
-      }
-
       await acceptAdminShiftOffer({
         offerId: offer.id,
         shiftId: offer.shift_id,
@@ -3656,6 +3748,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const shiftIds = bulkApplyShiftIds;
     if (shiftIds.length === 0) return;
 
+    const bulkStartTimeError = getOptionalTimeError('início', bulkApplyData.start_time);
+    const bulkEndTimeError = getOptionalTimeError('término', bulkApplyData.end_time);
+    if (bulkStartTimeError || bulkEndTimeError) {
+      notifyWarning('Horário inválido', bulkStartTimeError || bulkEndTimeError || undefined);
+      return;
+    }
+
     try {
       const hasRawValue = !!bulkApplyData.base_value.trim();
       const { selected: selectedBulkShifts, byId: selectedBulkShiftMap } = collectBulkApplyTargetShifts(shiftIds, shifts);
@@ -3693,6 +3792,35 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
             await updateAdminShiftById(shiftId, payload);
           })
+        );
+      }
+
+      if (!bulkApplyData.assigned_user_id && hasRawValue) {
+        await Promise.all(
+          shiftIds.map(async (shiftId) => {
+            const s = selectedBulkShiftMap.get(shiftId);
+            if (!s) return;
+
+            const currentAssignment = assignments.find((assignment) => assignment.shift_id === shiftId);
+            if (!currentAssignment) return;
+
+            const { start_time, end_time } = getBulkApplyEffectiveTimes(bulkApplyData, s);
+            const assignedValue = resolveValue({
+              raw: bulkApplyData.base_value,
+              sector_id: s.sector_id || null,
+              start_time,
+              end_time,
+              user_id: currentAssignment.user_id,
+              useSectorDefault: false,
+              applyProRata: true,
+            });
+
+            await updateAdminAssignmentValue({
+              assignmentId: currentAssignment.id,
+              assignedValue,
+              updatedBy: user.id,
+            });
+          }),
         );
       }
 
@@ -3770,7 +3898,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const { editData, originalShift, assignmentChoice, assignmentMode } = params;
     const currentAssignment = assignments.find((a) => a.shift_id === editData.id);
 
-    if (assignmentMode === 'keep') return;
+    if (assignmentMode === 'keep') {
+      if (!currentAssignment) return;
+
+      const assignedValue = resolveValue({
+        raw: editData.base_value,
+        sector_id: editData.sector_id || null,
+        start_time: editData.start_time,
+        end_time: editData.end_time,
+        user_id: currentAssignment.user_id,
+        useSectorDefault: false,
+        applyProRata: true,
+      });
+
+      await updateAdminAssignmentValue({
+        assignmentId: currentAssignment.id,
+        assignedValue,
+        updatedBy: user!.id,
+      });
+      return;
+    }
 
     if (assignmentMode === 'user') {
       const assignedValue = resolveValue({
@@ -3883,6 +4030,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleBulkEditSave(e: React.FormEvent) {
     e.preventDefault();
     if (!user?.id || !currentTenantId || bulkEditSaving) return;
+
+    const invalidBulkEditIndex = bulkEditData.findIndex(
+      (editData) => !isCompleteTimeValue(editData.start_time) || !isCompleteTimeValue(editData.end_time),
+    );
+    if (invalidBulkEditIndex >= 0) {
+      notifyWarning(
+        'Horário inválido',
+        `Revise os horários do plantão ${invalidBulkEditIndex + 1} antes de salvar. Use o formato HH:MM.`,
+      );
+      return;
+    }
 
     setBulkEditSaving(true);
     try {
@@ -6131,14 +6289,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="start_time">Início</Label>
-                <Input
+                <ShiftTimeInput
                   id="start_time"
-                  type="time"
                   value={formData.start_time}
-                  onChange={(e) => {
-                    const nextStart = e.target.value;
+                  onChange={(nextStart) => {
                     setFormData((prev) => {
-                      const nextDuration = prev.end_time
+                      const nextDuration = isCompleteTimeValue(nextStart) && isCompleteTimeValue(prev.end_time)
                         ? durationToInputValue(calculateDurationHours(nextStart, prev.end_time))
                         : prev.duration_hours;
                       return { ...prev, start_time: nextStart, duration_hours: nextDuration };
@@ -6255,15 +6411,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="end_time">Término</Label>
-                <Input
+                <ShiftTimeInput
                   id="end_time"
-                  type="time"
                   value={formData.end_time}
-                  onChange={(e) => {
-                    const value = e.target.value;
+                  onChange={(value) => {
                     setFormData((prev) => {
                       const nextDuration =
-                        value && prev.start_time
+                        isCompleteTimeValue(value) && isCompleteTimeValue(prev.start_time)
                           ? durationToInputValue(calculateDurationHours(prev.start_time, value))
                           : prev.duration_hours;
                       return { ...prev, end_time: value, duration_hours: nextDuration };
@@ -6356,14 +6510,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                           <div className="grid grid-cols-2 gap-2">
                             <div>
                               <Label className="text-xs">Início</Label>
-                              <Input
-                                type="time"
+                              <ShiftTimeInput
                                 value={shiftData.start_time}
-                                onChange={(e) => {
+                                onChange={(value) => {
                                   setMultiShifts(prev => {
                                     const newArr = [...prev];
                                     if (!newArr[i]) newArr[i] = { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
-                                    newArr[i] = { ...newArr[i], start_time: e.target.value };
+                                    newArr[i] = { ...newArr[i], start_time: value };
                                     return newArr;
                                   });
                                 }}
@@ -6372,14 +6525,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             </div>
                             <div>
                               <Label className="text-xs">Término</Label>
-                              <Input
-                                type="time"
+                              <ShiftTimeInput
                                 value={shiftData.end_time}
-                                onChange={(e) => {
+                                onChange={(value) => {
                                   setMultiShifts(prev => {
                                     const newArr = [...prev];
                                     if (!newArr[i]) newArr[i] = { user_id: 'vago', start_time: '07:00', end_time: '19:00' };
-                                    newArr[i] = { ...newArr[i], end_time: e.target.value };
+                                    newArr[i] = { ...newArr[i], end_time: value };
                                     return newArr;
                                   });
                                 }}
@@ -7042,21 +7194,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="bulk_start_time">Início</Label>
-                <Input
+                <ShiftTimeInput
                   id="bulk_start_time"
-                  type="time"
                   value={formData.start_time}
-                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                  onChange={(value) => setFormData({ ...formData, start_time: value })}
                   required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bulk_end_time">Término</Label>
-                <Input
+                <ShiftTimeInput
                   id="bulk_end_time"
-                  type="time"
                   value={formData.end_time}
-                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                  onChange={(value) => setFormData({ ...formData, end_time: value })}
                   required
                 />
               </div>
@@ -7508,18 +7658,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Início (opcional)</Label>
-                <Input
-                  type="time"
+                <ShiftTimeInput
                   value={bulkApplyData.start_time}
-                  onChange={(e) => setBulkApplyData((p) => ({ ...p, start_time: e.target.value }))}
+                  onChange={(value) => setBulkApplyData((p) => ({ ...p, start_time: value }))}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Término (opcional)</Label>
-                <Input
-                  type="time"
+                <ShiftTimeInput
                   value={bulkApplyData.end_time}
-                  onChange={(e) => setBulkApplyData((p) => ({ ...p, end_time: e.target.value }))}
+                  onChange={(value) => setBulkApplyData((p) => ({ ...p, end_time: value }))}
                 />
               </div>
             </div>
@@ -7739,11 +7887,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         {/* Start Time */}
                         <div className="space-y-2">
                           <Label>Início</Label>
-                          <Input
-                            type="time"
+                          <ShiftTimeInput
                             value={editData.start_time}
-                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
-                              i === index ? { ...d, start_time: e.target.value } : d
+                            onChange={(value) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, start_time: value } : d
                             ))}
                           />
                         </div>
@@ -7751,11 +7898,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         {/* End Time */}
                         <div className="space-y-2">
                           <Label>Término</Label>
-                          <Input
-                            type="time"
+                          <ShiftTimeInput
                             value={editData.end_time}
-                            onChange={(e) => setBulkEditData(prev => prev.map((d, i) => 
-                              i === index ? { ...d, end_time: e.target.value } : d
+                            onChange={(value) => setBulkEditData(prev => prev.map((d, i) => 
+                              i === index ? { ...d, end_time: value } : d
                             ))}
                           />
                         </div>

@@ -8,22 +8,20 @@ import type {
 
 import {
   calculateDurationHours,
-  calculateFinalValue,
-  isNightShift,
-  STANDARD_SHIFT_HOURS,
+  calculateAssignedSnapshotValue,
   type ValueSource,
 } from '@/lib/financial/valueCalculation';
 
 /**
- * @deprecated Use calculateFinalValue from valueCalculation.ts instead
- * Mantido para compatibilidade, mas delega para a função única
+ * @deprecated Mantido para compatibilidade histórica. O financeiro consolidado
+ * deve usar o snapshot salvo em shift_assignments.assigned_value.
  */
 export function getFinalValue(
   assigned_value: unknown,
   base_value: unknown,
   sector_default_value: number | null = null,
   individual_override_value: number | null = null,
-  duration_hours: number = STANDARD_SHIFT_HOURS
+  duration_hours: number = 12
 ): { final_value: number | null; source: ValueSource | 'invalid' | 'zero_individual' | 'zero_assigned' | 'zero_base'; invalidReason?: string } {
   // Normalize assigned_value
   const assigned = normalizeMoney(assigned_value);
@@ -37,14 +35,12 @@ export function getFinalValue(
     return { final_value: null, source: 'invalid', invalidReason: 'base_value negativo' };
   }
 
-  // Use the unified calculation function
-  const result = calculateFinalValue({
-    assignedValue: assigned,
-    individualValue: individual_override_value,
-    baseValue: base,
-    sectorDefaultValue: sector_default_value,
-    durationHours: duration_hours,
-  });
+  if (individual_override_value !== null || sector_default_value !== null || base !== null || duration_hours !== 12) {
+    // Compat only: older projection callers may still rely on these parameters.
+    // For financial reads, mapScheduleToFinancialEntries no longer routes through this path.
+  }
+
+  const result = calculateAssignedSnapshotValue(assigned);
 
   // Map zero values to specific sources for backwards compatibility
   if (result.finalValue === 0) {
@@ -92,48 +88,9 @@ export function mapScheduleToFinancialEntries(params: {
 }): FinancialEntry[] {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
 
-  // Build sector lookup maps
   const sectorNameById = new Map<string, string>();
-  const sectorDefaultDayById = new Map<string, number | null>();
-  const sectorDefaultNightById = new Map<string, number | null>();
-  
   (params.sectors ?? []).forEach((s) => {
     sectorNameById.set(s.id, s.name);
-    sectorDefaultDayById.set(s.id, s.default_day_value ?? null);
-    sectorDefaultNightById.set(s.id, s.default_night_value ?? null);
-  });
-
-  // Build individual user override lookup.
-  // Prefer month/year-specific values when available, and keep a legacy fallback without competence.
-  const userValueMap = new Map<string, { day_value: number | null; night_value: number | null }>();
-  const userValueFallbackMap = new Map<string, { day_value: number | null; night_value: number | null }>();
-  (params.userSectorValues ?? []).forEach((uv) => {
-    const hasCompetence = uv.month != null && uv.year != null;
-    const baseKey = `${uv.sector_id}:${uv.user_id}`;
-    const key = hasCompetence ? `${baseKey}:${uv.year}:${uv.month}` : baseKey;
-    const payload = { day_value: uv.day_value, night_value: uv.night_value };
-
-    // Keep explicit values (including 0) when duplicate rows exist.
-    // Null should not overwrite an explicit value from another row.
-    const mergeKeepingExplicit = (
-      current: { day_value: number | null; night_value: number | null } | undefined,
-      incoming: { day_value: number | null; night_value: number | null }
-    ) => ({
-      day_value:
-        incoming.day_value !== null
-          ? incoming.day_value
-          : (current?.day_value ?? null),
-      night_value:
-        incoming.night_value !== null
-          ? incoming.night_value
-          : (current?.night_value ?? null),
-    });
-
-    if (hasCompetence) {
-      userValueMap.set(key, mergeKeepingExplicit(userValueMap.get(key), payload));
-    } else {
-      userValueFallbackMap.set(baseKey, mergeKeepingExplicit(userValueFallbackMap.get(baseKey), payload));
-    }
   });
 
   const assignmentsByShift = new Map<string, ScheduleAssignment[]>();
@@ -154,15 +111,6 @@ export function mapScheduleToFinancialEntries(params: {
   for (const shift of params.shifts) {
     const duration_hours = calculateDurationHours(shift.start_time, shift.end_time);
     const sector_name = shift.sector_id ? sectorNameById.get(shift.sector_id) ?? 'Sem Setor' : 'Sem Setor';
-
-    // Get sector default values for fallback
-    const isNight = isNightShift(shift.start_time);
-    const sectorDefaultValue = shift.sector_id 
-      ? (isNight 
-          ? sectorDefaultNightById.get(shift.sector_id) 
-          : sectorDefaultDayById.get(shift.sector_id)
-        ) ?? null
-      : null;
 
     // Check if this is a training sector in GABS (no remuneration)
     const noRemuneration = isGabs && isTrainingSector(sector_name);
@@ -194,35 +142,25 @@ export function mapScheduleToFinancialEntries(params: {
     }
 
     for (const a of shiftAssignments) {
-      // Look up individual user override for this sector/user combination
-      const shiftMonth = Number(shift.shift_date.slice(5, 7));
-      const shiftYear = Number(shift.shift_date.slice(0, 4));
-      const userOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}:${shiftYear}:${shiftMonth}` : null;
-      const legacyOverrideKey = shift.sector_id ? `${shift.sector_id}:${a.user_id}` : null;
-      const userOverride = userOverrideKey
-        ? userValueMap.get(userOverrideKey) ?? (legacyOverrideKey ? userValueFallbackMap.get(legacyOverrideKey) : undefined)
-        : undefined;
-      const individualValue = userOverride
-        ? (isNight ? userOverride.night_value : userOverride.day_value) 
-        : null;
+      const assignedNumeric =
+        a.assigned_value === null || a.assigned_value === undefined
+          ? null
+          : Number(a.assigned_value);
+      const snapshotValue = calculateAssignedSnapshotValue(assignedNumeric);
 
-      // Business rule: if there is any individual config row for this plantonista/sector/month,
-      // never trust legacy assigned_value from assignment row.
-      // - explicit zero -> final zero
-      // - explicit non-zero -> final individual value
-      // - blank individual field -> fallback to sector default (or no value), not assigned_value
-      const effectiveAssignedValue = userOverride ? null : a.assigned_value;
-
-      // For GABS training sectors, always return no value
-      // Otherwise use priority: individual > assigned_value > base_value > sector_default
-      // CRITICAL: Pass duration_hours for PRO-RATA calculation to match calendar display
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
-        : getFinalValue(effectiveAssignedValue, shift.base_value, sectorDefaultValue, individualValue, duration_hours);
+        : assignedNumeric !== null && !Number.isFinite(assignedNumeric)
+          ? { final_value: null, source: 'invalid' as const, invalidReason: 'assigned_value inválido' }
+          : assignedNumeric !== null && assignedNumeric < 0
+            ? { final_value: null, source: 'invalid' as const, invalidReason: 'assigned_value negativo' }
+            : {
+                final_value: snapshotValue.finalValue,
+                source: snapshotValue.source,
+                invalidReason: assignedNumeric === null ? 'assignment sem snapshot financeiro' : undefined,
+              };
 
       if (debugLogsEnabled) {
-        // Log temporário solicitado (em caso real do Financeiro)
-        // Ativar com: localStorage.setItem('debug_financial_values','1');
         console.log('[FIN_DEBUG] valor_final', {
           shift_id: shift.id,
           assignment_id: a.id,
@@ -230,8 +168,8 @@ export function mapScheduleToFinancialEntries(params: {
           shift_date: shift.shift_date,
           duration_hours,
           valor_escala: a.assigned_value,
-          valor_individual: individualValue,
-          valor_setor: sectorDefaultValue,
+          valor_individual: null,
+          valor_setor: null,
           valor_final_usado: valueResult.final_value,
           fonte: valueResult.source,
           invalidReason: valueResult.invalidReason,

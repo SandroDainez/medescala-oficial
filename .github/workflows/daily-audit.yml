@@ -70,7 +70,16 @@ jobs:
       - name: Parse audit summary
         id: parse
         run: |
-          node -e "const fs=require('fs');const j=JSON.parse(fs.readFileSync('audit-results/latest-audit.json','utf8'));const o=process.env.GITHUB_OUTPUT;fs.appendFileSync(o,`status=${j.status||'failed'}\\n`);fs.appendFileSync(o,`critical=${j.summary?.critical ?? 1}\\n`);fs.appendFileSync(o,`warning=${j.summary?.warning ?? 0}\\n`);"
+          node <<'NODE'
+          const fs = require('fs');
+
+          const audit = JSON.parse(fs.readFileSync('audit-results/latest-audit.json', 'utf8'));
+          const outputPath = process.env.GITHUB_OUTPUT;
+
+          fs.appendFileSync(outputPath, `status=${audit.status || 'failed'}\n`);
+          fs.appendFileSync(outputPath, `critical=${audit.summary?.critical ?? 1}\n`);
+          fs.appendFileSync(outputPath, `warning=${audit.summary?.warning ?? 0}\n`);
+          NODE
 
       - name: Upload audit artifacts
         if: always()

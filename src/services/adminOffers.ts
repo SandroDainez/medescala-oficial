@@ -60,44 +60,40 @@ export async function approveAdminOffer(params: {
     throw new Error('Este plantão já foi preenchido por outro plantonista.');
   }
 
-  const { error: offerError } = await supabase
-    .from('shift_offers')
-    .update({
-      status: 'accepted',
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: reviewerId,
-    })
-    .eq('id', offer.id);
-
-  if (offerError) throw offerError;
-
   if (!alreadyAssignedToSameUser) {
-    const { error: assignError } = await supabase
-      .from('shift_assignments')
-      .insert({
-        tenant_id: tenantId,
-        shift_id: offer.shift_id,
-        user_id: offer.user_id,
-        assigned_value: offer.shift?.base_value || null,
-        status: 'assigned',
-        updated_by: reviewerId,
-      });
+    const { error: acceptError } = await supabase.rpc('accept_shift_offer_with_snapshot', {
+      _offer_id: offer.id,
+      _reviewer_id: reviewerId,
+    });
 
-    if (assignError) throw assignError;
+    if (acceptError) throw acceptError;
+  } else {
+    const reviewedAt = new Date().toISOString();
+
+    const { error: offerError } = await supabase
+      .from('shift_offers')
+      .update({
+        status: 'accepted',
+        reviewed_at: reviewedAt,
+        reviewed_by: reviewerId,
+      })
+      .eq('id', offer.id);
+
+    if (offerError) throw offerError;
+
+    const { error: rejectOthersError } = await supabase
+      .from('shift_offers')
+      .update({
+        status: 'rejected',
+        reviewed_at: reviewedAt,
+        reviewed_by: reviewerId,
+      })
+      .eq('shift_id', offer.shift_id)
+      .eq('status', 'pending')
+      .neq('id', offer.id);
+
+    if (rejectOthersError) throw rejectOthersError;
   }
-
-  const { error: rejectOthersError } = await supabase
-    .from('shift_offers')
-    .update({
-      status: 'rejected',
-      reviewed_at: new Date().toISOString(),
-      reviewed_by: reviewerId,
-    })
-    .eq('shift_id', offer.shift_id)
-    .eq('status', 'pending')
-    .neq('id', offer.id);
-
-  if (rejectOthersError) throw rejectOthersError;
 
   const { error: notifyError } = await supabase
     .from('notifications')
@@ -159,31 +155,12 @@ export async function acceptAdminShiftOffer(params: {
   shiftId: string;
   reviewerId: string;
 }) {
-  const reviewedAt = new Date().toISOString();
+  const { error } = await supabase.rpc('accept_shift_offer_with_snapshot', {
+    _offer_id: params.offerId,
+    _reviewer_id: params.reviewerId,
+  });
 
-  const { error: acceptError } = await supabase
-    .from('shift_offers')
-    .update({
-      status: 'accepted',
-      reviewed_by: params.reviewerId,
-      reviewed_at: reviewedAt,
-    })
-    .eq('id', params.offerId);
-
-  if (acceptError) throw acceptError;
-
-  const { error: rejectError } = await supabase
-    .from('shift_offers')
-    .update({
-      status: 'rejected',
-      reviewed_by: params.reviewerId,
-      reviewed_at: reviewedAt,
-    })
-    .eq('shift_id', params.shiftId)
-    .eq('status', 'pending')
-    .neq('id', params.offerId);
-
-  if (rejectError) throw rejectError;
+  if (error) throw error;
 }
 
 export async function rejectAdminShiftOffer(params: {
