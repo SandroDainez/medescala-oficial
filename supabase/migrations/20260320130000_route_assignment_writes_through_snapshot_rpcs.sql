@@ -18,6 +18,12 @@ ALTER TABLE public.shift_assignments
   ALTER COLUMN assigned_at SET DEFAULT now(),
   ALTER COLUMN assigned_at SET NOT NULL;
 
+DROP FUNCTION IF EXISTS public.resolve_assignment_snapshot_value(uuid, uuid, uuid, numeric, uuid);
+DROP FUNCTION IF EXISTS public.create_assignment_with_snapshot(uuid, uuid, uuid, numeric, text, uuid);
+DROP FUNCTION IF EXISTS public.override_assignment_value(uuid, numeric, uuid, text);
+DROP FUNCTION IF EXISTS public.transfer_assignment_preserving_value(uuid, uuid, uuid, uuid);
+DROP FUNCTION IF EXISTS public.accept_shift_offer_with_snapshot(uuid, uuid);
+
 CREATE OR REPLACE FUNCTION public.resolve_assignment_snapshot_value(
   _tenant_id uuid,
   _shift_id uuid,
