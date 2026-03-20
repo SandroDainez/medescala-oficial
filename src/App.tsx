@@ -205,7 +205,7 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
 
 function RoleRedirect() {
   const { user, loading: authLoading } = useAuth();
-  const { currentRole, loading: tenantLoading, memberships } = useTenant();
+  const { currentRole, loading: tenantLoading, memberships, currentTenantId, setCurrentTenant } = useTenant();
 
   if (authLoading || tenantLoading) {
     return (
@@ -222,6 +222,18 @@ function RoleRedirect() {
   // No memberships - go to onboarding
   if (memberships.length === 0) {
     return <Navigate to="/onboarding" replace />;
+  }
+
+  const adminMembership = memberships.find((m) => m.role === "owner" || m.role === "admin");
+
+  if (
+    adminMembership &&
+    currentRole !== "admin" &&
+    currentRole !== "owner" &&
+    adminMembership.tenant_id !== currentTenantId
+  ) {
+    setCurrentTenant(adminMembership.tenant_id);
+    return <Navigate to="/admin" replace />;
   }
 
   // Redirect based on role

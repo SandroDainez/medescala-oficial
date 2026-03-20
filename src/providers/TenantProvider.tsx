@@ -9,6 +9,22 @@ import {
   clearStoredTenantIdSafe,
 } from '@/hooks/tenant-context';
 
+function getRolePriority(role: Membership['role']): number {
+  if (role === 'owner') return 0;
+  if (role === 'admin') return 1;
+  return 2;
+}
+
+function getPreferredMembership(memberships: Membership[]): Membership | null {
+  if (memberships.length === 0) return null;
+
+  return [...memberships].sort((a, b) => {
+    const byRole = getRolePriority(a.role) - getRolePriority(b.role);
+    if (byRole !== 0) return byRole;
+    return a.tenant_name.localeCompare(b.tenant_name, 'pt-BR');
+  })[0] ?? null;
+}
+
 export function TenantProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
 
@@ -60,17 +76,24 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       }),
     );
 
-    setMemberships(membershipList);
+    const normalizedMemberships = [...membershipList].sort((a, b) => {
+      const byRole = getRolePriority(a.role) - getRolePriority(b.role);
+      if (byRole !== 0) return byRole;
+      return a.tenant_name.localeCompare(b.tenant_name, 'pt-BR');
+    });
+
+    setMemberships(normalizedMemberships);
 
     // Restore from localStorage or use first
     const storedTenantId = getStoredTenantIdSafe();
     const validTenant = storedTenantId
-      ? membershipList.find((m) => m.tenant_id === storedTenantId)
+      ? normalizedMemberships.find((m) => m.tenant_id === storedTenantId)
       : null;
+    const preferredMembership = getPreferredMembership(normalizedMemberships);
 
     const nextTenantId = validTenant
       ? validTenant.tenant_id
-      : membershipList[0].tenant_id;
+      : preferredMembership?.tenant_id ?? normalizedMemberships[0].tenant_id;
 
     setCurrentTenantId(nextTenantId);
     setStoredTenantIdSafe(nextTenantId);

@@ -20,9 +20,25 @@ interface AccessStatus {
 
 export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) {
   const { user, loading: authLoading } = useAuth();
-  const { currentTenantId, currentRole, loading: tenantLoading, memberships } = useTenant();
+  const { currentTenantId, currentRole, loading: tenantLoading, memberships, setCurrentTenant } = useTenant();
   const [accessStatus, setAccessStatus] = useState<AccessStatus | null>(null);
   const [checkingStatus, setCheckingStatus] = useState(true);
+  const [recoveringRole, setRecoveringRole] = useState(false);
+
+  useEffect(() => {
+    if (authLoading || tenantLoading || !requiredRole) return;
+
+    if (requiredRole === 'admin' && currentRole !== 'admin' && currentRole !== 'owner') {
+      const adminMembership = memberships.find((m) => m.role === 'admin' || m.role === 'owner');
+      if (adminMembership && adminMembership.tenant_id !== currentTenantId) {
+        setRecoveringRole(true);
+        setCurrentTenant(adminMembership.tenant_id);
+        return;
+      }
+    }
+
+    setRecoveringRole(false);
+  }, [authLoading, tenantLoading, requiredRole, currentRole, memberships, currentTenantId, setCurrentTenant]);
 
   useEffect(() => {
     async function checkAccessStatus() {
@@ -101,7 +117,7 @@ export function ProtectedRoute({ children, requiredRole }: ProtectedRouteProps) 
     }
   }, [user, currentTenantId, authLoading, tenantLoading]);
 
-  if (authLoading || tenantLoading || checkingStatus) {
+  if (authLoading || tenantLoading || checkingStatus || recoveringRole) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-muted-foreground">Carregando...</div>
