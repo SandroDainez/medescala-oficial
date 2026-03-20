@@ -1,24 +1,31 @@
 import { useTenant } from '@/hooks/useTenant';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Building2 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { setStoredTenantIdSafe } from '@/hooks/tenant-context';
 
 export function TenantSelector() {
   const { currentTenantId, memberships, setCurrentTenant } = useTenant();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleTenantChange = (tenantId: string) => {
     const membership = memberships.find((m) => m.tenant_id === tenantId);
     if (!membership) return;
 
-    setCurrentTenant(tenantId);
+    const targetPath =
+      membership.role === 'admin' || membership.role === 'owner' ? '/admin' : '/app';
+    const currentArea = location.pathname.startsWith('/admin') ? 'admin' : 'app';
+    const targetArea = targetPath === '/admin' ? 'admin' : 'app';
 
-    if (membership.role === 'admin' || membership.role === 'owner') {
-      navigate('/admin');
+    if (currentArea !== targetArea) {
+      setStoredTenantIdSafe(tenantId);
+      window.location.assign(targetPath);
       return;
     }
 
-    navigate('/app');
+    setCurrentTenant(tenantId);
+    navigate(targetPath);
   };
 
   if (memberships.length <= 1) {
