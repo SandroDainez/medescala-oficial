@@ -11,12 +11,14 @@ import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { importWithChunkRecovery } from "@/lib/chunkRecovery";
+import { getTenantSelectionDoneSafe } from "@/hooks/tenant-context";
 
 const lazyRoute = <T,>(loader: () => Promise<T>) => lazy(() => importWithChunkRecovery(loader));
 
 const Landing = lazyRoute(() => import("./pages/Landing"));
 const Auth = lazyRoute(() => import("./pages/Auth"));
 const Onboarding = lazyRoute(() => import("./pages/Onboarding"));
+const TenantSelect = lazyRoute(() => import("./pages/TenantSelect"));
 const NotFound = lazyRoute(() => import("./pages/NotFound"));
 const ForgotPassword = lazyRoute(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazyRoute(() => import("./pages/ResetPassword"));
@@ -224,6 +226,10 @@ function RoleRedirect() {
     return <Navigate to="/onboarding" replace />;
   }
 
+  if (memberships.length > 1 && !getTenantSelectionDoneSafe()) {
+    return <Navigate to="/tenant-select" replace />;
+  }
+
   const adminMembership = memberships.find((m) => m.role === "owner" || m.role === "admin");
 
   if (
@@ -288,6 +294,14 @@ const App = () => (
                       <Route path="/" element={<Landing />} />
                       <Route path="/home" element={<RoleRedirect />} />
                       <Route path="/auth" element={<Auth />} />
+                      <Route
+                        path="/tenant-select"
+                        element={
+                          <RequireAuth>
+                            <TenantSelect />
+                          </RequireAuth>
+                        }
+                      />
                       <Route path="/onboarding" element={<Onboarding />} />
                       <Route path="/forgot-password" element={<ForgotPassword />} />
                       <Route path="/reset-password" element={<ResetPassword />} />

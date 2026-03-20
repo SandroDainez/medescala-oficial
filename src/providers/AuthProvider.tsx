@@ -1,6 +1,7 @@
 import { useState, useEffect, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { AuthContext } from '@/hooks/auth-context';
+import { setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
 import type { Session, User } from '@supabase/supabase-js';
 import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 
@@ -72,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    setTenantSelectionDoneSafe(false);
 
     // Ensure UI updates immediately even if the auth event is delayed.
     setSession(null);
