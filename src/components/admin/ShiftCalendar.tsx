@@ -4197,15 +4197,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           'Plantões atualizados',
           errorCount > 0
             ? `${updatedCount} salvo(s) e ${errorCount} com pendência. Você pode continuar editando.`
-            : `${updatedCount} plantão(ões) salvos. Você pode continuar editando.`
+            : `${updatedCount} plantão(ões) salvos.`
         );
       } else if (errorCount > 0) {
         notifyWarning('Nenhum plantão salvo', 'Revise os campos e tente novamente.');
       }
 
       await fetchData();
-      if (selectedDate) {
-        openBulkEditDialog(selectedDate, dayDialogSectorId);
+      if (updatedCount > 0 && errorCount === 0) {
+        closeBulkEditDialog();
       }
     } catch (error) {
       console.error('Error saving bulk edits:', error);
