@@ -52,25 +52,36 @@ function parseCoordinateInput(value: string): number | null {
   const normalized = value.trim().replace(',', '.');
   if (!normalized) return null;
 
-  const decimal = Number(normalized);
-  if (Number.isFinite(decimal)) return decimal;
+  // Accept plain decimal degrees, preserving explicit sign.
+  if (/^[+-]?\d+(?:\.\d+)?$/.test(normalized)) {
+    const decimal = Number(normalized);
+    return Number.isFinite(decimal) ? decimal : null;
+  }
 
-  const dmsMatch = normalized.match(
-    /^\s*(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)?\D*(\d+(?:\.\d+)?)?\D*([NSEWOL])?\s*$/i,
-  );
-  if (!dmsMatch) return null;
+  const directionMatch = normalized.match(/([NSEWOL])\s*$/i);
+  const direction = (directionMatch?.[1] ?? '').toUpperCase();
+  const hasExplicitNegative = normalized.startsWith('-');
+  const numericParts = normalized.match(/\d+(?:\.\d+)?/g);
 
-  const degrees = Number(dmsMatch[1] ?? 0);
-  const minutes = Number(dmsMatch[2] ?? 0);
-  const seconds = Number(dmsMatch[3] ?? 0);
-  const direction = (dmsMatch[4] ?? '').toUpperCase();
+  if (!numericParts || numericParts.length === 0 || numericParts.length > 3) {
+    return null;
+  }
+
+  const [degreesRaw, minutesRaw = '0', secondsRaw = '0'] = numericParts;
+  const degrees = Number(degreesRaw);
+  const minutes = Number(minutesRaw);
+  const seconds = Number(secondsRaw);
 
   if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
     return null;
   }
 
+  if (minutes >= 60 || seconds >= 60) {
+    return null;
+  }
+
   let result = degrees + minutes / 60 + seconds / 3600;
-  if (['S', 'W', 'O'].includes(direction)) {
+  if (hasExplicitNegative || ['S', 'W', 'O'].includes(direction)) {
     result *= -1;
   }
 
@@ -83,6 +94,19 @@ function isValidLatitude(value: number | null): value is number {
 
 function isValidLongitude(value: number | null): value is number {
   return value !== null && value >= -180 && value <= 180;
+}
+
+function getGeolocationErrorMessage(error: GeolocationPositionError): string {
+  switch (error.code) {
+    case error.PERMISSION_DENIED:
+      return 'Localização bloqueada no navegador. Libere a permissão do site e tente novamente.';
+    case error.POSITION_UNAVAILABLE:
+      return 'Não foi possível obter sua posição atual. Verifique o GPS/dispositivo e tente novamente.';
+    case error.TIMEOUT:
+      return 'O tempo para capturar sua localização expirou. Tente novamente em um local com melhor sinal.';
+    default:
+      return 'Permita acesso à localização e tente novamente.';
+  }
 }
 
 export default function AdminSectors() {
@@ -419,7 +443,7 @@ export default function AdminSectors() {
       },
       (error) => {
         setCapturingReferenceLocation(false);
-        notifyError('capturar localização', error, 'Permita acesso à localização e tente novamente.');
+        notifyError('capturar localização', error, getGeolocationErrorMessage(error));
       },
       {
         enableHighAccuracy: true,
