@@ -638,6 +638,13 @@ export default function AdminSectors() {
                       <Users className="mr-1.5 h-3 w-3" />
                       {getMemberCount(sector.id)}
                     </Badge>
+                    <Badge variant={sector.checkin_enabled ? 'success' : 'outline'}>
+                      {sector.checkin_enabled
+                        ? sector.require_gps_checkin
+                          ? 'GPS ativo'
+                          : 'Check-in ativo'
+                        : 'GPS inativo'}
+                    </Badge>
                     <Badge variant={sector.active ? 'success' : 'outline'}>
                       {sector.active ? 'Ativo' : 'Inativo'}
                     </Badge>
