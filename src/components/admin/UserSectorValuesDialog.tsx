@@ -259,6 +259,36 @@ export default function UserSectorValuesDialog({
     });
   };
 
+  const applySectorDefaultsToRow = (index: number) => {
+    setUserValues((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        day_value:
+          sector?.default_day_value !== null && sector?.default_day_value !== undefined
+            ? sector.default_day_value.toFixed(2).replace('.', ',')
+            : '',
+        night_value:
+          sector?.default_night_value !== null && sector?.default_night_value !== undefined
+            ? sector.default_night_value.toFixed(2).replace('.', ',')
+            : '',
+      };
+      return updated;
+    });
+  };
+
+  const clearRowOverride = (index: number) => {
+    setUserValues((prev) => {
+      const updated = [...prev];
+      updated[index] = {
+        ...updated[index],
+        day_value: '',
+        night_value: '',
+      };
+      return updated;
+    });
+  };
+
   async function handleSave() {
     if (!sector || !tenantId) return;
     setSaving(true);
@@ -479,33 +509,46 @@ export default function UserSectorValuesDialog({
                       <Badge variant="secondary" className="shrink-0 text-xs">Personalizado</Badge>
                     )}
                   </div>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
-                    <Input
-                      type="text"
-                      value={uv.day_value}
-                      onChange={(e) => handleValueChange(index, 'day_value', e.target.value)}
-                      onFocus={handleValueFocus}
-                      placeholder={sector.default_day_value?.toFixed(2).replace('.', ',') || '0,00'}
-                      autoComplete="off"
-                      spellCheck={false}
-                      inputMode="decimal"
-                      className="pl-7 text-right h-9 text-sm touch-manipulation"
-                    />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                      <Input
+                        type="text"
+                        value={uv.day_value}
+                        onChange={(e) => handleValueChange(index, 'day_value', e.target.value)}
+                        onFocus={handleValueFocus}
+                        placeholder={sector.default_day_value?.toFixed(2).replace('.', ',') || '0,00'}
+                        autoComplete="off"
+                        spellCheck={false}
+                        inputMode="decimal"
+                        className="pl-7 text-right h-9 text-sm touch-manipulation"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground text-right">Em branco = usa padrão</p>
                   </div>
-                  <div className="relative">
-                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
-                    <Input
-                      type="text"
-                      value={uv.night_value}
-                      onChange={(e) => handleValueChange(index, 'night_value', e.target.value)}
-                      onFocus={handleValueFocus}
-                      placeholder={sector.default_night_value?.toFixed(2).replace('.', ',') || '0,00'}
-                      autoComplete="off"
-                      spellCheck={false}
-                      inputMode="decimal"
-                      className="pl-7 text-right h-9 text-sm touch-manipulation"
-                    />
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                      <Input
+                        type="text"
+                        value={uv.night_value}
+                        onChange={(e) => handleValueChange(index, 'night_value', e.target.value)}
+                        onFocus={handleValueFocus}
+                        placeholder={sector.default_night_value?.toFixed(2).replace('.', ',') || '0,00'}
+                        autoComplete="off"
+                        spellCheck={false}
+                        inputMode="decimal"
+                        className="pl-7 text-right h-9 text-sm touch-manipulation"
+                      />
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Button type="button" variant="outline" size="sm" onClick={() => applySectorDefaultsToRow(index)}>
+                        Individualizar
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => clearRowOverride(index)}>
+                        Limpar
+                      </Button>
+                    </div>
                   </div>
                 </div>
               ))}
