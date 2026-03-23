@@ -395,8 +395,7 @@ export default function UserSectorValuesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      {/* Use fixed height (not only max-height) so ScrollArea can calculate a viewport and allow scrolling */}
-      <DialogContent className="max-w-2xl h-[80vh] flex flex-col overflow-hidden">
+      <DialogContent className="w-[min(96vw,72rem)] max-w-[min(96vw,72rem)] h-[min(88vh,860px)] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <UserCog className="h-5 w-5" />
@@ -408,7 +407,7 @@ export default function UserSectorValuesDialog({
         </DialogHeader>
 
         {/* Default sector values reference */}
-        <div className="flex gap-4 p-3 rounded-lg bg-muted/50 border text-sm">
+        <div className="flex flex-wrap gap-4 p-3 rounded-lg bg-muted/50 border text-sm">
           <div className="flex items-center gap-2">
             <Sun className="h-4 w-4 text-amber-500" />
             <span className="text-muted-foreground">Padrão Diurno:</span>
@@ -439,9 +438,9 @@ export default function UserSectorValuesDialog({
           </div>
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mx-6 px-6">
-              <div className="space-y-3 py-2">
+              <div className="min-w-[640px] space-y-3 py-2">
               {/* Header */}
-              <div className="grid grid-cols-[1fr,120px,120px] gap-3 px-3 text-xs font-medium text-muted-foreground uppercase">
+              <div className="grid grid-cols-[minmax(240px,1fr)_minmax(132px,160px)_minmax(132px,160px)] gap-3 px-3 text-xs font-medium text-muted-foreground uppercase">
                 <span>Plantonista</span>
                 <span className="text-center">Diurno</span>
                 <span className="text-center">Noturno</span>
@@ -450,14 +449,14 @@ export default function UserSectorValuesDialog({
               {userValues.map((uv, index) => (
                 <div 
                   key={uv.user_id} 
-                  className={`grid grid-cols-[1fr,120px,120px] gap-3 items-center p-3 rounded-lg border ${
+                  className={`grid grid-cols-[minmax(240px,1fr)_minmax(132px,160px)_minmax(132px,160px)] gap-3 items-center p-3 rounded-lg border ${
                     uv.day_value || uv.night_value ? 'bg-primary/5 border-primary/20' : 'bg-background'
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <span className="font-medium truncate">{uv.user_name}</span>
                     {(uv.day_value || uv.night_value) && (
-                      <Badge variant="secondary" className="text-xs">Personalizado</Badge>
+                      <Badge variant="secondary" className="shrink-0 text-xs">Personalizado</Badge>
                     )}
                   </div>
                   <div className="relative">
