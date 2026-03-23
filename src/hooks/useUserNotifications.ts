@@ -148,6 +148,24 @@ export function useUserNotifications({
     };
   }, [limit, queryClient, tenantId, userId]);
 
+  const deleteNotifications = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return;
+    const callbackQueryKey = getQueryKey(userId, tenantId, limit);
+    const callbackBaseQueryKey = getBaseQueryKey(userId);
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .in('id', ids);
+
+    if (error) throw error;
+
+    queryClient.setQueryData<UserNotification[]>(callbackQueryKey, (current = []) =>
+      current.filter((item) => !ids.includes(item.id))
+    );
+    await queryClient.invalidateQueries({ queryKey: callbackBaseQueryKey });
+  }, [limit, queryClient, tenantId, userId]);
+
   const markAsRead = useCallback(
     async (id: string) => {
       const callbackQueryKey = getQueryKey(userId, tenantId, limit);
@@ -207,24 +225,6 @@ export function useUserNotifications({
     );
     await queryClient.invalidateQueries({ queryKey: callbackBaseQueryKey });
   }, [deleteNotifications, limit, queryClient, tenantId, userId]);
-
-  const deleteNotifications = useCallback(async (ids: string[]) => {
-    if (ids.length === 0) return;
-    const callbackQueryKey = getQueryKey(userId, tenantId, limit);
-    const callbackBaseQueryKey = getBaseQueryKey(userId);
-
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .in('id', ids);
-
-    if (error) throw error;
-
-    queryClient.setQueryData<UserNotification[]>(callbackQueryKey, (current = []) =>
-      current.filter((item) => !ids.includes(item.id))
-    );
-    await queryClient.invalidateQueries({ queryKey: callbackBaseQueryKey });
-  }, [limit, queryClient, tenantId, userId]);
 
   return {
     ...query,
