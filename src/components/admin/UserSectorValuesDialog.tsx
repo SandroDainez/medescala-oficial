@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { extractErrorMessage } from '@/lib/errorMessage';
 import { useToast } from '@/hooks/use-toast';
@@ -439,8 +438,7 @@ export default function UserSectorValuesDialog({
             Nenhum plantonista associado a este setor.
           </div>
         ) : (
-          <div className="flex-1 min-h-0 -mx-6 px-6">
-            <ScrollArea className="h-full">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain -mx-6 px-6">
               <div className="space-y-3 py-2">
               {/* Header */}
               <div className="grid grid-cols-[1fr,120px,120px] gap-3 px-3 text-xs font-medium text-muted-foreground uppercase">
@@ -468,7 +466,8 @@ export default function UserSectorValuesDialog({
                       value={uv.day_value}
                       onChange={(e) => handleValueChange(index, 'day_value', e.target.value)}
                       placeholder={sector.default_day_value?.toFixed(2).replace('.', ',') || '0,00'}
-                      className="pl-7 text-right h-9 text-sm"
+                      inputMode="decimal"
+                      className="pl-7 text-right h-9 text-sm touch-manipulation"
                     />
                   </div>
                   <div className="relative">
@@ -477,13 +476,13 @@ export default function UserSectorValuesDialog({
                       value={uv.night_value}
                       onChange={(e) => handleValueChange(index, 'night_value', e.target.value)}
                       placeholder={sector.default_night_value?.toFixed(2).replace('.', ',') || '0,00'}
-                      className="pl-7 text-right h-9 text-sm"
+                      inputMode="decimal"
+                      className="pl-7 text-right h-9 text-sm touch-manipulation"
                     />
                   </div>
                 </div>
               ))}
               </div>
-            </ScrollArea>
           </div>
         )}
 
