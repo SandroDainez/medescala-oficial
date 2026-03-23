@@ -3399,11 +3399,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Recalculate all assigned_values for the current month using current individual/sector values
   async function handleRecalculateValues() {
     if (!currentTenantId || !user?.id) return;
-    
-    if (filterSector === 'all') {
-      notifyWarning('Selecione um setor', 'Para recalcular, primeiro selecione um setor específico.');
-      return;
-    }
+
+    const targetSector = resolveSectorForManagement('recalcular valores');
+    if (!targetSector) return;
+    const targetSectorId = targetSector.id;
 
     if (!confirm('Isso irá recalcular TODOS os valores do mês com base nos valores individuais/setor atuais. Valores digitados manualmente serão substituídos. Deseja continuar?')) {
       return;
@@ -3419,7 +3418,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const monthEnd = format(endOfMonth(currentDate), 'yyyy-MM-dd');
       
       const shiftsInMonth = shifts.filter(s => 
-        s.sector_id === filterSector &&
+        s.sector_id === targetSectorId &&
         s.shift_date >= monthStart &&
         s.shift_date <= monthEnd
       );
@@ -3445,7 +3444,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         .from('user_sector_values')
         .select('*')
         .eq('tenant_id', currentTenantId)
-        .eq('sector_id', filterSector)
+        .eq('sector_id', targetSectorId)
         .eq('month', currentMonth)
         .eq('year', currentYear);
       
@@ -3461,7 +3460,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       });
 
       // Get sector info
-      const sector = sectors.find(s => s.id === filterSector);
+      const sector = sectors.find(s => s.id === targetSectorId);
       
       let updatedCount = 0;
       let skippedCount = 0;
@@ -3655,12 +3654,27 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     openEditShift(shift);
   }
 
-  function openSectorValuesFromCalendar() {
-    if (filterSector === 'all') {
-      notifyWarning('Selecione um setor', 'Escolha um setor específico para configurar valores.');
-      return;
+  function resolveSectorForManagement(actionLabel: string): Sector | null {
+    if (filterSector !== 'all') {
+      const selectedSector = sectors.find((sector) => sector.id === filterSector) || null;
+      if (selectedSector) return selectedSector;
     }
-    const sector = sectors.find((s) => s.id === filterSector) || null;
+
+    if (sectors.length === 1) {
+      const onlySector = sectors[0];
+      setFilterSector(onlySector.id);
+      return onlySector;
+    }
+
+    notifyWarning(
+      'Selecione um setor',
+      `Para ${actionLabel}, escolha um setor específico na escala ou clique em "Ver apenas" no card do setor desejado.`,
+    );
+    return null;
+  }
+
+  function openSectorValuesFromCalendar() {
+    const sector = resolveSectorForManagement('configurar valores do setor');
     if (!sector) {
       notifyWarning('Setor não encontrado', 'Não foi possível localizar o setor selecionado.');
       return;
@@ -3670,11 +3684,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   function openUserValuesFromCalendar() {
-    if (filterSector === 'all') {
-      notifyWarning('Selecione um setor', 'Escolha um setor específico para configurar valores individuais.');
-      return;
-    }
-    const sector = sectors.find((s) => s.id === filterSector) || null;
+    const sector = resolveSectorForManagement('configurar valores individuais');
     if (!sector) {
       notifyWarning('Setor não encontrado', 'Não foi possível localizar o setor selecionado.');
       return;
@@ -5382,8 +5392,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <Button 
                       variant="outline" 
                       onClick={handleRecalculateValues}
-                      disabled={recalculateLoading || filterSector === 'all'}
-                      title={filterSector === 'all' ? 'Selecione um setor para recalcular' : 'Recalcular valores do mês com base nos valores individuais/setor atuais'}
+                      disabled={recalculateLoading || sectors.length === 0}
+                      title={
+                        sectors.length === 0
+                          ? 'Nenhum setor disponível para recalcular'
+                          : filterSector === 'all'
+                            ? 'Escolha um setor específico ou, se houver apenas um, o sistema usará automaticamente'
+                            : 'Recalcular valores do mês com base nos valores individuais/setor atuais'
+                      }
                     >
                       <RefreshCw className={`mr-2 h-4 w-4 ${recalculateLoading ? 'animate-spin' : ''}`} />
                       {recalculateLoading ? 'Recalculando...' : 'Recalcular'}
@@ -5392,8 +5408,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <Button
                       variant="outline"
                       onClick={openSectorValuesFromCalendar}
-                      disabled={filterSector === 'all'}
-                      title={filterSector === 'all' ? 'Selecione um setor para editar valores' : 'Configurar valores padrão do setor'}
+                      disabled={sectors.length === 0}
+                      title={
+                        sectors.length === 0
+                          ? 'Nenhum setor disponível para configurar'
+                          : filterSector === 'all'
+                            ? 'Escolha um setor específico ou, se houver apenas um, o sistema usará automaticamente'
+                            : 'Configurar valores padrão do setor'
+                      }
                     >
                       <DollarSign className="mr-2 h-4 w-4" />
                       Valores do Setor
@@ -5402,8 +5424,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <Button
                       variant="outline"
                       onClick={openUserValuesFromCalendar}
-                      disabled={filterSector === 'all'}
-                      title={filterSector === 'all' ? 'Selecione um setor para editar valores individuais' : 'Configurar valores individuais'}
+                      disabled={sectors.length === 0}
+                      title={
+                        sectors.length === 0
+                          ? 'Nenhum setor disponível para configurar'
+                          : filterSector === 'all'
+                            ? 'Escolha um setor específico ou, se houver apenas um, o sistema usará automaticamente'
+                            : 'Configurar valores individuais'
+                      }
                     >
                       <UserCog className="mr-2 h-4 w-4" />
                       Valores Individuais
