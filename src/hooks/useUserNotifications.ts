@@ -14,6 +14,10 @@ export interface UserNotification {
   tenant_id?: string | null;
 }
 
+export function shouldAutoDismissResolvedNotification(notification: Pick<UserNotification, 'type'>): boolean {
+  return notification.type === 'shift' || notification.type === 'swap_request_update';
+}
+
 interface UseUserNotificationsOptions {
   userId?: string;
   tenantId?: string | null;

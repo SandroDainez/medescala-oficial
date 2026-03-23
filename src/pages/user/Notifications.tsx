@@ -11,7 +11,7 @@ import { Bell, Check, CheckCheck, Calendar, ArrowLeftRight, DollarSign, AlertCir
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getNotificationDestination } from '@/lib/notificationNavigation';
-import { useUserNotifications } from '@/hooks/useUserNotifications';
+import { shouldAutoDismissResolvedNotification, useUserNotifications } from '@/hooks/useUserNotifications';
 
 export default function UserNotifications() {
   const { user } = useAuth();
@@ -42,6 +42,10 @@ export default function UserNotifications() {
 
     if (!notification.read_at) {
       await markAsRead(notification.id);
+    }
+
+    if (shouldAutoDismissResolvedNotification(notification)) {
+      await deleteNotifications([notification.id]);
     }
 
     const destination = getNotificationDestination(notification);

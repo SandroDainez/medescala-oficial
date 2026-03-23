@@ -16,7 +16,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getNotificationDestination } from '@/lib/notificationNavigation';
-import { useUserNotifications } from '@/hooks/useUserNotifications';
+import { shouldAutoDismissResolvedNotification, useUserNotifications } from '@/hooks/useUserNotifications';
 
 const typeColors: Record<string, string> = {
   shift: 'bg-blue-500',
@@ -39,7 +39,7 @@ export function NotificationBell() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, markAsRead, markAllAsRead } = useUserNotifications({
+  const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotifications } = useUserNotifications({
     userId: user?.id,
     limit: 20,
   });
@@ -49,6 +49,10 @@ export function NotificationBell() {
 
     if (!notification.read_at) {
       await markAsRead(notification.id);
+    }
+
+    if (shouldAutoDismissResolvedNotification(notification)) {
+      await deleteNotifications([notification.id]);
     }
 
     setOpen(false);
