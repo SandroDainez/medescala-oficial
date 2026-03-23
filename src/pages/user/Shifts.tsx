@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -130,6 +130,8 @@ export default function UserShifts() {
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const highlightedAssignmentId = searchParams.get('assignment');
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [loading, setLoading] = useState(true);
@@ -545,6 +547,45 @@ export default function UserShifts() {
     }
   }, [assignments, didAutoSelect]);
 
+  useEffect(() => {
+    if (!highlightedAssignmentId || assignments.length === 0) return;
+
+    const targetAssignment = assignments.find((item) => item.id === highlightedAssignmentId);
+    if (!targetAssignment) return;
+
+    const targetDate = parseDateOnly(targetAssignment.shift.shift_date);
+    const targetMonth = targetDate.getMonth();
+    const targetYear = targetDate.getFullYear();
+
+    if (selectedMonth !== targetMonth) {
+      setSelectedMonth(targetMonth);
+    }
+    if (selectedYear !== targetYear) {
+      setSelectedYear(targetYear);
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      const element = document.getElementById(`assignment-${highlightedAssignmentId}`);
+      if (!element) return;
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      element.classList.add('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background');
+      window.setTimeout(() => {
+        element.classList.remove('ring-2', 'ring-primary', 'ring-offset-2', 'ring-offset-background');
+      }, 2200);
+    }, 180);
+
+    const cleanupId = window.setTimeout(() => {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('assignment');
+      setSearchParams(nextParams, { replace: true });
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      window.clearTimeout(cleanupId);
+    };
+  }, [assignments, highlightedAssignmentId, searchParams, selectedMonth, selectedYear, setSearchParams]);
+
   // Today's shifts that need check-in
   const todayShifts = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
@@ -912,6 +953,7 @@ export default function UserShifts() {
 
                           return (
                             <div 
+                              id={`assignment-${myAssignment.id}`}
                               key={myAssignment.id} 
                               className={`p-4 rounded-lg border bg-card transition-colors ${
                                 isShiftToday ? 'border-primary/50 bg-primary/5' : 

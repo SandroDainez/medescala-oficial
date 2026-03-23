@@ -19,13 +19,29 @@ import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 type SectorMember = { sector_id: string; sector: { id: string; name: string; color: string | null } | null };
 type NotificationRow = { id: string };
 type ShiftRow = {
+  assignment_id: string;
   id: string;
   title: string;
   shift_date: string;
   start_time: string;
   end_time: string;
-  sector: { name: string } | null;
+  status: string;
+  checkin_at: string | null;
+  checkout_at: string | null;
+  sector: {
+    name: string;
+    checkin_enabled?: boolean | null;
+    require_gps_checkin?: boolean | null;
+  } | null;
 };
+
+function assignmentNeedsCheckin(shift: ShiftRow): boolean {
+  return !shift.checkin_at && shift.status !== 'completed' && shift.status !== 'cancelled';
+}
+
+function assignmentNeedsCheckout(shift: ShiftRow): boolean {
+  return !shift.checkout_at && (Boolean(shift.checkin_at) || shift.status === 'confirmed');
+}
 
 export default function UserHome() {
   const navigate = useNavigate();
@@ -159,10 +175,10 @@ export default function UserHome() {
       supabase
         .from('shift_assignments')
         .select(`
-          id,
+          id, status, checkin_at, checkout_at,
           shift:shifts!inner(
             id, title, shift_date, start_time, end_time,
-            sector:sectors(name)
+            sector:sectors(name, checkin_enabled, require_gps_checkin)
           )
         `)
         .eq('tenant_id', currentTenantId)
@@ -233,7 +249,18 @@ export default function UserHome() {
 
     const upRows = (upcomingRes.data ?? []) as any[];
     const shifts = upRows
-      .map((r) => r.shift)
+      .map((r) => ({
+        assignment_id: r.id,
+        id: r.shift?.id,
+        title: r.shift?.title,
+        shift_date: r.shift?.shift_date,
+        start_time: r.shift?.start_time,
+        end_time: r.shift?.end_time,
+        status: r.status,
+        checkin_at: r.checkin_at,
+        checkout_at: r.checkout_at,
+        sector: r.shift?.sector ?? null,
+      }))
       .filter(Boolean)
       .sort((a, b) => `${a.shift_date}T${a.start_time}`.localeCompare(`${b.shift_date}T${b.start_time}`))
       .slice(0, 6) as ShiftRow[];
@@ -406,21 +433,48 @@ export default function UserHome() {
             <p className="text-sm text-muted-foreground">Nenhum plantão futuro confirmado.</p>
           ) : (
             upcomingShifts.map((s) => (
-              <button
-                type="button"
-                key={s.id}
-                onClick={() => navigate('/app/shifts')}
-                className="flex min-h-12 w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40 touch-manipulation"
-              >
-                <div>
-                  <p className="text-sm font-semibold">{s.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {format(parseDateOnly(s.shift_date), 'dd/MM/yyyy', { locale: ptBR })} • {s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{s.sector?.name || 'Sem setor'}</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              </button>
+              (() => {
+                const sectorCheckinEnabled = Boolean(s.sector?.checkin_enabled);
+                const requiresGps = Boolean(s.sector?.require_gps_checkin);
+                const needsCheckin = sectorCheckinEnabled && assignmentNeedsCheckin(s);
+                const needsCheckout = sectorCheckinEnabled && assignmentNeedsCheckout(s);
+                const targetHref = `/app/shifts?assignment=${s.assignment_id}`;
+
+                return (
+                  <button
+                    type="button"
+                    key={s.assignment_id}
+                    onClick={() => navigate(targetHref)}
+                    className="flex min-h-12 w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40 touch-manipulation"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold">{s.title}</p>
+                        {needsCheckin && (
+                          <Badge variant="outline" className="border-blue-500/30 bg-blue-500/5 text-blue-600">
+                            {requiresGps ? 'Check-in com GPS' : 'Check-in pendente'}
+                          </Badge>
+                        )}
+                        {needsCheckout && (
+                          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/5 text-amber-600">
+                            {requiresGps ? 'Check-out com GPS' : 'Check-out pendente'}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {format(parseDateOnly(s.shift_date), 'dd/MM/yyyy', { locale: ptBR })} • {s.start_time.slice(0, 5)}-{s.end_time.slice(0, 5)}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{s.sector?.name || 'Sem setor'}</p>
+                      {(needsCheckin || needsCheckout) && (
+                        <p className="text-xs font-medium text-primary">
+                          Toque para abrir o plantão e fazer {needsCheckout ? 'o check-out' : 'o check-in'}.
+                        </p>
+                      )}
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                );
+              })()
             ))
           )}
         </CardContent>
