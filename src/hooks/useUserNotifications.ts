@@ -15,7 +15,11 @@ export interface UserNotification {
 }
 
 export function shouldAutoDismissResolvedNotification(notification: Pick<UserNotification, 'type'>): boolean {
-  return notification.type === 'shift' || notification.type === 'swap_request_update';
+  return (
+    notification.type === 'shift' ||
+    notification.type === 'swap_request_update' ||
+    notification.type === 'swap_request_sent'
+  );
 }
 
 interface UseUserNotificationsOptions {
@@ -148,6 +152,14 @@ export function useUserNotifications({
     async (id: string) => {
       const callbackQueryKey = getQueryKey(userId, tenantId, limit);
       const callbackBaseQueryKey = getBaseQueryKey(userId);
+      const current = queryClient.getQueryData<UserNotification[]>(callbackQueryKey) ?? [];
+      const target = current.find((item) => item.id === id);
+
+      if (target && shouldAutoDismissResolvedNotification(target)) {
+        await deleteNotifications([id]);
+        return;
+      }
+
       const readAt = new Date().toISOString();
       const { error } = await supabase
         .from('notifications')
@@ -161,14 +173,25 @@ export function useUserNotifications({
       );
       await queryClient.invalidateQueries({ queryKey: callbackBaseQueryKey });
     },
-    [limit, queryClient, tenantId, userId]
+    [deleteNotifications, limit, queryClient, tenantId, userId]
   );
 
   const markAllAsRead = useCallback(async () => {
     const callbackQueryKey = getQueryKey(userId, tenantId, limit);
     const callbackBaseQueryKey = getBaseQueryKey(userId);
     const current = queryClient.getQueryData<UserNotification[]>(callbackQueryKey) ?? [];
-    const unreadIds = current.filter((item) => !item.read_at).map((item) => item.id);
+    const unreadItems = current.filter((item) => !item.read_at);
+    const dismissIds = unreadItems
+      .filter((item) => shouldAutoDismissResolvedNotification(item))
+      .map((item) => item.id);
+    const unreadIds = unreadItems
+      .filter((item) => !shouldAutoDismissResolvedNotification(item))
+      .map((item) => item.id);
+
+    if (dismissIds.length > 0) {
+      await deleteNotifications(dismissIds);
+    }
+
     if (unreadIds.length === 0) return;
 
     const readAt = new Date().toISOString();
@@ -183,7 +206,7 @@ export function useUserNotifications({
       items.map((item) => ({ ...item, read_at: item.read_at || readAt }))
     );
     await queryClient.invalidateQueries({ queryKey: callbackBaseQueryKey });
-  }, [limit, queryClient, tenantId, userId]);
+  }, [deleteNotifications, limit, queryClient, tenantId, userId]);
 
   const deleteNotifications = useCallback(async (ids: string[]) => {
     if (ids.length === 0) return;
