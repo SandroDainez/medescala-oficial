@@ -149,6 +149,27 @@ async function notifyTenantAdmins(params: {
   if (error) throw error;
 }
 
+async function deleteUserNotifications(params: {
+  userId: string;
+  tenantId: string;
+  type: string;
+  shiftAssignmentId?: string | null;
+}) {
+  let query = supabase
+    .from('notifications')
+    .delete()
+    .eq('user_id', params.userId)
+    .eq('tenant_id', params.tenantId)
+    .eq('type', params.type);
+
+  if (params.shiftAssignmentId) {
+    query = query.eq('shift_assignment_id', params.shiftAssignmentId);
+  }
+
+  const { error } = await query;
+  if (error) throw error;
+}
+
 export async function fetchUserSwapsData(userId: string, tenantId: string): Promise<UserSwapsData> {
   const today = new Date().toISOString().split('T')[0];
 
@@ -313,6 +334,20 @@ export async function decideSwapRequest(params: {
 
   if (notifyError) throw new Error(getErrorMessage(notifyError, 'Não foi possível notificar o solicitante.'));
 
+  await deleteUserNotifications({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    type: 'swap_request',
+    shiftAssignmentId: params.swap.origin_assignment_id,
+  });
+
+  await deleteUserNotifications({
+    userId: params.swap.requester_id,
+    tenantId: params.tenantId,
+    type: 'swap_request_sent',
+    shiftAssignmentId: params.swap.origin_assignment_id,
+  });
+
   await notifyTenantAdmins({
     tenantId: params.tenantId,
     type: 'swap_request_update_admin',
@@ -323,11 +358,23 @@ export async function decideSwapRequest(params: {
   });
 }
 
-export async function cancelSwapRequest(swapId: string) {
+export async function cancelSwapRequest(params: {
+  swapId: string;
+  tenantId: string;
+  userId: string;
+  originAssignmentId?: string | null;
+}) {
   const { error } = await supabase
     .from('swap_requests')
     .update({ status: 'cancelled' })
-    .eq('id', swapId);
+    .eq('id', params.swapId);
 
   if (error) throw error;
+
+  await deleteUserNotifications({
+    userId: params.userId,
+    tenantId: params.tenantId,
+    type: 'swap_request_sent',
+    shiftAssignmentId: params.originAssignmentId ?? null,
+  });
 }

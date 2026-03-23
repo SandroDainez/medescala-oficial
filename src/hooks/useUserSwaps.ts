@@ -68,7 +68,13 @@ export function useUserSwaps({ userId, tenantId }: UseUserSwapsOptions) {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: cancelSwapRequest,
+    mutationFn: async (params: { swapId: string; originAssignmentId?: string | null }) =>
+      cancelSwapRequest({
+        swapId: params.swapId,
+        tenantId: tenantId!,
+        userId: userId!,
+        originAssignmentId: params.originAssignmentId,
+      }),
     onSuccess: invalidate,
   });
 

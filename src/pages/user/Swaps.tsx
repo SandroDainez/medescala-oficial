@@ -430,9 +430,9 @@ export default function UserSwaps() {
     }
   }
 
-  async function handleCancelRequest(swapId: string) {
+  async function handleCancelRequest(swapId: string, originAssignmentId?: string | null) {
     try {
-      await cancelSwap(swapId);
+      await cancelSwap({ swapId, originAssignmentId });
       toast({ title: 'Solicitação cancelada.' });
     } catch (error) {
       toast({
@@ -763,7 +763,7 @@ export default function UserSwaps() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => handleCancelRequest(swap.id)}
+                              onClick={() => handleCancelRequest(swap.id, swap.origin_assignment_id)}
                               className="text-destructive hover:text-destructive"
                             >
                               <X className="h-4 w-4 mr-1" />
