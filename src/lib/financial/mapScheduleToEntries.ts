@@ -68,15 +68,6 @@ function normalizeMoney(value: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-/**
- * Check if a sector is a training sector (residentes/estagiários) that should have no remuneration.
- * This is specific to GABS tenant.
- */
-function isTrainingSector(sectorName: string): boolean {
-  const normalized = sectorName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  return normalized.includes('residente') || normalized.includes('estagiario');
-}
-
 function getEffectiveUserSectorValue(params: {
   values: UserSectorValueLookup[];
   sectorId: string | null;
@@ -124,7 +115,7 @@ export function mapScheduleToFinancialEntries(params: {
   userSectorValues?: UserSectorValueLookup[];
   /** When a shift has no assignee, we still include it as a row grouped under this id */
   unassignedLabel?: { id: string; name: string };
-  /** Tenant slug - used for tenant-specific rules (e.g., GABS training sectors have no remuneration) */
+  /** Tenant slug kept only for backwards compatibility with existing callers. */
   tenantSlug?: string;
 }): FinancialEntry[] {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
@@ -151,15 +142,9 @@ export function mapScheduleToFinancialEntries(params: {
     typeof window !== 'undefined' &&
     window.localStorage?.getItem('debug_financial_values') === '1';
 
-  // GABS-specific rule: training sectors (residentes/estagiários) have no remuneration
-  const isGabs = params.tenantSlug?.toLowerCase() === 'gabs';
-
   for (const shift of params.shifts) {
     const duration_hours = calculateDurationHours(shift.start_time, shift.end_time);
     const sector_name = shift.sector_id ? sectorNameById.get(shift.sector_id) ?? 'Sem Setor' : 'Sem Setor';
-
-    // Check if this is a training sector in GABS (no remuneration)
-    const noRemuneration = isGabs && isTrainingSector(sector_name);
 
     const shiftAssignments = assignmentsByShift.get(shift.id) ?? [];
 
@@ -212,9 +197,8 @@ export function mapScheduleToFinancialEntries(params: {
         durationHours: duration_hours,
       });
 
-      const valueResult = noRemuneration 
-        ? { final_value: null, source: 'none' as const, invalidReason: undefined }
-        : assignedNumeric !== null && !Number.isFinite(assignedNumeric)
+      const valueResult =
+        assignedNumeric !== null && !Number.isFinite(assignedNumeric)
           ? { final_value: null, source: 'invalid' as const, invalidReason: 'assigned_value inválido' }
           : assignedNumeric !== null && assignedNumeric < 0
             ? { final_value: null, source: 'invalid' as const, invalidReason: 'assigned_value negativo' }
@@ -253,8 +237,8 @@ export function mapScheduleToFinancialEntries(params: {
         assignee_name: a.profile_name ?? 'Sem nome',
         title: shift.title ?? null,
         hospital: shift.hospital ?? null,
-        assigned_value: noRemuneration ? null : a.assigned_value,
-        base_value: noRemuneration ? null : (shift.base_value ?? null),
+        assigned_value: a.assigned_value,
+        base_value: shift.base_value ?? null,
         final_value: valueResult.final_value,
         value_source: valueResult.source,
         value_invalid_reason: valueResult.invalidReason,
