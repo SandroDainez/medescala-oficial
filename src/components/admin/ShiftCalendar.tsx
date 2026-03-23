@@ -2163,11 +2163,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const useMultiRows = quantity > 1 && multiShifts.length > 0;
       const typedRows =
         typedTotal > 0
-          ? buildRowsByShiftType(dayQuantity, nightQuantity).map((row, index) =>
-              typedTotal === 1 && index === 0
-                ? { ...row, user_id: formData.assigned_user_id }
-                : row
-            )
+          ? typedTotal === 1
+            ? [{
+                user_id: formData.assigned_user_id,
+                start_time: formData.start_time,
+                end_time: formData.end_time,
+              }]
+            : buildRowsByShiftType(dayQuantity, nightQuantity)
           : Array.from({ length: quantity }).map(() => ({
               user_id: formData.assigned_user_id,
               start_time: formData.start_time,
