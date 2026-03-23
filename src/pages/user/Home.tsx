@@ -173,11 +173,9 @@ export default function UserHome() {
         .limit(12),
       supabase
         .from('user_sector_values')
-        .select('sector_id, user_id, day_value, night_value')
+        .select('sector_id, user_id, day_value, night_value, month, year')
         .eq('tenant_id', currentTenantId)
-        .eq('user_id', user.id)
-        .eq('month', month)
-        .eq('year', year),
+        .eq('user_id', user.id),
     ]);
 
     const memberships = (membershipsRes.data ?? []) as unknown as SectorMember[];

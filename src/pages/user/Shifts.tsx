@@ -151,7 +151,7 @@ export default function UserShifts() {
       supabase
         .from('shift_assignments')
         .select(
-          'id, shift_id, user_id, assigned_value, checkin_at, checkout_at, status, profile:profiles!shift_assignments_user_id_profiles_fkey(id, name, full_name), shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id)'
+          'id, shift_id, user_id, assigned_value, checkin_at, checkout_at, status, profile:profiles!shift_assignments_user_id_profiles_fkey(id, name, full_name), shift:shifts(title, hospital, shift_date, start_time, end_time, sector_id, base_value)'
         )
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id)
@@ -195,7 +195,9 @@ export default function UserShifts() {
         start_time: a.shift.start_time,
         end_time: a.shift.end_time,
         sector_id: a.shift.sector_id ?? null,
-        base_value: null,
+        base_value: (a.shift as any).base_value !== null && (a.shift as any).base_value !== undefined
+          ? Number((a.shift as any).base_value)
+          : null,
         title: a.shift.title,
         hospital: a.shift.hospital,
       }));

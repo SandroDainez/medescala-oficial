@@ -201,8 +201,7 @@ export default function UserFinancial() {
         .from('user_sector_values')
         .select('sector_id, user_id, day_value, night_value, month, year')
         .eq('tenant_id', currentTenantId)
-        .eq('user_id', user.id)
-        .or(`and(month.eq.${effectiveMonth},year.eq.${effectiveYear}),and(month.is.null,year.is.null)`),
+        .eq('user_id', user.id),
       supabase
         .from('sectors')
         .select('id, name, default_day_value, default_night_value')
