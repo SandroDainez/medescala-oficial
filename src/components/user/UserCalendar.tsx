@@ -100,7 +100,7 @@ export default function UserCalendar() {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [panelExpanded, setPanelExpanded] = useState(true);
-  const [activeTab, setActiveTab] = useState<FilterTab>('meus');
+  const [activeTab, setActiveTab] = useState<FilterTab>('todos');
 
   // Swap request states
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);

@@ -320,6 +320,62 @@ export default function UserShifts() {
     });
   }
 
+  async function notifyAdminsAboutLocationFailure(params: {
+    assignment: Assignment;
+    action: 'checkin' | 'checkout';
+    reason: string;
+  }) {
+    if (!currentTenantId || !user?.id) return;
+
+    try {
+      const [{ data: adminsData, error: adminsError }, { data: profileData }] = await Promise.all([
+        supabase
+          .from('memberships')
+          .select('user_id')
+          .eq('tenant_id', currentTenantId)
+          .in('role', ['admin', 'owner'])
+          .eq('active', true),
+        supabase
+          .from('profiles')
+          .select('full_name, name')
+          .eq('id', user.id)
+          .maybeSingle(),
+      ]);
+
+      if (adminsError || !adminsData?.length) return;
+
+      const actorName =
+        (profileData as { full_name?: string | null; name?: string | null } | null)?.full_name?.trim() ||
+        (profileData as { full_name?: string | null; name?: string | null } | null)?.name?.trim() ||
+        user.email ||
+        'Usuário';
+
+      const shiftDateLabel = format(parseDateOnly(params.assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR });
+      const actionLabel = params.action === 'checkin' ? 'check-in' : 'check-out';
+      const notifications = adminsData
+        .map((item: { user_id: string }) => item.user_id)
+        .filter((adminUserId) => adminUserId && adminUserId !== user.id)
+        .map((adminUserId) => ({
+          tenant_id: currentTenantId,
+          user_id: adminUserId,
+          shift_assignment_id: params.assignment.id,
+          type: 'gps_permission_denied',
+          title: `Falha de ${actionLabel} por localização`,
+          message:
+            `${actorName} não conseguiu realizar ${actionLabel} no plantão ` +
+            `"${params.assignment.shift.title}" de ${shiftDateLabel} ` +
+            `(${params.assignment.shift.start_time.slice(0, 5)}-${params.assignment.shift.end_time.slice(0, 5)}). ` +
+            `Motivo: ${params.reason}`,
+        }));
+
+      if (notifications.length > 0) {
+        await supabase.from('notifications').insert(notifications);
+      }
+    } catch (error) {
+      console.error('[UserShifts] Failed to notify admins about location failure:', error);
+    }
+  }
+
   // Calculate distance in meters between two GPS coordinates (Haversine formula)
   function calculateDistance(
     lat1: number,
@@ -360,8 +416,14 @@ export default function UserShifts() {
       longitude = position.coords.longitude;
     } catch (error) {
       if (requiresGps) {
-        setGpsError((error as Error).message);
+        const reason = (error as Error).message;
+        setGpsError(reason);
         setShowGpsErrorDialog(true);
+        await notifyAdminsAboutLocationFailure({
+          assignment,
+          action: 'checkin',
+          reason,
+        });
         setProcessingId(null);
         return;
       }
@@ -377,8 +439,14 @@ export default function UserShifts() {
       if (refLat && refLon) {
         const distance = calculateDistance(latitude, longitude, refLat, refLon);
         if (distance > allowedRadius) {
-          setGpsError(`Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`);
+          const reason = `Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`;
+          setGpsError(reason);
           setShowGpsErrorDialog(true);
+          await notifyAdminsAboutLocationFailure({
+            assignment,
+            action: 'checkin',
+            reason,
+          });
           setProcessingId(null);
           return;
         }
@@ -426,8 +494,14 @@ export default function UserShifts() {
       longitude = position.coords.longitude;
     } catch (error) {
       if (requiresGps) {
-        setGpsError((error as Error).message);
+        const reason = (error as Error).message;
+        setGpsError(reason);
         setShowGpsErrorDialog(true);
+        await notifyAdminsAboutLocationFailure({
+          assignment,
+          action: 'checkout',
+          reason,
+        });
         setProcessingId(null);
         return;
       }
@@ -442,8 +516,14 @@ export default function UserShifts() {
       if (refLat && refLon) {
         const distance = calculateDistance(latitude, longitude, refLat, refLon);
         if (distance > allowedRadius) {
-          setGpsError(`Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`);
+          const reason = `Você está a ${Math.round(distance)}m do local de trabalho. Máximo permitido: ${allowedRadius}m.`;
+          setGpsError(reason);
           setShowGpsErrorDialog(true);
+          await notifyAdminsAboutLocationFailure({
+            assignment,
+            action: 'checkout',
+            reason,
+          });
           setProcessingId(null);
           return;
         }
