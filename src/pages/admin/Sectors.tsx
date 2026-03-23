@@ -48,6 +48,43 @@ interface SectorMembership {
   user_id: string;
 }
 
+function parseCoordinateInput(value: string): number | null {
+  const normalized = value.trim().replace(',', '.');
+  if (!normalized) return null;
+
+  const decimal = Number(normalized);
+  if (Number.isFinite(decimal)) return decimal;
+
+  const dmsMatch = normalized.match(
+    /^\s*(\d+(?:\.\d+)?)\D+(\d+(?:\.\d+)?)?\D*(\d+(?:\.\d+)?)?\D*([NSEWOL])?\s*$/i,
+  );
+  if (!dmsMatch) return null;
+
+  const degrees = Number(dmsMatch[1] ?? 0);
+  const minutes = Number(dmsMatch[2] ?? 0);
+  const seconds = Number(dmsMatch[3] ?? 0);
+  const direction = (dmsMatch[4] ?? '').toUpperCase();
+
+  if (!Number.isFinite(degrees) || !Number.isFinite(minutes) || !Number.isFinite(seconds)) {
+    return null;
+  }
+
+  let result = degrees + minutes / 60 + seconds / 3600;
+  if (['S', 'W', 'O'].includes(direction)) {
+    result *= -1;
+  }
+
+  return Number(result.toFixed(6));
+}
+
+function isValidLatitude(value: number | null): value is number {
+  return value !== null && value >= -90 && value <= 90;
+}
+
+function isValidLongitude(value: number | null): value is number {
+  return value !== null && value >= -180 && value <= 180;
+}
+
 export default function AdminSectors() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -327,8 +364,15 @@ export default function AdminSectors() {
 
     // Validate coordinates if GPS is required
     if (checkinSettings.require_gps_checkin) {
-      if (!checkinSettings.reference_latitude || !checkinSettings.reference_longitude) {
+      if (checkinSettings.reference_latitude === null || checkinSettings.reference_longitude === null) {
         notifyWarning('Coordenadas obrigatórias', 'Informe as coordenadas de referência para validação GPS.');
+        return;
+      }
+      if (!isValidLatitude(checkinSettings.reference_latitude) || !isValidLongitude(checkinSettings.reference_longitude)) {
+        notifyWarning(
+          'Coordenadas inválidas',
+          'Latitude deve ficar entre -90 e 90, e longitude entre -180 e 180.',
+        );
         return;
       }
     }
@@ -927,36 +971,40 @@ export default function AdminSectors() {
                         <div>
                           <Label className="text-xs">Latitude</Label>
                           <Input
-                            type="number"
-                            step="0.000001"
+                            type="text"
                             placeholder="-23.550520"
                             value={checkinSettings.reference_latitude ?? ''}
                             onChange={(e) => 
                               setCheckinSettings({ 
                                 ...checkinSettings, 
-                                reference_latitude: e.target.value ? parseFloat(e.target.value) : null 
+                                reference_latitude: parseCoordinateInput(e.target.value),
                               })
                             }
                           />
+                          {checkinSettings.reference_latitude !== null && !isValidLatitude(checkinSettings.reference_latitude) && (
+                            <p className="mt-1 text-[11px] text-destructive">Latitude inválida. Use um valor entre -90 e 90.</p>
+                          )}
                         </div>
                         <div>
                           <Label className="text-xs">Longitude</Label>
                           <Input
-                            type="number"
-                            step="0.000001"
+                            type="text"
                             placeholder="-46.633308"
                             value={checkinSettings.reference_longitude ?? ''}
                             onChange={(e) => 
                               setCheckinSettings({ 
                                 ...checkinSettings, 
-                                reference_longitude: e.target.value ? parseFloat(e.target.value) : null 
+                                reference_longitude: parseCoordinateInput(e.target.value),
                               })
                             }
                           />
+                          {checkinSettings.reference_longitude !== null && !isValidLongitude(checkinSettings.reference_longitude) && (
+                            <p className="mt-1 text-[11px] text-destructive">Longitude inválida. Use um valor entre -180 e 180.</p>
+                          )}
                         </div>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Dica: Pesquise no Google Maps o endereço e copie as coordenadas da URL
+                        Dica: aceitamos decimal (`-23.550520`) ou graus/minutos/segundos (`23° 56' 58.2" S`).
                       </p>
                     </div>
                   </div>
