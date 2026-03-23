@@ -57,6 +57,28 @@ function getSectorDefaultReferenceValue(entry: Pick<FinancialEntry, 'sector_id' 
   return calculateProRata(baseReference, entry.duration_hours);
 }
 
+function getValueSourceLabel(source: FinancialEntry['value_source']): string {
+  switch (source) {
+    case 'individual':
+    case 'zero_individual':
+      return 'Individual';
+    case 'assigned':
+    case 'zero_assigned':
+      return 'Escala';
+    case 'base':
+    case 'zero_base':
+      return 'Plantao';
+    case 'sector_default':
+      return 'Setor';
+    case 'none':
+      return 'Sem valor';
+    case 'invalid':
+      return 'Invalido';
+    default:
+      return 'Desconhecido';
+  }
+}
+
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
@@ -1582,6 +1604,7 @@ export default function AdminFinancial() {
                       <TableHead>Setor</TableHead>
                       <TableHead className="text-right">Valor Padrão</TableHead>
                       <TableHead className="text-right">Valor Real</TableHead>
+                      <TableHead className="text-center">Origem</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1613,6 +1636,11 @@ export default function AdminFinancial() {
                               ) : (
                                 <span className="text-amber-500 text-sm">Sem valor definido</span>
                               )}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline" className="text-[11px]">
+                                {getValueSourceLabel(e.value_source)}
+                              </Badge>
                             </TableCell>
                           </TableRow>
                         );

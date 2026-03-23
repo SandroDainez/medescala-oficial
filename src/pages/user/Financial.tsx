@@ -35,6 +35,28 @@ interface FinancialSummary {
   status: string | null;
 }
 
+function getValueSourceLabel(source: ShiftDetail['value_source']): string {
+  switch (source) {
+    case 'individual':
+    case 'zero_individual':
+      return 'Valor individual';
+    case 'assigned':
+    case 'zero_assigned':
+      return 'Valor salvo na escala';
+    case 'base':
+    case 'zero_base':
+      return 'Valor do plantao';
+    case 'sector_default':
+      return 'Padrao do setor';
+    case 'none':
+      return 'Sem valor';
+    case 'invalid':
+      return 'Valor invalido';
+    default:
+      return 'Origem desconhecida';
+  }
+}
+
 export default function UserFinancial() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
@@ -462,13 +484,18 @@ export default function UserFinancial() {
                     {/* Duration & Value */}
                     <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 sm:w-40 shrink-0">
                       <Badge variant="outline" className="text-xs">{shift.duration_hours.toFixed(1)}h</Badge>
-                      <span className="font-semibold text-green-600 text-sm">
-                        {shift.final_value === null ? (
-                          <span className="text-muted-foreground font-medium text-xs">Sem valor</span>
-                        ) : (
-                          `R$ ${shift.final_value.toFixed(2)}`
-                        )}
-                      </span>
+                      <div className="text-right">
+                        <span className="font-semibold text-green-600 text-sm block">
+                          {shift.final_value === null ? (
+                            <span className="text-muted-foreground font-medium text-xs">Sem valor</span>
+                          ) : (
+                            `R$ ${shift.final_value.toFixed(2)}`
+                          )}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground block">
+                          {getValueSourceLabel(shift.value_source)}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 ))}
