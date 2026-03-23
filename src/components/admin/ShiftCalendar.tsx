@@ -190,6 +190,8 @@ function ShiftTimeInput({
 
 export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [searchParams, setSearchParams] = useSearchParams();
+  const sectorFromQuery = searchParams.get('sector') || undefined;
+  const routeSectorId = initialSectorId || sectorFromQuery;
   const { currentTenantId } = useTenant();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -221,7 +223,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [filterSector, setFilterSector] = useState<string>(initialSectorId || searchParams.get('sector') || 'all');
+  const [filterSector, setFilterSector] = useState<string>(routeSectorId || 'all');
   const [daySelectedShiftIds, setDaySelectedShiftIds] = useState<Set<string>>(new Set());
 
   // When viewing a specific sector card while filter is "all",
@@ -580,8 +582,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   useEffect(() => {
     // When route has no sectorId (e.g. /admin/calendar), always show all sectors.
     // When route has a sectorId (e.g. /admin/calendar/:sectorId), show only that sector.
-    setFilterSector(initialSectorId || 'all');
-  }, [initialSectorId]);
+    setFilterSector(routeSectorId || 'all');
+  }, [routeSectorId]);
 
   const fetchData = useCallback(async () => {
     if (!currentTenantId || !user?.id) return;
@@ -626,8 +628,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   useEffect(() => {
     if (filterSector === 'all') return;
     if (sectors.some((sector) => sector.id === filterSector)) return;
-    setFilterSector(initialSectorId && sectors.some((sector) => sector.id === initialSectorId) ? initialSectorId : 'all');
-  }, [filterSector, initialSectorId, sectors]);
+    setFilterSector(routeSectorId && sectors.some((sector) => sector.id === routeSectorId) ? routeSectorId : 'all');
+  }, [filterSector, routeSectorId, sectors]);
 
   useEffect(() => {
     if (!shiftDialogOpen) return;
