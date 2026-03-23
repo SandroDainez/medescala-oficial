@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getNotificationDestination } from '@/lib/notificationNavigation';
 import { shouldAutoDismissResolvedNotification, useUserNotifications } from '@/hooks/useUserNotifications';
+import { extractErrorMessage } from '@/lib/errorMessage';
 
 export default function UserNotifications() {
   const { user } = useAuth();
@@ -99,7 +100,7 @@ export default function UserNotifications() {
     } catch (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error instanceof Error ? error.message : 'Não foi possível excluir as notificações.',
+        description: extractErrorMessage(error, 'Não foi possível excluir as notificações.'),
         variant: 'destructive',
       });
     } finally {

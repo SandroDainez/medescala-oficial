@@ -14,6 +14,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { parseDateOnly } from '@/lib/utils';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
@@ -177,7 +178,7 @@ export default function UserShifts() {
 
     if (assignmentsRes.error) {
       console.error('[UserShifts] Error fetching assignments:', assignmentsRes.error);
-      toast({ title: 'Erro ao carregar agenda', description: assignmentsRes.error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao carregar agenda', description: extractErrorMessage(assignmentsRes.error, 'Não foi possível carregar sua agenda.'), variant: 'destructive' });
     }
 
     if (sectorsRes.error) {
@@ -350,7 +351,7 @@ export default function UserShifts() {
     });
 
     if (rpcError) {
-      toast({ title: 'Erro', description: rpcError.message, variant: 'destructive' });
+      toast({ title: 'Erro', description: extractErrorMessage(rpcError, 'Não foi possível registrar o check-in.'), variant: 'destructive' });
       setProcessingId(null);
       return;
     }
@@ -415,7 +416,7 @@ export default function UserShifts() {
     });
 
     if (rpcError) {
-      toast({ title: 'Erro', description: rpcError.message, variant: 'destructive' });
+      toast({ title: 'Erro', description: extractErrorMessage(rpcError, 'Não foi possível registrar o check-out.'), variant: 'destructive' });
       setProcessingId(null);
       return;
     }

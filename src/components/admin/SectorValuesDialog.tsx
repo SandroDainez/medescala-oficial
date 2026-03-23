@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useToast } from '@/hooks/use-toast';
 import { Sun, Moon, DollarSign, Users } from 'lucide-react';
 
@@ -208,7 +209,7 @@ export default function SectorValuesDialog({
     } catch (error: any) {
       toast({
         title: 'Erro ao salvar',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível salvar os valores do setor.'),
         variant: 'destructive',
       });
     } finally {

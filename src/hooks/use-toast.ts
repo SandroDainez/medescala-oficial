@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { buildErrorToastDescription } from "@/lib/errorMessage";
 
 const TOAST_LIMIT = 1;
 const TOAST_REMOVE_DELAY = 1000000;
@@ -136,6 +137,10 @@ type Toast = Omit<ToasterToast, "id">;
 
 function toast({ ...props }: Toast) {
   const id = genId();
+  const normalizedDescription =
+    props.variant === "destructive"
+      ? props.description || buildErrorToastDescription({ fallback: typeof props.title === "string" ? props.title : "Erro no aplicativo." })
+      : props.description;
 
   const update = (props: ToasterToast) =>
     dispatch({
@@ -148,6 +153,7 @@ function toast({ ...props }: Toast) {
     type: "ADD_TOAST",
     toast: {
       ...props,
+      description: normalizedDescription,
       id,
       open: true,
       onOpenChange: (open) => {

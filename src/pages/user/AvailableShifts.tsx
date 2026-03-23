@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { Calendar, Clock, MapPin, DollarSign, Hand, CheckCircle, XCircle, Loader2, Building } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -67,7 +68,7 @@ export default function UserAvailableShifts() {
       });
     } catch (error) {
       console.error('Error claiming shift:', error);
-      const backendMessage = error instanceof Error ? String(error.message || '') : '';
+      const backendMessage = extractErrorMessage(error, 'Não foi possível aceitar o plantão.');
       const isConflictError =
         backendMessage.toLowerCase().includes('conflito de horário') ||
         backendMessage.toLowerCase().includes('conflito de horario');
@@ -99,7 +100,7 @@ export default function UserAvailableShifts() {
     } catch (error) {
       toast({
         title: 'Erro ao cancelar',
-        description: error instanceof Error ? error.message : 'Não foi possível cancelar a solicitação.',
+        description: extractErrorMessage(error, 'Não foi possível cancelar a solicitação.'),
         variant: 'destructive',
       });
     }

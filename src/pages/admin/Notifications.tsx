@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -355,7 +356,7 @@ export default function AdminNotifications() {
       console.error('Error sending notifications:', error);
       toast({
         title: 'Erro ao enviar',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível enviar as notificações.'),
         variant: 'destructive',
       });
     } else {
@@ -389,7 +390,7 @@ export default function AdminNotifications() {
     if (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível excluir a notificação.'),
         variant: 'destructive',
       });
     } else {
@@ -436,7 +437,7 @@ export default function AdminNotifications() {
     if (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível excluir as notificações selecionadas.'),
         variant: 'destructive',
       });
     } else {
@@ -477,7 +478,7 @@ export default function AdminNotifications() {
     if (error) {
       toast({
         title: 'Erro ao editar',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível atualizar a notificação.'),
         variant: 'destructive',
       });
       return;

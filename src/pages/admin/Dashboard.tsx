@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -195,7 +196,7 @@ export default function AdminDashboard() {
     } catch (e: any) {
       toast({
         title: 'Erro ao carregar meses',
-        description: e?.message || 'Não foi possível carregar os meses disponíveis.',
+        description: extractErrorMessage(e, 'Não foi possível carregar os meses disponíveis.'),
         variant: 'destructive',
       });
       setUsedMonthValues([format(new Date(), 'yyyy-MM')]);
@@ -407,7 +408,7 @@ export default function AdminDashboard() {
       console.error('[Dashboard] erro ao carregar dados:', error);
       toast({
         title: 'Erro ao carregar dashboard',
-        description: error?.message || 'Tente atualizar a página.',
+        description: extractErrorMessage(error, 'Tente atualizar a página.'),
         variant: 'destructive',
       });
     } finally {
@@ -460,7 +461,7 @@ export default function AdminDashboard() {
       .eq('id', swapId);
 
     if (error) {
-      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro', description: extractErrorMessage(error, 'Não foi possível processar a troca.'), variant: 'destructive' });
     } else {
       toast({ title: action === 'approved' ? 'Troca aprovada!' : 'Troca rejeitada!' });
       fetchAllData();

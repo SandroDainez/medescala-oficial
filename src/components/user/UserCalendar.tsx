@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -199,7 +200,7 @@ export default function UserCalendar() {
       console.error('get_shift_assignments_range error:', assignmentsRangeRes.error);
       toast({
         title: 'Não foi possível carregar os nomes',
-        description: 'Verifique sua conexão e tente novamente.',
+        description: extractErrorMessage(assignmentsRangeRes.error, 'Verifique sua conexão e tente novamente.'),
         variant: 'destructive',
       });
     }
@@ -228,7 +229,7 @@ export default function UserCalendar() {
       console.error('shifts (sector) error:', sectorShiftsRes.error);
       toast({
         title: 'Não foi possível carregar as escalas do setor',
-        description: 'Verifique sua conexão e tente novamente.',
+        description: extractErrorMessage(sectorShiftsRes.error, 'Verifique sua conexão e tente novamente.'),
         variant: 'destructive',
       });
     }
@@ -485,7 +486,7 @@ export default function UserCalendar() {
       const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: currentTenantId });
       if (error) {
         console.error('[UserCalendar] get_tenant_member_names error:', error);
-        toast({ title: 'Erro ao carregar colegas', description: error.message, variant: 'destructive' });
+        toast({ title: 'Erro ao carregar colegas', description: extractErrorMessage(error, 'Não foi possível carregar os colegas do tenant.'), variant: 'destructive' });
       } else if (data) {
         const members = (data as TenantMember[]).filter((m) => m.user_id !== user.id);
         setTenantMembers(await enrichMembersWithFullNames(members));
@@ -503,7 +504,7 @@ export default function UserCalendar() {
 
     if (smError) {
       console.error('[UserCalendar] sector_memberships error:', smError);
-      toast({ title: 'Erro ao carregar colegas do setor', description: smError.message, variant: 'destructive' });
+      toast({ title: 'Erro ao carregar colegas do setor', description: extractErrorMessage(smError, 'Não foi possível carregar os colegas do setor.'), variant: 'destructive' });
       setLoadingMembers(false);
       return;
     }
@@ -562,7 +563,7 @@ export default function UserCalendar() {
 
     if (nmError) {
       console.error('[UserCalendar] get_tenant_member_names error:', nmError);
-      toast({ title: 'Erro ao carregar colegas', description: nmError.message, variant: 'destructive' });
+      toast({ title: 'Erro ao carregar colegas', description: extractErrorMessage(nmError, 'Não foi possível carregar os colegas elegíveis.'), variant: 'destructive' });
       setLoadingMembers(false);
       return;
     }
@@ -649,7 +650,7 @@ export default function UserCalendar() {
       .single();
 
     if (swapError) {
-      toast({ title: 'Erro', description: swapError.message, variant: 'destructive' });
+      toast({ title: 'Erro', description: extractErrorMessage(swapError, 'Não foi possível enviar a solicitação de troca.'), variant: 'destructive' });
       setSubmittingSwap(false);
       return;
     }

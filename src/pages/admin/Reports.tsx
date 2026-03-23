@@ -12,6 +12,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
@@ -773,7 +774,7 @@ export default function AdminReports() {
       });
     
     if (error) {
-      toast({ title: 'Erro ao criar ausência', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao criar ausência', description: extractErrorMessage(error, 'Não foi possível criar a ausência.'), variant: 'destructive' });
       return;
     }
     
@@ -806,7 +807,7 @@ export default function AdminReports() {
       .eq('id', absenceId);
     
     if (error) {
-      toast({ title: 'Erro ao atualizar status', variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar status', description: extractErrorMessage(error, 'Não foi possível atualizar o status da ausência.'), variant: 'destructive' });
       return;
     }
     
@@ -824,7 +825,7 @@ export default function AdminReports() {
       .eq('id', sector.id);
     
     if (error) {
-      toast({ title: 'Erro ao atualizar setor', variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar setor', description: extractErrorMessage(error, 'Não foi possível atualizar o setor.'), variant: 'destructive' });
       return;
     }
     
@@ -842,7 +843,7 @@ export default function AdminReports() {
       .eq('id', sector.id);
     
     if (error) {
-      toast({ title: 'Erro ao atualizar setor', variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar setor', description: extractErrorMessage(error, 'Não foi possível atualizar o setor.'), variant: 'destructive' });
       return;
     }
     
@@ -860,7 +861,7 @@ export default function AdminReports() {
       .eq('id', sectorId);
     
     if (error) {
-      toast({ title: 'Erro ao atualizar raio', variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar raio', description: extractErrorMessage(error, 'Não foi possível atualizar o raio de check-in.'), variant: 'destructive' });
       return;
     }
     
@@ -881,7 +882,7 @@ export default function AdminReports() {
       .eq('id', assignmentId);
     
     if (error) {
-      toast({ title: 'Erro ao registrar check-in', variant: 'destructive' });
+      toast({ title: 'Erro ao registrar check-in', description: extractErrorMessage(error, 'Não foi possível registrar o check-in manual.'), variant: 'destructive' });
       return;
     }
     
@@ -900,7 +901,7 @@ export default function AdminReports() {
       .eq('id', assignmentId);
     
     if (error) {
-      toast({ title: 'Erro ao registrar check-out', variant: 'destructive' });
+      toast({ title: 'Erro ao registrar check-out', description: extractErrorMessage(error, 'Não foi possível registrar o check-out manual.'), variant: 'destructive' });
       return;
     }
     
@@ -921,7 +922,7 @@ export default function AdminReports() {
       .eq('id', assignmentId);
     
     if (error) {
-      toast({ title: 'Erro ao limpar registros', variant: 'destructive' });
+      toast({ title: 'Erro ao limpar registros', description: extractErrorMessage(error, 'Não foi possível limpar os registros de presença.'), variant: 'destructive' });
       return;
     }
 
@@ -981,7 +982,7 @@ export default function AdminReports() {
       .in('id', Array.from(selectedConflicts));
     
     if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao excluir', description: extractErrorMessage(error, 'Não foi possível excluir os conflitos selecionados.'), variant: 'destructive' });
     } else {
       toast({ title: `${selectedConflicts.size} conflito(s) excluído(s)` });
       setSelectedConflicts(new Set());
@@ -998,7 +999,7 @@ export default function AdminReports() {
       .in('id', Array.from(selectedAbsences));
     
     if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao excluir', description: extractErrorMessage(error, 'Não foi possível excluir os afastamentos selecionados.'), variant: 'destructive' });
     } else {
       toast({ title: `${selectedAbsences.size} afastamento(s) excluído(s)` });
       setSelectedAbsences(new Set());
@@ -1017,7 +1018,7 @@ export default function AdminReports() {
       .in('shift_id', Array.from(selectedShifts));
     
     if (assignmentError) {
-      toast({ title: 'Erro ao excluir alocações', description: assignmentError.message, variant: 'destructive' });
+      toast({ title: 'Erro ao excluir alocações', description: extractErrorMessage(assignmentError, 'Não foi possível excluir as alocações ligadas aos plantões.'), variant: 'destructive' });
       return;
     }
     
@@ -1028,7 +1029,7 @@ export default function AdminReports() {
       .in('id', Array.from(selectedShifts));
     
     if (error) {
-      toast({ title: 'Erro ao excluir', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao excluir', description: extractErrorMessage(error, 'Não foi possível excluir os plantões selecionados.'), variant: 'destructive' });
     } else {
       toast({ title: `${selectedShifts.size} plantão(ões) excluído(s)` });
       setSelectedShifts(new Set());

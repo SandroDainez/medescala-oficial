@@ -15,18 +15,10 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAdminSwaps } from '@/hooks/useAdminSwaps';
 import type { AdminSwapOffer as ShiftOffer, AdminSwapRequest as SwapRequest } from '@/services/adminSwaps';
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'object' && error !== null && 'message' in error) {
-    const message = String((error as { message?: unknown }).message ?? '').trim();
-    if (message) return message;
-  }
-  return fallback;
-}
+import { extractErrorMessage } from '@/lib/errorMessage';
 
 function formatSwapApprovalError(error: unknown) {
-  const rawMessage = getErrorMessage(error, 'Não foi possível processar a troca.');
+  const rawMessage = extractErrorMessage(error, 'Não foi possível processar a troca.');
   const lowerMessage = rawMessage.toLowerCase();
   const isConflictError = lowerMessage.includes('conflito') || lowerMessage.includes('horário');
   const isEligibilityError =
@@ -94,7 +86,7 @@ export default function AdminSwaps() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível processar a candidatura.',
+        description: extractErrorMessage(error, 'Não foi possível processar a candidatura.'),
         variant: 'destructive',
       });
     }
@@ -123,7 +115,7 @@ export default function AdminSwaps() {
     } catch (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error instanceof Error ? error.message : 'Não foi possível excluir as candidaturas.',
+        description: extractErrorMessage(error, 'Não foi possível excluir as candidaturas.'),
         variant: 'destructive',
       });
     }
@@ -140,7 +132,7 @@ export default function AdminSwaps() {
     } catch (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error instanceof Error ? error.message : 'Não foi possível excluir as trocas.',
+        description: extractErrorMessage(error, 'Não foi possível excluir as trocas.'),
         variant: 'destructive',
       });
     }

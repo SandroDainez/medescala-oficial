@@ -1,12 +1,8 @@
+import { buildErrorToastDescription } from '@/lib/errorMessage';
+
 type ToastVariant = "default" | "destructive";
 
 type ToastFn = (input: { title: string; description?: string; variant?: ToastVariant }) => void;
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === "string" && error.trim()) return error;
-  if (error instanceof Error && error.message.trim()) return error.message;
-  return fallback;
-}
 
 export const adminFeedback = {
   success(toast: ToastFn, action: string, description?: string) {
@@ -24,9 +20,8 @@ export const adminFeedback = {
   error(toast: ToastFn, action: string, error?: unknown, fallback = "Tente novamente em instantes.") {
     toast({
       title: `Falha ao ${action.toLowerCase()}`,
-      description: getErrorMessage(error, fallback),
+      description: buildErrorToastDescription({ action, error, fallback }),
       variant: "destructive",
     });
   },
 };
-

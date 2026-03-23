@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { parseDateOnly } from '@/lib/utils';
 
 export interface SwapAssignment {
@@ -70,19 +71,6 @@ const swapRequestSelect = `
     )
   )
 `;
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) return error.message;
-  if (typeof error === 'object' && error !== null) {
-    const candidate = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
-    const parts = [candidate.message, candidate.details, candidate.hint, candidate.code]
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean);
-    if (parts.length > 0) return parts.join(' | ');
-  }
-  if (typeof error === 'string' && error.trim()) return error;
-  return fallback;
-}
 
 async function getTenantMembers(tenantId: string, userId: string): Promise<SwapTenantMember[]> {
   const { data, error } = await supabase.rpc('get_tenant_member_names', { _tenant_id: tenantId });
@@ -317,7 +305,7 @@ export async function decideSwapRequest(params: {
   });
 
   if (error) {
-    throw new Error(getErrorMessage(error, 'Não foi possível processar a troca.'));
+    throw new Error(extractErrorMessage(error, 'Não foi possível processar a troca.'));
   }
 
   const decisionTitle = params.decision === 'approved' ? 'Troca aceita' : 'Troca recusada';
@@ -332,7 +320,7 @@ export async function decideSwapRequest(params: {
     message: `Seu pedido para passar o plantão "${params.swap.origin_assignment?.shift?.title}" (${params.swap.origin_assignment?.shift?.shift_date ? format(parseDateOnly(params.swap.origin_assignment.shift.shift_date), 'dd/MM/yyyy', { locale: ptBR }) : ''}) foi ${decisionText}.`,
   });
 
-  if (notifyError) throw new Error(getErrorMessage(notifyError, 'Não foi possível notificar o solicitante.'));
+  if (notifyError) throw new Error(extractErrorMessage(notifyError, 'Não foi possível notificar o solicitante.'));
 
   await deleteUserNotifications({
     userId: params.userId,

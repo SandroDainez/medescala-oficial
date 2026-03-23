@@ -9,6 +9,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { supabase } from '@/integrations/supabase/client';
 import { MessageSquare, Send, Star, ThumbsUp, ThumbsDown, Meh, CheckCircle } from 'lucide-react';
+import { extractErrorMessage } from '@/lib/errorMessage';
 
 export default function UserFeedback() {
   const { user } = useAuth();
@@ -53,7 +54,7 @@ export default function UserFeedback() {
     if (error) {
       toast({
         title: 'Erro ao enviar feedback',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível enviar o feedback.'),
         variant: 'destructive',
       });
       return;

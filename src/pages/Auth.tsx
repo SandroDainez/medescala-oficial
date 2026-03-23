@@ -13,6 +13,7 @@ import { ArrowLeft, Mail, CreditCard, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 import { getPendingInviteEmailSafe, setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
+import { extractErrorMessage } from '@/lib/errorMessage';
 
 const emailSchema = z.string().email('Email inválido');
 const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres');
@@ -125,7 +126,7 @@ export default function Auth() {
       });
       setForgotOpen(false);
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Erro ao enviar recuperação';
+      const message = extractErrorMessage(err, 'Erro ao enviar recuperação');
       toast({
         title: 'Erro',
         description: message,
@@ -176,7 +177,7 @@ export default function Auth() {
         });
       }
     } catch (err: unknown) {
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao fazer login';
+      const errorMessage = extractErrorMessage(err, 'Erro ao fazer login');
       toast({
         title: 'Erro',
         description: errorMessage,
@@ -209,10 +210,11 @@ export default function Auth() {
     setIsSubmitting(false);
 
     if (error) {
-      let message = 'Erro ao fazer login';
-      if (error.message.includes('Invalid login credentials')) {
+      const rawMessage = extractErrorMessage(error, 'Erro ao fazer login');
+      let message = rawMessage;
+      if (rawMessage.includes('Invalid login credentials')) {
         message = 'Email ou senha incorretos. Se for seu primeiro acesso, use o link do convite para definir a senha ou clique em "Esqueceu sua senha?".';
-      } else if (error.message.includes('Email not confirmed')) {
+      } else if (rawMessage.includes('Email not confirmed')) {
         message = 'Email não confirmado. Verifique sua caixa de entrada.';
       }
 
@@ -247,8 +249,9 @@ export default function Auth() {
     setIsSubmitting(false);
 
     if (error) {
-      let message = 'Erro ao criar conta';
-      if (error.message.includes('User already registered')) {
+      const rawMessage = extractErrorMessage(error, 'Erro ao criar conta');
+      let message = rawMessage;
+      if (rawMessage.includes('User already registered')) {
         message = 'Este email já está cadastrado';
       }
 

@@ -14,6 +14,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAdminOffers } from '@/hooks/useAdminOffers';
 import type { AdminShiftOffer as ShiftOffer } from '@/services/adminOffers';
+import { extractErrorMessage } from '@/lib/errorMessage';
 
 function formatOfferLocation(offer: ShiftOffer) {
   if (!offer.shift) return 'Local não informado';
@@ -50,7 +51,7 @@ export default function AdminOffers() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível aprovar a candidatura.',
+        description: extractErrorMessage(error, 'Não foi possível aprovar a candidatura.'),
         variant: 'destructive',
       });
     }
@@ -64,7 +65,7 @@ export default function AdminOffers() {
     } catch (error) {
       toast({
         title: 'Erro',
-        description: error instanceof Error ? error.message : 'Não foi possível recusar a candidatura.',
+        description: extractErrorMessage(error, 'Não foi possível recusar a candidatura.'),
         variant: 'destructive',
       });
     }
@@ -79,7 +80,7 @@ export default function AdminOffers() {
     } catch (error) {
       toast({
         title: 'Erro ao excluir',
-        description: error instanceof Error ? error.message : 'Não foi possível excluir as candidaturas.',
+        description: extractErrorMessage(error, 'Não foi possível excluir as candidaturas.'),
         variant: 'destructive',
       });
     }

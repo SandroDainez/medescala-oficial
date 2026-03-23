@@ -7,6 +7,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
@@ -221,7 +222,7 @@ export default function UserFinancial() {
 
     if (error) {
       console.error('[UserFinancial] Error fetching:', error);
-      toast({ title: 'Erro ao carregar financeiro', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao carregar financeiro', description: extractErrorMessage(error, 'Não foi possível carregar o financeiro.'), variant: 'destructive' });
     }
 
     const { data: payment } = await supabase

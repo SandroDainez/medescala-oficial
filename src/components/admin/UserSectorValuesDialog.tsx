@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
+import { extractErrorMessage } from '@/lib/errorMessage';
 import { useToast } from '@/hooks/use-toast';
 import { Sun, Moon, DollarSign, UserCog, Loader2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -211,7 +212,7 @@ export default function UserSectorValuesDialog({
     } catch (error: any) {
       toast({
         title: 'Erro ao carregar',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível carregar os valores individuais.'),
         variant: 'destructive',
       });
     } finally {
@@ -392,7 +393,7 @@ export default function UserSectorValuesDialog({
     } catch (error: any) {
       toast({
         title: 'Erro ao salvar',
-        description: error.message,
+        description: extractErrorMessage(error, 'Não foi possível salvar os valores individuais.'),
         variant: 'destructive',
       });
     } finally {

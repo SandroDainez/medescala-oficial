@@ -623,6 +623,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
   }, [currentTenantId, user?.id, currentDate, viewMode, fetchData]);
 
+  useEffect(() => {
+    if (filterSector === 'all') return;
+    if (sectors.some((sector) => sector.id === filterSector)) return;
+    setFilterSector(initialSectorId && sectors.some((sector) => sector.id === initialSectorId) ? initialSectorId : 'all');
+  }, [filterSector, initialSectorId, sectors]);
+
+  useEffect(() => {
+    if (!shiftDialogOpen) return;
+    if (!formData.sector_id) return;
+    if (sectors.some((sector) => sector.id === formData.sector_id)) return;
+
+    const fallbackSector = sectors[0] ?? null;
+    setFormData((prev) => ({
+      ...prev,
+      sector_id: fallbackSector?.id || '',
+      hospital: fallbackSector?.name || prev.hospital,
+    }));
+  }, [formData.sector_id, sectors, shiftDialogOpen]);
+
   // Get members that belong to a specific sector
   function getMembersForSector(sectorId: string): Member[] {
     const sectorUserIds = sectorMemberships
@@ -635,6 +654,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!userId || userId === 'vago' || userId === 'disponivel') return true;
     if (!sectorId) return true;
     return getMembersForSector(sectorId).some((m) => m.user_id === userId);
+  }
+
+  function getValidSectorOrFallback(sectorId: string | null | undefined): Sector | null {
+    if (sectorId) {
+      const selectedSector = sectors.find((sector) => sector.id === sectorId);
+      if (selectedSector) return selectedSector;
+    }
+    return sectors[0] ?? null;
   }
 
   // Check if shift is nocturnal (7h-19h = diurno, 19h-7h = noturno)
@@ -1799,6 +1826,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return;
     }
 
+    const hasInvalidExplicitSector =
+      Boolean(formData.sector_id) && !sectors.some((sector) => sector.id === formData.sector_id);
+    const selectedSector = getValidSectorOrFallback(formData.sector_id || null);
+    const normalizedSectorId = selectedSector?.id || null;
+    const normalizedHospital = selectedSector?.name || formData.hospital;
+
+    if (hasInvalidExplicitSector && !selectedSector) {
+      notifyWarning('Setor inválido', 'Selecione um setor válido antes de criar o plantão.');
+      return;
+    }
+
     // Generate title automatically based on time and assignment type
     const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     
@@ -1813,7 +1851,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const shiftInsertData = {
       tenant_id: currentTenantId,
       title: autoTitle,
-      hospital: formData.hospital,
+      hospital: normalizedHospital,
       location: formData.location || null,
       shift_date: formData.shift_date,
       start_time: formData.start_time,
@@ -1821,14 +1859,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       // IMPORTANT: allow "em branco" (null) and apply sector default only when enabled.
       base_value: resolveValue({
         raw: formData.base_value,
-        sector_id: formData.sector_id || null,
+        sector_id: normalizedSectorId,
         start_time: formData.start_time,
         end_time: formData.end_time,
         useSectorDefault: formData.use_sector_default,
         applyProRata: true,
       }),
       notes: shiftNotes || null,
-      sector_id: formData.sector_id || null,
+      sector_id: normalizedSectorId,
+      created_by: user?.id,
       updated_by: user?.id,
     };
 
@@ -1870,14 +1909,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           formData.assigned_user_id !== 'vago' &&
           formData.assigned_user_id !== 'disponivel';
 
-        if (isRealUser && !isUserAllowedInSector(formData.assigned_user_id, formData.sector_id || null)) {
+        if (isRealUser && !isUserAllowedInSector(formData.assigned_user_id, normalizedSectorId)) {
           notifyWarning('Plantonista inválido para o setor', 'Selecione um plantonista cadastrado no setor deste plantão.');
           return;
         }
 
         const assignedValue = resolveValue({
           raw: formData.base_value,
-          sector_id: formData.sector_id || null,
+          sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
           user_id: formData.assigned_user_id,
@@ -2165,10 +2204,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
           // Create assignment if a real user was selected for THIS row
           if (isRealUserId(rowAssigned)) {
-            if (!isUserAllowedInSector(rowAssigned, formData.sector_id || null)) {
+            if (!isUserAllowedInSector(rowAssigned, normalizedSectorId)) {
               console.warn('[ShiftCalendar] assignment skipped: user is not sector member', {
                 userId: rowAssigned,
-                sectorId: formData.sector_id || null,
+                sectorId: normalizedSectorId,
               });
               errorsCount++;
               continue;
@@ -2177,7 +2216,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             // Calculate assigned_value per row (using row's start_time, end_time, and user_id for individual pricing)
             const rowAssignedValue = resolveValue({
               raw: formData.base_value,
-              sector_id: formData.sector_id || null,
+              sector_id: normalizedSectorId,
               start_time: row.start_time,
               end_time: row.end_time,
               user_id: rowAssigned,
@@ -2253,6 +2292,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return;
     }
 
+    const hasInvalidExplicitSector =
+      Boolean(formData.sector_id) && !sectors.some((sector) => sector.id === formData.sector_id);
+    const selectedSector = getValidSectorOrFallback(formData.sector_id || null);
+    const normalizedSectorId = selectedSector?.id || null;
+    const normalizedHospital = selectedSector?.name || formData.hospital;
+
+    if (hasInvalidExplicitSector && !selectedSector) {
+      notifyWarning('Setor inválido', 'Selecione um setor válido antes de criar os plantões.');
+      return;
+    }
+
     const autoTitle = generateShiftTitle(formData.start_time, formData.end_time);
     let shiftNotes = formData.notes || '';
     if (formData.assigned_user_id === 'disponivel') {
@@ -2269,21 +2319,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const shiftData = {
         tenant_id: currentTenantId,
         title: autoTitle,
-        hospital: formData.hospital,
+        hospital: normalizedHospital,
         location: formData.location || null,
         shift_date: dateStr,
         start_time: formData.start_time,
         end_time: formData.end_time,
         base_value: resolveValue({
           raw: formData.base_value,
-          sector_id: formData.sector_id || null,
+          sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
           useSectorDefault: formData.use_sector_default,
           applyProRata: true,
         }),
         notes: shiftNotes || null,
-        sector_id: formData.sector_id || null,
+        sector_id: normalizedSectorId,
+        created_by: user?.id,
         updated_by: user?.id,
       };
 
@@ -2301,14 +2352,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           formData.assigned_user_id !== 'vago' && 
           formData.assigned_user_id !== 'disponivel' && 
           newShiftId) {
-        if (!isUserAllowedInSector(formData.assigned_user_id, formData.sector_id || null)) {
+        if (!isUserAllowedInSector(formData.assigned_user_id, normalizedSectorId)) {
           errorCount++;
           continue;
         }
 
         const assignedValue = resolveValue({
           raw: formData.base_value,
-          sector_id: formData.sector_id || null,
+          sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
           user_id: formData.assigned_user_id,
