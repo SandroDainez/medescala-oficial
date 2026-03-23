@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { registerSW } from "virtual:pwa-register";
-import { clearPwaCacheAndReload } from "@/lib/pwa";
+import { clearPwaCacheAndReload, forcePwaUpdateCheck } from "@/lib/pwa";
 
 sessionStorage.removeItem("medescala_chunk_recovering");
 sessionStorage.removeItem("medescala_chunk_retry_done");
@@ -14,6 +14,25 @@ const updateSW = registerSW({
     updateSW(true);
   },
 });
+
+let lastPwaUpdateCheckAt = 0;
+
+function shouldRunPwaUpdateCheck() {
+  const now = Date.now();
+  if (now - lastPwaUpdateCheckAt < 15000) return false;
+  lastPwaUpdateCheckAt = now;
+  return true;
+}
+
+function requestPwaUpdateCheck() {
+  if (!shouldRunPwaUpdateCheck()) return;
+  void forcePwaUpdateCheck(updateSW);
+}
+
+const navEntry = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+if (navEntry?.type === "reload") {
+  requestPwaUpdateCheck();
+}
 
 function isChunkLoadErrorMessage(message: string) {
   const normalized = message.toLowerCase();
@@ -47,6 +66,14 @@ window.addEventListener("unhandledrejection", (event) => {
       : (reason as { message?: string } | null | undefined)?.message || "";
   if (msg && isChunkLoadErrorMessage(msg)) {
     triggerSingleChunkRecovery();
+  }
+});
+
+window.addEventListener("focus", requestPwaUpdateCheck);
+window.addEventListener("pageshow", requestPwaUpdateCheck);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    requestPwaUpdateCheck();
   }
 });
 

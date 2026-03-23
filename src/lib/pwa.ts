@@ -15,3 +15,18 @@ export async function clearPwaCacheAndReload() {
     window.location.replace(nextUrl.toString());
   }
 }
+
+export async function forcePwaUpdateCheck(applyUpdate?: (reloadPage?: boolean) => Promise<void>) {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.update()));
+    }
+
+    if (applyUpdate) {
+      await applyUpdate(true);
+    }
+  } catch (error) {
+    console.warn("[PWA] update check failed", error);
+  }
+}
