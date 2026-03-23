@@ -98,7 +98,23 @@ export default function UserSectorValuesDialog({
     setLoading(true);
 
     try {
-      // 1) Load all tenant member names (bypasses restrictive RLS on profiles)
+      // 1) Load current sector members
+      const { data: sectorMemberships, error: sectorMembersError } = await supabase
+        .from('sector_memberships')
+        .select('user_id')
+        .eq('tenant_id', tenantId)
+        .eq('sector_id', sector.id);
+
+      if (sectorMembersError) throw sectorMembersError;
+
+      const sectorUserIds = (sectorMemberships || []).map((m) => m.user_id);
+      if (sectorUserIds.length === 0) {
+        setUserValues([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2) Load member names (bypasses restrictive RLS on profiles)
       const { data: tenantMembers, error: membersError } = await supabase
         .rpc('get_tenant_member_names', { _tenant_id: tenantId });
 
@@ -110,18 +126,17 @@ export default function UserSectorValuesDialog({
         memberNameMap.set(m.user_id, m.name || 'Sem nome');
       });
 
-      // 2) Load all eligible plantonistas from this tenant.
-      // Individual values are scoped by setor, but the admin must be able to define
-      // a value for any plantonista user, even before the user is linked to the setor.
+      // 3) Restrict strictly to plantonistas of role=user that belong to this sector.
       const { data: membershipsWithProfiles, error: membershipsError } = await supabase
         .from('memberships')
         .select('user_id, role, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type, full_name, name)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
-        .eq('role', 'user');
+        .eq('role', 'user')
+        .in('user_id', sectorUserIds);
 
       if (membershipsError) {
-        console.warn('Could not fetch profile types, using all sector members:', membershipsError.message);
+        console.warn('Could not fetch profile types, using sector members:', membershipsError.message);
       }
 
       // Build a set of plantonista user_ids (or fall back to all sector members if profiles failed)
@@ -141,20 +156,19 @@ export default function UserSectorValuesDialog({
           if (!profile || (profile.profile_type || '') === 'plantonista') plantonistaIds.add(m.user_id);
         });
 
-        // Safety: if we got rows but none qualified (e.g. all profiles hidden), keep all role=user members.
+        // Safety: if we got rows but none qualified (e.g. all profiles hidden), keep the fetched sector users.
         if (plantonistaIds.size === 0) {
           membershipsWithProfiles.forEach((m: any) => plantonistaIds.add(m.user_id));
         }
       } else {
         // Fallback only when the memberships query actually failed.
-        // If it succeeded with zero rows, there are no eligible plantonistas of role=user in this tenant.
         if (membershipsError) {
-          (tenantMembers || []).forEach((m: { user_id: string }) => plantonistaIds.add(m.user_id));
+          sectorUserIds.forEach((id) => plantonistaIds.add(id));
         }
       }
 
       // Filter to only plantonistas and map to Member format
-      const members: Member[] = Array.from(plantonistaIds)
+      const members: Member[] = sectorUserIds
         .filter(userId => plantonistaIds.has(userId))
         .map(userId => ({
           user_id: userId,
