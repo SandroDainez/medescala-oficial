@@ -32,8 +32,6 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
   const { ["aria-describedby"]: ariaDescribedBy, ...contentProps } = props;
-  const fallbackDescriptionId = React.useId();
-  const describedBy = ariaDescribedBy ?? fallbackDescriptionId;
 
   return (
     <DialogPortal>
@@ -45,13 +43,8 @@ const DialogContent = React.forwardRef<
           className,
         )}
         {...contentProps}
-        aria-describedby={describedBy}
+        aria-describedby={ariaDescribedBy}
       >
-        {ariaDescribedBy == null && (
-          <DialogPrimitive.Description id={fallbackDescriptionId} className="sr-only">
-            Conteúdo do diálogo
-          </DialogPrimitive.Description>
-        )}
         {children}
         <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 opacity-70 ring-offset-background transition-all hover:opacity-100 hover:bg-muted focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none">
           <X className="h-4 w-4" />
