@@ -7,6 +7,8 @@ import {
   getStoredTenantIdSafe,
   setStoredTenantIdSafe,
   clearStoredTenantIdSafe,
+  getPendingInviteTenantIdSafe,
+  clearPendingInviteSafe,
 } from '@/hooks/tenant-context';
 
 function getRolePriority(role: Membership['role']): number {
@@ -86,17 +88,26 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
     // Restore from localStorage or use first
     const storedTenantId = getStoredTenantIdSafe();
+    const pendingInviteTenantId = getPendingInviteTenantIdSafe();
     const validTenant = storedTenantId
       ? normalizedMemberships.find((m) => m.tenant_id === storedTenantId)
+      : null;
+    const pendingInviteTenant = pendingInviteTenantId
+      ? normalizedMemberships.find((m) => m.tenant_id === pendingInviteTenantId)
       : null;
     const preferredMembership = getPreferredMembership(normalizedMemberships);
 
     const nextTenantId = validTenant
       ? validTenant.tenant_id
+      : pendingInviteTenant
+        ? pendingInviteTenant.tenant_id
       : preferredMembership?.tenant_id ?? normalizedMemberships[0].tenant_id;
 
     setCurrentTenantId(nextTenantId);
     setStoredTenantIdSafe(nextTenantId);
+    if (pendingInviteTenant?.tenant_id === nextTenantId) {
+      clearPendingInviteSafe();
+    }
 
     setLoading(false);
   }, [user]);

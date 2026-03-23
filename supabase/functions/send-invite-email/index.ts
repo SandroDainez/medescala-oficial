@@ -158,6 +158,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error("Usuário não encontrado. Crie o usuário antes de enviar o convite.");
     }
 
+    const { data: targetMembership, error: targetMembershipError } = await supabaseAdmin
+      .from("memberships")
+      .select("tenant_id, active")
+      .eq("tenant_id", tenantId)
+      .eq("user_id", targetProfile.id)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (targetMembershipError) {
+      throw new Error(`Erro ao validar vínculo do usuário: ${targetMembershipError.message}`);
+    }
+
+    if (!targetMembership?.tenant_id) {
+      throw new Error("Este usuário ainda não está vinculado ativamente ao hospital/serviço. Reabra o cadastro e salve o vínculo antes de enviar o convite.");
+    }
+
     const inviteToken = generateInviteToken();
     const inviteTokenHash = await sha256Hex(inviteToken);
 

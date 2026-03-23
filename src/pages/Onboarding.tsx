@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
+import { clearPendingInviteSafe, getPendingInviteTenantIdSafe } from '@/hooks/tenant-context';
 import { Building2, Plus, ArrowRight, Stethoscope, LogOut, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -22,6 +23,8 @@ export default function Onboarding() {
   const [tenantSlug, setTenantSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [retryingInviteMembership, setRetryingInviteMembership] = useState(false);
+  const pendingInviteTenantId = getPendingInviteTenantIdSafe();
 
   const generateSlug = (name: string) => {
     return name
@@ -76,25 +79,46 @@ export default function Onboarding() {
       return;
     }
 
-toast({ title: 'Hospital criado com sucesso!' });
+    toast({ title: 'Hospital criado com sucesso!' });
 
-await refreshMemberships();
+    await refreshMemberships();
 
-if (tenantId) {
-  setCurrentTenant(tenantId);
-}
+    if (tenantId) {
+      clearPendingInviteSafe();
+      setCurrentTenant(tenantId);
+    }
 
-setDialogOpen(false);
-navigate('/admin');
-setLoading(false);
-}
+    setDialogOpen(false);
+    navigate('/admin');
+    setLoading(false);
+  }
 
   const handleLogout = async () => {
+    clearPendingInviteSafe();
     await signOut();
     navigate('/auth');
   };
 
   const hasMemberships = memberships && memberships.length > 0;
+
+  useEffect(() => {
+    if (!hasMemberships || !pendingInviteTenantId) return;
+
+    const pendingMembership = memberships.find((membership) => membership.tenant_id === pendingInviteTenantId);
+    if (!pendingMembership) return;
+
+    clearPendingInviteSafe();
+    setCurrentTenant(pendingMembership.tenant_id);
+    navigate(pendingMembership.role === 'admin' || pendingMembership.role === 'owner' ? '/admin' : '/app', {
+      replace: true,
+    });
+  }, [hasMemberships, memberships, navigate, pendingInviteTenantId, setCurrentTenant]);
+
+  async function handleRetryInviteAccess() {
+    setRetryingInviteMembership(true);
+    await refreshMemberships();
+    setRetryingInviteMembership(false);
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -217,68 +241,93 @@ setLoading(false);
                     Bem-vindo ao MedEscala
                   </h2>
                   <p className="text-muted-foreground mt-2">
-                    Para começar, crie um hospital ou aguarde o convite do administrador
+                    {pendingInviteTenantId
+                      ? 'Seu convite foi identificado. Atualize o acesso para entrar no hospital/serviço correto.'
+                      : 'Para começar, crie um hospital ou aguarde o convite do administrador'}
                   </p>
                 </div>
 
-                <div className="grid gap-4">
-                  <Card 
-                    className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50 group"
-                    onClick={() => setDialogOpen(true)}
-                  >
-                    <CardContent className="p-6 flex items-center gap-4">
-                      <div className="p-4 bg-primary/10 rounded-xl group-hover:bg-primary/20 transition-colors">
-                        <Building2 className="h-8 w-8 text-primary" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-lg">Criar Hospital</h3>
+                {pendingInviteTenantId ? (
+                  <Card>
+                    <CardContent className="space-y-4 p-6">
+                      <div className="space-y-2 text-center">
+                        <h3 className="text-lg font-semibold">Convite em processamento</h3>
                         <p className="text-sm text-muted-foreground">
-                          Sou administrador e quero cadastrar meu hospital
+                          Evite criar um novo hospital agora. Primeiro tente recarregar o vínculo do convite para entrar no hospital/clínica que já cadastrou você.
                         </p>
                       </div>
-                      <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <Button className="flex-1" onClick={handleRetryInviteAccess} disabled={retryingInviteMembership}>
+                          {retryingInviteMembership ? 'Atualizando...' : 'Entrar no meu hospital'}
+                        </Button>
+                        <Button variant="outline" className="flex-1" onClick={handleLogout}>
+                          Sair
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
+                ) : (
+                  <>
+                    <div className="grid gap-4">
+                      <Card 
+                        className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50 group"
+                        onClick={() => setDialogOpen(true)}
+                      >
+                        <CardContent className="p-6 flex items-center gap-4">
+                          <div className="p-4 bg-primary/10 rounded-xl group-hover:bg-primary/20 transition-colors">
+                            <Building2 className="h-8 w-8 text-primary" />
+                          </div>
+                          <div className="flex-1 text-left">
+                            <h3 className="font-semibold text-lg">Criar Hospital</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Sou administrador e quero cadastrar meu hospital
+                            </p>
+                          </div>
+                          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </CardContent>
+                      </Card>
 
-                  <Card 
-                    className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50 group"
-                    onClick={() => {
-                      setDialogOpen(true);
-                    }}
-                  >
-                    <CardContent className="p-6 flex items-center gap-4">
-                      <div className="p-4 bg-secondary/50 rounded-xl group-hover:bg-secondary transition-colors">
-                        <Plus className="h-8 w-8 text-secondary-foreground" />
-                      </div>
-                      <div className="flex-1 text-left">
-                        <h3 className="font-semibold text-lg">Entrar por Convite</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Meu administrador vai me cadastrar e enviar o convite
-                        </p>
-                      </div>
-                      <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                    </CardContent>
-                  </Card>
-                </div>
+                      <Card 
+                        className="cursor-pointer transition-all hover:shadow-md hover:border-primary/50 group"
+                        onClick={() => {
+                          setDialogOpen(true);
+                        }}
+                      >
+                        <CardContent className="p-6 flex items-center gap-4">
+                          <div className="p-4 bg-secondary/50 rounded-xl group-hover:bg-secondary transition-colors">
+                            <Plus className="h-8 w-8 text-secondary-foreground" />
+                          </div>
+                          <div className="flex-1 text-left">
+                            <h3 className="font-semibold text-lg">Entrar por Convite</h3>
+                            <p className="text-sm text-muted-foreground">
+                              Meu administrador vai me cadastrar e enviar o convite
+                            </p>
+                          </div>
+                          <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                        </CardContent>
+                      </Card>
+                    </div>
 
-                <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-                  <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                      <DialogTitle>Configurar Acesso</DialogTitle>
-                      <DialogDescription>
-                        Crie um novo hospital ou aguarde o convite do administrador
-                      </DialogDescription>
-                    </DialogHeader>
-                    <AddHospitalTabs
-                      tenantName={tenantName}
-                      tenantSlug={tenantSlug}
-                      loading={loading}
-                      onNameChange={handleNameChange}
-                      onSlugChange={setTenantSlug}
-                      onCreateTenant={handleCreateTenant}
-                    />
-                  </DialogContent>
-                </Dialog>
+                    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+                      <DialogContent className="sm:max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>Configurar Acesso</DialogTitle>
+                          <DialogDescription>
+                            Crie um novo hospital ou aguarde o convite do administrador
+                          </DialogDescription>
+                        </DialogHeader>
+                        <AddHospitalTabs
+                          tenantName={tenantName}
+                          tenantSlug={tenantSlug}
+                          loading={loading}
+                          onNameChange={handleNameChange}
+                          onSlugChange={setTenantSlug}
+                          onCreateTenant={handleCreateTenant}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  </>
+                )}
               </div>
             )}
           </div>

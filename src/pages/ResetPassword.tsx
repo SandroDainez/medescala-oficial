@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { setPendingInviteEmailSafe, setPendingInviteTenantIdSafe } from '@/hooks/tenant-context';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 
@@ -60,6 +61,12 @@ export default function ResetPassword() {
 
           if (!error && !data?.error) {
             setInviteToken(inviteTokenParam);
+            if (typeof data?.tenantId === 'string') {
+              setPendingInviteTenantIdSafe(data.tenantId);
+            }
+            if (typeof data?.email === 'string') {
+              setPendingInviteEmailSafe(data.email);
+            }
             setIsValidLink(true);
           } else {
             setIsValidLink(false);
@@ -149,7 +156,7 @@ export default function ResetPassword() {
 
     setLoading(true);
 
-    const { error } = inviteToken
+    const { data, error } = inviteToken
       ? await supabase.functions.invoke('accept-invite-password', {
           body: {
             inviteToken,
@@ -184,6 +191,15 @@ export default function ResetPassword() {
       return;
     }
 
+    if (inviteToken) {
+      if (typeof data?.tenantId === 'string') {
+        setPendingInviteTenantIdSafe(data.tenantId);
+      }
+      if (typeof data?.email === 'string') {
+        setPendingInviteEmailSafe(data.email);
+      }
+    }
+
     if (!inviteToken) {
       // Also update must_change_password flag if applicable
       const { data: { user } } = await supabase.auth.getUser();
@@ -197,13 +213,18 @@ export default function ResetPassword() {
 
     toast({
       title: 'Senha alterada com sucesso!',
-      description: 'Você será redirecionado para o login.',
+      description: inviteToken
+        ? 'Senha definida. Faça login para entrar no hospital/serviço do convite.'
+        : 'Você será redirecionado para o login.',
     });
 
     if (!inviteToken) {
       await supabase.auth.signOut();
     }
-    navigate('/auth');
+    const authSearch = inviteToken && typeof data?.email === 'string' && data.email.trim()
+      ? `?email=${encodeURIComponent(data.email)}`
+      : '';
+    navigate(`/auth${authSearch}`);
   }
 
   if (checking) {

@@ -22,6 +22,8 @@ export const TenantContext = createContext<TenantContextType | undefined>(undefi
 
 export const TENANT_STORAGE_KEY = 'medescala_current_tenant';
 export const TENANT_SELECTION_SESSION_KEY = 'medescala_tenant_selection_done';
+export const PENDING_INVITE_TENANT_STORAGE_KEY = 'medescala_pending_invite_tenant';
+export const PENDING_INVITE_EMAIL_STORAGE_KEY = 'medescala_pending_invite_email';
 
 export function getStoredTenantIdSafe(): string | null {
   if (typeof window === 'undefined') return null;
@@ -67,6 +69,60 @@ export function setTenantSelectionDoneSafe(done: boolean) {
       return;
     }
     sessionStorage.removeItem(TENANT_SELECTION_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getPendingInviteTenantIdSafe(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(PENDING_INVITE_TENANT_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setPendingInviteTenantIdSafe(tenantId: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (tenantId) {
+      localStorage.setItem(PENDING_INVITE_TENANT_STORAGE_KEY, tenantId);
+    } else {
+      localStorage.removeItem(PENDING_INVITE_TENANT_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function getPendingInviteEmailSafe(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(PENDING_INVITE_EMAIL_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setPendingInviteEmailSafe(email: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    if (email) {
+      localStorage.setItem(PENDING_INVITE_EMAIL_STORAGE_KEY, email);
+    } else {
+      localStorage.removeItem(PENDING_INVITE_EMAIL_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function clearPendingInviteSafe() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.removeItem(PENDING_INVITE_TENANT_STORAGE_KEY);
+    localStorage.removeItem(PENDING_INVITE_EMAIL_STORAGE_KEY);
   } catch {
     // ignore
   }

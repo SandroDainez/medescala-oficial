@@ -35,6 +35,25 @@ function randomPassword(length = 12): string {
   return result;
 }
 
+async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
+  let page = 1;
+  const perPage = 200;
+
+  while (true) {
+    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+    if (error) {
+      throw new Error(`Erro ao buscar usuários existentes: ${error.message}`);
+    }
+
+    const users = data?.users ?? [];
+    const match = users.find((user) => user.email?.trim().toLowerCase() === email);
+    if (match) return match;
+
+    if (users.length < perPage) return null;
+    page += 1;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -106,14 +125,9 @@ Deno.serve(async (req) => {
     let targetUserId: string | null = null;
     let createdNow = false;
 
-    const { data: existingProfile } = await admin
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (existingProfile?.id) {
-      targetUserId = existingProfile.id;
+    const existingAuthUser = await findAuthUserByEmail(admin, email);
+    if (existingAuthUser?.id) {
+      targetUserId = existingAuthUser.id;
     }
 
     if (!targetUserId) {

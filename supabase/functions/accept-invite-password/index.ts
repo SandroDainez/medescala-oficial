@@ -30,7 +30,7 @@ async function resolveInvite(admin: ReturnType<typeof createClient>, inviteToken
 
   const { data: invite, error: inviteError } = await admin
     .from("user_invites")
-    .select("id, user_id, expires_at")
+    .select("id, user_id, tenant_id, email, expires_at")
     .eq("token_hash", tokenHash)
     .is("used_at", null)
     .is("revoked_at", null)
@@ -103,7 +103,28 @@ Deno.serve(async (req) => {
     const invite = resolvedInvite.invite;
 
     if (validateOnly) {
-      return json({ ok: true });
+      const { data: membership, error: membershipError } = await admin
+        .from("memberships")
+        .select("tenant_id, active, tenant:tenants(name)")
+        .eq("tenant_id", invite.tenant_id)
+        .eq("user_id", invite.user_id)
+        .eq("active", true)
+        .maybeSingle();
+
+      if (membershipError) {
+        return json({ error: membershipError.message }, 400);
+      }
+
+      if (!membership?.tenant_id) {
+        return json({ error: "Este convite não está vinculado a um hospital/serviço ativo." }, 400);
+      }
+
+      return json({
+        ok: true,
+        tenantId: membership.tenant_id,
+        tenantName: (membership.tenant as { name?: string | null } | null)?.name ?? null,
+        email: invite.email ?? null,
+      });
     }
 
     const {
@@ -155,7 +176,11 @@ Deno.serve(async (req) => {
       return json({ error: inviteUpdateError.message }, 400);
     }
 
-    return json({ ok: true });
+    return json({
+      ok: true,
+      tenantId: invite.tenant_id,
+      email: invite.email ?? existingUserData.user.email ?? null,
+    });
   } catch (err) {
     return json(
       {

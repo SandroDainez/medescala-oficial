@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { ArrowLeft, Mail, CreditCard, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { buildPublicAppUrl } from '@/lib/publicAppUrl';
-import { setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
+import { getPendingInviteEmailSafe, setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
 
 const emailSchema = z.string().email('Email inválido');
 const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres');
@@ -56,6 +56,16 @@ export default function Auth() {
       setTenantSelectionDoneSafe(false);
     }
   }, [user, loading]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const emailFromUrl = params.get('email')?.trim().toLowerCase();
+    const emailFromInvite = getPendingInviteEmailSafe()?.trim().toLowerCase();
+    const nextEmail = emailFromUrl || emailFromInvite;
+    if (nextEmail) {
+      setEmail(nextEmail);
+    }
+  }, []);
 
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCpf(formatCpfInput(e.target.value));
