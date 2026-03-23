@@ -35,6 +35,8 @@ interface Sector {
   id: string;
   name: string;
   color: string;
+  checkin_enabled?: boolean | null;
+  require_gps_checkin?: boolean | null;
 }
 
 interface Shift {
@@ -56,6 +58,8 @@ interface ShiftAssignment {
   user_id: string;
   assigned_value: number;
   status: string;
+  checkin_at?: string | null;
+  checkout_at?: string | null;
   profile: { name: string | null; full_name?: string | null } | null;
 }
 
@@ -71,6 +75,16 @@ interface TenantMember {
 
 type FilterTab = 'todos' | 'meus';
 
+function assignmentNeedsCheckin(assignment: ShiftAssignment | null | undefined): boolean {
+  if (!assignment) return false;
+  return !assignment.checkin_at && assignment.status !== 'completed' && assignment.status !== 'cancelled';
+}
+
+function assignmentNeedsCheckout(assignment: ShiftAssignment | null | undefined): boolean {
+  if (!assignment) return false;
+  return !assignment.checkout_at && (Boolean(assignment.checkin_at) || assignment.status === 'confirmed');
+}
+
 export default function UserCalendar() {
   const navigate = useNavigate();
   const { currentTenantId } = useTenant();
@@ -81,6 +95,7 @@ export default function UserCalendar() {
   const [assignments, setAssignments] = useState<ShiftAssignment[]>([]);
   // Source of truth for “meus plantões” (não depende do roster/nome)
   const [myShiftIds, setMyShiftIds] = useState<string[]>([]);
+  const [myAssignmentsByShiftId, setMyAssignmentsByShiftId] = useState<Record<string, ShiftAssignment>>({});
   const [mySectors, setMySectors] = useState<MySector[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
@@ -129,6 +144,7 @@ export default function UserCalendar() {
       setShifts([]);
       setAssignments([]);
       setMyShiftIds([]);
+      setMyAssignmentsByShiftId({});
       setMySectors([]);
       setLoading(false);
       return;
@@ -149,15 +165,39 @@ export default function UserCalendar() {
         .eq('user_id', user.id),
       supabase
         .from('shift_assignments')
-        .select('shift_id')
+        .select('id, shift_id, user_id, assigned_value, status, checkin_at, checkout_at')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id)
         .in('status', ['assigned', 'confirmed', 'completed']),
     ]);
 
     const mySectorIds = (mySectorsRes.data ?? []).map((r: any) => r.sector_id).filter(Boolean) as string[];
-    const myShiftIdsLocal = (myAssignmentsRes.data ?? []).map((r: any) => r.shift_id).filter(Boolean) as string[];
+    const myAssignmentsRows = (myAssignmentsRes.data ?? []) as Array<{
+      id: string;
+      shift_id: string;
+      user_id: string;
+      assigned_value: number | null;
+      status: string;
+      checkin_at: string | null;
+      checkout_at: string | null;
+    }>;
+    const myShiftIdsLocal = myAssignmentsRows.map((r) => r.shift_id).filter(Boolean);
+    const myAssignmentsMap = myAssignmentsRows.reduce<Record<string, ShiftAssignment>>((acc, row) => {
+      if (!row.shift_id) return acc;
+      acc[row.shift_id] = {
+        id: row.id,
+        shift_id: row.shift_id,
+        user_id: row.user_id,
+        assigned_value: Number(row.assigned_value ?? 0),
+        status: row.status,
+        checkin_at: row.checkin_at,
+        checkout_at: row.checkout_at,
+        profile: { name: 'Você', full_name: 'Você' },
+      };
+      return acc;
+    }, {});
     setMyShiftIds(myShiftIdsLocal);
+    setMyAssignmentsByShiftId(myAssignmentsMap);
 
     // 2) Busca os plantões dos setores do usuário (mesmo sem ele estar escalado)
     const sectorShiftsPromise = mySectorIds.length
@@ -288,6 +328,8 @@ export default function UserCalendar() {
             user_id: r.user_id,
             assigned_value: 0, // Not needed for display
             status: r.status,
+            checkin_at: null,
+            checkout_at: null,
             profile: { name: resolvedName, full_name: resolvedName },
           });
           });
@@ -348,6 +390,16 @@ export default function UserCalendar() {
 
   function getAssignmentsForShift(shiftId: string) {
     return assignments.filter(a => a.shift_id === shiftId);
+  }
+
+  function getMyAssignmentForShift(shiftId: string) {
+    return myAssignmentsByShiftId[shiftId] ?? null;
+  }
+
+  function getMyShiftTargetHref(shiftId: string) {
+    const assignment = getMyAssignmentForShift(shiftId);
+    if (!assignment?.id) return '/app/shifts';
+    return `/app/shifts?assignment=${encodeURIComponent(assignment.id)}`;
   }
 
   function isMyShift(shiftId: string) {
@@ -598,14 +650,6 @@ export default function UserCalendar() {
       return null;
     }
     return data.id;
-  }
-
-  // Handle shift click - open swap sheet (legacy flow)
-  function handleMyShiftClick(shift: Shift) {
-    setSelectedShiftForSwap(shift);
-    setSwapSheetOpen(true);
-    // Fetch only users in the same sector as this shift
-    fetchSectorMembers(shift.sector_id);
   }
 
 
@@ -1165,6 +1209,11 @@ export default function UserCalendar() {
                           {/* Day shifts */}
                           {dayShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
+                            const myAssignment = getMyAssignmentForShift(shift.id);
+                            const sectorCheckinEnabled = Boolean(shift.sector?.checkin_enabled);
+                            const requiresGps = Boolean(shift.sector?.require_gps_checkin);
+                            const needsCheckin = sectorCheckinEnabled && assignmentNeedsCheckin(myAssignment);
+                            const needsCheckout = sectorCheckinEnabled && assignmentNeedsCheckout(myAssignment);
                             const isConflict = myConflictShiftIds.has(shift.id);
                              return (
                                <TapSafeButton
@@ -1174,7 +1223,7 @@ export default function UserCalendar() {
                                  minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  navigate('/app/swaps');
+                                  navigate(getMyShiftTargetHref(shift.id));
                                 }}
                                 className={cn(
                                   "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 cursor-pointer w-full text-left select-none touch-manipulation",
@@ -1212,6 +1261,16 @@ export default function UserCalendar() {
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
+                                    {needsCheckin && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-blue-500/30 bg-blue-500/5 text-blue-600">
+                                        {requiresGps ? 'Check-in com GPS' : 'Check-in pendente'}
+                                      </Badge>
+                                    )}
+                                    {needsCheckout && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-amber-500/30 bg-amber-500/5 text-amber-600">
+                                        {requiresGps ? 'Check-out com GPS' : 'Check-out pendente'}
+                                      </Badge>
+                                    )}
                                     {isConflict && (
                                       <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
                                         Conflito
@@ -1235,6 +1294,11 @@ export default function UserCalendar() {
                           {/* Night shifts */}
                           {nightShifts.map((shift) => {
                             const shiftAssignments = getAssignmentsForShift(shift.id);
+                            const myAssignment = getMyAssignmentForShift(shift.id);
+                            const sectorCheckinEnabled = Boolean(shift.sector?.checkin_enabled);
+                            const requiresGps = Boolean(shift.sector?.require_gps_checkin);
+                            const needsCheckin = sectorCheckinEnabled && assignmentNeedsCheckin(myAssignment);
+                            const needsCheckout = sectorCheckinEnabled && assignmentNeedsCheckout(myAssignment);
                             const isConflict = myConflictShiftIds.has(shift.id);
                              return (
                                <TapSafeButton
@@ -1244,7 +1308,7 @@ export default function UserCalendar() {
                                  minPressTime={160}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  navigate('/app/swaps');
+                                  navigate(getMyShiftTargetHref(shift.id));
                                 }}
                                 className={cn(
                                   "flex items-center gap-3 px-4 py-4 border-b transition-all duration-150 border-l-4 cursor-pointer w-full text-left select-none touch-manipulation",
@@ -1282,6 +1346,16 @@ export default function UserCalendar() {
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
                                     </Badge>
+                                    {needsCheckin && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-blue-500/30 bg-blue-500/5 text-blue-600">
+                                        {requiresGps ? 'Check-in com GPS' : 'Check-in pendente'}
+                                      </Badge>
+                                    )}
+                                    {needsCheckout && (
+                                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-amber-500/30 bg-amber-500/5 text-amber-600">
+                                        {requiresGps ? 'Check-out com GPS' : 'Check-out pendente'}
+                                      </Badge>
+                                    )}
                                     {isConflict && (
                                       <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
                                         Conflito
@@ -1338,6 +1412,11 @@ export default function UserCalendar() {
                         {dayShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const myAssignment = getMyAssignmentForShift(shift.id);
+                          const sectorCheckinEnabled = Boolean(shift.sector?.checkin_enabled);
+                          const requiresGps = Boolean(shift.sector?.require_gps_checkin);
+                          const needsCheckin = isMine && sectorCheckinEnabled && assignmentNeedsCheckin(myAssignment);
+                          const needsCheckout = isMine && sectorCheckinEnabled && assignmentNeedsCheckout(myAssignment);
                           const isConflict = isMine && myConflictShiftIds.has(shift.id);
                           const assignedNames = getShiftAssignedNames(shift.id);
                           const isVacant = assignedNames.length === 0;
@@ -1352,7 +1431,7 @@ export default function UserCalendar() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isMine) {
-                                  navigate('/app/swaps');
+                                  navigate(getMyShiftTargetHref(shift.id));
                                   return;
                                 }
                                 if (isVacant) {
@@ -1413,6 +1492,16 @@ export default function UserCalendar() {
                                       Meu Plantão
                                     </Badge>
                                   )}
+                                  {needsCheckin && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-blue-500/30 bg-blue-500/5 text-blue-600">
+                                      {requiresGps ? 'Check-in com GPS' : 'Check-in pendente'}
+                                    </Badge>
+                                  )}
+                                  {needsCheckout && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-amber-500/30 bg-amber-500/5 text-amber-600">
+                                      {requiresGps ? 'Check-out com GPS' : 'Check-out pendente'}
+                                    </Badge>
+                                  )}
                                   {isConflict && (
                                     <Badge variant="destructive" className="text-[10px] px-1.5 py-0.5 h-auto">
                                       Conflito
@@ -1449,6 +1538,11 @@ export default function UserCalendar() {
                         {nightShifts.map((shift) => {
                           const shiftAssignments = getAssignmentsForShift(shift.id);
                           const isMine = isMyShift(shift.id);
+                          const myAssignment = getMyAssignmentForShift(shift.id);
+                          const sectorCheckinEnabled = Boolean(shift.sector?.checkin_enabled);
+                          const requiresGps = Boolean(shift.sector?.require_gps_checkin);
+                          const needsCheckin = isMine && sectorCheckinEnabled && assignmentNeedsCheckin(myAssignment);
+                          const needsCheckout = isMine && sectorCheckinEnabled && assignmentNeedsCheckout(myAssignment);
                           const isConflict = isMine && myConflictShiftIds.has(shift.id);
                           const assignedNames = getShiftAssignedNames(shift.id);
                           const isVacant = assignedNames.length === 0;
@@ -1463,7 +1557,7 @@ export default function UserCalendar() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 if (isMine) {
-                                  navigate('/app/swaps');
+                                  navigate(getMyShiftTargetHref(shift.id));
                                   return;
                                 }
                                 if (isVacant) {
@@ -1522,6 +1616,16 @@ export default function UserCalendar() {
                                     <Badge variant="default" className="text-[10px] px-1.5 py-0.5 h-auto">
                                       <ArrowRightLeft className="h-3 w-3 mr-1" />
                                       Meu Plantão
+                                    </Badge>
+                                  )}
+                                  {needsCheckin && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-blue-500/30 bg-blue-500/5 text-blue-600">
+                                      {requiresGps ? 'Check-in com GPS' : 'Check-in pendente'}
+                                    </Badge>
+                                  )}
+                                  {needsCheckout && (
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 h-auto border-amber-500/30 bg-amber-500/5 text-amber-600">
+                                      {requiresGps ? 'Check-out com GPS' : 'Check-out pendente'}
                                     </Badge>
                                   )}
                                   {isConflict && (
