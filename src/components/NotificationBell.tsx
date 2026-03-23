@@ -64,11 +64,11 @@ export function NotificationBell() {
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-10 w-10 shrink-0 overflow-visible rounded-full">
+        <Button variant="ghost" size="icon" className="relative h-10 w-10 shrink-0 rounded-full">
           <Bell className="h-5 w-5" />
           {unreadCount > 0 && (
             <Badge
-              className="absolute -right-1 top-0 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] leading-none"
+              className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] leading-none"
               variant="destructive"
             >
               {unreadCount > 9 ? '9+' : unreadCount}
