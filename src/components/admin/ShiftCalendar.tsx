@@ -151,6 +151,22 @@ function getOptionalTimeError(label: string, value: string): string | null {
   return null;
 }
 
+function buildEndTimeFromStartAndDuration(startTime: string, durationValue: string): string | null {
+  if (!isCompleteTimeValue(startTime) || !durationValue) return null;
+
+  const hours = Number(durationValue);
+  if (!Number.isFinite(hours) || hours <= 0) return null;
+
+  const [startHours, startMinutes] = startTime.split(':').map(Number);
+  const startTotalMinutes = startHours * 60 + startMinutes;
+  const durationMinutes = Math.round(hours * 60);
+  const endTotalMinutes = (startTotalMinutes + durationMinutes) % (24 * 60);
+
+  const endHours = Math.floor(endTotalMinutes / 60).toString().padStart(2, '0');
+  const endMinutes = (endTotalMinutes % 60).toString().padStart(2, '0');
+  return `${endHours}:${endMinutes}`;
+}
+
 interface ShiftTimeInputProps {
   id?: string;
   value: string;
@@ -6446,14 +6462,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <Select 
                   value={formData.duration_hours} 
                   onValueChange={(v) => {
-                    if (!formData.start_time) return;
-                    const hours = parseInt(v, 10);
-                    const [h, m] = formData.start_time.split(':').map(Number);
-                    const startMinutes = h * 60 + m;
-                    const endMinutes = (startMinutes + hours * 60) % (24 * 60);
-                    const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
-                    const endM = (endMinutes % 60).toString().padStart(2, '0');
-                    setFormData((prev) => ({ ...prev, end_time: `${endH}:${endM}`, duration_hours: v }));
+                    setFormData((prev) => {
+                      const nextEndTime = buildEndTimeFromStartAndDuration(prev.start_time, v);
+                      return {
+                        ...prev,
+                        duration_hours: v,
+                        end_time: nextEndTime ?? prev.end_time,
+                      };
+                    });
                   }}
                 >
                   <SelectTrigger>
@@ -6477,17 +6493,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   value={formData.duration_hours}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setFormData((prev) => ({ ...prev, duration_hours: value }));
-                    
-                    if (!formData.start_time || !value) return;
-                    const hours = parseInt(value, 10);
-                    if (isNaN(hours) || hours < 1) return;
-                    const [h, m] = formData.start_time.split(':').map(Number);
-                    const startMinutes = h * 60 + m;
-                    const endMinutes = (startMinutes + hours * 60) % (24 * 60);
-                    const endH = Math.floor(endMinutes / 60).toString().padStart(2, '0');
-                    const endM = (endMinutes % 60).toString().padStart(2, '0');
-                    setFormData(prev => ({ ...prev, end_time: `${endH}:${endM}`, duration_hours: value }));
+                    setFormData((prev) => {
+                      const nextEndTime = buildEndTimeFromStartAndDuration(prev.start_time, value);
+                      return {
+                        ...prev,
+                        duration_hours: value,
+                        end_time: nextEndTime ?? prev.end_time,
+                      };
+                    });
                   }}
                 />
               </div>
