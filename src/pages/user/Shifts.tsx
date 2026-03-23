@@ -97,7 +97,9 @@ function getCheckActionCopy(needsCheckin: boolean, needsCheckout: boolean, requi
   if (needsCheckout) {
     return {
       title: 'Check-out pendente',
-      description: 'Finalize este plantão com o check-out no aplicativo.',
+      description: requiresGps
+        ? 'Finalize este plantão com check-out e validação de GPS.'
+        : 'Finalize este plantão com o check-out no aplicativo.',
       tone: 'amber' as const,
     };
   }
@@ -113,6 +115,14 @@ function getCheckActionCopy(needsCheckin: boolean, needsCheckout: boolean, requi
   }
 
   return null;
+}
+
+function getCheckButtonLabel(kind: 'checkin' | 'checkout', requiresGps: boolean) {
+  if (kind === 'checkin') {
+    return requiresGps ? 'Check-in com GPS' : 'Fazer Check-in';
+  }
+
+  return requiresGps ? 'Check-out com GPS' : 'Fazer Check-out';
 }
 
 export default function UserShifts() {
@@ -726,10 +736,10 @@ export default function UserShifts() {
                         <Clock className="h-4 w-4" />
                         {a.shift.start_time.slice(0, 5)} - {a.shift.end_time.slice(0, 5)}
                       </div>
-                      {sectorInfo.require_gps_checkin && (
+                      {sectorInfo.checkin_enabled && sectorInfo.require_gps_checkin && (
                         <div className="flex items-center gap-1 text-blue-600">
                           <MapPin className="h-4 w-4" />
-                          GPS obrigatório
+                          GPS obrigatório no check-in/check-out
                         </div>
                       )}
                     </div>
@@ -774,7 +784,7 @@ export default function UserShifts() {
                           ) : (
                             <>
                               <LogIn className="mr-2 h-5 w-5" />
-                              Fazer Check-in
+                              {getCheckButtonLabel('checkin', sectorInfo.require_gps_checkin)}
                             </>
                           )}
                         </Button>
@@ -795,7 +805,7 @@ export default function UserShifts() {
                           ) : (
                             <>
                               <LogOut className="mr-2 h-5 w-5" />
-                              Fazer Check-out
+                              {getCheckButtonLabel('checkout', sectorInfo.require_gps_checkin)}
                             </>
                           )}
                         </Button>
@@ -866,8 +876,11 @@ export default function UserShifts() {
                         <Badge variant="secondary" className="ml-2">
                           {sectorAssignments.length} plantão{sectorAssignments.length !== 1 ? 'ões' : ''}
                         </Badge>
-                        {sectorInfo.require_gps_checkin && (
-                          <MapPin className="h-4 w-4 text-blue-500" />
+                        {sectorInfo.checkin_enabled && sectorInfo.require_gps_checkin && (
+                          <Badge variant="outline" className="text-blue-600 border-blue-500/30 bg-blue-500/5">
+                            <MapPin className="mr-1 h-3 w-3" />
+                            GPS no check-in
+                          </Badge>
                         )}
                       </div>
                       {isOpen ? (
@@ -992,7 +1005,7 @@ export default function UserShifts() {
                                         ) : (
                                           <LogIn className="mr-2 h-4 w-4" />
                                         )}
-                                        Check-in
+                                        {getCheckButtonLabel('checkin', sectorInfo.require_gps_checkin)}
                                       </Button>
                                     )}
 
@@ -1011,7 +1024,7 @@ export default function UserShifts() {
                                         ) : (
                                           <LogOut className="mr-2 h-4 w-4" />
                                         )}
-                                        Check-out
+                                        {getCheckButtonLabel('checkout', sectorInfo.require_gps_checkin)}
                                       </Button>
                                     )}
                                   </div>
