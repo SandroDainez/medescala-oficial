@@ -223,12 +223,12 @@ export function UserLayout() {
             <span className="text-[15px] font-semibold text-foreground">{headerTitle}</span>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             <ThemeToggleSimple />
             <Button
               variant="ghost"
               size="sm"
-              className="h-10 rounded-full border border-border px-3 text-xs font-semibold touch-manipulation"
+              className="h-10 shrink-0 rounded-full border border-border px-3 text-xs font-semibold touch-manipulation"
               onClick={() => navigate('/app')}
             >
               HOJE
