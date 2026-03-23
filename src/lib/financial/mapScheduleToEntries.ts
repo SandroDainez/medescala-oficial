@@ -9,6 +9,8 @@ import type {
 import {
   calculateDurationHours,
   calculateAssignedSnapshotValue,
+  calculateFinalValue,
+  isNightShift,
   type ValueSource,
 } from '@/lib/financial/valueCalculation';
 
@@ -75,6 +77,41 @@ function isTrainingSector(sectorName: string): boolean {
   return normalized.includes('residente') || normalized.includes('estagiario');
 }
 
+function getEffectiveUserSectorValue(params: {
+  values: UserSectorValueLookup[];
+  sectorId: string | null;
+  userId: string;
+  shiftDate: string;
+  startTime: string;
+}): number | null {
+  if (!params.sectorId) return null;
+
+  const shiftMonth = Number(params.shiftDate.slice(5, 7));
+  const shiftYear = Number(params.shiftDate.slice(0, 4));
+  const useNightValue = isNightShift(params.startTime);
+
+  const matches = params.values.filter((value) =>
+    value.sector_id === params.sectorId &&
+    value.user_id === params.userId &&
+    (
+      (value.month === shiftMonth && value.year === shiftYear) ||
+      (value.month == null && value.year == null)
+    )
+  );
+
+  if (matches.length === 0) return null;
+
+  matches.sort((a, b) => {
+    const aSpecific = a.month === shiftMonth && a.year === shiftYear ? 0 : 1;
+    const bSpecific = b.month === shiftMonth && b.year === shiftYear ? 0 : 1;
+    return aSpecific - bSpecific;
+  });
+
+  const selected = matches[0];
+  const raw = useNightValue ? selected.night_value : selected.day_value;
+  return raw == null ? null : Number(raw);
+}
+
 export function mapScheduleToFinancialEntries(params: {
   shifts: ScheduleShift[];
   assignments: ScheduleAssignment[];
@@ -89,8 +126,13 @@ export function mapScheduleToFinancialEntries(params: {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
 
   const sectorNameById = new Map<string, string>();
+  const sectorDefaultsById = new Map<string, { day: number | null; night: number | null }>();
   (params.sectors ?? []).forEach((s) => {
     sectorNameById.set(s.id, s.name);
+    sectorDefaultsById.set(s.id, {
+      day: s.default_day_value ?? null,
+      night: s.default_night_value ?? null,
+    });
   });
 
   const assignmentsByShift = new Map<string, ScheduleAssignment[]>();
@@ -147,6 +189,24 @@ export function mapScheduleToFinancialEntries(params: {
           ? null
           : Number(a.assigned_value);
       const snapshotValue = calculateAssignedSnapshotValue(assignedNumeric);
+      const userSectorValue = getEffectiveUserSectorValue({
+        values: params.userSectorValues ?? [],
+        sectorId: shift.sector_id,
+        userId: a.user_id,
+        shiftDate: shift.shift_date,
+        startTime: shift.start_time,
+      });
+      const sectorDefaults = shift.sector_id ? sectorDefaultsById.get(shift.sector_id) : null;
+      const sectorDefaultValue = isNightShift(shift.start_time)
+        ? (sectorDefaults?.night ?? null)
+        : (sectorDefaults?.day ?? null);
+      const projectedValue = calculateFinalValue({
+        assignedValue: assignedNumeric,
+        individualValue: userSectorValue,
+        baseValue: shift.base_value ?? null,
+        sectorDefaultValue,
+        durationHours: duration_hours,
+      });
 
       const valueResult = noRemuneration 
         ? { final_value: null, source: 'none' as const, invalidReason: undefined }
@@ -155,9 +215,9 @@ export function mapScheduleToFinancialEntries(params: {
           : assignedNumeric !== null && assignedNumeric < 0
             ? { final_value: null, source: 'invalid' as const, invalidReason: 'assigned_value negativo' }
             : {
-                final_value: snapshotValue.finalValue,
-                source: snapshotValue.source,
-                invalidReason: assignedNumeric === null ? 'assignment sem snapshot financeiro' : undefined,
+                final_value: projectedValue.finalValue ?? snapshotValue.finalValue,
+                source: projectedValue.source,
+                invalidReason: projectedValue.finalValue === null ? 'assignment sem regra de valor aplicável' : undefined,
               };
 
       if (debugLogsEnabled) {
@@ -168,8 +228,8 @@ export function mapScheduleToFinancialEntries(params: {
           shift_date: shift.shift_date,
           duration_hours,
           valor_escala: a.assigned_value,
-          valor_individual: null,
-          valor_setor: null,
+          valor_individual: userSectorValue,
+          valor_setor: sectorDefaultValue,
           valor_final_usado: valueResult.final_value,
           fonte: valueResult.source,
           invalidReason: valueResult.invalidReason,
