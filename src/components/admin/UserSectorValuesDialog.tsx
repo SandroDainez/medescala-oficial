@@ -253,6 +253,12 @@ export default function UserSectorValuesDialog({
     });
   };
 
+  const handleValueFocus = (event: React.FocusEvent<HTMLInputElement>) => {
+    requestAnimationFrame(() => {
+      event.currentTarget.select();
+    });
+  };
+
   async function handleSave() {
     if (!sector || !tenantId) return;
     setSaving(true);
@@ -474,21 +480,29 @@ export default function UserSectorValuesDialog({
                     )}
                   </div>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
                     <Input
+                      type="text"
                       value={uv.day_value}
                       onChange={(e) => handleValueChange(index, 'day_value', e.target.value)}
+                      onFocus={handleValueFocus}
                       placeholder={sector.default_day_value?.toFixed(2).replace('.', ',') || '0,00'}
+                      autoComplete="off"
+                      spellCheck={false}
                       inputMode="decimal"
                       className="pl-7 text-right h-9 text-sm touch-manipulation"
                     />
                   </div>
                   <div className="relative">
-                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                    <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
                     <Input
+                      type="text"
                       value={uv.night_value}
                       onChange={(e) => handleValueChange(index, 'night_value', e.target.value)}
+                      onFocus={handleValueFocus}
                       placeholder={sector.default_night_value?.toFixed(2).replace('.', ',') || '0,00'}
+                      autoComplete="off"
+                      spellCheck={false}
                       inputMode="decimal"
                       className="pl-7 text-right h-9 text-sm touch-manipulation"
                     />
