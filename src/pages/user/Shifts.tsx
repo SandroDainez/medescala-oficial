@@ -85,6 +85,36 @@ interface Sector {
   reference_longitude: number | null;
 }
 
+function assignmentNeedsCheckin(assignment: Assignment): boolean {
+  return !assignment.checkin_at && assignment.status !== 'completed' && assignment.status !== 'cancelled';
+}
+
+function assignmentNeedsCheckout(assignment: Assignment): boolean {
+  return !assignment.checkout_at && (Boolean(assignment.checkin_at) || assignment.status === 'confirmed');
+}
+
+function getCheckActionCopy(needsCheckin: boolean, needsCheckout: boolean, requiresGps: boolean) {
+  if (needsCheckout) {
+    return {
+      title: 'Check-out pendente',
+      description: 'Finalize este plantão com o check-out no aplicativo.',
+      tone: 'amber' as const,
+    };
+  }
+
+  if (needsCheckin) {
+    return {
+      title: 'Check-in pendente',
+      description: requiresGps
+        ? 'Este plantão exige check-in com validação de GPS.'
+        : 'Faça o check-in no aplicativo para registrar sua entrada.',
+      tone: 'blue' as const,
+    };
+  }
+
+  return null;
+}
+
 export default function UserShifts() {
   const { user } = useAuth();
   const { currentTenantId } = useTenant();
@@ -515,6 +545,20 @@ export default function UserShifts() {
     );
   }, [assignments, user?.id]);
 
+  const todayPendingSummary = useMemo(() => {
+    return todayShifts.reduce(
+      (acc, assignment) => {
+        const sector = sectors.find((item) => item.id === assignment.shift.sector_id);
+        if (!sector?.checkin_enabled) return acc;
+
+        if (assignmentNeedsCheckin(assignment)) acc.checkin += 1;
+        if (assignmentNeedsCheckout(assignment)) acc.checkout += 1;
+        return acc;
+      },
+      { checkin: 0, checkout: 0 },
+    );
+  }, [todayShifts, sectors]);
+
   const filteredAssignments = useMemo(() => {
     const inMonth = assignments.filter((a) => {
       const year = Number(a.shift.shift_date.slice(0, 4));
@@ -627,16 +671,33 @@ export default function UserShifts() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {(todayPendingSummary.checkin > 0 || todayPendingSummary.checkout > 0) && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm">
+                <div className="flex items-start gap-2 text-amber-700 dark:text-amber-300">
+                  <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+                  <div>
+                    {todayPendingSummary.checkin > 0 && (
+                      <p>
+                        {todayPendingSummary.checkin} plantão(ões) aguardando check-in.
+                      </p>
+                    )}
+                    {todayPendingSummary.checkout > 0 && (
+                      <p>
+                        {todayPendingSummary.checkout} plantão(ões) aguardando check-out.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
             {todayShifts.map((a) => {
               const sectorInfo = getSectorInfo(a.shift.sector_id || 'sem-setor');
               const isProcessing = processingId === a.id;
-              // Alguns dados legados podem ter status diferente sem os timestamps preenchidos.
-              // Para UX: mostrar check-in sempre que ainda não houve check-in e o plantão não foi finalizado/cancelado.
-              const needsCheckin =
-                !a.checkin_at && a.status !== 'completed' && a.status !== 'cancelled';
-              // Mostrar check-out quando há check-in pendente de finalização.
-              // Se por algum motivo o status ficou "confirmed" mas checkin_at não foi gravado, ainda assim permitir check-out.
-              const needsCheckout = !a.checkout_at && (Boolean(a.checkin_at) || a.status === 'confirmed');
+              const needsCheckin = assignmentNeedsCheckin(a);
+              const needsCheckout = assignmentNeedsCheckout(a);
+              const actionCopy = sectorInfo.checkin_enabled
+                ? getCheckActionCopy(needsCheckin, needsCheckout, sectorInfo.require_gps_checkin)
+                : null;
 
               return (
                 <div 
@@ -680,6 +741,19 @@ export default function UserShifts() {
                         {a.checkout_at && (
                           <span className="ml-2">| Check-out: {format(new Date(a.checkout_at), 'HH:mm')}</span>
                         )}
+                      </div>
+                    )}
+
+                    {actionCopy && (
+                      <div
+                        className={`rounded-lg px-3 py-2 text-sm ${
+                          actionCopy.tone === 'amber'
+                            ? 'border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                            : 'border border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                        }`}
+                      >
+                        <div className="font-medium">{actionCopy.title}</div>
+                        <div className="text-xs opacity-90">{actionCopy.description}</div>
                       </div>
                     )}
 
@@ -815,15 +889,11 @@ export default function UserShifts() {
                           const isShiftPast = isPast(shiftDate) && !isShiftToday;
                           const isProcessing = processingId === myAssignment.id;
                           const isMine = myAssignment.user_id === user?.id;
-                          const needsCheckin =
-                            isMine &&
-                            !myAssignment?.checkin_at &&
-                            myAssignment?.status !== 'completed' &&
-                            myAssignment?.status !== 'cancelled';
-                          const needsCheckout =
-                            isMine &&
-                            !myAssignment?.checkout_at &&
-                            (Boolean(myAssignment?.checkin_at) || myAssignment?.status === 'confirmed');
+                          const needsCheckin = isMine && assignmentNeedsCheckin(myAssignment);
+                          const needsCheckout = isMine && assignmentNeedsCheckout(myAssignment);
+                          const actionCopy = sectorInfo.checkin_enabled
+                            ? getCheckActionCopy(needsCheckin, needsCheckout, sectorInfo.require_gps_checkin)
+                            : null;
                           const canRequestSwap =
                             isMine && !isShiftPast && (myAssignment.status === 'assigned' || myAssignment.status === 'confirmed');
 
@@ -884,6 +954,19 @@ export default function UserShifts() {
                                       <CheckCircle2 className="h-3 w-3" />
                                       Check-in: {format(new Date(myAssignment.checkin_at), 'HH:mm')}
                                       {myAssignment.checkout_at && ` | Check-out: ${format(new Date(myAssignment.checkout_at), 'HH:mm')}`}
+                                    </div>
+                                  )}
+
+                                  {actionCopy && (
+                                    <div
+                                      className={`rounded-lg px-3 py-2 text-xs ${
+                                        actionCopy.tone === 'amber'
+                                          ? 'border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                                          : 'border border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300'
+                                      }`}
+                                    >
+                                      <div className="font-medium">{actionCopy.title}</div>
+                                      <div className="opacity-90">{actionCopy.description}</div>
                                     </div>
                                   )}
                                 </div>
