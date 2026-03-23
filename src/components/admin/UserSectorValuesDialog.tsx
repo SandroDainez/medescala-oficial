@@ -130,9 +130,10 @@ export default function UserSectorValuesDialog({
       // 3) Get memberships to check profile_type (only for sector members)
       const { data: membershipsWithProfiles, error: membershipsError } = await supabase
         .from('memberships')
-        .select('user_id, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type, full_name, name)')
+        .select('user_id, role, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type, full_name, name)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
+        .eq('role', 'user')
         .in('user_id', sectorUserIds);
 
       if (membershipsError) {
@@ -157,11 +158,16 @@ export default function UserSectorValuesDialog({
         });
 
         // Safety: if we got rows but none qualified (e.g. all profiles hidden), show all sector members.
-        if (plantonistaIds.size === 0) sectorUserIds.forEach((id) => plantonistaIds.add(id));
+        if (plantonistaIds.size === 0) {
+          membershipsWithProfiles.forEach((m: any) => plantonistaIds.add(m.user_id));
+        }
       } else {
-      // Fallback: assume all sector members are plantonistas if profile query failed
-      sectorUserIds.forEach(id => plantonistaIds.add(id));
-    }
+        // Fallback only when the memberships query actually failed.
+        // If it succeeded with zero rows, there are no eligible plantonistas of role=user in this setor.
+        if (membershipsError) {
+          sectorUserIds.forEach(id => plantonistaIds.add(id));
+        }
+      }
 
       // Filter to only plantonistas and map to Member format
       const members: Member[] = sectorUserIds

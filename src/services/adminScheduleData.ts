@@ -140,20 +140,12 @@ export async function fetchAdminScheduleData({
       .lte('shift_date', endStr)
       .order('shift_date', { ascending: true })
       .order('start_time', { ascending: true }),
-    filterSector && filterSector !== 'all'
-      ? supabase
-          .from('sector_memberships')
-          .select(`
-            user_id,
-            profile:profiles!sector_memberships_user_id_fkey(id, name, full_name, profile_type)
-          `)
-          .eq('tenant_id', tenantId)
-          .eq('sector_id', filterSector)
-      : supabase
-          .from('memberships')
-          .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
-          .eq('tenant_id', tenantId)
-          .eq('active', true),
+    supabase
+      .from('memberships')
+      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
+      .eq('tenant_id', tenantId)
+      .eq('active', true)
+      .eq('role', 'user'),
     supabase
       .from('sectors')
       .select('*')
@@ -173,9 +165,18 @@ export async function fetchAdminScheduleData({
 
   const sectors = (sectorsRes.data ?? []) as ScheduleSector[];
   const sectorMemberships = (sectorMembershipsRes.data ?? []) as ScheduleSectorMembership[];
-  const members = ((membersRes.data ?? []) as unknown as ScheduleMember[]).filter(
-    (member) => member.profile?.profile_type === 'plantonista'
-  );
+  const scopedSectorUserIds =
+    filterSector && filterSector !== 'all'
+      ? new Set(
+          sectorMemberships
+            .filter((membership) => membership.sector_id === filterSector)
+            .map((membership) => membership.user_id),
+        )
+      : null;
+
+  const members = ((membersRes.data ?? []) as unknown as Array<ScheduleMember & { role?: string | null }>)
+    .filter((member) => member.profile?.profile_type === 'plantonista')
+    .filter((member) => !scopedSectorUserIds || scopedSectorUserIds.has(member.user_id));
   const allowedUserIds = new Set(members.map((member) => member.user_id));
   const memberDisplayNameByUserId = new Map<string, string>();
   for (const member of members) {
