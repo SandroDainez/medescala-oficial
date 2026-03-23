@@ -2137,25 +2137,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
 
       await refreshAssignmentsForShiftIds([editingShift.id]);
-      // keep the dialog open but refresh the form/shift with the saved values
-      setEditingShift((prev) =>
-        prev
-          ? { ...prev, start_time: formData.start_time, end_time: formData.end_time }
-          : prev,
-      );
-      setShifts((prev) =>
-        prev.map((shift) =>
-          shift.id === editingShift.id
-            ? { ...shift, start_time: formData.start_time, end_time: formData.end_time }
-            : shift,
-        ),
-      );
-      setFormData((prev) => ({
-        ...prev,
-        start_time: formData.start_time,
-        end_time: formData.end_time,
-      }));
       await fetchData();
+      closeShiftDialog();
       setDayDialogOpen(false);
       return;
     } else {
