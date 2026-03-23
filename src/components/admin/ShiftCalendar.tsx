@@ -627,6 +627,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   useEffect(() => {
     if (filterSector === 'all') return;
+    if (sectors.length === 0) return;
     if (sectors.some((sector) => sector.id === filterSector)) return;
     setFilterSector(routeSectorId && sectors.some((sector) => sector.id === routeSectorId) ? routeSectorId : 'all');
   }, [filterSector, routeSectorId, sectors]);
