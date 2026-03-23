@@ -247,7 +247,7 @@ export default function UserHome() {
       const [shiftsRes, rosterRes] = await Promise.all([
         supabase
           .from('shifts')
-          .select('id, sector_id')
+          .select('id, sector_id, notes')
           .eq('tenant_id', currentTenantId)
           .in('sector_id', memberSectorIds)
           .gte('shift_date', today)
@@ -263,7 +263,11 @@ export default function UserHome() {
           .filter((r) => r.status !== 'cancelled')
           .map((r) => r.shift_id)
       );
-      const openCount = ((shiftsRes.data ?? []) as any[]).filter((s) => !takenIds.has(s.id)).length;
+      const openCount = ((shiftsRes.data ?? []) as any[]).filter((s) => {
+        const notes = String(s.notes ?? '');
+        if (notes.includes('[DISPONÍVEL]') || notes.includes('[VAGO]')) return true;
+        return !takenIds.has(s.id);
+      }).length;
       setAvailableInMySectors(openCount);
     } else {
       setAvailableInMySectors(0);

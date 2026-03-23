@@ -11,6 +11,8 @@ export interface AvailableShift {
   start_time: string;
   end_time: string;
   base_value: number | null;
+  notes?: string | null;
+  open_kind?: 'available' | 'vacant';
   sector_id?: string | null;
   sector: { id: string; name: string; color: string } | null;
 }
@@ -48,6 +50,21 @@ export interface ClaimShiftParams {
   memberSectorIds: Set<string>;
 }
 
+function getShiftOpenKind(params: {
+  shiftId: string;
+  notes?: string | null;
+  takenShiftIds: Set<string>;
+}): 'available' | 'vacant' | null {
+  const notes = params.notes ?? '';
+  const hasActiveAssignment = params.takenShiftIds.has(params.shiftId);
+
+  if (notes.includes('[DISPONÍVEL]')) return 'available';
+  if (notes.includes('[VAGO]')) return 'vacant';
+  if (!hasActiveAssignment) return 'vacant';
+
+  return null;
+}
+
 export async function fetchUserOffersData(userId: string, tenantId: string): Promise<UserOffersData> {
   const today = startOfDay(new Date()).toISOString().split('T')[0];
   const end = format(new Date(new Date().setMonth(new Date().getMonth() + 12)), 'yyyy-MM-dd');
@@ -56,7 +73,7 @@ export async function fetchUserOffersData(userId: string, tenantId: string): Pro
     supabase
       .from('shifts')
       .select(`
-        id, title, hospital, location, shift_date, start_time, end_time, base_value, sector_id,
+        id, title, hospital, location, shift_date, start_time, end_time, base_value, sector_id, notes,
         sector:sectors(id, name, color)
       `)
       .eq('tenant_id', tenantId)
@@ -103,7 +120,16 @@ export async function fetchUserOffersData(userId: string, tenantId: string): Pro
   const myAssignedShiftIds = new Set((myAssignmentsResult.data ?? []).map((row: { shift_id: string }) => row.shift_id));
 
   const availableShifts = ((shiftsResult.data ?? []) as unknown as AvailableShift[])
-    .filter((shift) => !takenShiftIds.has(shift.id))
+    .map((shift) => {
+      const openKind = getShiftOpenKind({
+        shiftId: shift.id,
+        notes: shift.notes,
+        takenShiftIds,
+      });
+
+      return openKind ? { ...shift, open_kind: openKind } : null;
+    })
+    .filter((shift): shift is AvailableShift => shift !== null)
     .filter((shift) => !!shift.sector_id && memberSectorIds.has(shift.sector_id));
 
   return {

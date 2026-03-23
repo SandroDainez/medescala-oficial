@@ -138,7 +138,7 @@ export default function UserAvailableShifts() {
           <Hand className="h-5 w-5 text-primary" />
           Anúncios e Candidaturas
         </h1>
-        <p className="text-sm text-muted-foreground">Plantões disponíveis dos setores em que você está cadastrado</p>
+        <p className="text-sm text-muted-foreground">Plantões disponíveis e vagos dos setores em que você está cadastrado</p>
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'available' | 'myoffers')} className="space-y-4">
@@ -218,6 +218,11 @@ export default function UserAvailableShifts() {
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="flex-1 min-w-0">
                                     <h3 className="font-semibold">{shift.title}</h3>
+                                    <div className="mt-2">
+                                      <Badge variant="outline" className={shift.open_kind === 'available' ? 'border-blue-500/50 bg-blue-500/10 text-blue-700' : 'border-amber-500/50 bg-amber-500/10 text-amber-700'}>
+                                        {shift.open_kind === 'available' ? 'Disponível' : 'Vago'}
+                                      </Badge>
+                                    </div>
                                     <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                                       <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4" />
@@ -275,6 +280,11 @@ export default function UserAvailableShifts() {
                                 <div className="flex items-start justify-between gap-4">
                                   <div className="flex-1 min-w-0">
                                     <h3 className="font-semibold">{shift.title}</h3>
+                                    <div className="mt-2">
+                                      <Badge variant="outline" className={shift.open_kind === 'available' ? 'border-blue-500/50 bg-blue-500/10 text-blue-700' : 'border-amber-500/50 bg-amber-500/10 text-amber-700'}>
+                                        {shift.open_kind === 'available' ? 'Disponível' : 'Vago'}
+                                      </Badge>
+                                    </div>
                                     <div className="mt-2 space-y-1 text-sm text-muted-foreground">
                                       <div className="flex items-center gap-2">
                                         <Calendar className="h-4 w-4" />
