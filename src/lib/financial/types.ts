@@ -28,6 +28,7 @@ export interface UserSectorValueLookup {
   night_value: Money | null;
   month?: number | null;
   year?: number | null;
+  updated_at?: string | null;
 }
 
 export interface SectorLookup {

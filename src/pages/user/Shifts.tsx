@@ -170,7 +170,7 @@ export default function UserShifts() {
         ,
       supabase
         .from('user_sector_values')
-        .select('sector_id, user_id, day_value, night_value, month, year')
+        .select('sector_id, user_id, day_value, night_value, month, year, updated_at')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id),
     ]);

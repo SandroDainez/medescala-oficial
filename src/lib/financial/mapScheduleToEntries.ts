@@ -104,7 +104,11 @@ function getEffectiveUserSectorValue(params: {
   matches.sort((a, b) => {
     const aSpecific = a.month === shiftMonth && a.year === shiftYear ? 0 : 1;
     const bSpecific = b.month === shiftMonth && b.year === shiftYear ? 0 : 1;
-    return aSpecific - bSpecific;
+    if (aSpecific !== bSpecific) return aSpecific - bSpecific;
+
+    const aUpdatedAt = a.updated_at ? Date.parse(a.updated_at) : 0;
+    const bUpdatedAt = b.updated_at ? Date.parse(b.updated_at) : 0;
+    return bUpdatedAt - aUpdatedAt;
   });
 
   const selected = matches[0];

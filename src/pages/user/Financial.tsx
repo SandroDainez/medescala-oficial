@@ -199,7 +199,7 @@ export default function UserFinancial() {
         .lte('shift.shift_date', endDate),
       supabase
         .from('user_sector_values')
-        .select('sector_id, user_id, day_value, night_value, month, year')
+        .select('sector_id, user_id, day_value, night_value, month, year, updated_at')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id),
       supabase
@@ -216,6 +216,7 @@ export default function UserFinancial() {
       night_value: number | null;
       month?: number | null;
       year?: number | null;
+      updated_at?: string | null;
     }>;
 
     if (error) {

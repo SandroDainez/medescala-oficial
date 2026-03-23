@@ -173,7 +173,7 @@ export default function UserHome() {
         .limit(12),
       supabase
         .from('user_sector_values')
-        .select('sector_id, user_id, day_value, night_value, month, year')
+        .select('sector_id, user_id, day_value, night_value, month, year, updated_at')
         .eq('tenant_id', currentTenantId)
         .eq('user_id', user.id),
     ]);

@@ -582,7 +582,7 @@ export default function AdminFinancial() {
   // Export CSV - Totais por Plantonista (summary view)
   function exportCSVPlantonistas() {
     const headers = ['Plantonista', 'Plantões', 'Horas', 'Sem Valor', 'Total'];
-    const rows = plantonistaReports
+    const rows = visiblePlantonistaReports
       .slice()
       .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name))
       .map(p => [
@@ -858,7 +858,7 @@ export default function AdminFinancial() {
       ? sectors.find(s => s.id === filterSetor)?.name ?? 'Filtrado'
       : 'Todos os setores';
 
-    const sortedReports = plantonistaReports
+    const sortedReports = visiblePlantonistaReports
       .slice()
       .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
 
@@ -1038,7 +1038,7 @@ export default function AdminFinancial() {
 
         <div class="footer">
           <span>Gerado em ${format(new Date(), "dd/MM/yyyy 'às' HH:mm")}</span>
-          <span>${plantonistaReports.length} plantonistas</span>
+          <span>${visiblePlantonistaReports.length} plantonistas</span>
         </div>
       </body>
       </html>
