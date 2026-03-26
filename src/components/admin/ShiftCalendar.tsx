@@ -888,6 +888,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return parts.join(' | ') || 'Erro desconhecido';
   }
 
+  function buildShiftContextLabel(params: {
+    shiftDate: string;
+    startTime: string;
+    endTime: string;
+    sectorName?: string | null;
+    hospital?: string | null;
+  }): string {
+    const dateLabel = params.shiftDate ? format(parseISO(params.shiftDate), 'dd/MM/yyyy') : 'data inválida';
+    const sectorLabel = params.sectorName?.trim() || params.hospital?.trim() || 'setor não informado';
+    return `${dateLabel} ${params.startTime}-${params.endTime} (${sectorLabel})`;
+  }
+
+  function buildIssueSummary(issues: string[], totalCount: number): string | undefined {
+    if (totalCount <= 0 || issues.length === 0) return undefined;
+    const preview = issues.slice(0, 3).join(' | ');
+    return totalCount > issues.length
+      ? `${preview} | +${totalCount - issues.length} outro(s) erro(s).`
+      : preview;
+  }
+
   function formatMoneyInput(value: string | number): string {
     const num = parseMoneyValue(value);
     return num.toFixed(2);
@@ -912,13 +932,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .trim();
   }
 
+  function normalizeImportedPersonName(value: unknown): string {
+    return normalizeString(value)
+      .replace(/\bdrs?\b/g, ' ')
+      .replace(/\bdra?s?\b/g, ' ')
+      .replace(/\bmedic[oa]s?\b/g, ' ')
+      .replace(/\bplantonistas?\b/g, ' ')
+      .replace(/\bcrm[a-z]*\s*[:-]?\s*\d+[a-z0-9/-]*\b/g, ' ')
+      .replace(/\bcoren\s*[:-]?\s*\d+[a-z0-9/-]*\b/g, ' ')
+      .replace(/[()[\]{}]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function resolveImportedMember(name: string): Member | null {
-    const target = normalizeString(name);
+    const target = normalizeImportedPersonName(name);
     if (!target) return null;
 
     const exact = members.find((member) => {
-      const full = normalizeString(member.profile?.full_name ?? '');
-      const short = normalizeString(member.profile?.name ?? '');
+      const full = normalizeImportedPersonName(member.profile?.full_name ?? '');
+      const short = normalizeImportedPersonName(member.profile?.name ?? '');
       return full === target || short === target;
     });
     if (exact) return exact;
@@ -927,8 +960,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     return (
       members.find((member) => {
-        const full = normalizeString(member.profile?.full_name ?? '');
-        const short = normalizeString(member.profile?.name ?? '');
+        const full = normalizeImportedPersonName(member.profile?.full_name ?? '');
+        const short = normalizeImportedPersonName(member.profile?.name ?? '');
         return (
           (full && (full.includes(target) || target.includes(full))) ||
           (short && (short.includes(target) || target.includes(short)))
@@ -1226,8 +1259,29 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const dateAliases = ['data', 'date', 'shift_date', 'dia'];
     const startAliases = ['inicio', 'início', 'start', 'start_time', 'hora_inicio'];
     const endAliases = ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim'];
+    const assigneeAliases = [
+      'plantonista',
+      'plantonistas',
+      'profissional',
+      'profissional_plantao',
+      'profissional_de_plantao',
+      'nome',
+      'nomes',
+      'medico',
+      'medicos',
+      'médico',
+      'médicos',
+      'doctor',
+      'doctors',
+      'assignee',
+      'assignees',
+      'responsavel',
+      'responsável',
+      'funcionario',
+      'funcionário',
+    ];
 
-    const groups = [sectorAliases, dateAliases, startAliases, endAliases];
+    const groups = [sectorAliases, dateAliases, startAliases, endAliases, assigneeAliases];
     const maxHeaderScan = Math.min(12, rawMatrix.length);
 
     const rowContainsAlias = (row: unknown[], aliases: string[]) => {
@@ -1330,6 +1384,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const rawBase = readFieldByAliases(row, ['valor', 'valor_base', 'base_value', 'valorbase']);
       const rawNotes = readFieldByAliases(row, ['obs', 'observacao', 'observação', 'notes']);
       const rawTitle = readFieldByAliases(row, ['titulo', 'título', 'title']);
+      const rawAssignees = readFieldByAliases(row, assigneeAliases);
 
       const sectorName = String(rawSector ?? '').trim();
       const sector = sectorByNormalizedName.get(normalizeString(sectorName));
@@ -1357,6 +1412,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const baseValue = parseMoneyNullable(rawBase);
       const notes = String(rawNotes ?? '').trim() || null;
       const title = String(rawTitle ?? '').trim() || generateShiftTitle(startTime, endTime);
+      const assigneeNames = String(rawAssignees ?? '')
+        .split(/\n|;|,|\||\/|&/g)
+        .map((part) => part.trim())
+        .filter(Boolean);
 
       parsed.push({
         sector_id: sector.id,
@@ -1369,6 +1428,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         base_value: baseValue,
         notes,
         title,
+        assignee_names: assigneeNames.length > 0 ? assigneeNames : undefined,
       });
     });
 
@@ -1411,22 +1471,42 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     try {
       let createdCount = 0;
       let assignedCount = 0;
+      let importErrorCount = 0;
       const unmatchedNames = new Set<string>();
+      const importIssues: string[] = [];
+      const zeroValueAssignments: string[] = [];
 
       for (const row of importPreviewRows) {
-        const shiftId = await insertAdminShiftAndGetId({
-          tenant_id: currentTenantId,
-          title: row.title,
+        const shiftContext = buildShiftContextLabel({
+          shiftDate: row.shift_date,
+          startTime: row.start_time,
+          endTime: row.end_time,
+          sectorName: row.sector_name,
           hospital: row.hospital,
-          location: row.location,
-          shift_date: row.shift_date,
-          start_time: row.start_time,
-          end_time: row.end_time,
-          base_value: row.base_value,
-          notes: row.notes,
-          sector_id: row.sector_id,
-          updated_by: user?.id,
         });
+
+        let shiftId: string;
+        try {
+          shiftId = await insertAdminShiftAndGetId({
+            tenant_id: currentTenantId,
+            title: row.title,
+            hospital: row.hospital,
+            location: row.location,
+            shift_date: row.shift_date,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            base_value: row.base_value,
+            notes: row.notes,
+            sector_id: row.sector_id,
+            updated_by: user?.id,
+          });
+        } catch (error) {
+          importErrorCount++;
+          if (importIssues.length < 3) {
+            importIssues.push(`${shiftContext}: ${formatSupabaseError(error)}`);
+          }
+          continue;
+        }
         createdCount += 1;
 
         const names = (row.assignee_names || []).map((n) => n.trim()).filter(Boolean);
@@ -1451,17 +1531,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             useSectorDefault: true,
             applyProRata: true,
           });
+          const assignmentValueToPersist = assignedValue ?? 0;
+
+          if (assignedValue === null && zeroValueAssignments.length < 8) {
+            zeroValueAssignments.push(`${importedName} em ${shiftContext}`);
+          }
 
           try {
             await upsertAdminAssignment({
               tenantId: currentTenantId,
               shiftId,
               userId: member.user_id,
-              assignedValue,
+              assignedValue: assignmentValueToPersist,
               updatedBy: user?.id,
             });
             assignedCount += 1;
-          } catch {
+          } catch (error) {
+            importErrorCount++;
+            if (importIssues.length < 3) {
+              importIssues.push(`${shiftContext} / ${importedName}: ${formatSupabaseError(error)}`);
+            }
             unmatchedNames.add(`${importedName} (erro de vínculo)`);
           }
         }
@@ -1472,10 +1561,23 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         unmatchedList.length > 0
           ? ` Não vinculados: ${unmatchedList.slice(0, 8).join(', ')}${unmatchedList.length > 8 ? '...' : ''}.`
           : '';
-      notifySuccess(
-        'Escala importada',
-        `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}`,
-      );
+      const zeroValueText =
+        zeroValueAssignments.length > 0
+          ? ` Valores zerados automaticamente: ${zeroValueAssignments.slice(0, 4).join(', ')}${zeroValueAssignments.length > 4 ? '...' : ''}.`
+          : '';
+      const issueSummary = buildIssueSummary(importIssues, importErrorCount);
+      if (importErrorCount > 0) {
+        notifyError(
+          'importar escala',
+          issueSummary || `${importErrorCount} erro(s)`,
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}${zeroValueText}${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
+        );
+      } else {
+        notifySuccess(
+          'Escala importada',
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}${zeroValueText}`,
+        );
+      }
       setImportDialogOpen(false);
       setImportPreviewRows([]);
       setImportErrors([]);
@@ -2156,6 +2258,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       let createdCount = 0;
       let errorsCount = 0;
+      const creationIssues: string[] = [];
 
       const baseDate = parseISO(formData.shift_date);
 
@@ -2195,6 +2298,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         for (const row of rows) {
           const rowAssigned = row.user_id;
+          const shiftContext = buildShiftContextLabel({
+            shiftDate: weekDate,
+            startTime: row.start_time,
+            endTime: row.end_time,
+            sectorName: selectedSector?.name,
+            hospital: shiftInsertData.hospital,
+          });
 
           // Notes markers
           let notes = (formData.notes || '').trim();
@@ -2217,6 +2327,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 details: e,
                 payload: { ...shiftInsertData, shift_date: weekDate, start_time: row.start_time, end_time: row.end_time },
               });
+              if (creationIssues.length < 3) {
+                creationIssues.push(`${shiftContext}: ${formatSupabaseError(e)}`);
+              }
               errorsCount++;
               continue;
             }
@@ -2255,6 +2368,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               });
             } catch (assignErr) {
               console.error('[ShiftCalendar] assignment failed:', assignErr);
+              if (creationIssues.length < 3) {
+                creationIssues.push(`${shiftContext}: ${formatSupabaseError(assignErr)}`);
+              }
               errorsCount++;
             }
           }
@@ -2262,10 +2378,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
 
       if (errorsCount > 0) {
+        const issueSummary = buildIssueSummary(creationIssues, errorsCount);
         notifyError(
           'criar plantões',
-          `${errorsCount} erro(s)`,
-          `Criados: ${createdCount}. Alguns plantões não puderam ser salvos. Veja o console para detalhes.`,
+          issueSummary || `${errorsCount} erro(s)`,
+          `Criados: ${createdCount}. Alguns plantões não puderam ser salvos.${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
         );
       } else {
         notifySuccess('Cadastro de plantões', `${createdCount} plantão(ões) criado(s).`);
@@ -2335,8 +2452,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const sortedDates = Array.from(selectedDates).sort();
     let successCount = 0;
     let errorCount = 0;
+    const creationIssues: string[] = [];
 
     for (const dateStr of sortedDates) {
+      const shiftContext = buildShiftContextLabel({
+        shiftDate: dateStr,
+        startTime: formData.start_time,
+        endTime: formData.end_time,
+        sectorName: selectedSector?.name,
+        hospital: normalizedHospital,
+      });
       const shiftData = {
         tenant_id: currentTenantId,
         title: autoTitle,
@@ -2364,6 +2489,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         newShiftId = await insertAdminShiftAndGetId(shiftData);
       } catch (error) {
         errorCount++;
+        if (creationIssues.length < 3) {
+          creationIssues.push(`${shiftContext}: ${formatSupabaseError(error)}`);
+        }
         continue;
       }
       successCount++;
@@ -2396,14 +2524,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             assignedValue,
             updatedBy: user?.id,
           });
-        } catch {
+        } catch (error) {
           errorCount++;
+          if (creationIssues.length < 3) {
+            creationIssues.push(`${shiftContext}: ${formatSupabaseError(error)}`);
+          }
         }
       }
     }
 
     if (errorCount > 0) {
-      notifyError('criar plantões em lote', `${errorCount} erro(s)`, `${successCount} criado(s).`);
+      const issueSummary = buildIssueSummary(creationIssues, errorCount);
+      notifyError(
+        'criar plantões em lote',
+        issueSummary || `${errorCount} erro(s)`,
+        `${successCount} criado(s).${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
+      );
     } else {
       notifySuccess('Cadastro em lote', `${successCount} plantão(ões) criado(s).`);
     }

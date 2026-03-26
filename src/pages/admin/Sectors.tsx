@@ -142,6 +142,7 @@ export default function AdminSectors() {
   const [checkinDialogOpen, setCheckinDialogOpen] = useState(false);
   const [selectedSectorForCheckin, setSelectedSectorForCheckin] = useState<Sector | null>(null);
   const [selectedConfigSectorId, setSelectedConfigSectorId] = useState<string>('');
+  const [togglingCheckinId, setTogglingCheckinId] = useState<string | null>(null);
   
   const [checkinSettings, setCheckinSettings] = useState({
     checkin_enabled: false,

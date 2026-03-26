@@ -277,17 +277,69 @@ export default function UserSectorValuesDialog({
     });
   };
 
-  const clearRowOverride = (index: number) => {
-    setUserValues((prev) => {
-      const updated = [...prev];
-      updated[index] = {
-        ...updated[index],
-        day_value: '',
-        night_value: '',
-      };
-      return updated;
-    });
-  };
+  async function saveSingleRow(index: number) {
+    if (!sector || !tenantId) return;
+    const row = userValues[index];
+    if (!row) return;
+
+    setSaving(true);
+
+    try {
+      const dayValue = parseCurrency(row.day_value);
+      const nightValue = parseCurrency(row.night_value);
+
+      if (dayValue === null && nightValue === null) {
+        toast({
+          title: 'Nada para salvar',
+          description: 'Individualize ou preencha ao menos um valor antes de salvar.',
+        });
+        return;
+      }
+
+      const { error } = await supabase
+        .from('user_sector_values')
+        .upsert(
+          {
+            tenant_id: tenantId,
+            sector_id: sector.id,
+            user_id: row.user_id,
+            month,
+            year,
+            day_value: dayValue,
+            night_value: nightValue,
+            updated_by: userId,
+            created_by: userId,
+          },
+          { onConflict: 'tenant_id,sector_id,user_id,month,year' },
+        );
+
+      if (error) throw error;
+
+      setUserValues((prev) => {
+        const updated = [...prev];
+        updated[index] = {
+          ...updated[index],
+          hasOverride: true,
+        };
+        return updated;
+      });
+
+      toast({
+        title: 'Valor individual salvo',
+        description: `${row.user_name} atualizado com sucesso.`,
+      });
+
+      onSuccess();
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: extractErrorMessage(error, 'Não foi possível salvar o valor individual.'),
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleSave() {
     if (!sector || !tenantId) return;
@@ -545,8 +597,8 @@ export default function UserSectorValuesDialog({
                       <Button type="button" variant="outline" size="sm" onClick={() => applySectorDefaultsToRow(index)}>
                         Individualizar
                       </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={() => clearRowOverride(index)}>
-                        Limpar
+                      <Button type="button" variant="ghost" size="sm" onClick={() => void saveSingleRow(index)} disabled={saving}>
+                        Salvar
                       </Button>
                     </div>
                   </div>
