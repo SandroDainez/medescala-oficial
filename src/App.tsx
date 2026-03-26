@@ -208,8 +208,9 @@ function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
 function RoleRedirect() {
   const { user, loading: authLoading } = useAuth();
   const { currentRole, loading: tenantLoading, memberships, currentTenantId, setCurrentTenant } = useTenant();
+  const { isSuperAdmin, loading: superAdminLoading } = useSuperAdmin();
 
-  if (authLoading || tenantLoading) {
+  if (authLoading || tenantLoading || superAdminLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-muted-foreground">Carregando...</div>
@@ -219,6 +220,11 @@ function RoleRedirect() {
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  // Super admins can exist without tenant memberships and should land in the global panel.
+  if (memberships.length === 0 && isSuperAdmin) {
+    return <Navigate to="/super-admin" replace />;
   }
 
   // No memberships - go to onboarding

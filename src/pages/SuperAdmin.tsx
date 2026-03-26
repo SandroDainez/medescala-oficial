@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
+import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -133,6 +134,24 @@ interface UserFeedbackItem {
   created_at: string;
   profile_name: string | null;
   tenant_name: string | null;
+}
+
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function deriveAdminNameFromEmail(email: string): string {
+  const localPart = email.split('@')[0] ?? '';
+  const normalized = localPart
+    .replace(/[._-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return 'Administrador';
+
+  return normalized
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
 }
 
 export default function SuperAdmin() {
@@ -476,6 +495,8 @@ export default function SuperAdmin() {
   const handleCreateTenant = useCallback(async () => {
     const name = createName.trim();
     const slug = createSlug.trim().toLowerCase();
+    const adminEmail = createAdminEmail.trim().toLowerCase();
+
     if (!name || !slug) {
       toast({
         title: 'Campos obrigatórios',
@@ -485,15 +506,24 @@ export default function SuperAdmin() {
       return;
     }
 
+    if (adminEmail && !EMAIL_REGEX.test(adminEmail)) {
+      toast({
+        title: 'Email inválido',
+        description: 'Informe um email válido para o administrador inicial.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setCreatingTenant(true);
-    const { error } = await supabase.rpc('super_admin_create_tenant', {
+    const { data: tenantId, error } = await supabase.rpc('super_admin_create_tenant', {
       _name: name,
       _slug: slug,
-      _admin_email: createAdminEmail.trim() || null,
+      _admin_email: adminEmail || null,
     });
-    setCreatingTenant(false);
 
     if (error) {
+      setCreatingTenant(false);
       toast({
         title: 'Erro ao criar hospital',
         description: error.message,
@@ -502,7 +532,55 @@ export default function SuperAdmin() {
       return;
     }
 
-    toast({ title: 'Hospital criado com sucesso.' });
+    let adminProvisionWarning: string | null = null;
+
+    if (tenantId && adminEmail) {
+      const adminName = deriveAdminNameFromEmail(adminEmail);
+      const { data: userData, error: userError } = await supabase.functions.invoke('create-user', {
+        body: {
+          tenantId,
+          name: adminName,
+          email: adminEmail,
+          role: 'admin',
+        },
+      });
+
+      if (userError || !userData?.ok || !userData?.userId) {
+        adminProvisionWarning =
+          userData?.error ||
+          userError?.message ||
+          'Hospital criado, mas não foi possível provisionar o administrador inicial.';
+      } else {
+        const { data: inviteData, error: inviteError } = await supabase.functions.invoke('send-invite-email', {
+          body: {
+            name: adminName,
+            email: adminEmail,
+            hospitalName: name,
+            loginUrl: buildPublicAppUrl('/auth'),
+            redirectUrl: buildPublicAppUrl('/reset-password'),
+            tenantId,
+          },
+        });
+
+        if (inviteError || inviteData?.error) {
+          adminProvisionWarning =
+            inviteData?.error ||
+            inviteError?.message ||
+            'Hospital criado e administrador vinculado, mas o convite por email falhou.';
+        }
+      }
+    }
+
+    setCreatingTenant(false);
+
+    toast({
+      title: adminProvisionWarning ? 'Hospital criado com ressalvas.' : 'Hospital criado com sucesso.',
+      description: adminProvisionWarning || (adminEmail
+        ? 'Administrador inicial vinculado e convite enviado para definir a senha.'
+        : 'Hospital criado com trial gratuito.'),
+      variant: adminProvisionWarning ? 'destructive' : 'default',
+    });
+
     setCreateName('');
     setCreateSlug('');
     setCreateAdminEmail('');
@@ -1491,7 +1569,8 @@ export default function SuperAdmin() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Novo hospital inicia limpo, com trial gratuito e senha de reabertura padrão `123456`.
+              Se informar um email, o sistema criará ou vinculará esse administrador ao hospital e enviará um convite
+              para definir a senha de acesso. A senha `123456` é da reabertura da escala, não do login.
             </p>
           </div>
           <DialogFooter>

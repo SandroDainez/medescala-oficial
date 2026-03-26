@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Building2, ChevronRight, Shield } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
+import { useSuperAdmin } from '@/hooks/useSuperAdmin';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
@@ -10,13 +11,19 @@ import { setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
 export default function TenantSelect() {
   const { user, loading: authLoading, signOut } = useAuth();
   const { memberships, loading: tenantLoading, setCurrentTenant } = useTenant();
+  const { isSuperAdmin, loading: superAdminLoading } = useSuperAdmin();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (authLoading || tenantLoading) return;
+    if (authLoading || tenantLoading || superAdminLoading) return;
 
     if (!user) {
       navigate('/auth', { replace: true });
+      return;
+    }
+
+    if (memberships.length === 0 && isSuperAdmin) {
+      navigate('/super-admin', { replace: true });
       return;
     }
 
@@ -33,7 +40,7 @@ export default function TenantSelect() {
         replace: true,
       });
     }
-  }, [authLoading, tenantLoading, user, memberships, navigate, setCurrentTenant]);
+  }, [authLoading, tenantLoading, superAdminLoading, user, memberships, isSuperAdmin, navigate, setCurrentTenant]);
 
   const handleSelectTenant = (tenantId: string, role: 'admin' | 'owner' | 'user') => {
     setCurrentTenant(tenantId);
@@ -46,7 +53,7 @@ export default function TenantSelect() {
     navigate('/auth', { replace: true });
   };
 
-  if (authLoading || tenantLoading) {
+  if (authLoading || tenantLoading || superAdminLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-muted-foreground">Carregando...</div>

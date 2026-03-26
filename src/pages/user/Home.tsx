@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { TapSafeButton } from '@/components/TapSafeButton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
@@ -409,16 +410,34 @@ export default function UserHome() {
         <Card className="border-primary/20 bg-card/90 shadow-sm">
           <CardHeader className="pb-2"><CardTitle className="text-base">Atenção</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/notifications')}>
+            <TapSafeButton
+              type="button"
+              moveThresholdPx={44}
+              minPressTime={180}
+              className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation"
+              onClick={() => navigate('/app/notifications')}
+            >
               <span className="flex items-center gap-2"><Bell className="h-4 w-4" /> Não lidas</span><Badge>{unreadNotifications}</Badge>
-            </button>
-            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/swaps')}>
+            </TapSafeButton>
+            <TapSafeButton
+              type="button"
+              moveThresholdPx={44}
+              minPressTime={180}
+              className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation"
+              onClick={() => navigate('/app/swaps')}
+            >
               <span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas para responder</span><Badge>{pendingIncomingSwaps}</Badge>
-            </button>
+            </TapSafeButton>
             <div className="flex min-h-11 items-center justify-between rounded-lg border border-border/60 px-3 py-2.5"><span className="flex items-center gap-2"><ArrowLeftRight className="h-4 w-4" /> Trocas aguardando colega</span><Badge>{pendingOutgoingSwaps}</Badge></div>
-            <button type="button" className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation" onClick={() => navigate('/app/available')}>
+            <TapSafeButton
+              type="button"
+              moveThresholdPx={44}
+              minPressTime={180}
+              className="flex min-h-11 w-full items-center justify-between rounded-lg border border-border/60 px-3 py-2.5 text-left hover:bg-accent/30 touch-manipulation"
+              onClick={() => navigate('/app/available')}
+            >
               <span className="flex items-center gap-2"><Hand className="h-4 w-4" /> Plantões disponíveis no meu setor</span><Badge>{availableInMySectors}</Badge>
-            </button>
+            </TapSafeButton>
             {monthSummary.unpriced > 0 && (
               <p className="text-xs text-amber-600">Há {monthSummary.unpriced} plantão(ões) sem valor definido neste mês.</p>
             )}
@@ -441,9 +460,11 @@ export default function UserHome() {
                 const targetHref = `/app/shifts?assignment=${s.assignment_id}`;
 
                 return (
-                  <button
+                  <TapSafeButton
                     type="button"
                     key={s.assignment_id}
+                    moveThresholdPx={48}
+                    minPressTime={180}
                     onClick={() => navigate(targetHref)}
                     className="flex min-h-12 w-full items-center justify-between rounded-xl border border-border/70 p-3 text-left transition-colors hover:bg-accent/40 touch-manipulation"
                   >
@@ -472,7 +493,7 @@ export default function UserHome() {
                       )}
                     </div>
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                  </button>
+                  </TapSafeButton>
                 );
               })()
             ))

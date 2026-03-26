@@ -54,6 +54,41 @@ async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email
   }
 }
 
+async function requesterCanManageTenant(
+  admin: ReturnType<typeof createClient>,
+  tenantId: string,
+  requesterId: string,
+) {
+  const { data: superAdmin, error: superAdminError } = await admin
+    .from("super_admins")
+    .select("user_id")
+    .eq("user_id", requesterId)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (superAdminError) {
+    throw new Error(`Erro ao validar super admin: ${superAdminError.message}`);
+  }
+
+  if (superAdmin?.user_id) {
+    return true;
+  }
+
+  const { data: requesterMembership, error: requesterMembershipError } = await admin
+    .from("memberships")
+    .select("role, active")
+    .eq("tenant_id", tenantId)
+    .eq("user_id", requesterId)
+    .eq("active", true)
+    .maybeSingle();
+
+  if (requesterMembershipError) {
+    throw new Error(requesterMembershipError.message);
+  }
+
+  return Boolean(requesterMembership && ["admin", "owner"].includes(requesterMembership.role));
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -106,20 +141,9 @@ Deno.serve(async (req) => {
       return json({ error: "tenantId, email e name são obrigatórios" }, 400);
     }
 
-    const { data: requesterMembership, error: requesterMembershipError } = await admin
-      .from("memberships")
-      .select("role, active")
-      .eq("tenant_id", tenantId)
-      .eq("user_id", requester.id)
-      .eq("active", true)
-      .maybeSingle();
-
-    if (requesterMembershipError) {
-      return json({ error: requesterMembershipError.message }, 400);
-    }
-
-    if (!requesterMembership || !["admin", "owner"].includes(requesterMembership.role)) {
-      return json({ error: "Apenas admin/owner pode adicionar usuários" }, 403);
+    const canManageTenant = await requesterCanManageTenant(admin, tenantId, requester.id);
+    if (!canManageTenant) {
+      return json({ error: "Apenas admin/owner do hospital ou superadmin pode adicionar usuários" }, 403);
     }
 
     let targetUserId: string | null = null;

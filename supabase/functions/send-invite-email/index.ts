@@ -68,6 +68,41 @@ function generateInviteToken(): string {
     .join("");
 }
 
+async function requesterCanManageTenant(
+  supabaseAdmin: ReturnType<typeof createClient>,
+  tenantId: string,
+  requesterId: string,
+) {
+  const { data: superAdmin, error: superAdminError } = await supabaseAdmin
+    .from('super_admins')
+    .select('user_id')
+    .eq('user_id', requesterId)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (superAdminError) {
+    throw new Error(`Erro ao validar super admin: ${superAdminError.message}`);
+  }
+
+  if (superAdmin?.user_id) {
+    return true;
+  }
+
+  const { data: membership, error: membershipError } = await supabaseAdmin
+    .from('memberships')
+    .select('role, active')
+    .eq('tenant_id', tenantId)
+    .eq('user_id', requesterId)
+    .eq('active', true)
+    .maybeSingle();
+
+  if (membershipError) {
+    throw new Error(`Erro ao validar permissões: ${membershipError.message}`);
+  }
+
+  return Boolean(membership && ['admin', 'owner'].includes(membership.role));
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response('ok', { headers: corsHeaders });
@@ -120,21 +155,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
       });
     }
 
-    const { data: membership, error: membershipError } = await supabaseAdmin
-      .from('memberships')
-      .select('role, active')
-      .eq('tenant_id', tenantId)
-      .eq('user_id', requester.id)
-      .eq('active', true)
-      .maybeSingle();
-
-    if (membershipError) {
-      throw new Error(`Erro ao validar permissões: ${membershipError.message}`);
-    }
-
-    if (!membership || !['admin', 'owner'].includes(membership.role)) {
+    const canManageTenant = await requesterCanManageTenant(supabaseAdmin, tenantId, requester.id);
+    if (!canManageTenant) {
       return new Response(
-        JSON.stringify({ error: 'Apenas administradores do hospital/serviço podem enviar convites' }),
+        JSON.stringify({ error: 'Apenas administradores do hospital/serviço ou superadmins podem enviar convites' }),
         {
           status: 403,
           headers: { "Content-Type": "application/json", ...corsHeaders },
