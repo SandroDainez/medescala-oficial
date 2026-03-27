@@ -693,7 +693,7 @@ export default function AdminDashboard() {
                 assignments={monthAssignmentsForCharts}
                 sectors={sectors}
                 members={members
-                  .filter(m => m.active && m.role === 'user')
+                  .filter(m => m.active && m.profile?.profile_type === 'plantonista')
                   .map(m => ({ id: m.user_id, name: m.profile?.name || null, full_name: m.profile?.full_name || null }))}
                 sectorMemberships={sectorMemberships}
                 currentMonth={currentDate}

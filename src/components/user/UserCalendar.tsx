@@ -575,7 +575,6 @@ export default function UserCalendar() {
       .select('user_id, role, active')
       .eq('tenant_id', currentTenantId)
       .eq('active', true)
-      .eq('role', 'user')
       .in('user_id', sectorUserIds);
 
     if (eligibleMembershipsError) {

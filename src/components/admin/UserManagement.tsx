@@ -786,7 +786,7 @@ export default function UserManagement() {
       return;
     }
 
-    const effectiveProfileType = form.accessRole === "admin" ? "admin" : form.profileType;
+    const effectiveProfileType = form.profileType;
     const { data, error } = await supabase.functions.invoke("update-user", {
       body: {
         action: "update",
@@ -917,7 +917,7 @@ export default function UserManagement() {
 
     const createdUserId = String(data.userId);
 
-    const effectiveProfileType = createForm.accessRole === "admin" ? "admin" : createForm.profileType;
+    const effectiveProfileType = createForm.profileType;
     const { data: detailsData, error: detailsError } = await supabase.functions.invoke("update-user", {
       body: {
         action: "update",
@@ -1909,7 +1909,6 @@ export default function UserManagement() {
                         return {
                           ...p,
                           accessRole: nextAccess,
-                          profileType: nextAccess === "admin" ? "admin" : p.profileType,
                         };
                       })
                     }
@@ -1922,6 +1921,9 @@ export default function UserManagement() {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Acesso e tipo são independentes. Um admin também pode ser plantonista.
+                  </p>
                 </div>
                 <div className="space-y-3 md:col-span-2">
                   <Label>Foto do usuário (opcional)</Label>
@@ -2535,7 +2537,6 @@ export default function UserManagement() {
                         return {
                           ...p,
                           accessRole: nextAccess,
-                          profileType: nextAccess === "admin" ? "admin" : p.profileType,
                         };
                       })
                     }
@@ -2548,6 +2549,9 @@ export default function UserManagement() {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Acesso e tipo são independentes. Um admin também pode ser plantonista.
+                  </p>
                 </div>
                 <div className="space-y-3 md:col-span-2">
                   <Label>Foto do usuário (opcional)</Label>

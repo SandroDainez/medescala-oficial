@@ -144,8 +144,7 @@ export async function fetchAdminScheduleData({
       .from('memberships')
       .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
       .eq('tenant_id', tenantId)
-      .eq('active', true)
-      .eq('role', 'user'),
+      .eq('active', true),
     supabase
       .from('sectors')
       .select('*')

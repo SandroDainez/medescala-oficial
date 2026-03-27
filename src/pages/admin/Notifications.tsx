@@ -62,6 +62,10 @@ interface Sector {
   name: string;
 }
 
+function isPlantonistaMember(member: Pick<Member, 'profile_type'>) {
+  return (member.profile_type ?? '').trim().toLowerCase() === 'plantonista';
+}
+
 const notificationTypes = [
   { value: 'shift', label: 'Plantão Disponível', icon: Calendar, color: 'text-blue-500' },
   { value: 'payment', label: 'Pagamento', icon: DollarSign, color: 'text-green-500' },
@@ -294,7 +298,7 @@ export default function AdminNotifications() {
       return;
     }
 
-    const eligibleMembers = members.filter((m) => m.role !== 'admin');
+    const eligibleMembers = members.filter(isPlantonistaMember);
 
     const filteredMembers =
       selectedSectorFilter === 'all'
@@ -495,7 +499,7 @@ export default function AdminNotifications() {
   const eligibleMembers = useMemo(
     () =>
       members
-        .filter((m) => m.role !== 'admin')
+        .filter(isPlantonistaMember)
         .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
     [members],
   );

@@ -132,7 +132,6 @@ export default function UserSectorValuesDialog({
         .select('user_id, role, profiles:profiles!memberships_user_id_profiles_fkey(id, profile_type, full_name, name)')
         .eq('tenant_id', tenantId)
         .eq('active', true)
-        .eq('role', 'user')
         .in('user_id', sectorUserIds);
 
       if (membershipsError) {

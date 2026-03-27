@@ -172,21 +172,27 @@ export function DashboardCharts({
 
   const generalByUser = useMemo<UserMetric[]>(() => {
     const userMap = new Map<string, UserMetric>();
-    for (const sector of sectorMetrics) {
-      for (const user of sector.userData) {
-        const existing = userMap.get(user.user_id) ?? {
-          user_id: user.user_id,
-          name: user.name,
-          plantoes: 0,
-          valor: 0,
-        };
-        existing.plantoes += user.plantoes;
-        existing.valor += user.valor;
-        userMap.set(user.user_id, existing);
-      }
+
+    for (const assignment of assignments) {
+      if (!allowedChartUserIds.has(assignment.user_id)) continue;
+
+      const shift = shiftById.get(assignment.shift_id);
+      if (!shift) continue;
+
+      const existing = userMap.get(assignment.user_id) ?? {
+        user_id: assignment.user_id,
+        name: assignmentNameByUserId.get(assignment.user_id) ?? memberNameById.get(assignment.user_id) ?? 'Sem nome',
+        plantoes: 0,
+        valor: 0,
+      };
+
+      existing.plantoes += 1;
+      existing.valor += shiftValueToReceive(assignment.assigned_value, shift.base_value);
+      userMap.set(assignment.user_id, existing);
     }
+
     return Array.from(userMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
-  }, [sectorMetrics]);
+  }, [assignments, shiftById, allowedChartUserIds, assignmentNameByUserId, memberNameById]);
 
   const totals = useMemo(() => {
     return {
@@ -241,14 +247,7 @@ export function DashboardCharts({
     } as const;
   }, [selectedChartKey, sectorMetrics, generalByUser]);
 
-  if (shifts.length === 0) {
-    return (
-      <div className="text-center py-12 text-muted-foreground">
-        <Building className="h-12 w-12 mx-auto mb-4 opacity-50" />
-        <p>Nenhum dado disponível para exibir gráficos</p>
-      </div>
-    );
-  }
+  const hasChartData = selectedChart.data.length > 0;
 
   const currencyTooltip = ({ active, payload, label }: any) => {
     if (!active || !payload || !payload.length) return null;
@@ -306,25 +305,35 @@ export function DashboardCharts({
               <div>
                 <p className="text-sm font-medium mb-1">{selectedChart.title}</p>
                 <p className="text-xs text-muted-foreground mb-2">{selectedChart.description}</p>
-                <ResponsiveContainer width="100%" height={Math.max(260, selectedChart.data.length * 32)}>
-                  <BarChart data={selectedChart.data} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="name"
-                      width={selectedChart.yWidth}
-                      tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
-                      tickFormatter={(value: string) => truncateName(value, selectedChart.yWidth > 200 ? 28 : 20)}
-                    />
-                    <Tooltip content={selectedChart.useCurrencyTooltip ? currencyTooltip : undefined} />
-                    <Bar
-                      dataKey={selectedChart.dataKey}
-                      fill={selectedChart.barColor}
-                      radius={[0, 4, 4, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
+                {hasChartData ? (
+                  <ResponsiveContainer width="100%" height={Math.max(260, selectedChart.data.length * 32)}>
+                    <BarChart data={selectedChart.data} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={selectedChart.yWidth}
+                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
+                        tickFormatter={(value: string) => truncateName(value, selectedChart.yWidth > 200 ? 28 : 20)}
+                      />
+                      <Tooltip content={selectedChart.useCurrencyTooltip ? currencyTooltip : undefined} />
+                      <Bar
+                        dataKey={selectedChart.dataKey}
+                        fill={selectedChart.barColor}
+                        radius={[0, 4, 4, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex min-h-[260px] flex-col items-center justify-center rounded-md border border-dashed border-border text-center text-muted-foreground">
+                    <Building className="mb-3 h-10 w-10 opacity-50" />
+                    <p className="font-medium">Sem dados para este gráfico ainda</p>
+                    <p className="mt-1 max-w-md text-sm">
+                      Os gráficos aparecem conforme o hospital recebe plantões atribuídos no mês selecionado.
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
