@@ -1538,12 +1538,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           }
 
           try {
-            await upsertAdminAssignment({
-              tenantId: currentTenantId,
+            await createAssignmentWithZeroFallback({
               shiftId,
               userId: member.user_id,
               assignedValue: assignmentValueToPersist,
-              updatedBy: user?.id,
             });
             assignedCount += 1;
           } catch (error) {
@@ -1633,13 +1631,45 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     
     // Fall back to sector default
     const sectorValue = getSectorDefaultValue(params.sector_id, params.start_time);
-    // IMPORTANT: Only use sector default if it has a positive value
-    // If sector default is 0 or null, return null (no value defined)
-    if (sectorValue !== null && sectorValue > 0) {
+    // 0 é valor explícito e deve ser preservado.
+    if (sectorValue !== null) {
       return shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
     }
     
     return null;
+  }
+
+  function shouldRetryAssignmentWithExplicitZero(error: unknown): boolean {
+    const message = formatSupabaseError(error).toLowerCase();
+    return message.includes('não foi possível resolver valor financeiro');
+  }
+
+  async function createAssignmentWithZeroFallback(params: {
+    shiftId: string;
+    userId: string;
+    assignedValue: number | null;
+  }) {
+    try {
+      return await upsertAdminAssignment({
+        tenantId: currentTenantId,
+        shiftId: params.shiftId,
+        userId: params.userId,
+        assignedValue: params.assignedValue,
+        updatedBy: user?.id,
+      });
+    } catch (error) {
+      if (params.assignedValue === 0 || !shouldRetryAssignmentWithExplicitZero(error)) {
+        throw error;
+      }
+
+      return upsertAdminAssignment({
+        tenantId: currentTenantId,
+        shiftId: params.shiftId,
+        userId: params.userId,
+        assignedValue: 0,
+        updatedBy: user?.id,
+      });
+    }
   }
 
   // Filter shifts by sector
@@ -2359,12 +2389,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             });
 
             try {
-              await upsertAdminAssignment({
-                tenantId: currentTenantId,
+              await createAssignmentWithZeroFallback({
                 shiftId: createdShiftId,
                 userId: rowAssigned,
                 assignedValue: rowAssignedValue,
-                updatedBy: user?.id,
               });
             } catch (assignErr) {
               console.error('[ShiftCalendar] assignment failed:', assignErr);
