@@ -58,12 +58,18 @@ function normalizeRedirectUrl(input: string | undefined): string {
   }
 }
 
-function enforceRedirectInActionLink(actionLink: string, redirectTo: string): string {
+function buildHostedRecoveryLink(actionLink: string, supabaseUrl: string, redirectTo: string): string {
   try {
-    const url = new URL(actionLink);
-    // Keep Supabase verify endpoint untouched and only force redirect_to.
-    url.searchParams.set("redirect_to", redirectTo);
-    return url.toString();
+    const actionUrl = new URL(actionLink);
+    const authBaseUrl = new URL(supabaseUrl);
+    const hostedVerifyUrl = new URL("/auth/v1/verify", authBaseUrl.origin);
+
+    actionUrl.searchParams.forEach((value, key) => {
+      hostedVerifyUrl.searchParams.set(key, value);
+    });
+    hostedVerifyUrl.searchParams.set("redirect_to", redirectTo);
+
+    return hostedVerifyUrl.toString();
   } catch {
     return actionLink;
   }
@@ -179,7 +185,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error("Link de recuperação não gerado");
     }
     const resetLink = rawResetLink
-      ? enforceRedirectInActionLink(rawResetLink, safeRedirectUrl)
+      ? buildHostedRecoveryLink(rawResetLink, supabaseUrl, safeRedirectUrl)
       : tokenHash
         ? `${safeRedirectUrl}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
         : null;
