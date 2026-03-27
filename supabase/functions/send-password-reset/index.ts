@@ -33,12 +33,12 @@ async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string>
 }
 
 function normalizeRedirectUrl(input: string | undefined): string {
-  const canonicalBaseUrl = (Deno.env.get("APP_PUBLIC_URL") || "https://medescala-oficial.vercel.app").trim();
+  const canonicalBaseUrl = (Deno.env.get("APP_PUBLIC_URL") || "https://app.medescalas.com.br").trim();
   const canonicalOrigin = (() => {
     try {
       return new URL(canonicalBaseUrl).origin;
     } catch {
-      return "https://medescala-oficial.vercel.app";
+      return "https://app.medescalas.com.br";
     }
   })();
   const fallback = `${canonicalOrigin}/reset-password`;

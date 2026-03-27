@@ -136,6 +136,8 @@ Deno.serve(async (req) => {
     const phone = normalizeText(body.phone);
     const requestedRole = String(body.role ?? "user").trim();
     const role = requestedRole === "admin" ? "admin" : "user";
+    const bootstrapPassword = normalizeText(body.bootstrapPassword);
+    const mustChangePassword = body.mustChangePassword === true;
 
     if (!tenantId || !email || !name) {
       return json({ error: "tenantId, email e name são obrigatórios" }, 400);
@@ -155,17 +157,15 @@ Deno.serve(async (req) => {
     }
 
     if (!targetUserId) {
-      // Internal random password only to satisfy auth creation.
-      // User defines the real password through the invite recovery link.
-      const bootstrapPassword = randomPassword(14);
+      const passwordToUse = bootstrapPassword ?? randomPassword(14);
 
       const { data: createdUserData, error: createUserError } = await admin.auth.admin.createUser({
         email,
-        password: bootstrapPassword,
+        password: passwordToUse,
         email_confirm: true,
         user_metadata: {
           name,
-          must_change_password: false,
+          must_change_password: mustChangePassword,
         },
       });
 
@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
         user_metadata: {
           ...currentMetadata,
           name,
-          must_change_password: false,
+          must_change_password: currentMetadata.must_change_password ?? false,
         },
       });
       if (metadataUpdateError) {
@@ -211,7 +211,7 @@ Deno.serve(async (req) => {
           phone,
           status: "ativo",
           updated_at: new Date().toISOString(),
-          must_change_password: false,
+          must_change_password: createdNow ? mustChangePassword : false,
         },
         { onConflict: "id" },
       );

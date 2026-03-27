@@ -12,7 +12,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
-import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -533,6 +532,7 @@ export default function SuperAdmin() {
     }
 
     let adminProvisionWarning: string | null = null;
+    let adminProvisionMessage: string | null = null;
 
     if (tenantId && adminEmail) {
       const adminName = deriveAdminNameFromEmail(adminEmail);
@@ -542,6 +542,8 @@ export default function SuperAdmin() {
           name: adminName,
           email: adminEmail,
           role: 'admin',
+          bootstrapPassword: '123456',
+          mustChangePassword: true,
         },
       });
 
@@ -551,22 +553,10 @@ export default function SuperAdmin() {
           userError?.message ||
           'Hospital criado, mas não foi possível provisionar o administrador inicial.';
       } else {
-        const { data: inviteData, error: inviteError } = await supabase.functions.invoke('send-invite-email', {
-          body: {
-            name: adminName,
-            email: adminEmail,
-            hospitalName: name,
-            loginUrl: buildPublicAppUrl('/auth'),
-            redirectUrl: buildPublicAppUrl('/reset-password'),
-            tenantId,
-          },
-        });
-
-        if (inviteError || inviteData?.error) {
-          adminProvisionWarning =
-            inviteData?.error ||
-            inviteError?.message ||
-            'Hospital criado e administrador vinculado, mas o convite por email falhou.';
+        if (userData.createdNow) {
+          adminProvisionMessage = `Administrador inicial criado. Primeiro login com ${adminEmail} e senha 123456, com troca obrigatória no primeiro acesso.`;
+        } else {
+          adminProvisionMessage = 'Administrador inicial vinculado ao hospital. Como este email já existia, a senha atual do usuário foi preservada.';
         }
       }
     }
@@ -576,7 +566,7 @@ export default function SuperAdmin() {
     toast({
       title: adminProvisionWarning ? 'Hospital criado com ressalvas.' : 'Hospital criado com sucesso.',
       description: adminProvisionWarning || (adminEmail
-        ? 'Administrador inicial vinculado e convite enviado para definir a senha.'
+        ? adminProvisionMessage || 'Administrador inicial vinculado ao hospital.'
         : 'Hospital criado com trial gratuito.'),
       variant: adminProvisionWarning ? 'destructive' : 'default',
     });
@@ -1569,8 +1559,8 @@ export default function SuperAdmin() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Se informar um email, o sistema criará ou vinculará esse administrador ao hospital e enviará um convite
-              para definir a senha de acesso. A senha `123456` é da reabertura da escala, não do login.
+              Se informar um email novo, o sistema criará o administrador inicial com senha temporária `123456`
+              e exigirá a troca no primeiro acesso. Se o email já existir, o vínculo será criado sem alterar a senha atual.
             </p>
           </div>
           <DialogFooter>
