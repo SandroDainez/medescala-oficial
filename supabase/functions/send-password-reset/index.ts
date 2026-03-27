@@ -69,14 +69,6 @@ function enforceRedirectInActionLink(actionLink: string, redirectTo: string): st
   }
 }
 
-function buildAppResetLink(redirectTo: string, tokenHash: string): string {
-  const base = new URL(redirectTo);
-  const appUrl = new URL("/reset-password", base.origin);
-  appUrl.searchParams.set("token_hash", tokenHash);
-  appUrl.searchParams.set("type", "recovery");
-  return appUrl.toString();
-}
-
 Deno.serve(async (req: Request): Promise<Response> => {
   console.log("send-password-reset function called");
 
@@ -186,9 +178,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       console.error("No recovery link/token in response:", linkData);
       throw new Error("Link de recuperação não gerado");
     }
-    const resetLink = tokenHash
-      ? buildAppResetLink(safeRedirectUrl, tokenHash)
-      : enforceRedirectInActionLink(rawResetLink as string, safeRedirectUrl);
+    const resetLink = rawResetLink
+      ? enforceRedirectInActionLink(rawResetLink, safeRedirectUrl)
+      : tokenHash
+        ? `${safeRedirectUrl}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
+        : null;
+
+    if (!resetLink) {
+      throw new Error("Link de recuperação não gerado");
+    }
 
     console.log("Sending email via Resend...");
 
