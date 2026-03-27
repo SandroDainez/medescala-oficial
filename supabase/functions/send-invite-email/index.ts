@@ -31,12 +31,7 @@ interface InviteEmailRequest {
 const INVITE_EXPIRATION_HOURS = 48;
 
 function getCanonicalAppOrigin(): string {
-  const configured = (Deno.env.get("APP_PUBLIC_URL") || "https://app.medescalas.com.br").trim();
-  try {
-    return new URL(configured).origin;
-  } catch {
-    return "https://app.medescalas.com.br";
-  }
+  return "https://app.medescalas.com.br";
 }
 
 function normalizeRedirectUrl(input: string | undefined, _loginUrl: string): string {

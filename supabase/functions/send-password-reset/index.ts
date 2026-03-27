@@ -33,7 +33,7 @@ async function decryptValue(ciphertext: string, key: CryptoKey): Promise<string>
 }
 
 function normalizeRedirectUrl(input: string | undefined): string {
-  const canonicalBaseUrl = (Deno.env.get("APP_PUBLIC_URL") || "https://app.medescalas.com.br").trim();
+  const canonicalBaseUrl = "https://app.medescalas.com.br";
   const canonicalOrigin = (() => {
     try {
       return new URL(canonicalBaseUrl).origin;
