@@ -58,21 +58,12 @@ function normalizeRedirectUrl(input: string | undefined): string {
   }
 }
 
-function buildHostedRecoveryLink(actionLink: string, supabaseUrl: string, redirectTo: string): string {
-  try {
-    const actionUrl = new URL(actionLink);
-    const authBaseUrl = new URL(supabaseUrl);
-    const hostedVerifyUrl = new URL("/auth/v1/verify", authBaseUrl.origin);
-
-    actionUrl.searchParams.forEach((value, key) => {
-      hostedVerifyUrl.searchParams.set(key, value);
-    });
-    hostedVerifyUrl.searchParams.set("redirect_to", redirectTo);
-
-    return hostedVerifyUrl.toString();
-  } catch {
-    return actionLink;
-  }
+function buildAppResetLink(redirectTo: string, tokenHash: string): string {
+  const base = new URL(redirectTo);
+  const appUrl = new URL("/reset-password", base.origin);
+  appUrl.searchParams.set("token_hash", tokenHash);
+  appUrl.searchParams.set("type", "recovery");
+  return appUrl.toString();
 }
 
 Deno.serve(async (req: Request): Promise<Response> => {
@@ -177,22 +168,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     console.log("Reset link generated successfully");
 
     // Get the action link from the response
-    const rawResetLink = linkData.properties?.action_link;
     const tokenHash = (linkData.properties as any)?.hashed_token as string | undefined;
 
-    if (!rawResetLink && !tokenHash) {
+    if (!tokenHash) {
       console.error("No recovery link/token in response:", linkData);
       throw new Error("Link de recuperação não gerado");
     }
-    const resetLink = rawResetLink
-      ? buildHostedRecoveryLink(rawResetLink, supabaseUrl, safeRedirectUrl)
-      : tokenHash
-        ? `${safeRedirectUrl}?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`
-        : null;
-
-    if (!resetLink) {
-      throw new Error("Link de recuperação não gerado");
-    }
+    const resetLink = buildAppResetLink(safeRedirectUrl, tokenHash);
 
     console.log("Sending email via Resend...");
 
