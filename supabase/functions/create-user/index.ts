@@ -35,7 +35,7 @@ function randomPassword(length = 12): string {
   return result;
 }
 
-async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email: string) {
+async function findAuthUserByEmail(admin: AdminClient, email: string) {
   let page = 1;
   const perPage = 200;
 
@@ -46,7 +46,7 @@ async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email
     }
 
     const users = data?.users ?? [];
-    const match = users.find((user) => user.email?.trim().toLowerCase() === email);
+    const match = users.find((user: { email?: string | null }) => user.email?.trim().toLowerCase() === email);
     if (match) return match;
 
     if (users.length < perPage) return null;
@@ -54,17 +54,22 @@ async function findAuthUserByEmail(admin: ReturnType<typeof createClient>, email
   }
 }
 
+type AdminClient = any;
+type SuperAdminRow = { user_id: string };
+type MembershipRoleRow = { role: string; active?: boolean | null };
+
 async function requesterCanManageTenant(
-  admin: ReturnType<typeof createClient>,
+  admin: AdminClient,
   tenantId: string,
   requesterId: string,
 ) {
-  const { data: superAdmin, error: superAdminError } = await admin
+  const { data: superAdminData, error: superAdminError } = await admin
     .from("super_admins")
     .select("user_id")
     .eq("user_id", requesterId)
     .eq("active", true)
     .maybeSingle();
+  const superAdmin = (superAdminData ?? null) as SuperAdminRow | null;
 
   if (superAdminError) {
     throw new Error(`Erro ao validar super admin: ${superAdminError.message}`);
@@ -74,13 +79,14 @@ async function requesterCanManageTenant(
     return true;
   }
 
-  const { data: requesterMembership, error: requesterMembershipError } = await admin
+  const { data: requesterMembershipData, error: requesterMembershipError } = await admin
     .from("memberships")
     .select("role, active")
     .eq("tenant_id", tenantId)
     .eq("user_id", requesterId)
     .eq("active", true)
     .maybeSingle();
+  const requesterMembership = (requesterMembershipData ?? null) as MembershipRoleRow | null;
 
   if (requesterMembershipError) {
     throw new Error(requesterMembershipError.message);

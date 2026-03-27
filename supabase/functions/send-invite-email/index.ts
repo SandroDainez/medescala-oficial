@@ -63,17 +63,22 @@ function generateInviteToken(): string {
     .join("");
 }
 
+type AdminClient = any;
+type SuperAdminRow = { user_id: string };
+type MembershipRoleRow = { role: string; active?: boolean | null };
+
 async function requesterCanManageTenant(
-  supabaseAdmin: ReturnType<typeof createClient>,
+  supabaseAdmin: AdminClient,
   tenantId: string,
   requesterId: string,
 ) {
-  const { data: superAdmin, error: superAdminError } = await supabaseAdmin
+  const { data: superAdminData, error: superAdminError } = await supabaseAdmin
     .from('super_admins')
     .select('user_id')
     .eq('user_id', requesterId)
     .eq('active', true)
     .maybeSingle();
+  const superAdmin = (superAdminData ?? null) as SuperAdminRow | null;
 
   if (superAdminError) {
     throw new Error(`Erro ao validar super admin: ${superAdminError.message}`);
@@ -83,13 +88,14 @@ async function requesterCanManageTenant(
     return true;
   }
 
-  const { data: membership, error: membershipError } = await supabaseAdmin
+  const { data: membershipData, error: membershipError } = await supabaseAdmin
     .from('memberships')
     .select('role, active')
     .eq('tenant_id', tenantId)
     .eq('user_id', requesterId)
     .eq('active', true)
     .maybeSingle();
+  const membership = (membershipData ?? null) as MembershipRoleRow | null;
 
   if (membershipError) {
     throw new Error(`Erro ao validar permissões: ${membershipError.message}`);
