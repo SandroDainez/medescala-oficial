@@ -56,6 +56,31 @@ export async function insertAdminShiftAndGetId(payload: PersistedShiftPayload): 
   return found.id;
 }
 
+export async function findAdminShiftIdByNaturalKey(params: {
+  tenantId: string;
+  shiftDate: string;
+  startTime: string;
+  endTime: string;
+  hospital: string;
+  sectorId: string | null;
+}) {
+  const { data, error } = await supabase
+    .from('shifts')
+    .select('id')
+    .eq('tenant_id', params.tenantId)
+    .eq('shift_date', params.shiftDate)
+    .eq('start_time', params.startTime)
+    .eq('end_time', params.endTime)
+    .eq('hospital', params.hospital)
+    .eq('sector_id', params.sectorId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data?.id ?? null;
+}
+
 export async function updateAdminShiftById(
   shiftId: string,
   payload: Partial<PersistedShiftPayload>,

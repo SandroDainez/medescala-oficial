@@ -23,7 +23,7 @@ import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteA
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
-import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
+import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftsInRange, findAdminShiftIdByNaturalKey, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate, addDays, differenceInCalendarDays } from 'date-fns';
@@ -1565,8 +1565,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const unmatchedNames = new Set<string>();
       const importIssues: string[] = [];
       const zeroValueAssignments: string[] = [];
+      const groupedRows = new Map<string, ImportedShiftRow>();
 
       for (const row of importPreviewRows) {
+        const key = [
+          row.sector_id,
+          row.shift_date,
+          row.start_time,
+          row.end_time,
+          row.hospital,
+          row.location ?? '',
+          row.title,
+        ].join('|');
+
+        const existing = groupedRows.get(key);
+        if (existing) {
+          const mergedNames = Array.from(
+            new Set([...(existing.assignee_names ?? []), ...(row.assignee_names ?? [])].map((name) => name.trim()).filter(Boolean)),
+          );
+          existing.assignee_names = mergedNames.length > 0 ? mergedNames : undefined;
+          if (existing.base_value === null && row.base_value !== null) {
+            existing.base_value = row.base_value;
+          }
+          if (!existing.notes && row.notes) {
+            existing.notes = row.notes;
+          }
+          continue;
+        }
+
+        groupedRows.set(key, {
+          ...row,
+          assignee_names: row.assignee_names ? Array.from(new Set(row.assignee_names.map((name) => name.trim()).filter(Boolean))) : undefined,
+        });
+      }
+
+      for (const row of groupedRows.values()) {
         const shiftContext = buildShiftContextLabel({
           shiftDate: row.shift_date,
           startTime: row.start_time,
@@ -1585,19 +1618,30 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         let shiftId: string;
         try {
-          shiftId = await insertAdminShiftAndGetId({
-            tenant_id: currentTenantId,
-            title: row.title,
+          const existingShiftId = await findAdminShiftIdByNaturalKey({
+            tenantId: currentTenantId,
+            shiftDate: row.shift_date,
+            startTime: row.start_time,
+            endTime: row.end_time,
             hospital: row.hospital,
-            location: row.location,
-            shift_date: row.shift_date,
-            start_time: row.start_time,
-            end_time: row.end_time,
-            base_value: row.base_value,
-            notes: row.notes,
-            sector_id: row.sector_id,
-            updated_by: user?.id,
+            sectorId: row.sector_id,
           });
+
+          shiftId =
+            existingShiftId ??
+            (await insertAdminShiftAndGetId({
+              tenant_id: currentTenantId,
+              title: row.title,
+              hospital: row.hospital,
+              location: row.location,
+              shift_date: row.shift_date,
+              start_time: row.start_time,
+              end_time: row.end_time,
+              base_value: row.base_value,
+              notes: row.notes,
+              sector_id: row.sector_id,
+              updated_by: user?.id,
+            }));
         } catch (error) {
           importErrorCount++;
           if (importIssues.length < 3) {
