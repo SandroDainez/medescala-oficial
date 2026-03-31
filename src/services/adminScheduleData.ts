@@ -225,9 +225,15 @@ export async function fetchAdminScheduleData({
       .lte('conflict_date', endStr),
   ]);
 
-  if (assignmentsRes.error) throw assignmentsRes.error;
-  if (offersRes.error) throw offersRes.error;
-  if (resolutionsRes.error) throw resolutionsRes.error;
+  if (assignmentsRes.error) {
+    console.error('[adminScheduleData] get_shift_assignments_range failed', assignmentsRes.error);
+  }
+  if (offersRes.error) {
+    console.error('[adminScheduleData] get_shift_offers_pending_range failed', offersRes.error);
+  }
+  if (resolutionsRes.error) {
+    console.error('[adminScheduleData] conflict_resolutions fetch failed', resolutionsRes.error);
+  }
 
   let assignments = ((assignmentsRes.data ?? []) as any[])
     .filter((row) => allowedUserIds.has(row.user_id))
