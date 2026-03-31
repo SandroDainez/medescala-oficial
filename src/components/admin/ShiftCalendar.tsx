@@ -908,7 +908,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     sectorName?: string | null;
     hospital?: string | null;
   }): string {
-    const dateLabel = params.shiftDate ? format(parseISO(params.shiftDate), 'dd/MM/yyyy') : 'data inválida';
+    let dateLabel = 'data inválida';
+    if (params.shiftDate) {
+      try {
+        dateLabel = format(parseISO(params.shiftDate), 'dd/MM/yyyy');
+      } catch {
+        dateLabel = params.shiftDate;
+      }
+    }
     const sectorLabel = params.sectorName?.trim() || params.hospital?.trim() || 'setor não informado';
     return `${dateLabel} ${params.startTime}-${params.endTime} (${sectorLabel})`;
   }
@@ -1235,246 +1242,260 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleImportScheduleFile(file: File) {
     if (!file) return;
 
-    const ext = file.name.split('.').pop()?.toLowerCase();
-    if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
-      notifyWarning('Arquivo inválido', 'Use um arquivo .xlsx, .xls ou .csv.');
-      return;
-    }
-
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    const firstSheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[firstSheetName];
-    const rawMatrix = XLSX.utils.sheet_to_json<(string | number | Date)[]>(sheet, {
-      header: 1,
-      defval: '',
-      raw: false,
-      blankrows: false,
-    });
-
-    if (!rawMatrix.length) {
-      setImportPreviewRows([]);
-      setImportErrors(['Planilha vazia.']);
-      return;
-    }
-
-    const sectorAliases = [
-      'setor',
-      'sector',
-      'setor_nome',
-      'nome_setor',
-      'unidade',
-      'setor_local',
-      'setor/local',
-      'hospital',
-      'hospital_setor',
-    ];
-    const dateAliases = ['data', 'date', 'shift_date', 'dia'];
-    const startAliases = ['inicio', 'início', 'start', 'start_time', 'hora_inicio'];
-    const endAliases = ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim'];
-    const assigneeAliases = [
-      'plantonista',
-      'plantonistas',
-      'profissional',
-      'profissional_plantao',
-      'profissional_de_plantao',
-      'nome',
-      'nomes',
-      'medico',
-      'medicos',
-      'médico',
-      'médicos',
-      'doctor',
-      'doctors',
-      'assignee',
-      'assignees',
-      'responsavel',
-      'responsável',
-      'funcionario',
-      'funcionário',
-    ];
-
-    const groups = [sectorAliases, dateAliases, startAliases, endAliases, assigneeAliases];
-    const maxHeaderScan = Math.min(12, rawMatrix.length);
-
-    const rowContainsAlias = (row: unknown[], aliases: string[]) => {
-      const normalizedCells = row.map((cell) => normalizeHeader(cell));
-      return aliases.some((alias) => normalizedCells.includes(normalizeHeader(alias)));
-    };
-
-    let headerRowIndex = -1;
-    let bestScore = -1;
-    for (let i = 0; i < maxHeaderScan; i++) {
-      const row = rawMatrix[i] || [];
-      const score = groups.reduce((acc, aliases) => acc + (rowContainsAlias(row as unknown[], aliases) ? 1 : 0), 0);
-      if (score > bestScore) {
-        bestScore = score;
-        headerRowIndex = i;
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
+        notifyWarning('Arquivo inválido', 'Use um arquivo .xlsx, .xls ou .csv.');
+        return;
       }
-    }
 
-    const useDetectedHeader = bestScore >= 2 && headerRowIndex >= 0;
-    const fallbackHeaders = ['setor', 'data', 'inicio', 'fim', 'hospital', 'local', 'valor', 'observacao', 'titulo'];
-    const headers = useDetectedHeader
-      ? (rawMatrix[headerRowIndex] || []).map((cell, idx) => String(cell ?? '').trim() || `col_${idx + 1}`)
-      : fallbackHeaders;
-    const dataRows = useDetectedHeader ? rawMatrix.slice(headerRowIndex + 1) : rawMatrix;
-    const firstDataLine = useDetectedHeader ? headerRowIndex + 2 : 1;
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      const firstSheetName = workbook.SheetNames[0];
+      const sheet = firstSheetName ? workbook.Sheets[firstSheetName] : undefined;
 
-    const rows = dataRows.map((cells) => {
-      const obj: Record<string, unknown> = {};
-      headers.forEach((header, index) => {
-        obj[header] = cells?.[index] ?? '';
+      if (!sheet) {
+        setImportPreviewRows([]);
+        setImportErrors(['Não foi possível localizar uma aba válida no arquivo.']);
+        notifyWarning('Arquivo inválido', 'A planilha não possui uma aba legível para importação.');
+        return;
+      }
+
+      const rawMatrix = XLSX.utils.sheet_to_json<(string | number | Date)[]>(sheet, {
+        header: 1,
+        defval: '',
+        raw: false,
+        blankrows: false,
       });
-      return obj;
-    });
 
-    if (!rows.length) {
-      setImportPreviewRows([]);
-      setImportErrors(['Planilha sem dados após o cabeçalho.']);
-      return;
-    }
+      if (!rawMatrix.length) {
+        setImportPreviewRows([]);
+        setImportErrors(['Planilha vazia.']);
+        return;
+      }
 
-    // Detecta layout de escala impressa em grade:
-    // "ESCALAS", "PROFISSIONAL DE PLANTÃO", dias em colunas etc.
-    // Nesses casos, não devemos passar pelo parser tabular.
-    const lookaheadText = rawMatrix
-      .slice(0, 20)
-      .flat()
-      .map((cell) => normalizeString(cell))
-      .join(' | ');
-    const looksLikeEscalasGrid =
-      lookaheadText.includes('escalas') &&
-      lookaheadText.includes('profissional de plant');
+      const sectorAliases = [
+        'setor',
+        'sector',
+        'setor_nome',
+        'nome_setor',
+        'unidade',
+        'setor_local',
+        'setor/local',
+        'hospital',
+        'hospital_setor',
+      ];
+      const dateAliases = ['data', 'date', 'shift_date', 'dia'];
+      const startAliases = ['inicio', 'início', 'start', 'start_time', 'hora_inicio'];
+      const endAliases = ['fim', 'término', 'termino', 'end', 'end_time', 'hora_fim'];
+      const assigneeAliases = [
+        'plantonista',
+        'plantonistas',
+        'profissional',
+        'profissional_plantao',
+        'profissional_de_plantao',
+        'nome',
+        'nomes',
+        'medico',
+        'medicos',
+        'médico',
+        'médicos',
+        'doctor',
+        'doctors',
+        'assignee',
+        'assignees',
+        'responsavel',
+        'responsável',
+        'funcionario',
+        'funcionário',
+      ];
 
-    if (looksLikeEscalasGrid) {
+      const groups = [sectorAliases, dateAliases, startAliases, endAliases, assigneeAliases];
+      const maxHeaderScan = Math.min(12, rawMatrix.length);
+
+      const rowContainsAlias = (row: unknown[], aliases: string[]) => {
+        const normalizedCells = row.map((cell) => normalizeHeader(cell));
+        return aliases.some((alias) => normalizedCells.includes(normalizeHeader(alias)));
+      };
+
+      let headerRowIndex = -1;
+      let bestScore = -1;
+      for (let i = 0; i < maxHeaderScan; i++) {
+        const row = rawMatrix[i] || [];
+        const score = groups.reduce((acc, aliases) => acc + (rowContainsAlias(row as unknown[], aliases) ? 1 : 0), 0);
+        if (score > bestScore) {
+          bestScore = score;
+          headerRowIndex = i;
+        }
+      }
+
+      const useDetectedHeader = bestScore >= 2 && headerRowIndex >= 0;
+      const fallbackHeaders = ['setor', 'data', 'inicio', 'fim', 'hospital', 'local', 'valor', 'observacao', 'titulo'];
+      const headers = useDetectedHeader
+        ? (rawMatrix[headerRowIndex] || []).map((cell, idx) => String(cell ?? '').trim() || `col_${idx + 1}`)
+        : fallbackHeaders;
+      const dataRows = useDetectedHeader ? rawMatrix.slice(headerRowIndex + 1) : rawMatrix;
+      const firstDataLine = useDetectedHeader ? headerRowIndex + 2 : 1;
+
+      const rows = dataRows.map((cells) => {
+        const obj: Record<string, unknown> = {};
+        headers.forEach((header, index) => {
+          obj[header] = cells?.[index] ?? '';
+        });
+        return obj;
+      });
+
+      if (!rows.length) {
+        setImportPreviewRows([]);
+        setImportErrors(['Planilha sem dados após o cabeçalho.']);
+        return;
+      }
+
+      // Detecta layout de escala impressa em grade:
+      // "ESCALAS", "PROFISSIONAL DE PLANTÃO", dias em colunas etc.
+      // Nesses casos, não devemos passar pelo parser tabular.
+      const lookaheadText = rawMatrix
+        .slice(0, 20)
+        .flat()
+        .map((cell) => normalizeString(cell))
+        .join(' | ');
+      const looksLikeEscalasGrid =
+        lookaheadText.includes('escalas') &&
+        lookaheadText.includes('profissional de plant');
+
+      if (looksLikeEscalasGrid) {
+        const fallback = parseEscalasGridLayout(rawMatrix);
+        setImportFileName(file.name);
+
+        if (fallback.parsed.length > 0) {
+          setImportPreviewRows(fallback.parsed);
+          setImportErrors([
+            ...fallback.errors,
+            'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
+          ]);
+          notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+          return;
+        }
+
+        setImportPreviewRows([]);
+        setImportErrors([
+          'Formato de grade detectado, mas não foi possível identificar dias/setores automaticamente.',
+        ]);
+        notifyWarning('Importação sem linhas válidas', 'Não foi possível interpretar a grade desta planilha.');
+        return;
+      }
+
+      const sectorByNormalizedName = new Map(
+        sectors.map((s) => [normalizeString(s.name), s]),
+      );
+
+      const parsed: ImportedShiftRow[] = [];
+      const errors: string[] = [];
+
+      let sectorNotFoundCount = 0;
+
+      rows.forEach((row, index) => {
+        const line = firstDataLine + index;
+
+        const isEmptyRow = Object.values(row).every((value) => String(value ?? '').trim() === '');
+        if (isEmptyRow) return;
+
+        const rawHospital = readFieldByAliases(row, ['hospital', 'hospital_nome']);
+        const rawUnit = readFieldByAliases(row, ['unidade', 'setor_unidade']);
+        const rawSector =
+          readFieldByAliases(row, sectorAliases) ??
+          rawUnit ??
+          rawHospital;
+        const rawDate = readFieldByAliases(row, dateAliases);
+        const rawStart = readFieldByAliases(row, startAliases);
+        const rawEnd = readFieldByAliases(row, endAliases);
+        const rawLocation = readFieldByAliases(row, ['local', 'location', 'sala']);
+        const rawBase = readFieldByAliases(row, ['valor', 'valor_base', 'base_value', 'valorbase']);
+        const rawNotes = readFieldByAliases(row, ['obs', 'observacao', 'observação', 'notes']);
+        const rawTitle = readFieldByAliases(row, ['titulo', 'título', 'title']);
+        const rawAssignees = readFieldByAliases(row, assigneeAliases);
+
+        const sectorName = String(rawSector ?? '').trim();
+        const sector = sectorByNormalizedName.get(normalizeString(sectorName));
+        if (!sector) {
+          sectorNotFoundCount += 1;
+          errors.push(`Linha ${line}: setor não encontrado (${sectorName || 'vazio'}).`);
+          return;
+        }
+
+        const shiftDate = parseImportDate(rawDate);
+        if (!shiftDate) {
+          errors.push(`Linha ${line}: data inválida (${String(rawDate ?? '').trim() || 'vazia'}).`);
+          return;
+        }
+
+        const startTime = parseImportTime(rawStart);
+        const endTime = parseImportTime(rawEnd);
+        if (!startTime || !endTime) {
+          errors.push(`Linha ${line}: horário inválido (início/fim).`);
+          return;
+        }
+
+        const hospital = String(rawHospital ?? '').trim() || String(rawUnit ?? '').trim() || sector.name;
+        const location = String(rawLocation ?? '').trim() || null;
+        const baseValue = parseMoneyNullable(rawBase);
+        const notes = String(rawNotes ?? '').trim() || null;
+        const title = String(rawTitle ?? '').trim() || generateShiftTitle(startTime, endTime);
+        const assigneeNames = String(rawAssignees ?? '')
+          .split(/\n|;|,|\||\/|&/g)
+          .map((part) => part.trim())
+          .filter(Boolean);
+
+        parsed.push({
+          sector_id: sector.id,
+          sector_name: sector.name,
+          shift_date: shiftDate,
+          start_time: startTime,
+          end_time: endTime,
+          hospital,
+          location,
+          base_value: baseValue,
+          notes,
+          title,
+          assignee_names: assigneeNames.length > 0 ? assigneeNames : undefined,
+        });
+      });
+
       const fallback = parseEscalasGridLayout(rawMatrix);
-      setImportFileName(file.name);
+      const shouldPreferFallback =
+        fallback.parsed.length > 0 &&
+        (
+          parsed.length === 0 ||
+          fallback.parsed.length > parsed.length ||
+          sectorNotFoundCount >= Math.max(6, parsed.length)
+        );
 
-      if (fallback.parsed.length > 0) {
+      if (shouldPreferFallback) {
         setImportPreviewRows(fallback.parsed);
         setImportErrors([
           ...fallback.errors,
           'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
         ]);
+        setImportFileName(file.name);
         notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
         return;
       }
 
-      setImportPreviewRows([]);
-      setImportErrors([
-        'Formato de grade detectado, mas não foi possível identificar dias/setores automaticamente.',
-      ]);
-      notifyWarning('Importação sem linhas válidas', 'Não foi possível interpretar a grade desta planilha.');
-      return;
-    }
-
-    const sectorByNormalizedName = new Map(
-      sectors.map((s) => [normalizeString(s.name), s]),
-    );
-
-    const parsed: ImportedShiftRow[] = [];
-    const errors: string[] = [];
-
-    let sectorNotFoundCount = 0;
-
-    rows.forEach((row, index) => {
-      const line = firstDataLine + index;
-
-      const isEmptyRow = Object.values(row).every((value) => String(value ?? '').trim() === '');
-      if (isEmptyRow) return;
-
-      const rawHospital = readFieldByAliases(row, ['hospital', 'hospital_nome']);
-      const rawUnit = readFieldByAliases(row, ['unidade', 'setor_unidade']);
-      const rawSector =
-        readFieldByAliases(row, sectorAliases) ??
-        rawUnit ??
-        rawHospital;
-      const rawDate = readFieldByAliases(row, dateAliases);
-      const rawStart = readFieldByAliases(row, startAliases);
-      const rawEnd = readFieldByAliases(row, endAliases);
-      const rawLocation = readFieldByAliases(row, ['local', 'location', 'sala']);
-      const rawBase = readFieldByAliases(row, ['valor', 'valor_base', 'base_value', 'valorbase']);
-      const rawNotes = readFieldByAliases(row, ['obs', 'observacao', 'observação', 'notes']);
-      const rawTitle = readFieldByAliases(row, ['titulo', 'título', 'title']);
-      const rawAssignees = readFieldByAliases(row, assigneeAliases);
-
-      const sectorName = String(rawSector ?? '').trim();
-      const sector = sectorByNormalizedName.get(normalizeString(sectorName));
-      if (!sector) {
-        sectorNotFoundCount += 1;
-        errors.push(`Linha ${line}: setor não encontrado (${sectorName || 'vazio'}).`);
-        return;
-      }
-
-      const shiftDate = parseImportDate(rawDate);
-      if (!shiftDate) {
-        errors.push(`Linha ${line}: data inválida (${String(rawDate ?? '').trim() || 'vazia'}).`);
-        return;
-      }
-
-      const startTime = parseImportTime(rawStart);
-      const endTime = parseImportTime(rawEnd);
-      if (!startTime || !endTime) {
-        errors.push(`Linha ${line}: horário inválido (início/fim).`);
-        return;
-      }
-
-      const hospital = String(rawHospital ?? '').trim() || String(rawUnit ?? '').trim() || sector.name;
-      const location = String(rawLocation ?? '').trim() || null;
-      const baseValue = parseMoneyNullable(rawBase);
-      const notes = String(rawNotes ?? '').trim() || null;
-      const title = String(rawTitle ?? '').trim() || generateShiftTitle(startTime, endTime);
-      const assigneeNames = String(rawAssignees ?? '')
-        .split(/\n|;|,|\||\/|&/g)
-        .map((part) => part.trim())
-        .filter(Boolean);
-
-      parsed.push({
-        sector_id: sector.id,
-        sector_name: sector.name,
-        shift_date: shiftDate,
-        start_time: startTime,
-        end_time: endTime,
-        hospital,
-        location,
-        base_value: baseValue,
-        notes,
-        title,
-        assignee_names: assigneeNames.length > 0 ? assigneeNames : undefined,
-      });
-    });
-
-    const fallback = parseEscalasGridLayout(rawMatrix);
-    const shouldPreferFallback =
-      fallback.parsed.length > 0 &&
-      (
-        parsed.length === 0 ||
-        fallback.parsed.length > parsed.length ||
-        sectorNotFoundCount >= Math.max(6, parsed.length)
-      );
-
-    if (shouldPreferFallback) {
-      setImportPreviewRows(fallback.parsed);
-      setImportErrors([
-        ...fallback.errors,
-        'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
-      ]);
+      setImportPreviewRows(parsed);
+      setImportErrors(errors);
       setImportFileName(file.name);
-      notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
-      return;
+
+      if (!parsed.length) {
+        notifyWarning('Importação sem linhas válidas', 'Revise o arquivo e tente novamente.');
+        return;
+      }
+
+      notifyInfo('Arquivo carregado', `${parsed.length} linha(s) pronta(s) para importar.`);
+    } catch (error) {
+      setImportPreviewRows([]);
+      setImportErrors(['Não foi possível interpretar o arquivo selecionado.']);
+      notifyError('importar escala', error, 'Falha ao ler o arquivo de importação.');
     }
-
-    setImportPreviewRows(parsed);
-    setImportErrors(errors);
-    setImportFileName(file.name);
-
-    if (!parsed.length) {
-      notifyWarning('Importação sem linhas válidas', 'Revise o arquivo e tente novamente.');
-      return;
-    }
-
-    notifyInfo('Arquivo carregado', `${parsed.length} linha(s) pronta(s) para importar.`);
   }
 
   async function confirmImportSchedule() {
@@ -1497,6 +1518,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           sectorName: row.sector_name,
           hospital: row.hospital,
         });
+
+        if (!row.sector_id || !row.shift_date || !row.start_time || !row.end_time) {
+          importErrorCount++;
+          if (importIssues.length < 3) {
+            importIssues.push(`${shiftContext}: linha inválida ou incompleta no arquivo importado.`);
+          }
+          continue;
+        }
 
         let shiftId: string;
         try {
