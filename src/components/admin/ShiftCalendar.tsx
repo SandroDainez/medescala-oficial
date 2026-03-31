@@ -965,6 +965,14 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .trim();
   }
 
+  function tokenizeImportedPersonName(value: unknown): string[] {
+    return normalizeImportedPersonName(value)
+      .split(/\s+/)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 3)
+      .filter((token) => !['dos', 'das', 'des', 'da', 'de', 'do', 'e'].includes(token));
+  }
+
   function resolveImportedMember(name: string): Member | null {
     const target = normalizeImportedPersonName(name);
     if (!target) return null;
@@ -978,7 +986,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     if (target.length < 6) return null;
 
-    return (
+    const containsMatch =
       members.find((member) => {
         const full = normalizeImportedPersonName(member.profile?.full_name ?? '');
         const short = normalizeImportedPersonName(member.profile?.name ?? '');
@@ -986,8 +994,52 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           (full && (full.includes(target) || target.includes(full))) ||
           (short && (short.includes(target) || target.includes(short)))
         );
-      }) || null
-    );
+      }) || null;
+    if (containsMatch) return containsMatch;
+
+    const targetTokens = tokenizeImportedPersonName(target);
+    if (targetTokens.length < 2) return null;
+
+    let bestMember: Member | null = null;
+    let bestScore = 0;
+    let secondBestScore = 0;
+
+    for (const member of members) {
+      const variants = [
+        member.profile?.full_name ?? '',
+        member.profile?.name ?? '',
+      ];
+
+      let memberBestScore = 0;
+      for (const variant of variants) {
+        const variantTokens = tokenizeImportedPersonName(variant);
+        if (variantTokens.length < 2) continue;
+
+        const variantTokenSet = new Set(variantTokens);
+        const overlap = targetTokens.filter((token) => variantTokenSet.has(token));
+        if (overlap.length === 0) continue;
+
+        let score = overlap.length * 10;
+        if (variantTokens[0] === targetTokens[0]) score += 6;
+        if (variantTokens[variantTokens.length - 1] === targetTokens[targetTokens.length - 1]) score += 8;
+        if (overlap.length === Math.min(targetTokens.length, variantTokens.length)) score += 6;
+        memberBestScore = Math.max(memberBestScore, score);
+      }
+
+      if (memberBestScore > bestScore) {
+        secondBestScore = bestScore;
+        bestScore = memberBestScore;
+        bestMember = member;
+      } else if (memberBestScore > secondBestScore) {
+        secondBestScore = memberBestScore;
+      }
+    }
+
+    if (bestMember && bestScore >= 24 && bestScore >= secondBestScore + 4) {
+      return bestMember;
+    }
+
+    return null;
   }
 
   function normalizeHeader(value: unknown): string {
@@ -1639,7 +1691,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return { slotKey, slots };
       }
 
-      async function resolveShiftSlot(row: ImportedShiftRow, userId: string | null) {
+      async function resolveShiftSlot(
+        row: ImportedShiftRow,
+        userId: string | null,
+        options?: { forceCreate?: boolean },
+      ) {
         const { slotKey, slots } = await loadShiftSlots(row);
 
         if (userId) {
@@ -1649,9 +1705,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           }
         }
 
-        const vacantSlot = slots.find((slot) => slot.activeUserIds.size === 0);
-        if (vacantSlot) {
-          return { slot: vacantSlot, created: false, alreadyAssigned: false };
+        if (!options?.forceCreate) {
+          const vacantSlot = slots.find((slot) => slot.activeUserIds.size === 0);
+          if (vacantSlot) {
+            return { slot: vacantSlot, created: false, alreadyAssigned: false };
+          }
         }
 
         const newShiftId = await insertAdminShiftAndGetId({
@@ -1707,7 +1765,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         let selectedSlot: { id: string; activeUserIds: Set<string> };
         let alreadyAssigned = false;
         try {
-          const resolved = await resolveShiftSlot(row, targetUserId);
+          const resolved = await resolveShiftSlot(row, targetUserId, {
+            forceCreate: Boolean(importedName && !targetUserId),
+          });
           selectedSlot = resolved.slot;
           alreadyAssigned = resolved.alreadyAssigned;
           if (resolved.created) {
