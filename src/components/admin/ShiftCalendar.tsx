@@ -1061,7 +1061,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
   }
 
-  function parseEscalasGridLayout(rawMatrix: Array<Array<string | number | Date>>): {
+  function parseEscalasGridLayout(
+    rawMatrix: Array<Array<string | number | Date>>,
+    contextHints: string[] = [],
+  ): {
     parsed: ImportedShiftRow[];
     errors: string[];
   } {
@@ -1073,24 +1076,77 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const sectorByNormalizedName = new Map(
       sectors.map((s) => [normalizeString(s.name), s]),
     );
+    const buildSectorCandidates = (value: unknown): string[] => {
+      const text = String(value ?? '').trim();
+      if (!text) return [];
+
+      const cleaned = text
+        .replace(/^local\s*:\s*/i, '')
+        .replace(/^setor\s*:\s*/i, '')
+        .replace(/^unidade\s*:\s*/i, '')
+        .trim();
+
+      const normalized = normalizeString(cleaned);
+      const stripped = normalized
+        .replace(/\bhospital\b/g, ' ')
+        .replace(/\bterreo\b/g, ' ')
+        .replace(/\btérreo\b/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      return Array.from(new Set([normalized, stripped].filter(Boolean)));
+    };
+
+    const scoreSectorMatch = (sector: Sector, candidate: string): number => {
+      const sectorNorm = normalizeString(sector.name);
+      if (!candidate || !sectorNorm) return 0;
+      if (sectorNorm === candidate) return 100;
+      if (sectorNorm.includes(candidate) || candidate.includes(sectorNorm)) return 80;
+
+      const sectorTokens = new Set(sectorNorm.split(/\s+/).filter((token) => token.length >= 3));
+      const candidateTokens = new Set(candidate.split(/\s+/).filter((token) => token.length >= 3));
+      let overlap = 0;
+      for (const token of candidateTokens) {
+        if (sectorTokens.has(token)) overlap++;
+      }
+      if (overlap === 0) return 0;
+      return overlap * 10 + Math.min(candidateTokens.size, sectorTokens.size);
+    };
+
+    const resolveSectorFromCell = (value: unknown): Sector | null => {
+      const candidates = buildSectorCandidates(value);
+      if (candidates.length === 0) return null;
+
+      for (const candidate of candidates) {
+        const exact = sectorByNormalizedName.get(candidate);
+        if (exact) return exact;
+      }
+
+      let bestMatch: Sector | null = null;
+      let bestScore = 0;
+      for (const sector of sectors) {
+        for (const candidate of candidates) {
+          const score = scoreSectorMatch(sector, candidate);
+          if (score > bestScore) {
+            bestScore = score;
+            bestMatch = sector;
+          }
+        }
+      }
+
+      return bestMatch && bestScore >= 20 ? bestMatch : null;
+    };
+
+    const hintedSector =
+      contextHints
+        .map((hint) => resolveSectorFromCell(hint))
+        .find((sector): sector is Sector => Boolean(sector)) || null;
+
     const defaultSector =
+      hintedSector ||
       (filterSector && filterSector !== 'all'
         ? sectors.find((s) => s.id === filterSector)
         : null) || sectors[0] || null;
-
-    const resolveSectorFromCell = (value: unknown): Sector | null => {
-      const text = String(value ?? '').trim();
-      if (!text) return null;
-      const norm = normalizeString(text);
-      const exact = sectorByNormalizedName.get(norm);
-      if (exact) return exact;
-
-      for (const sector of sectors) {
-        const sNorm = normalizeString(sector.name);
-        if (norm.includes(sNorm) || sNorm.includes(norm)) return sector;
-      }
-      return null;
-    };
 
     const findNearestSector = (rowIndex: number): Sector | null => {
       for (let r = rowIndex; r >= Math.max(0, rowIndex - 14); r--) {
@@ -1364,7 +1420,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         lookaheadText.includes('profissional de plant');
 
       if (looksLikeEscalasGrid) {
-        const fallback = parseEscalasGridLayout(rawMatrix);
+        const fallback = parseEscalasGridLayout(rawMatrix, [firstSheetName, file.name]);
         setImportFileName(file.name);
 
         if (fallback.parsed.length > 0) {
@@ -1461,7 +1517,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         });
       });
 
-      const fallback = parseEscalasGridLayout(rawMatrix);
+      const fallback = parseEscalasGridLayout(rawMatrix, [firstSheetName, file.name]);
       const shouldPreferFallback =
         fallback.parsed.length > 0 &&
         (
