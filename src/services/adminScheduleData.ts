@@ -157,10 +157,18 @@ export async function fetchAdminScheduleData({
       .eq('tenant_id', tenantId),
   ]);
 
-  if (shiftsRes.error) throw shiftsRes.error;
-  if (membersRes.error) throw membersRes.error;
-  if (sectorsRes.error) throw sectorsRes.error;
-  if (sectorMembershipsRes.error) throw sectorMembershipsRes.error;
+  if (shiftsRes.error) {
+    console.error('[adminScheduleData] shifts fetch failed', shiftsRes.error);
+  }
+  if (membersRes.error) {
+    console.error('[adminScheduleData] memberships fetch failed', membersRes.error);
+  }
+  if (sectorsRes.error) {
+    console.error('[adminScheduleData] sectors fetch failed', sectorsRes.error);
+  }
+  if (sectorMembershipsRes.error) {
+    console.error('[adminScheduleData] sector_memberships fetch failed', sectorMembershipsRes.error);
+  }
 
   const sectors = (sectorsRes.data ?? []) as ScheduleSector[];
   const sectorMemberships = (sectorMembershipsRes.data ?? []) as ScheduleSectorMembership[];
@@ -194,7 +202,9 @@ export async function fetchAdminScheduleData({
     .eq('month', currentMonth)
     .eq('year', currentYear);
 
-  if (userValuesError) throw userValuesError;
+  if (userValuesError) {
+    console.error('[adminScheduleData] user_sector_values fetch failed', userValuesError);
+  }
 
   const userSectorValues = new Map<string, { day_value: number | null; night_value: number | null }>();
   (userValuesData ?? []).forEach((value: any) => {
@@ -258,21 +268,23 @@ export async function fetchAdminScheduleData({
       .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
       .in('shift_id', shifts.map((shift) => shift.id));
 
-    if (directAssignmentsError) throw directAssignmentsError;
-
-    assignments = ((directAssignments ?? []) as any[])
-      .filter((row) => allowedUserIds.has(row.user_id))
-      .map((row) => ({
-        id: row.id,
-        shift_id: row.shift_id,
-        user_id: row.user_id,
-        assigned_value: row.assigned_value,
-        status: row.status,
-        profile: {
-          name: row.profile?.name ?? null,
-          full_name: row.profile?.full_name ?? null,
-        },
-      })) as ScheduleAssignment[];
+    if (directAssignmentsError) {
+      console.error('[adminScheduleData] shift_assignments fallback fetch failed', directAssignmentsError);
+    } else {
+      assignments = ((directAssignments ?? []) as any[])
+        .filter((row) => allowedUserIds.has(row.user_id))
+        .map((row) => ({
+          id: row.id,
+          shift_id: row.shift_id,
+          user_id: row.user_id,
+          assigned_value: row.assigned_value,
+          status: row.status,
+          profile: {
+            name: row.profile?.name ?? null,
+            full_name: row.profile?.full_name ?? null,
+          },
+        })) as ScheduleAssignment[];
+    }
   }
 
   const offers = ((offersRes.data ?? []) as any[]).map((row) => {
