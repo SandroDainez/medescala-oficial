@@ -12,6 +12,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
+import { ADMIN_SECTORS_UPDATED_EVENT } from '@/lib/sectorEvents';
 import { buildBulkEditAddedMovement, buildBulkEditRemovedMovement, buildBulkEditShiftPayload, buildBulkEditStatusNotes, buildBulkShiftUpdatePayload, collectBulkApplyTargetShifts, createBulkEditDrafts, findInvalidBulkAssigneeShift, getBulkApplyEffectiveTimes, getBulkEditAssignmentMode, hasBulkApplyChanges, normalizeBulkEditAssignmentChoice } from '@/lib/adminBulkEdit';
 import { ChevronLeft, ChevronRight, Plus, UserPlus, Trash2, Edit, Users, Clock, MapPin, Calendar, LayoutGrid, Moon, Sun, Printer, Repeat, Check, X, AlertTriangle, Copy, History, FileText, RefreshCw, ArrowRightLeft, Download, Upload, DollarSign, UserCog } from 'lucide-react';
 import ScheduleMovements from './ScheduleMovements';
@@ -640,6 +641,18 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       fetchData();
     }
   }, [currentTenantId, user?.id, currentDate, viewMode, fetchData]);
+
+  useEffect(() => {
+    function handleSectorsUpdated() {
+      if (!currentTenantId || !user?.id) return;
+      void fetchData();
+    }
+
+    window.addEventListener(ADMIN_SECTORS_UPDATED_EVENT, handleSectorsUpdated);
+    return () => {
+      window.removeEventListener(ADMIN_SECTORS_UPDATED_EVENT, handleSectorsUpdated);
+    };
+  }, [currentTenantId, user?.id, fetchData]);
 
   useEffect(() => {
     if (filterSector === 'all') return;

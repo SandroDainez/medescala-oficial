@@ -9,6 +9,7 @@ import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { ADMIN_SECTORS_UPDATED_EVENT } from '@/lib/sectorEvents';
 import { importWithChunkRecovery } from '@/lib/chunkRecovery';
 import {
   LayoutDashboard, 
@@ -136,6 +137,17 @@ export function AdminLayout() {
       fetchSectors();
     }
   }, [currentTenantId, fetchSectors]);
+
+  useEffect(() => {
+    function handleSectorsUpdated() {
+      void fetchSectors();
+    }
+
+    window.addEventListener(ADMIN_SECTORS_UPDATED_EVENT, handleSectorsUpdated);
+    return () => {
+      window.removeEventListener(ADMIN_SECTORS_UPDATED_EVENT, handleSectorsUpdated);
+    };
+  }, [fetchSectors]);
 
   useEffect(() => {
     setMobileMenuOpen(false);

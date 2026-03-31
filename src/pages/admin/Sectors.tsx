@@ -14,6 +14,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { adminFeedback } from '@/lib/adminFeedback';
+import { emitAdminSectorsUpdated } from '@/lib/sectorEvents';
 import { Plus, Pencil, Trash2, Users, Building2, Calendar, RefreshCw, MapPin, Clock, LocateFixed, ExternalLink } from 'lucide-react';
 
 interface Sector {
@@ -222,6 +223,7 @@ export default function AdminSectors() {
         notifyError('atualizar setor', error, 'Não foi possível atualizar o setor.');
       } else {
         notifySuccess('Atualização de setor');
+        emitAdminSectorsUpdated();
         fetchData();
         closeDialog();
       }
@@ -238,6 +240,7 @@ export default function AdminSectors() {
         }
       } else {
         notifySuccess('Cadastro de setor');
+        emitAdminSectorsUpdated();
         fetchData();
         closeDialog();
       }
@@ -252,6 +255,7 @@ export default function AdminSectors() {
       notifyError('excluir setor', error, 'Não foi possível excluir o setor.');
     } else {
       notifySuccess('Exclusão de setor');
+      emitAdminSectorsUpdated();
       fetchData();
     }
   }
@@ -266,6 +270,7 @@ export default function AdminSectors() {
       notifyError('atualizar status do setor', error, 'Não foi possível atualizar o status do setor.');
     } else {
       notifySuccess(sector.active ? 'Setor desativado' : 'Setor ativado');
+      emitAdminSectorsUpdated();
       fetchData();
     }
   }
@@ -421,6 +426,7 @@ export default function AdminSectors() {
     }
 
     notifySuccess('Configurações de check-in');
+    emitAdminSectorsUpdated();
     fetchData();
     setCheckinDialogOpen(false);
   }
