@@ -1073,6 +1073,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     if (!rawMatrix.length) return { parsed, errors };
 
+    const selectedFilterSector =
+      filterSector && filterSector !== 'all'
+        ? sectors.find((sector) => sector.id === filterSector) || null
+        : null;
+
     const sectorByNormalizedName = new Map(
       sectors.map((s) => [normalizeString(s.name), s]),
     );
@@ -1143,10 +1148,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         .find((sector): sector is Sector => Boolean(sector)) || null;
 
     const defaultSector =
+      selectedFilterSector ||
       hintedSector ||
-      (filterSector && filterSector !== 'all'
-        ? sectors.find((s) => s.id === filterSector)
-        : null) || sectors[0] || null;
+      sectors[0] || null;
 
     const findNearestSector = (rowIndex: number): Sector | null => {
       for (let r = rowIndex; r >= Math.max(0, rowIndex - 14); r--) {
@@ -1210,7 +1214,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         if (periodStart && date < periodStart) continue;
         if (periodEnd && date > periodEnd) continue;
 
-        const sector = findNearestSector(r) || defaultSector;
+        const sector = selectedFilterSector || findNearestSector(r) || defaultSector;
         if (!sector) {
           errors.push(`Linha ${r + 1}: não foi possível identificar o setor para ${cellText}.`);
           continue;
