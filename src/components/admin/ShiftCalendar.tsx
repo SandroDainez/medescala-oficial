@@ -23,7 +23,7 @@ import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteA
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
-import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftsInRange, findAdminShiftIdByNaturalKey, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
+import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftIdsByNaturalKey, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths, isToday, parseISO, startOfWeek, endOfWeek, addWeeks, subWeeks, getDate, getDaysInMonth, setDate, addDays, differenceInCalendarDays } from 'date-fns';
@@ -1569,41 +1569,112 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const unmatchedNames = new Set<string>();
       const importIssues: string[] = [];
       const zeroValueAssignments: string[] = [];
-      const groupedRows = new Map<string, ImportedShiftRow>();
+      const activeAssignmentStatuses = new Set(['assigned', 'confirmed', 'completed']);
+      const expandedRows = importPreviewRows.flatMap((row) => {
+        const uniqueNames = Array.from(new Set((row.assignee_names ?? []).map((name) => name.trim()).filter(Boolean)));
+        if (uniqueNames.length <= 1) {
+          return [
+            {
+              ...row,
+              assignee_names: uniqueNames.length === 1 ? [uniqueNames[0]] : undefined,
+            },
+          ];
+        }
 
-      for (const row of importPreviewRows) {
-        const key = [
+        return uniqueNames.map((name) => ({
+          ...row,
+          assignee_names: [name],
+        }));
+      });
+
+      type ImportShiftSlot = {
+        id: string;
+        activeUserIds: Set<string>;
+      };
+
+      const shiftSlotCache = new Map<string, ImportShiftSlot[]>();
+
+      async function loadShiftSlots(row: ImportedShiftRow) {
+        const slotKey = [
           row.sector_id,
           row.shift_date,
           row.start_time,
           row.end_time,
           row.hospital,
-          row.location ?? '',
-          row.title,
         ].join('|');
 
-        const existing = groupedRows.get(key);
-        if (existing) {
-          const mergedNames = Array.from(
-            new Set([...(existing.assignee_names ?? []), ...(row.assignee_names ?? [])].map((name) => name.trim()).filter(Boolean)),
-          );
-          existing.assignee_names = mergedNames.length > 0 ? mergedNames : undefined;
-          if (existing.base_value === null && row.base_value !== null) {
-            existing.base_value = row.base_value;
-          }
-          if (!existing.notes && row.notes) {
-            existing.notes = row.notes;
-          }
-          continue;
+        const cached = shiftSlotCache.get(slotKey);
+        if (cached) {
+          return { slotKey, slots: cached };
         }
 
-        groupedRows.set(key, {
-          ...row,
-          assignee_names: row.assignee_names ? Array.from(new Set(row.assignee_names.map((name) => name.trim()).filter(Boolean))) : undefined,
+        const shiftIds = await fetchAdminShiftIdsByNaturalKey({
+          tenantId: currentTenantId,
+          shiftDate: row.shift_date,
+          startTime: row.start_time,
+          endTime: row.end_time,
+          hospital: row.hospital,
+          sectorId: row.sector_id,
         });
+
+        const assignments = shiftIds.length > 0
+          ? await fetchAdminAssignmentsByShiftIds(shiftIds)
+          : [];
+
+        const activeUserIdsByShift = new Map<string, Set<string>>();
+        for (const assignment of assignments as Array<{ shift_id: string; user_id: string; status: string }>) {
+          if (!activeAssignmentStatuses.has(assignment.status)) continue;
+          if (!activeUserIdsByShift.has(assignment.shift_id)) {
+            activeUserIdsByShift.set(assignment.shift_id, new Set<string>());
+          }
+          activeUserIdsByShift.get(assignment.shift_id)!.add(assignment.user_id);
+        }
+
+        const slots = shiftIds.map((id) => ({
+          id,
+          activeUserIds: activeUserIdsByShift.get(id) ?? new Set<string>(),
+        }));
+
+        shiftSlotCache.set(slotKey, slots);
+        return { slotKey, slots };
       }
 
-      for (const row of groupedRows.values()) {
+      async function resolveShiftSlot(row: ImportedShiftRow, userId: string | null) {
+        const { slotKey, slots } = await loadShiftSlots(row);
+
+        if (userId) {
+          const existingForUser = slots.find((slot) => slot.activeUserIds.has(userId));
+          if (existingForUser) {
+            return { slot: existingForUser, created: false, alreadyAssigned: true };
+          }
+        }
+
+        const vacantSlot = slots.find((slot) => slot.activeUserIds.size === 0);
+        if (vacantSlot) {
+          return { slot: vacantSlot, created: false, alreadyAssigned: false };
+        }
+
+        const newShiftId = await insertAdminShiftAndGetId({
+          tenant_id: currentTenantId,
+          title: row.title,
+          hospital: row.hospital,
+          location: row.location,
+          shift_date: row.shift_date,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          base_value: row.base_value,
+          notes: row.notes,
+          sector_id: row.sector_id,
+          updated_by: user?.id,
+        });
+
+        const newSlot = { id: newShiftId, activeUserIds: new Set<string>() };
+        slots.push(newSlot);
+        shiftSlotCache.set(slotKey, slots);
+        return { slot: newSlot, created: true, alreadyAssigned: false };
+      }
+
+      for (const row of expandedRows) {
         const shiftContext = buildShiftContextLabel({
           shiftDate: row.shift_date,
           startTime: row.start_time,
@@ -1620,32 +1691,28 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           continue;
         }
 
-        let shiftId: string;
-        try {
-          const existingShiftId = await findAdminShiftIdByNaturalKey({
-            tenantId: currentTenantId,
-            shiftDate: row.shift_date,
-            startTime: row.start_time,
-            endTime: row.end_time,
-            hospital: row.hospital,
-            sectorId: row.sector_id,
-          });
+        const importedName = row.assignee_names?.[0]?.trim() || null;
+        let targetUserId: string | null = null;
+        if (importedName) {
+          const member = resolveImportedMember(importedName);
+          if (!member?.user_id) {
+            unmatchedNames.add(importedName);
+          } else if (!isUserAllowedInSector(member.user_id, row.sector_id || null)) {
+            unmatchedNames.add(`${importedName} (fora do setor)`);
+          } else {
+            targetUserId = member.user_id;
+          }
+        }
 
-          shiftId =
-            existingShiftId ??
-            (await insertAdminShiftAndGetId({
-              tenant_id: currentTenantId,
-              title: row.title,
-              hospital: row.hospital,
-              location: row.location,
-              shift_date: row.shift_date,
-              start_time: row.start_time,
-              end_time: row.end_time,
-              base_value: row.base_value,
-              notes: row.notes,
-              sector_id: row.sector_id,
-              updated_by: user?.id,
-            }));
+        let selectedSlot: { id: string; activeUserIds: Set<string> };
+        let alreadyAssigned = false;
+        try {
+          const resolved = await resolveShiftSlot(row, targetUserId);
+          selectedSlot = resolved.slot;
+          alreadyAssigned = resolved.alreadyAssigned;
+          if (resolved.created) {
+            createdCount += 1;
+          }
         } catch (error) {
           importErrorCount++;
           if (importIssues.length < 3) {
@@ -1653,50 +1720,44 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           }
           continue;
         }
-        createdCount += 1;
+        if (!targetUserId) {
+          continue;
+        }
 
-        const names = (row.assignee_names || []).map((n) => n.trim()).filter(Boolean);
-        for (const importedName of names) {
-          const member = resolveImportedMember(importedName);
-          if (!member?.user_id) {
-            unmatchedNames.add(importedName);
-            continue;
-          }
+        if (alreadyAssigned) {
+          assignedCount += 1;
+          continue;
+        }
 
-          if (!isUserAllowedInSector(member.user_id, row.sector_id || null)) {
-            unmatchedNames.add(`${importedName} (fora do setor)`);
-            continue;
-          }
+        const assignedValue = resolveValue({
+          raw: row.base_value ?? '',
+          sector_id: row.sector_id || null,
+          start_time: row.start_time,
+          end_time: row.end_time,
+          user_id: targetUserId,
+          useSectorDefault: true,
+          applyProRata: true,
+        });
+        const assignmentValueToPersist = assignedValue ?? 0;
 
-          const assignedValue = resolveValue({
-            raw: row.base_value ?? '',
-            sector_id: row.sector_id || null,
-            start_time: row.start_time,
-            end_time: row.end_time,
-            user_id: member.user_id,
-            useSectorDefault: true,
-            applyProRata: true,
+        if (assignedValue === null && zeroValueAssignments.length < 8) {
+          zeroValueAssignments.push(`${importedName ?? 'Plantonista'} em ${shiftContext}`);
+        }
+
+        try {
+          await createAssignmentWithZeroFallback({
+            shiftId: selectedSlot.id,
+            userId: targetUserId,
+            assignedValue: assignmentValueToPersist,
           });
-          const assignmentValueToPersist = assignedValue ?? 0;
-
-          if (assignedValue === null && zeroValueAssignments.length < 8) {
-            zeroValueAssignments.push(`${importedName} em ${shiftContext}`);
+          selectedSlot.activeUserIds.add(targetUserId);
+          assignedCount += 1;
+        } catch (error) {
+          importErrorCount++;
+          if (importIssues.length < 3) {
+            importIssues.push(`${shiftContext} / ${importedName ?? 'plantonista'}: ${formatSupabaseError(error)}`);
           }
-
-          try {
-            await createAssignmentWithZeroFallback({
-              shiftId,
-              userId: member.user_id,
-              assignedValue: assignmentValueToPersist,
-            });
-            assignedCount += 1;
-          } catch (error) {
-            importErrorCount++;
-            if (importIssues.length < 3) {
-              importIssues.push(`${shiftContext} / ${importedName}: ${formatSupabaseError(error)}`);
-            }
-            unmatchedNames.add(`${importedName} (erro de vínculo)`);
-          }
+          unmatchedNames.add(`${importedName ?? 'plantonista'} (erro de vínculo)`);
         }
       }
 
