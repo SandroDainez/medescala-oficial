@@ -97,7 +97,7 @@ interface Member {
   user_id: string;
   role: 'admin' | 'user';
   active: boolean;
-  profile: { name: string | null; full_name?: string | null } | null;
+  profile: { name: string | null; full_name?: string | null; profile_type?: string | null } | null;
 }
 
 interface SectorMembership {
@@ -234,7 +234,7 @@ export default function AdminDashboard() {
           .eq('active', true),
         supabase
           .from('memberships')
-          .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, full_name)')
+          .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
           .eq('tenant_id', currentTenantId),
         supabase
           .from('sector_memberships')
