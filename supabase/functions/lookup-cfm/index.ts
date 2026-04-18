@@ -795,7 +795,7 @@ Deno.serve(async (req) => {
           manualLookupRequired: true,
           manualLookupUrl: buildManualLookupUrl(crm, uf),
           error: "O portal do CFM passou a exigir validação por captcha na consulta automática.",
-        }, 502);
+        });
       }
     }
 

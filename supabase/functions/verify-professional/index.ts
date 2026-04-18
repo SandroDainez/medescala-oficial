@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
         manualLookupRequired: Boolean(lookupData?.manualLookupRequired),
         manualLookupUrl: typeof lookupData?.manualLookupUrl === "string" ? lookupData.manualLookupUrl : null,
         error: typeof lookupData?.error === "string" ? lookupData.error : "Falha ao consultar o CFM",
-      }, 502);
+      });
     }
 
     const found = Boolean(lookupData?.found);
