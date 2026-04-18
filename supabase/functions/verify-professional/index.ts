@@ -187,6 +187,16 @@ Deno.serve(async (req) => {
     }
 
     const lookupData = await lookupResponse.json();
+    if (lookupData?.ok === false) {
+      return json({
+        ok: false,
+        found: false,
+        verificationStatus: "pending_manual",
+        sourceUsed: typeof lookupData?.sourceUsed === "string" ? lookupData.sourceUsed : "lookup-cfm",
+        error: typeof lookupData?.error === "string" ? lookupData.error : "Falha ao consultar o CFM",
+      }, 502);
+    }
+
     const found = Boolean(lookupData?.found);
     const regular = typeof lookupData?.regular === "boolean" ? lookupData.regular : undefined;
     const doctorRaw = (lookupData?.doctor ?? {}) as Record<string, unknown>;

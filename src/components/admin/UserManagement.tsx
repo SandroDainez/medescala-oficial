@@ -1065,6 +1065,11 @@ export default function UserManagement() {
       return;
     }
 
+    if (!uf) {
+      notifyWarning("UF obrigatória", "Selecione a UF do CRM antes de consultar no CFM.");
+      return;
+    }
+
     if (mode === "edit") setEditCfmLoading(true);
     if (mode === "create") setCreateCfmLoading(true);
 

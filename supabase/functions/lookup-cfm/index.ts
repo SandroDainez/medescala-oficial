@@ -16,7 +16,7 @@ function json(data: unknown, status = 200) {
 
 function normalizeCrm(value: unknown): string {
   if (typeof value !== "string") return "";
-  return value.replace(/\D/g, "").slice(0, 7);
+  return value.replace(/\D/g, "").slice(0, 8);
 }
 
 function normalizeUf(value: unknown): string {
@@ -723,7 +723,7 @@ Deno.serve(async (req) => {
     const debug = Boolean(body.debug);
 
     if (!crm) {
-      return json({ error: "CRM inválido" }, 400);
+      return json({ ok: false, found: false, error: "CRM inválido" }, 400);
     }
 
     const payload = [{
@@ -760,7 +760,7 @@ Deno.serve(async (req) => {
         ok: false,
         found: false,
         error: `CFM indisponível no momento (${cfmResponse.status})`,
-      });
+      }, 502);
     }
 
     const rawBody = await cfmResponse.text();
@@ -772,7 +772,7 @@ Deno.serve(async (req) => {
         ok: false,
         found: false,
         error: "Resposta inválida do CFM no momento.",
-      });
+      }, 502);
     }
 
     const rows = Array.isArray(result.dados) ? result.dados : [];
