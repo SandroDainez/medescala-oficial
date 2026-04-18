@@ -1079,14 +1079,28 @@ export default function UserManagement() {
     let data: any = null;
     let error: any = null;
     try {
-      const response = await supabase.functions.invoke("verify-professional", {
-        body: {
-          crm,
-          uf,
-          tenantId: currentTenantId ?? null,
-          userId: mode === "edit" ? editingUser?.user_id ?? null : null,
-        },
-      });
+      const response = uf === "SP"
+        ? await fetch("/api/lookup-cremesp", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ crm, uf }),
+          }).then(async (res) => {
+            const payload = await res.json().catch(() => null);
+            return {
+              data: payload,
+              error: res.ok ? null : new Error(payload?.error || `HTTP ${res.status}`),
+            };
+          })
+        : await supabase.functions.invoke("verify-professional", {
+            body: {
+              crm,
+              uf,
+              tenantId: currentTenantId ?? null,
+              userId: mode === "edit" ? editingUser?.user_id ?? null : null,
+            },
+          });
       data = response.data;
       error = response.error;
     } catch (invokeError) {
