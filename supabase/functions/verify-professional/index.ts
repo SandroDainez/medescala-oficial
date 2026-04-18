@@ -193,6 +193,8 @@ Deno.serve(async (req) => {
         found: false,
         verificationStatus: "pending_manual",
         sourceUsed: typeof lookupData?.sourceUsed === "string" ? lookupData.sourceUsed : "lookup-cfm",
+        manualLookupRequired: Boolean(lookupData?.manualLookupRequired),
+        manualLookupUrl: typeof lookupData?.manualLookupUrl === "string" ? lookupData.manualLookupUrl : null,
         error: typeof lookupData?.error === "string" ? lookupData.error : "Falha ao consultar o CFM",
       }, 502);
     }

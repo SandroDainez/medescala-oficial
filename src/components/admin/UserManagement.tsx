@@ -118,6 +118,9 @@ type CfmLookupResult = {
   verificationStatus?: "verified" | "partial" | "pending_manual";
   sourceUsed?: string;
   consultedAt?: string;
+  message?: string;
+  manualLookupRequired?: boolean;
+  manualLookupUrl?: string;
   doctor?: {
     nome?: string | null;
     crm?: string | null;
@@ -1094,6 +1097,26 @@ export default function UserManagement() {
     }
 
     if (error || !data?.ok) {
+      const fallbackResult: CfmLookupResult | null =
+        data?.manualLookupRequired && typeof data?.manualLookupUrl === "string"
+          ? {
+              found: false,
+              verificationStatus: typeof data?.verificationStatus === "string" ? data.verificationStatus : undefined,
+              sourceUsed: typeof data?.sourceUsed === "string" ? data.sourceUsed : undefined,
+              consultedAt: typeof data?.consultedAt === "string" ? data.consultedAt : undefined,
+              message: typeof data?.error === "string" ? data.error : "Consulta automática indisponível no momento.",
+              manualLookupRequired: true,
+              manualLookupUrl: data.manualLookupUrl,
+            }
+          : null;
+
+      if (fallbackResult) {
+        if (mode === "edit") setEditCfmResult(fallbackResult);
+        if (mode === "create") setCreateCfmResult(fallbackResult);
+        notifyWarning("Consulta oficial necessária", "O portal do CFM exige captcha. Use o link oficial abaixo para concluir a consulta.");
+        return;
+      }
+
       notifyError("consultar CFM", data?.error || error, "Não foi possível validar o CRM agora.");
       return;
     }
@@ -1104,6 +1127,9 @@ export default function UserManagement() {
       verificationStatus: typeof data?.verificationStatus === "string" ? data.verificationStatus : undefined,
       sourceUsed: typeof data?.sourceUsed === "string" ? data.sourceUsed : undefined,
       consultedAt: typeof data?.consultedAt === "string" ? data.consultedAt : undefined,
+      message: typeof data?.error === "string" ? data.error : undefined,
+      manualLookupRequired: Boolean(data?.manualLookupRequired),
+      manualLookupUrl: typeof data?.manualLookupUrl === "string" ? data.manualLookupUrl : undefined,
       doctor: data?.doctor ?? undefined,
     } as CfmLookupResult;
 
@@ -2092,7 +2118,18 @@ export default function UserManagement() {
                           )}
                         </>
                       ) : (
-                        <p>Nenhum registro encontrado no CFM para este CRM.</p>
+                        <>
+                          <p>{editCfmResult.message ?? "Nenhum registro encontrado no CFM para este CRM."}</p>
+                          {editCfmResult.manualLookupRequired && editCfmResult.manualLookupUrl && (
+                            <div className="mt-2">
+                              <Button asChild type="button" size="sm" variant="outline" className="h-8">
+                                <a href={editCfmResult.manualLookupUrl} target="_blank" rel="noreferrer">
+                                  Abrir consulta oficial
+                                </a>
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -2712,7 +2749,18 @@ export default function UserManagement() {
                           )}
                         </>
                       ) : (
-                        <p>Nenhum registro encontrado no CFM para este CRM.</p>
+                        <>
+                          <p>{createCfmResult.message ?? "Nenhum registro encontrado no CFM para este CRM."}</p>
+                          {createCfmResult.manualLookupRequired && createCfmResult.manualLookupUrl && (
+                            <div className="mt-2">
+                              <Button asChild type="button" size="sm" variant="outline" className="h-8">
+                                <a href={createCfmResult.manualLookupUrl} target="_blank" rel="noreferrer">
+                                  Abrir consulta oficial
+                                </a>
+                              </Button>
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )}

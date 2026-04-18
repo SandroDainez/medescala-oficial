@@ -14,6 +14,14 @@ function json(data: unknown, status = 200) {
   });
 }
 
+function buildManualLookupUrl(crm: string, uf: string): string {
+  const params = new URLSearchParams();
+  if (crm) params.set("crm", crm);
+  if (uf) params.set("uf", uf);
+  const query = params.toString();
+  return `https://portal.cfm.org.br/busca-medicos/${query ? `?${query}` : ""}`;
+}
+
 function normalizeCrm(value: unknown): string {
   if (typeof value !== "string") return "";
   return value.replace(/\D/g, "").slice(0, 8);
@@ -765,14 +773,30 @@ Deno.serve(async (req) => {
 
     const rawBody = await cfmResponse.text();
     let result: CfmApiResult | null = null;
+    let parsedBody: unknown = null;
     try {
-      result = JSON.parse(rawBody) as CfmApiResult;
+      parsedBody = JSON.parse(rawBody);
+      result = parsedBody as CfmApiResult;
     } catch {
       return json({
         ok: false,
         found: false,
         error: "Resposta inválida do CFM no momento.",
       }, 502);
+    }
+
+    if (typeof parsedBody === "string") {
+      const normalized = parsedBody.trim().toLowerCase();
+      if (normalized === "invalidinput" || normalized === "expirou") {
+        return json({
+          ok: false,
+          found: false,
+          sourceUsed: "cfm-captcha-required",
+          manualLookupRequired: true,
+          manualLookupUrl: buildManualLookupUrl(crm, uf),
+          error: "O portal do CFM passou a exigir validação por captcha na consulta automática.",
+        }, 502);
+      }
     }
 
     const rows = Array.isArray(result.dados) ? result.dados : [];
