@@ -20,6 +20,44 @@ function addIssue(list, severity, code, message, context = {}) {
   list.push({ severity, code, message, context });
 }
 
+function safeJsonStringify(value) {
+  const seen = new WeakSet();
+  return JSON.stringify(
+    value,
+    (_key, currentValue) => {
+      if (typeof currentValue === 'object' && currentValue !== null) {
+        if (seen.has(currentValue)) return '[Circular]';
+        seen.add(currentValue);
+      }
+      return currentValue;
+    },
+    2
+  );
+}
+
+function formatAuditError(error) {
+  if (error instanceof Error) {
+    const formatted = {
+      name: error.name,
+      message: error.message,
+    };
+
+    if ('code' in error && error.code) formatted.code = error.code;
+    if ('details' in error && error.details) formatted.details = error.details;
+    if ('hint' in error && error.hint) formatted.hint = error.hint;
+    if ('context' in error && error.context) formatted.context = error.context;
+    if ('cause' in error && error.cause) formatted.cause = formatAuditError(error.cause);
+
+    return formatted;
+  }
+
+  if (typeof error === 'object' && error !== null) {
+    return JSON.parse(safeJsonStringify(error));
+  }
+
+  return { message: String(error) };
+}
+
 async function checkEndpoints(baseUrl, issues) {
   const paths = ['/', '/auth', '/admin', '/admin/financial', '/admin/sectors', '/user/shifts'];
   const checks = [];
@@ -60,7 +98,16 @@ async function fetchAll(supabase, table, columns, pageSize = 1000, filters = [])
     }
 
     const { data, error } = await q;
-    if (error) throw error;
+    if (error) {
+      const wrappedError = new Error(`Falha ao consultar ${table}`, { cause: error });
+      wrappedError.context = {
+        table,
+        columns,
+        range: { from, to: from + pageSize - 1 },
+        filters,
+      };
+      throw wrappedError;
+    }
     if (!data || data.length === 0) break;
     rows.push(...data);
     if (data.length < pageSize) break;
@@ -378,7 +425,7 @@ async function main() {
       Object.assign(metrics, dbMetrics);
     } catch (error) {
       addIssue(issues, 'critical', 'DATABASE_AUDIT_FAILED', 'Falha ao executar auditoria de banco', {
-        error: error instanceof Error ? error.message : String(error),
+        error: formatAuditError(error),
       });
     }
   }
