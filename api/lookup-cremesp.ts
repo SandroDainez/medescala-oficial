@@ -75,7 +75,7 @@ async function performLookup(crm: string): Promise<LookupResponse> {
     executablePath,
     headless: isLocalMac ? true : "shell",
     args: isLocalMac ? ["--no-sandbox"] : chromium.args,
-    defaultViewport: chromium.defaultViewport,
+    defaultViewport: null,
   });
 
   try {
