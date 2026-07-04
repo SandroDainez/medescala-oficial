@@ -47,6 +47,19 @@ export function isNightShift(startTime: string): boolean {
 }
 
 /**
+ * Determina se a data do plantão cai em fim de semana (sábado ou domingo).
+ * Espera data no formato 'YYYY-MM-DD'. Interpreta como data local para evitar
+ * deslocamento de fuso (não usa new Date('YYYY-MM-DD') que assume UTC).
+ */
+export function isWeekendDate(shiftDate: string | null | undefined): boolean {
+  if (!shiftDate) return false;
+  const [year, month, day] = shiftDate.split('-').map(Number);
+  if (!year || !month || !day) return false;
+  const weekday = new Date(year, month - 1, day).getDay(); // 0=domingo, 6=sábado
+  return weekday === 0 || weekday === 6;
+}
+
+/**
  * Tipo de fonte do valor
  */
 export type ValueSource = 

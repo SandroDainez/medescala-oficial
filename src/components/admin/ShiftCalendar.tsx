@@ -22,6 +22,7 @@ import { recordScheduleMovement } from '@/lib/scheduleMovements';
 import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteAllAdminConflictHistory, fetchAdminConflictHistory, resolveAdminProfileId } from '@/services/adminConflicts';
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
+import { isWeekendDate } from '@/lib/financial/valueCalculation';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
 import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftIdsByNaturalKey, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
@@ -37,6 +38,8 @@ interface Sector {
   active: boolean;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  default_weekend_day_value?: number | null;
+  default_weekend_night_value?: number | null;
 }
 
 interface Shift {
@@ -705,14 +708,25 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return startHour >= 19 || startHour < 7;
   }
 
-  // Get sector default value based on shift time
-  function getSectorDefaultValue(sectorId: string | null, startTime: string): number | null {
+  // Get sector default value based on shift time and date.
+  // Fim de semana (sáb/dom) usa os valores de FDS; se o valor de FDS não estiver
+  // preenchido, cai no valor de dia útil correspondente (diurno/noturno).
+  function getSectorDefaultValue(sectorId: string | null, startTime: string, shiftDate?: string): number | null {
     if (!sectorId) return null;
     const sector = sectors.find(s => s.id === sectorId);
     if (!sector) return null;
-    
+
     const isNight = isNightShift(startTime, '');
-    return isNight ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
+    const weekday = isNight ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
+
+    if (isWeekendDate(shiftDate)) {
+      const weekend = isNight
+        ? (sector.default_weekend_night_value ?? null)
+        : (sector.default_weekend_day_value ?? null);
+      return weekend ?? weekday;
+    }
+
+    return weekday;
   }
 
   // Get individual plantonista value for a sector (if set)
@@ -777,7 +791,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
    */
   function getAssignmentDisplayInfo(
     assignment: { assigned_value: number | null; user_id: string },
-    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }
+    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null; shift_date?: string }
   ): { value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none'; durationHours: number } {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
 
@@ -804,7 +818,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     // PRIORIDADE 3: Valor padrão do setor
     // Aplicar pró-rata pois é valor base de 12h
-    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time, shift.shift_date);
     if (sectorValue !== null) {
       if (sectorValue === 0) return { value: 0, source: 'sector_default', durationHours: duration };
       return { value: calculateProRataValue(sectorValue, duration), source: 'sector_default', durationHours: duration };
@@ -817,16 +831,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
    * Valor de exibição para o card do plantão (sem médico específico)
    * Usa apenas sector default com pró-rata
    */
-  function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null }): number | null {
+  function getShiftDisplayValue(shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null; shift_date?: string }): number | null {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
-    
+
     // Se tem base_value explícito, usar como está (já está pró-rata se foi editado)
     if (shift.base_value !== null) {
       return shift.base_value;
     }
-    
+
     // Senão, usar padrão do setor com pró-rata
-    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time);
+    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time, shift.shift_date);
     return calculateProRataValue(sectorValue, duration);
   }
 
@@ -1794,6 +1808,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           sector_id: row.sector_id || null,
           start_time: row.start_time,
           end_time: row.end_time,
+          shift_date: row.shift_date,
           user_id: targetUserId,
           useSectorDefault: true,
           applyProRata: true,
@@ -1865,6 +1880,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     sector_id: string | null;
     start_time: string;
     end_time?: string;
+    shift_date?: string; // Data do plantão (YYYY-MM-DD) para aplicar valor de fim de semana
     user_id?: string | null;
     useSectorDefault: boolean;
     applyProRata?: boolean; // If true, calculate value based on duration
@@ -1897,7 +1913,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }
     
     // Fall back to sector default
-    const sectorValue = getSectorDefaultValue(params.sector_id, params.start_time);
+    const sectorValue = getSectorDefaultValue(params.sector_id, params.start_time, params.shift_date);
     // 0 é valor explícito e deve ser preservado.
     if (sectorValue !== null) {
       return shouldApplyProRata ? calculateProRataValue(sectorValue, duration) : sectorValue;
@@ -2280,6 +2296,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         sector_id: normalizedSectorId,
         start_time: formData.start_time,
         end_time: formData.end_time,
+        shift_date: formData.shift_date,
         useSectorDefault: formData.use_sector_default,
         applyProRata: true,
       }),
@@ -2337,6 +2354,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
+          shift_date: formData.shift_date,
           user_id: formData.assigned_user_id,
           useSectorDefault: formData.use_sector_default,
           applyProRata: true,
@@ -2481,9 +2499,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         for (let week = 1; week <= repeatWeeks; week++) {
           const newDate = addWeeks(baseDate, week);
+          const newDateStr = format(newDate, 'yyyy-MM-dd');
           const duplicatedShiftData = {
             ...shiftInsertData,
-            shift_date: format(newDate, 'yyyy-MM-dd'),
+            shift_date: newDateStr,
+            // Recalcula o valor base para a data duplicada (pode cair em fim de semana).
+            base_value: resolveValue({
+              raw: formData.base_value,
+              sector_id: normalizedSectorId,
+              start_time: formData.start_time,
+              end_time: formData.end_time,
+              shift_date: newDateStr,
+              useSectorDefault: formData.use_sector_default,
+              applyProRata: true,
+            }),
           };
 
           let duplicatedShiftId: string | null = null;
@@ -2506,6 +2535,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               sector_id: formData.sector_id || null,
               start_time: formData.start_time,
               end_time: formData.end_time,
+              shift_date: newDateStr,
               user_id: formData.assigned_user_id,
               useSectorDefault: formData.use_sector_default,
               applyProRata: true,
@@ -2608,6 +2638,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           if (!rowAssigned || rowAssigned === 'vago') notes = `[VAGO] ${notes}`.trim();
           if (rowAssigned === 'disponivel') notes = `[DISPONÍVEL] ${notes}`.trim();
 
+          // Recalcula o valor base para a data/horário desta linha (fim de semana e diurno/noturno).
+          const rowBaseValue = resolveValue({
+            raw: formData.base_value,
+            sector_id: normalizedSectorId,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            shift_date: weekDate,
+            useSectorDefault: formData.use_sector_default,
+            applyProRata: true,
+          });
+
           let createdShiftId: string;
             try {
               createdShiftId = await insertAdminShiftAndGetId({
@@ -2615,6 +2656,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 shift_date: weekDate,
                 start_time: row.start_time,
                 end_time: row.end_time,
+                base_value: rowBaseValue,
                 title: generateShiftTitle(row.start_time, row.end_time),
                 notes: notes || null,
               });
@@ -2650,6 +2692,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               sector_id: normalizedSectorId,
               start_time: row.start_time,
               end_time: row.end_time,
+              shift_date: weekDate,
               user_id: rowAssigned,
               useSectorDefault: formData.use_sector_default,
               applyProRata: true,
@@ -2770,6 +2813,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
+          shift_date: dateStr,
           useSectorDefault: formData.use_sector_default,
           applyProRata: true,
         }),
@@ -2806,6 +2850,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           sector_id: normalizedSectorId,
           start_time: formData.start_time,
           end_time: formData.end_time,
+          shift_date: dateStr,
           user_id: formData.assigned_user_id,
           useSectorDefault: formData.use_sector_default,
           applyProRata: true,
@@ -3616,6 +3661,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       sector_id: selectedShift.sector_id || null,
       start_time: selectedShift.start_time.slice(0, 5),
       end_time: selectedShift.end_time.slice(0, 5),
+      shift_date: selectedShift.shift_date,
       user_id: assignData.user_id,
       useSectorDefault: raw.length === 0,
       applyProRata: true,
@@ -3752,6 +3798,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               sector_id: targetShift.sector_id || null,
               start_time: targetShift.start_time,
               end_time: targetShift.end_time,
+              shift_date: targetShift.shift_date,
               user_id: userId,
               useSectorDefault: true,
               applyProRata: true,
@@ -6971,7 +7018,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                   placeholder={
                     formData.use_sector_default && formData.sector_id 
                       ? (() => {
-                          const sectorValue = getSectorDefaultValue(formData.sector_id, formData.start_time);
+                          const sectorValue = getSectorDefaultValue(formData.sector_id, formData.start_time, formData.shift_date);
                           if (!sectorValue) return '0.00';
                           const duration = calculateDurationHours(formData.start_time, formData.end_time);
                           const proRataValue = calculateProRataValue(sectorValue, duration);
@@ -6997,7 +7044,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         <span className="ml-1 text-primary">
                           ({isNightShift(formData.start_time, '') ? 'Noturno' : 'Diurno'}: 
                           {(() => {
-                            const v = getSectorDefaultValue(formData.sector_id, formData.start_time);
+                            const v = getSectorDefaultValue(formData.sector_id, formData.start_time, formData.shift_date);
                             if (!v) return ' não definido';
                             const duration = calculateDurationHours(formData.start_time, formData.end_time);
                             const proRataVal = calculateProRataValue(v, duration);
@@ -7309,6 +7356,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       sector_id: selectedShift.sector_id || null,
                       start_time: selectedShift.start_time.slice(0, 5),
                       end_time: selectedShift.end_time.slice(0, 5),
+                      shift_date: selectedShift.shift_date,
                       user_id: assignData.user_id,
                       // For preview, show what the system will pay using the same rules as Financeiro.
                       useSectorDefault: true,

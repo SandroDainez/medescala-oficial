@@ -11,6 +11,7 @@ import {
   calculateAssignedSnapshotValue,
   calculateFinalValue,
   isNightShift,
+  isWeekendDate,
   type ValueSource,
 } from '@/lib/financial/valueCalculation';
 
@@ -121,12 +122,19 @@ export function mapScheduleToFinancialEntries(params: {
   const unassigned = params.unassignedLabel ?? { id: 'unassigned', name: 'Vago' };
 
   const sectorNameById = new Map<string, string>();
-  const sectorDefaultsById = new Map<string, { day: number | null; night: number | null }>();
+  const sectorDefaultsById = new Map<string, {
+    day: number | null;
+    night: number | null;
+    weekendDay: number | null;
+    weekendNight: number | null;
+  }>();
   (params.sectors ?? []).forEach((s) => {
     sectorNameById.set(s.id, s.name);
     sectorDefaultsById.set(s.id, {
       day: s.default_day_value ?? null,
       night: s.default_night_value ?? null,
+      weekendDay: s.default_weekend_day_value ?? null,
+      weekendNight: s.default_weekend_night_value ?? null,
     });
   });
 
@@ -186,9 +194,11 @@ export function mapScheduleToFinancialEntries(params: {
         startTime: shift.start_time,
       });
       const sectorDefaults = shift.sector_id ? sectorDefaultsById.get(shift.sector_id) : null;
-      const sectorDefaultValue = isNightShift(shift.start_time)
-        ? (sectorDefaults?.night ?? null)
-        : (sectorDefaults?.day ?? null);
+      const night = isNightShift(shift.start_time);
+      const weekdayDefault = night ? (sectorDefaults?.night ?? null) : (sectorDefaults?.day ?? null);
+      const sectorDefaultValue = isWeekendDate(shift.shift_date)
+        ? ((night ? sectorDefaults?.weekendNight : sectorDefaults?.weekendDay) ?? weekdayDefault)
+        : weekdayDefault;
       const projectedValue = calculateFinalValue({
         assignedValue: assignedNumeric,
         individualValue: userSectorValue,

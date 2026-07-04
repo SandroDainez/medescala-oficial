@@ -9,6 +9,8 @@ export interface ScheduleSector {
   active: boolean;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  default_weekend_day_value?: number | null;
+  default_weekend_night_value?: number | null;
 }
 
 export interface ScheduleShift {

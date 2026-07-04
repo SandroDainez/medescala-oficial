@@ -29,6 +29,8 @@ interface Sector {
   color: string | null;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  default_weekend_day_value?: number | null;
+  default_weekend_night_value?: number | null;
 }
 
 interface SectorRevenue {
@@ -164,7 +166,7 @@ export default function SectorProfitability() {
       const [sectorsRes, revenuesRes, expensesRes, shiftsRes, assignmentsRes, userValuesRes] = await Promise.all([
         supabase
           .from('sectors')
-          .select('id, name, color, default_day_value, default_night_value')
+          .select('id, name, color, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value')
           .eq('tenant_id', currentTenantId)
           .eq('active', true)
           .order('name'),
@@ -253,6 +255,8 @@ export default function SectorProfitability() {
         name: s.name,
         default_day_value: s.default_day_value ?? null,
         default_night_value: s.default_night_value ?? null,
+        default_weekend_day_value: s.default_weekend_day_value ?? null,
+        default_weekend_night_value: s.default_weekend_night_value ?? null,
       }));
 
       const mappedEntries = mapScheduleToFinancialEntries({

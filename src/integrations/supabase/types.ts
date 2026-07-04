@@ -1195,6 +1195,8 @@ export type Database = {
           created_by: string | null
           default_day_value: number | null
           default_night_value: number | null
+          default_weekend_day_value: number | null
+          default_weekend_night_value: number | null
           description: string | null
           id: string
           name: string
@@ -1215,6 +1217,8 @@ export type Database = {
           created_by?: string | null
           default_day_value?: number | null
           default_night_value?: number | null
+          default_weekend_day_value?: number | null
+          default_weekend_night_value?: number | null
           description?: string | null
           id?: string
           name: string
@@ -1235,6 +1239,8 @@ export type Database = {
           created_by?: string | null
           default_day_value?: number | null
           default_night_value?: number | null
+          default_weekend_day_value?: number | null
+          default_weekend_night_value?: number | null
           description?: string | null
           id?: string
           name?: string

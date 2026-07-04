@@ -22,7 +22,7 @@ import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
-import { calculateProRata, isNightShift } from '@/lib/financial/valueCalculation';
+import { calculateProRata, isNightShift, isWeekendDate } from '@/lib/financial/valueCalculation';
 import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2, RefreshCw } from 'lucide-react';
 import {
   DropdownMenu,
@@ -47,12 +47,16 @@ function formatCurrency(value: number | null): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
-function getSectorDefaultReferenceValue(entry: Pick<FinancialEntry, 'sector_id' | 'start_time' | 'duration_hours'>, sectors: SectorLookup[]): number | null {
+function getSectorDefaultReferenceValue(entry: Pick<FinancialEntry, 'sector_id' | 'start_time' | 'duration_hours' | 'shift_date'>, sectors: SectorLookup[]): number | null {
   if (!entry.sector_id || !entry.start_time) return null;
   const sector = sectors.find((s) => s.id === entry.sector_id);
   if (!sector) return null;
 
-  const baseReference = isNightShift(entry.start_time) ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
+  const night = isNightShift(entry.start_time);
+  const weekdayReference = night ? (sector.default_night_value ?? null) : (sector.default_day_value ?? null);
+  const baseReference = isWeekendDate(entry.shift_date)
+    ? ((night ? sector.default_weekend_night_value : sector.default_weekend_day_value) ?? weekdayReference)
+    : weekdayReference;
   if (baseReference === null) return null;
   return calculateProRata(baseReference, entry.duration_hours);
 }
@@ -305,7 +309,7 @@ export default function AdminFinancial() {
     while (true) {
       const { data, error } = await supabase
         .from('sectors')
-        .select('id, name, default_day_value, default_night_value, active')
+        .select('id, name, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value, active')
         .eq('tenant_id', tenantId)
         .order('name', { ascending: true })
         .range(from, from + pageSize - 1);

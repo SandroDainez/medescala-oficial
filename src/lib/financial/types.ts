@@ -36,6 +36,8 @@ export interface SectorLookup {
   name: string;
   default_day_value?: Money | null;
   default_night_value?: Money | null;
+  default_weekend_day_value?: Money | null;
+  default_weekend_night_value?: Money | null;
 }
 
 export interface FinancialEntry {

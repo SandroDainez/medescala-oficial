@@ -6,8 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { extractErrorMessage } from '@/lib/errorMessage';
+import { isWeekendDate } from '@/lib/financial/valueCalculation';
 import { useToast } from '@/hooks/use-toast';
-import { Sun, Moon, DollarSign, Users } from 'lucide-react';
+import { Sun, Moon, DollarSign, CalendarDays } from 'lucide-react';
 
 interface Sector {
   id: string;
@@ -15,6 +16,8 @@ interface Sector {
   color: string;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  default_weekend_day_value?: number | null;
+  default_weekend_night_value?: number | null;
 }
 
 interface SectorValuesDialogProps {
@@ -37,6 +40,8 @@ export default function SectorValuesDialog({
   const { toast } = useToast();
   const [dayValue, setDayValue] = useState('');
   const [nightValue, setNightValue] = useState('');
+  const [weekendDayValue, setWeekendDayValue] = useState('');
+  const [weekendNightValue, setWeekendNightValue] = useState('');
   const [applyToExisting, setApplyToExisting] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -44,6 +49,8 @@ export default function SectorValuesDialog({
     if (sector) {
       setDayValue(sector.default_day_value?.toString() || '');
       setNightValue(sector.default_night_value?.toString() || '');
+      setWeekendDayValue(sector.default_weekend_day_value?.toString() || '');
+      setWeekendNightValue(sector.default_weekend_night_value?.toString() || '');
       // Default to applying to existing so Sector -> Escalas -> Financeiro stays consistent.
       setApplyToExisting(true);
     }
@@ -63,15 +70,15 @@ export default function SectorValuesDialog({
     return isNaN(parsed) ? null : parsed;
   };
 
-  const handleDayValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCurrencyChange = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/[^\d,]/g, '');
-    setDayValue(raw);
+    setter(raw);
   };
 
-  const handleNightValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/[^\d,]/g, '');
-    setNightValue(raw);
-  };
+  const handleDayValueChange = handleCurrencyChange(setDayValue);
+  const handleNightValueChange = handleCurrencyChange(setNightValue);
+  const handleWeekendDayValueChange = handleCurrencyChange(setWeekendDayValue);
+  const handleWeekendNightValueChange = handleCurrencyChange(setWeekendNightValue);
 
   const isNightShift = (startTime: string): boolean => {
     const hour = parseInt(startTime.split(':')[0], 10);
@@ -102,12 +109,33 @@ export default function SectorValuesDialog({
     return Number(((baseValue / STANDARD_HOURS) * durationHours).toFixed(2));
   };
 
+  // Escolhe o valor base (12h) para um plantão conforme diurno/noturno e fim de semana.
+  // Fim de semana usa o valor de FDS; se não preenchido, cai no valor de dia útil.
+  const pickBaseValue = (
+    startTime: string,
+    shiftDate: string,
+    dayVal: number | null,
+    nightVal: number | null,
+    weekendDayVal: number | null,
+    weekendNightVal: number | null,
+  ): number | null => {
+    const night = isNightShift(startTime);
+    const weekday = night ? nightVal : dayVal;
+    if (isWeekendDate(shiftDate)) {
+      const weekend = night ? weekendNightVal : weekendDayVal;
+      return weekend ?? weekday;
+    }
+    return weekday;
+  };
+
   async function handleSave() {
     if (!sector || !tenantId) return;
     setSaving(true);
 
     const dayVal = parseCurrency(dayValue);
     const nightVal = parseCurrency(nightValue);
+    const weekendDayVal = parseCurrency(weekendDayValue);
+    const weekendNightVal = parseCurrency(weekendNightValue);
 
     try {
       // Update sector default values
@@ -116,6 +144,8 @@ export default function SectorValuesDialog({
         .update({
           default_day_value: dayVal,
           default_night_value: nightVal,
+          default_weekend_day_value: weekendDayVal,
+          default_weekend_night_value: weekendNightVal,
           updated_by: userId,
         })
         .eq('id', sector.id);
@@ -126,10 +156,10 @@ export default function SectorValuesDialog({
       // so the same values flow Escalas -> Financeiro.
       // IMPORTANT: Apply pro-rata based on shift duration (12h standard)
       if (applyToExisting) {
-        // 1) Update shifts base_value (by day/night with pro-rata)
+        // 1) Update shifts base_value (by day/night/weekend with pro-rata)
         const { data: shifts, error: shiftsError } = await supabase
           .from('shifts')
-          .select('id, start_time, end_time, base_value')
+          .select('id, start_time, end_time, base_value, shift_date')
           .eq('tenant_id', tenantId)
           .eq('sector_id', sector.id);
 
@@ -138,8 +168,7 @@ export default function SectorValuesDialog({
         if (shifts && shifts.length > 0) {
           const shiftsToUpdate = shifts.filter((s: any) => s.base_value === null);
           const shiftUpdates = shiftsToUpdate.map((s: any) => {
-            const isNight = isNightShift(s.start_time);
-            const baseValue = isNight ? nightVal : dayVal; // Base 12h value
+            const baseValue = pickBaseValue(s.start_time, s.shift_date, dayVal, nightVal, weekendDayVal, weekendNightVal); // Base 12h value
             const duration = calculateDurationHours(s.start_time, s.end_time);
             const proRataValue = calculateProRataValue(baseValue, duration);
             return supabase
@@ -162,7 +191,8 @@ export default function SectorValuesDialog({
               id,
               sector_id,
               start_time,
-              end_time
+              end_time,
+              shift_date
             )
           `)
           .eq('tenant_id', tenantId)
@@ -174,9 +204,8 @@ export default function SectorValuesDialog({
           // Preserve explicit manual values (including zero). Apply defaults only when value is truly undefined (null).
           const assignmentsToUpdate = assignments.filter((assignment: any) => assignment.assigned_value === null);
           const updates = assignmentsToUpdate.map(async (assignment: any) => {
-            const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string; end_time: string };
-            const isNight = isNightShift(shift.start_time);
-            const baseValue = isNight ? nightVal : dayVal; // Base 12h value
+            const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string; end_time: string; shift_date: string };
+            const baseValue = pickBaseValue(shift.start_time, shift.shift_date, dayVal, nightVal, weekendDayVal, weekendNightVal); // Base 12h value
             const duration = calculateDurationHours(shift.start_time, shift.end_time);
             const proRataValue = calculateProRataValue(baseValue, duration);
 
@@ -232,43 +261,98 @@ export default function SectorValuesDialog({
           </DialogTitle>
           <DialogDescription>
             Defina os valores padrão para plantões diurnos (7h-19h) e noturnos (19h-7h) deste setor.
+            Opcionalmente, defina valores diferenciados para sábados e domingos.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
-          {/* Day Value */}
-          <div className="space-y-2">
-            <Label htmlFor="dayValue" className="flex items-center gap-2">
-              <Sun className="h-4 w-4 text-amber-500" />
-              Valor Diurno (7h - 19h)
-            </Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
-              <Input
-                id="dayValue"
-                value={dayValue}
-                onChange={handleDayValueChange}
-                placeholder="0,00"
-                className="pl-10"
-              />
+        <div className="max-h-[65vh] space-y-6 overflow-y-auto py-4 pr-1">
+          {/* ===== Dias úteis (seg-sex) ===== */}
+          <div className="space-y-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Dias úteis (segunda a sexta)
+            </p>
+
+            {/* Day Value */}
+            <div className="space-y-2">
+              <Label htmlFor="dayValue" className="flex items-center gap-2">
+                <Sun className="h-4 w-4 text-amber-500" />
+                Valor Diurno (7h - 19h)
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                <Input
+                  id="dayValue"
+                  value={dayValue}
+                  onChange={handleDayValueChange}
+                  placeholder="0,00"
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {/* Night Value */}
+            <div className="space-y-2">
+              <Label htmlFor="nightValue" className="flex items-center gap-2">
+                <Moon className="h-4 w-4 text-blue-500" />
+                Valor Noturno (19h - 7h)
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                <Input
+                  id="nightValue"
+                  value={nightValue}
+                  onChange={handleNightValueChange}
+                  placeholder="0,00"
+                  className="pl-10"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Night Value */}
-          <div className="space-y-2">
-            <Label htmlFor="nightValue" className="flex items-center gap-2">
-              <Moon className="h-4 w-4 text-blue-500" />
-              Valor Noturno (19h - 7h)
-            </Label>
-            <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
-              <Input
-                id="nightValue"
-                value={nightValue}
-                onChange={handleNightValueChange}
-                placeholder="0,00"
-                className="pl-10"
-              />
+          {/* ===== Fim de semana (sáb/dom) ===== */}
+          <div className="space-y-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
+            <p className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
+              <CalendarDays className="h-4 w-4" />
+              Fim de semana (sábado e domingo)
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Se deixar em branco, o fim de semana usa o mesmo valor dos dias úteis.
+            </p>
+
+            {/* Weekend Day Value */}
+            <div className="space-y-2">
+              <Label htmlFor="weekendDayValue" className="flex items-center gap-2">
+                <Sun className="h-4 w-4 text-amber-500" />
+                Valor Diurno FDS (7h - 19h)
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                <Input
+                  id="weekendDayValue"
+                  value={weekendDayValue}
+                  onChange={handleWeekendDayValueChange}
+                  placeholder={dayValue ? `Padrão: ${dayValue}` : '0,00'}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            {/* Weekend Night Value */}
+            <div className="space-y-2">
+              <Label htmlFor="weekendNightValue" className="flex items-center gap-2">
+                <Moon className="h-4 w-4 text-blue-500" />
+                Valor Noturno FDS (19h - 7h)
+              </Label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">R$</span>
+                <Input
+                  id="weekendNightValue"
+                  value={weekendNightValue}
+                  onChange={handleWeekendNightValueChange}
+                  placeholder={nightValue ? `Padrão: ${nightValue}` : '0,00'}
+                  className="pl-10"
+                />
+              </div>
             </div>
           </div>
 
