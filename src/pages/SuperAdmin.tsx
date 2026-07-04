@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
+import { callEdgeFunction } from '@/lib/edgeFetch';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -536,21 +537,18 @@ export default function SuperAdmin() {
 
     if (tenantId && adminEmail) {
       const adminName = deriveAdminNameFromEmail(adminEmail);
-      const { data: userData, error: userError } = await supabase.functions.invoke('create-user', {
-        body: {
-          tenantId,
-          name: adminName,
-          email: adminEmail,
-          role: 'admin',
-          bootstrapPassword: '123456',
-          mustChangePassword: true,
-        },
+      const { ok: userOk, data: userData } = await callEdgeFunction('create-user', {
+        tenantId,
+        name: adminName,
+        email: adminEmail,
+        role: 'admin',
+        bootstrapPassword: '123456',
+        mustChangePassword: true,
       });
 
-      if (userError || !userData?.ok || !userData?.userId) {
+      if (!userOk || !userData?.ok || !userData?.userId) {
         adminProvisionWarning =
-          userData?.error ||
-          userError?.message ||
+          (userData?.error as string | undefined) ||
           'Hospital criado, mas não foi possível provisionar o administrador inicial.';
       } else {
         if (userData.createdNow) {

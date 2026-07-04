@@ -6,6 +6,7 @@ import { useTenant } from "@/hooks/useTenant";
 import { useToast } from "@/hooks/use-toast";
 import { useUserDetails } from "@/hooks/useUserDetails";
 import { buildPublicAppUrl } from "@/lib/publicAppUrl";
+import { callEdgeFunction } from "@/lib/edgeFetch";
 import { adminFeedback } from "@/lib/adminFeedback";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
@@ -902,18 +903,16 @@ export default function UserManagement() {
       return;
     }
 
-    const { data, error } = await supabase.functions.invoke("create-user", {
-      body: {
-        tenantId: currentTenantId,
-        name,
-        email,
-        phone: createForm.phone.trim(),
-        role: createForm.accessRole,
-      },
+    const { ok: createOk, data } = await callEdgeFunction("create-user", {
+      tenantId: currentTenantId,
+      name,
+      email,
+      phone: createForm.phone.trim(),
+      role: createForm.accessRole,
     });
 
-    if (error || !data?.ok || !data?.userId) {
-      notifyError("adicionar usuário", data?.error || error, "Não foi possível adicionar o usuário.");
+    if (!createOk || !data?.ok || !data?.userId) {
+      notifyError("adicionar usuário", (data?.error as string | undefined) || "Não foi possível adicionar o usuário.", "Verifique os dados e tente novamente.");
       setCreating(false);
       return;
     }
@@ -1617,23 +1616,21 @@ export default function UserManagement() {
         continue;
       }
 
-      const { data, error } = await supabase.functions.invoke("create-user", {
-        body: {
-          tenantId: currentTenantId,
-          name: item.nome,
-          email: item.email,
-          phone: item.telefone,
-          role: "user",
-        },
+      const { ok: createOk, data } = await callEdgeFunction("create-user", {
+        tenantId: currentTenantId,
+        name: item.nome,
+        email: item.email,
+        phone: item.telefone,
+        role: "user",
       });
 
-      if (error || !data?.ok || !data?.userId) {
+      if (!createOk || !data?.ok || !data?.userId) {
         failed += 1;
         runtimeIssues.push({
           line: item.line,
           nome: item.nome,
           email: item.email,
-          error: data?.error || error?.message || "Falha ao criar usuário.",
+          error: (data?.error as string | undefined) || "Falha ao criar usuário.",
         });
         continue;
       }
