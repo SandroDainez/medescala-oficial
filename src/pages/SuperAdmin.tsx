@@ -208,19 +208,11 @@ export default function SuperAdmin() {
   async function handleMigratePii() {
     setMigratingPii(true);
     try {
-      // Obter sessão para garantir que o token seja enviado
-      const { data: sessionData } = await supabase.auth.getSession();
-      if (!sessionData?.session?.access_token) {
-        throw new Error('Sessão não encontrada. Faça login novamente.');
+      const { ok, data } = await callEdgeFunction('migrate-pii', {});
+
+      if (!ok || data?.error) {
+        throw new Error((data?.error as string | undefined) || 'Falha ao migrar dados sensíveis.');
       }
-
-      const { data, error } = await supabase.functions.invoke('migrate-pii', {
-        headers: {
-          Authorization: `Bearer ${sessionData.session.access_token}`,
-        },
-      });
-
-      if (error) throw error;
 
       toast({
         title: 'Migração concluída!',

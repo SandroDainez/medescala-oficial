@@ -377,23 +377,21 @@ export default function UserManagement() {
     if (mode === "edit") setEditLattesLoading(true);
     if (mode === "create") setCreateLattesLoading(true);
 
-    let data: any = null;
-    let error: any = null;
+    let data: Record<string, unknown> = {};
+    let ok = false;
     try {
-      const response = await supabase.functions.invoke("lookup-lattes", {
-        body: { lattes: value },
-      });
+      const response = await callEdgeFunction("lookup-lattes", { lattes: value });
       data = response.data;
-      error = response.error;
-    } catch (invokeError) {
-      error = invokeError;
+      ok = response.ok;
+    } catch {
+      ok = false;
     } finally {
       if (mode === "edit") setEditLattesLoading(false);
       if (mode === "create") setCreateLattesLoading(false);
     }
 
-    if (error || !data?.ok) {
-      notifyError("buscar Lattes", data?.error || error, "Não foi possível consultar o Lattes.");
+    if (!ok || !data?.ok) {
+      notifyError("buscar Lattes", (data?.error as string | undefined) || "Não foi possível consultar o Lattes.", "Não foi possível consultar o Lattes.");
       return;
     }
 
@@ -620,15 +618,13 @@ export default function UserManagement() {
 
     setDeletingUserId(user.user_id);
 
-    const { data, error } = await supabase.functions.invoke("delete-users", {
-      body: {
-        tenantId: currentTenantId,
-        userIds: [user.user_id],
-      },
+    const { ok: deleteOk, data } = await callEdgeFunction("delete-users", {
+      tenantId: currentTenantId,
+      userIds: [user.user_id],
     });
 
-    if (error || !data?.success) {
-      notifyError("excluir usuário", data?.error || error, "Falha ao excluir usuário.");
+    if (!deleteOk || !data?.success) {
+      notifyError("excluir usuário", (data?.error as string | undefined) || "Falha ao excluir usuário.", "Falha ao excluir usuário.");
       setDeletingUserId(null);
       return;
     }
@@ -666,16 +662,14 @@ export default function UserManagement() {
 
     setEditOpen(true);
 
-    const { data, error } = await supabase.functions.invoke("update-user", {
-      body: {
-        action: "get",
-        tenantId: currentTenantId,
-        userId: user.user_id,
-      },
+    const { ok: getOk, data } = await callEdgeFunction("update-user", {
+      action: "get",
+      tenantId: currentTenantId,
+      userId: user.user_id,
     });
 
-    if (error || !data?.ok) {
-      notifyError("carregar dados sensíveis", data?.error || error, "Verifique permissões de PII.");
+    if (!getOk || !data?.ok) {
+      notifyError("carregar dados sensíveis", (data?.error as string | undefined) || "Verifique permissões de PII.", "Verifique permissões de PII.");
       return;
     }
 
@@ -791,12 +785,11 @@ export default function UserManagement() {
     }
 
     const effectiveProfileType = form.profileType;
-    const { data, error } = await supabase.functions.invoke("update-user", {
-      body: {
-        action: "update",
-        tenantId: currentTenantId,
-        userId: editingUser.user_id,
-        payload: {
+    const { ok: saveOk, data } = await callEdgeFunction("update-user", {
+      action: "update",
+      tenantId: currentTenantId,
+      userId: editingUser.user_id,
+      payload: {
           name: form.fullName,
           fullName: form.fullName,
           email: form.email,
@@ -832,12 +825,11 @@ export default function UserManagement() {
           curriculumFileNameUpload: editCurriculumFile?.name,
           curriculumFileType: editCurriculumFile?.type,
           documentUploads,
-        },
       },
     });
 
-    if (error || !data?.ok) {
-      notifyError("salvar usuário", data?.error || error, "Não foi possível salvar o usuário.");
+    if (!saveOk || !data?.ok) {
+      notifyError("salvar usuário", (data?.error as string | undefined) || "Não foi possível salvar o usuário.", "Verifique os dados e tente novamente.");
       setSaving(false);
       return;
     }
@@ -920,14 +912,13 @@ export default function UserManagement() {
     const createdUserId = String(data.userId);
 
     const effectiveProfileType = createForm.profileType;
-    const { data: detailsData, error: detailsError } = await supabase.functions.invoke("update-user", {
-      body: {
-        action: "update",
-        tenantId: currentTenantId,
-        userId: createdUserId,
-        payload: {
-          name,
-          fullName: createForm.fullName || name,
+    const { ok: detailsOk, data: detailsData } = await callEdgeFunction("update-user", {
+      action: "update",
+      tenantId: currentTenantId,
+      userId: createdUserId,
+      payload: {
+        name,
+        fullName: createForm.fullName || name,
           email: createForm.email,
           phone: createForm.phone,
           profileType: effectiveProfileType,
@@ -961,35 +952,32 @@ export default function UserManagement() {
           curriculumFileNameUpload: createCurriculumFile?.name,
           curriculumFileType: createCurriculumFile?.type,
           documentUploads,
-        },
       },
     });
 
-    if (detailsError || !detailsData?.ok) {
+    if (!detailsOk || !detailsData?.ok) {
       notifyWarning(
         "Usuário criado com pendências",
-        detailsData?.error || detailsError?.message || "Abra editar e complete os dados.",
+        (detailsData?.error as string | undefined) || "Abra editar e complete os dados.",
       );
     }
 
     const loginUrl = buildPublicAppUrl("/auth");
     const redirectUrl = buildPublicAppUrl("/reset-password");
     const inviteName = name;
-    const { data: inviteData, error: inviteError } = await supabase.functions.invoke("send-invite-email", {
-      body: {
-        name: inviteName,
-        email,
-        hospitalName: currentTenantName || "MedEscala",
-        loginUrl,
-        redirectUrl,
-        tenantId: currentTenantId,
-      },
+    const { ok: inviteOk, data: inviteData } = await callEdgeFunction("send-invite-email", {
+      name: inviteName,
+      email,
+      hospitalName: currentTenantName || "MedEscala",
+      loginUrl,
+      redirectUrl,
+      tenantId: currentTenantId,
     });
 
-    if (inviteError || inviteData?.error) {
+    if (!inviteOk || inviteData?.error) {
       notifyWarning(
         "Usuário criado sem convite",
-        inviteData?.error || inviteError?.message || "Você pode enviar manualmente na ação Convite.",
+        (inviteData?.error as string | undefined) || "Você pode enviar manualmente na ação Convite.",
       );
     } else {
       notifySuccess(
@@ -1092,14 +1080,15 @@ export default function UserManagement() {
               error: res.ok ? null : new Error(payload?.error || `HTTP ${res.status}`),
             };
           })
-        : await supabase.functions.invoke("verify-professional", {
-            body: {
-              crm,
-              uf,
-              tenantId: currentTenantId ?? null,
-              userId: mode === "edit" ? editingUser?.user_id ?? null : null,
-            },
-          });
+        : await callEdgeFunction("verify-professional", {
+            crm,
+            uf,
+            tenantId: currentTenantId ?? null,
+            userId: mode === "edit" ? editingUser?.user_id ?? null : null,
+          }).then((r) => ({
+            data: r.data,
+            error: r.ok ? null : new Error((r.data?.error as string | undefined) || "Não foi possível validar o CRM agora."),
+          }));
       data = response.data;
       error = response.error;
     } catch (invokeError) {
@@ -1239,22 +1228,20 @@ export default function UserManagement() {
 
     const loginUrl = buildPublicAppUrl("/auth");
     const redirectUrl = buildPublicAppUrl("/reset-password");
-    const { data, error } = await supabase.functions.invoke("send-invite-email", {
-      body: {
-        name: inviteUser.full_name || inviteUser.name || "Profissional",
-        email: inviteUser.email,
-        hospitalName: currentTenantName || "MedEscala",
-        loginUrl,
-        redirectUrl,
-        tenantId: currentTenantId,
-        sendEmail: true,
-      },
+    const { ok: inviteOk, data } = await callEdgeFunction("send-invite-email", {
+      name: inviteUser.full_name || inviteUser.name || "Profissional",
+      email: inviteUser.email,
+      hospitalName: currentTenantName || "MedEscala",
+      loginUrl,
+      redirectUrl,
+      tenantId: currentTenantId,
+      sendEmail: true,
     });
 
     setSendingInviteEmail(false);
 
-    if (error || data?.error) {
-      notifyError("enviar convite por email", data?.error || error, "Falha no envio do convite.");
+    if (!inviteOk || data?.error) {
+      notifyError("enviar convite por email", (data?.error as string | undefined) || "Falha no envio do convite.", "Falha no envio do convite.");
       return;
     }
 
@@ -1282,22 +1269,20 @@ export default function UserManagement() {
 
     const loginUrl = buildPublicAppUrl("/auth");
     const redirectUrl = buildPublicAppUrl("/reset-password");
-    const { data, error } = await supabase.functions.invoke("send-invite-email", {
-      body: {
-        name: inviteUser.full_name || inviteUser.name || "Profissional",
-        email: inviteUser.email,
-        hospitalName: currentTenantName || "MedEscala",
-        loginUrl,
-        redirectUrl,
-        tenantId: currentTenantId,
-        sendEmail: false,
-      },
+    const { ok: inviteOk, data } = await callEdgeFunction("send-invite-email", {
+      name: inviteUser.full_name || inviteUser.name || "Profissional",
+      email: inviteUser.email,
+      hospitalName: currentTenantName || "MedEscala",
+      loginUrl,
+      redirectUrl,
+      tenantId: currentTenantId,
+      sendEmail: false,
     });
 
     setSendingInviteWhatsapp(false);
 
-    if (error || data?.error || !data?.resetLink) {
-      notifyError("gerar link de convite", data?.error || error, "Falha ao gerar o link de convite para WhatsApp.");
+    if (!inviteOk || data?.error || !data?.resetLink) {
+      notifyError("gerar link de convite", (data?.error as string | undefined) || "Falha ao gerar o link de convite para WhatsApp.", "Falha ao gerar o link de convite para WhatsApp.");
       return;
     }
 
@@ -1636,30 +1621,28 @@ export default function UserManagement() {
       }
 
       const crmWithUf = item.crm ? (item.uf ? `${item.crm}/${item.uf}` : item.crm) : "";
-      const { data: detailsData, error: detailsError } = await supabase.functions.invoke("update-user", {
-        body: {
-          action: "update",
-          tenantId: currentTenantId,
-          userId: String(data.userId),
-          payload: {
-            name: item.nome,
-            fullName: item.nome,
-            email: item.email,
-            phone: item.telefone,
-            profileType: item.profileType,
-            status: "ativo",
-            crm: crmWithUf || undefined,
-          },
+      const { ok: detailsOk, data: detailsData } = await callEdgeFunction("update-user", {
+        action: "update",
+        tenantId: currentTenantId,
+        userId: String(data.userId),
+        payload: {
+          name: item.nome,
+          fullName: item.nome,
+          email: item.email,
+          phone: item.telefone,
+          profileType: item.profileType,
+          status: "ativo",
+          crm: crmWithUf || undefined,
         },
       });
 
-      if (detailsError || !detailsData?.ok) {
+      if (!detailsOk || !detailsData?.ok) {
         failed += 1;
         runtimeIssues.push({
           line: item.line,
           nome: item.nome,
           email: item.email,
-          error: detailsData?.error || detailsError?.message || "Usuário criado, mas dados complementares não foram salvos.",
+          error: (detailsData?.error as string | undefined) || "Usuário criado, mas dados complementares não foram salvos.",
         });
         continue;
       }
