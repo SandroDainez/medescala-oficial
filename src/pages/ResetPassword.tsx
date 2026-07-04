@@ -12,6 +12,33 @@ import { z } from 'zod';
 
 const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres');
 
+// Usa fetch nativo para que o corpo da resposta seja sempre acessível,
+// independente do status HTTP — evita o FunctionsHttpError do supabase-js
+// que oculta a mensagem real do edge function.
+async function callAcceptInvite(body: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
+  const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, '');
+  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+  const response = await fetch(`${supabaseUrl}/functions/v1/accept-invite-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${anonKey}`,
+      'apikey': anonKey,
+    },
+    body: JSON.stringify(body),
+  });
+
+  let data: Record<string, unknown> = {};
+  try {
+    data = await response.json();
+  } catch {
+    // corpo não era JSON
+  }
+
+  return { ok: response.ok, data };
+}
+
 export default function ResetPassword() {
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -25,7 +52,6 @@ export default function ResetPassword() {
   const [inviteToken, setInviteToken] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if we have a valid recovery session
     const checkSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
@@ -41,32 +67,23 @@ export default function ResetPassword() {
             access_token: hashAccessToken,
             refresh_token: hashRefreshToken,
           });
-
           if (!error) {
             setIsValidLink(true);
             return;
           }
         }
 
-        // 2) PKCE/code format: /reset-password?code=...
         const queryParams = new URLSearchParams(window.location.search);
+
+        // 2) Convite: /reset-password?invite_token=...
         const inviteTokenParam = queryParams.get('invite_token');
         if (inviteTokenParam) {
-          const { data, error } = await supabase.functions.invoke('accept-invite-password', {
-            body: {
-              inviteToken: inviteTokenParam,
-              validateOnly: true,
-            },
-          });
+          const { ok, data } = await callAcceptInvite({ inviteToken: inviteTokenParam, validateOnly: true });
 
-          if (!error && !data?.error) {
+          if (ok && !data?.error) {
             setInviteToken(inviteTokenParam);
-            if (typeof data?.tenantId === 'string') {
-              setPendingInviteTenantIdSafe(data.tenantId);
-            }
-            if (typeof data?.email === 'string') {
-              setPendingInviteEmailSafe(data.email);
-            }
+            if (typeof data?.tenantId === 'string') setPendingInviteTenantIdSafe(data.tenantId);
+            if (typeof data?.email === 'string') setPendingInviteEmailSafe(data.email);
             setIsValidLink(true);
           } else {
             setIsValidLink(false);
@@ -77,8 +94,7 @@ export default function ResetPassword() {
         const token = queryParams.get('token');
         const queryType = queryParams.get('type') || 'recovery';
 
-        // 2a) Raw token format: /reset-password?token=...&type=recovery
-        // Redirect through Supabase verify endpoint to obtain access_token/refresh_token.
+        // 3) Raw token: /reset-password?token=...&type=recovery
         if (token && queryType === 'recovery') {
           const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
           if (supabaseUrl) {
@@ -91,6 +107,7 @@ export default function ResetPassword() {
           }
         }
 
+        // 4) PKCE code exchange
         const code = queryParams.get('code');
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
@@ -100,23 +117,19 @@ export default function ResetPassword() {
           }
         }
 
-        // 3) Token hash format: /reset-password?token=... or token_hash=...
+        // 5) token_hash format
         const tokenHash = queryParams.get('token_hash');
         if (tokenHash && queryType === 'recovery') {
-          const { error } = await supabase.auth.verifyOtp({
-            type: 'recovery',
-            token_hash: tokenHash,
-          });
-
+          const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
           if (!error) {
             setIsValidLink(true);
             return;
           }
         }
 
-        // 4) Already authenticated session
+        // Nenhum token válido encontrado — se já logado, vai para home
         if (session) {
-          setIsValidLink(true);
+          navigate('/home');
           return;
         }
       } catch (_err) {
@@ -136,95 +149,76 @@ export default function ResetPassword() {
       passwordSchema.parse(newPassword);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        toast({
-          title: 'Erro de validação',
-          description: err.errors[0].message,
-          variant: 'destructive',
-        });
+        toast({ title: 'Erro de validação', description: err.errors[0].message, variant: 'destructive' });
         return;
       }
     }
 
     if (newPassword !== confirmPassword) {
-      toast({
-        title: 'Erro',
-        description: 'As senhas não coincidem',
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro', description: 'As senhas não coincidem', variant: 'destructive' });
       return;
     }
 
     setLoading(true);
 
-    const { data, error } = inviteToken
-      ? await supabase.functions.invoke('accept-invite-password', {
-          body: {
-            inviteToken,
-            password: newPassword,
-          },
-        })
-      : await supabase.auth.updateUser({
+    try {
+      if (inviteToken) {
+        // --- fluxo convite ---
+        const { ok, data } = await callAcceptInvite({ inviteToken, password: newPassword });
+
+        if (!ok || data?.error) {
+          const msg = (data?.error as string | undefined) || 'Não foi possível alterar a senha. Tente novamente.';
+          toast({ title: 'Erro', description: msg, variant: 'destructive' });
+          return;
+        }
+
+        if (typeof data?.tenantId === 'string') setPendingInviteTenantIdSafe(data.tenantId);
+        if (typeof data?.email === 'string') setPendingInviteEmailSafe(data.email);
+
+        toast({
+          title: 'Senha definida com sucesso!',
+          description: 'Faça login para entrar no hospital/serviço do convite.',
+        });
+
+        const authSearch = typeof data?.email === 'string' && (data.email as string).trim()
+          ? `?email=${encodeURIComponent(data.email as string)}`
+          : '';
+        navigate(`/auth${authSearch}`);
+      } else {
+        // --- fluxo recuperação normal ---
+        const { error: authError } = await supabase.auth.updateUser({
           password: newPassword,
           data: { must_change_password: false },
         });
 
-    setLoading(false);
+        if (authError) {
+          let errorMessage = 'Não foi possível alterar a senha. Tente novamente.';
+          const normalizedError = authError.message.toLowerCase();
 
-    if (error) {
-      // Handle specific error cases
-      let errorMessage = 'Não foi possível alterar a senha. Tente novamente.';
-      const normalizedError = (error.message || '').toLowerCase();
-      
-      if (normalizedError.includes('same password') || normalizedError.includes('should be different')) {
-        errorMessage = 'A nova senha deve ser diferente da senha atual.';
-      } else if (normalizedError.includes('weak password') || normalizedError.includes('password')) {
-        errorMessage = 'A senha não foi aceita. Use pelo menos 6 caracteres e tente combinar letras, números e símbolos.';
-      } else if (normalizedError.includes('session') || normalizedError.includes('expired') || normalizedError.includes('otp')) {
-        errorMessage = 'Sessão expirada. Solicite um novo link de recuperação.';
+          if (normalizedError.includes('same password') || normalizedError.includes('should be different')) {
+            errorMessage = 'A nova senha deve ser diferente da senha atual.';
+          } else if (normalizedError.includes('weak password') || normalizedError.includes('password')) {
+            errorMessage = 'A senha não foi aceita. Use pelo menos 6 caracteres e tente combinar letras, números e símbolos.';
+          } else if (normalizedError.includes('session') || normalizedError.includes('expired') || normalizedError.includes('otp')) {
+            errorMessage = 'Sessão expirada. Solicite um novo link de recuperação.';
+          }
+
+          toast({ title: 'Erro', description: errorMessage, variant: 'destructive' });
+          return;
+        }
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          await supabase.from('profiles').update({ must_change_password: false }).eq('id', user.id);
+        }
+        await supabase.auth.signOut();
+
+        toast({ title: 'Senha alterada com sucesso!', description: 'Você será redirecionado para o login.' });
+        navigate('/auth');
       }
-
-      toast({
-        title: 'Erro',
-        description: `${errorMessage}${error.message ? ` (${error.message})` : ''}`,
-        variant: 'destructive',
-      });
-      return;
+    } finally {
+      setLoading(false);
     }
-
-    if (inviteToken) {
-      if (typeof data?.tenantId === 'string') {
-        setPendingInviteTenantIdSafe(data.tenantId);
-      }
-      if (typeof data?.email === 'string') {
-        setPendingInviteEmailSafe(data.email);
-      }
-    }
-
-    if (!inviteToken) {
-      // Also update must_change_password flag if applicable
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        await supabase
-          .from('profiles')
-          .update({ must_change_password: false })
-          .eq('id', user.id);
-      }
-    }
-
-    toast({
-      title: 'Senha alterada com sucesso!',
-      description: inviteToken
-        ? 'Senha definida. Faça login para entrar no hospital/serviço do convite.'
-        : 'Você será redirecionado para o login.',
-    });
-
-    if (!inviteToken) {
-      await supabase.auth.signOut();
-    }
-    const authSearch = inviteToken && typeof data?.email === 'string' && data.email.trim()
-      ? `?email=${encodeURIComponent(data.email)}`
-      : '';
-    navigate(`/auth${authSearch}`);
   }
 
   if (checking) {
@@ -263,9 +257,7 @@ export default function ResetPassword() {
             <Lock className="h-6 w-6 text-primary" />
           </div>
           <CardTitle className="text-2xl">Criar nova senha</CardTitle>
-          <CardDescription>
-            Digite sua nova senha abaixo
-          </CardDescription>
+          <CardDescription>Digite sua nova senha abaixo</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleResetPassword} className="space-y-4">
