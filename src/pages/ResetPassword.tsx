@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { setPendingInviteEmailSafe, setPendingInviteTenantIdSafe } from '@/hooks/tenant-context';
+import { translatePasswordError } from '@/lib/errorMessage';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 
@@ -167,7 +168,9 @@ export default function ResetPassword() {
         const { ok, data } = await callAcceptInvite({ inviteToken, password: newPassword });
 
         if (!ok || data?.error) {
-          const msg = (data?.error as string | undefined) || 'Não foi possível alterar a senha. Tente novamente.';
+          const msg = translatePasswordError(data?.error)
+            ?? (data?.error as string | undefined)
+            ?? 'Não foi possível alterar a senha. Tente novamente.';
           toast({ title: 'Erro', description: msg, variant: 'destructive' });
           return;
         }
@@ -192,14 +195,10 @@ export default function ResetPassword() {
         });
 
         if (authError) {
-          let errorMessage = 'Não foi possível alterar a senha. Tente novamente.';
           const normalizedError = authError.message.toLowerCase();
+          let errorMessage = translatePasswordError(authError) ?? 'Não foi possível alterar a senha. Tente novamente.';
 
-          if (normalizedError.includes('same password') || normalizedError.includes('should be different')) {
-            errorMessage = 'A nova senha deve ser diferente da senha atual.';
-          } else if (normalizedError.includes('weak password') || normalizedError.includes('password')) {
-            errorMessage = 'A senha não foi aceita. Use pelo menos 6 caracteres e tente combinar letras, números e símbolos.';
-          } else if (normalizedError.includes('session') || normalizedError.includes('expired') || normalizedError.includes('otp')) {
+          if (normalizedError.includes('session') || normalizedError.includes('expired') || normalizedError.includes('otp')) {
             errorMessage = 'Sessão expirada. Solicite um novo link de recuperação.';
           }
 

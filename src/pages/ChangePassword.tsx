@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { translatePasswordError } from '@/lib/errorMessage';
 import { Lock, Eye, EyeOff, CheckCircle } from 'lucide-react';
 import { z } from 'zod';
 
@@ -81,7 +82,7 @@ export default function ChangePassword() {
     if (error) {
       toast({
         title: 'Erro',
-        description: 'Não foi possível alterar a senha. Tente novamente.',
+        description: translatePasswordError(error) ?? 'Não foi possível alterar a senha. Tente novamente.',
         variant: 'destructive',
       });
       setLoading(false);

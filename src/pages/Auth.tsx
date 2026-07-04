@@ -13,7 +13,7 @@ import { ArrowLeft, Mail, CreditCard, Loader2, Eye, EyeOff } from 'lucide-react'
 import { supabase } from '@/integrations/supabase/client';
 import { buildPublicAppUrl } from '@/lib/publicAppUrl';
 import { getPendingInviteEmailSafe, setTenantSelectionDoneSafe } from '@/hooks/tenant-context';
-import { extractErrorMessage } from '@/lib/errorMessage';
+import { extractErrorMessage, translatePasswordError } from '@/lib/errorMessage';
 
 const emailSchema = z.string().email('Email inválido');
 const passwordSchema = z.string().min(6, 'Senha deve ter no mínimo 6 caracteres');
@@ -252,7 +252,7 @@ export default function Auth() {
 
     if (error) {
       const rawMessage = extractErrorMessage(error, 'Erro ao criar conta');
-      let message = rawMessage;
+      let message = translatePasswordError(error) ?? rawMessage;
       if (rawMessage.includes('User already registered')) {
         message = 'Este email já está cadastrado';
       }
