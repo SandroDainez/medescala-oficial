@@ -77,6 +77,14 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Checagem periódica: garante que sessões longas abertas (ex.: admin com o app
+// aberto o dia todo) também recebam a versão nova sem precisar reabrir.
+setInterval(() => {
+  if (document.visibilityState === "visible") {
+    requestPwaUpdateCheck();
+  }
+}, 60000);
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
