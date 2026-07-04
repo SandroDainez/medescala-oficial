@@ -3,9 +3,27 @@ import react from "@vitejs/plugin-react-swc";
 import { VitePWA } from "vite-plugin-pwa";
 import path from "path";
 
+// ID único por build. Fica embutido no bundle (__APP_BUILD_ID__) e também é
+// escrito em dist/version.json, servido sem cache. O app compara os dois e, se
+// a versão publicada for diferente da que está rodando, limpa o cache e recarrega.
+const BUILD_ID = String(Date.now());
+
 export default defineConfig(() => ({
+  define: {
+    __APP_BUILD_ID__: JSON.stringify(BUILD_ID),
+  },
   plugins: [
     react(),
+    {
+      name: "emit-version-json",
+      generateBundle() {
+        this.emitFile({
+          type: "asset",
+          fileName: "version.json",
+          source: JSON.stringify({ buildId: BUILD_ID }),
+        });
+      },
+    },
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.ico", "apple-touch-icon.png", "mask-icon.svg"],
