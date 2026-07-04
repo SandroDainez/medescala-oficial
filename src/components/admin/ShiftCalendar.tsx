@@ -4771,8 +4771,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                         <div
                           key={shift.id}
                           className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
-                          style={{ 
-                            backgroundColor: isNight ? '#e0e7ff' : `${sectorColor}20`,
+                          style={{
+                            // Tom translúcido (não opaco) para o texto do tema permanecer legível
+                            // em qualquer tema — padrão único para diurno e noturno.
+                            backgroundColor: isNight ? 'rgba(99, 102, 241, 0.18)' : `${sectorColor}20`,
                             borderLeft: `3px solid ${isNight ? '#6366f1' : sectorColor}`
                           }}
                           title={`${shift.title} - ${sectorName} ${isNight ? '(Noturno)' : '(Diurno)'}`}
@@ -4800,7 +4802,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                           {showSectorName && (
                             <div className="flex items-center gap-1">
                               {isNight ? (
-                                <Moon className="h-3 w-3 text-indigo-600" />
+                                <Moon className="h-3 w-3 text-indigo-400" />
                               ) : (
                                 <Sun className="h-3 w-3 text-amber-500" />
                               )}
@@ -4809,10 +4811,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               </span>
                             </div>
                           )}
-                          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <div className="flex items-center gap-1 text-[10px] font-medium text-foreground/80">
                             {!showSectorName && (
                               isNight ? (
-                                <Moon className="h-2.5 w-2.5 text-indigo-600" />
+                                <Moon className="h-2.5 w-2.5 text-indigo-400" />
                               ) : (
                                 <Sun className="h-2.5 w-2.5 text-amber-500" />
                               )
