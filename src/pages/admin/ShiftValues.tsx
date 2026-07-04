@@ -16,6 +16,8 @@ interface Sector {
   color: string;
   default_day_value?: number | null;
   default_night_value?: number | null;
+  default_weekend_day_value?: number | null;
+  default_weekend_night_value?: number | null;
 }
 
 const MONTH_OPTIONS = [
@@ -58,7 +60,7 @@ export default function AdminShiftValues() {
 
     const { data } = await supabase
       .from('sectors')
-      .select('id, name, color, default_day_value, default_night_value')
+      .select('id, name, color, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value')
       .eq('tenant_id', currentTenantId)
       .order('name');
 

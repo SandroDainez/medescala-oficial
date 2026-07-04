@@ -227,7 +227,7 @@ export default function UserFinancial() {
         .eq('user_id', user.id),
       supabase
         .from('sectors')
-        .select('id, name, default_day_value, default_night_value')
+        .select('id, name, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value')
         .eq('tenant_id', currentTenantId),
     ]);
 
@@ -285,6 +285,8 @@ export default function UserFinancial() {
         name: sec.name,
         default_day_value: sec.default_day_value ?? null,
         default_night_value: sec.default_night_value ?? null,
+        default_weekend_day_value: sec.default_weekend_day_value ?? null,
+        default_weekend_night_value: sec.default_weekend_night_value ?? null,
       }));
 
       const mappedEntries = mapScheduleToFinancialEntries({

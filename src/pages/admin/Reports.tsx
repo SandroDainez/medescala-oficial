@@ -378,7 +378,7 @@ export default function AdminReports() {
         }),
         supabase
           .from('sectors')
-          .select('id, name, default_day_value, default_night_value')
+          .select('id, name, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value')
           .eq('tenant_id', currentTenantId)
           .eq('active', true),
         supabase
