@@ -279,7 +279,11 @@ function PrefetchDashboardChunks() {
 }
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
+  // ErrorBoundary externo: rede de segurança para erros em qualquer provider
+  // (Query/Theme/Router/Auth/Tenant) ou falha de chunk antes das rotas montarem.
+  // Evita a tela branca — mostra recuperação e auto-recarrega em erro de chunk.
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       <TooltipProvider>
         <Toaster />
@@ -387,7 +391,8 @@ const App = () => (
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
-  </QueryClientProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;
