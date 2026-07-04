@@ -140,7 +140,7 @@ export default function UserNotifications() {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Bell className="h-5 w-5 text-primary" />
           <h1 className="text-xl font-bold">Notificações</h1>
@@ -148,21 +148,22 @@ export default function UserNotifications() {
             <Badge variant="destructive">{unreadCount}</Badge>
           )}
         </div>
-        
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center justify-end gap-2">
           {selectionMode ? (
             <>
-              <Button variant="ghost" size="sm" onClick={cancelSelection}>
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={cancelSelection}>
                 <X className="h-4 w-4 mr-1" />
                 Cancelar
               </Button>
-              <Button variant="ghost" size="sm" onClick={selectAll}>
+              <Button variant="ghost" size="sm" className="shrink-0" onClick={selectAll}>
                 <CheckCheck className="h-4 w-4 mr-1" />
                 {selectedIds.size === notifications.length ? 'Desmarcar' : 'Todas'}
               </Button>
-              <Button 
-                variant="destructive" 
-                size="sm" 
+              <Button
+                variant="destructive"
+                size="sm"
+                className="shrink-0"
                 onClick={deleteSelected}
                 disabled={selectedIds.size === 0 || deleting}
               >
@@ -173,13 +174,13 @@ export default function UserNotifications() {
           ) : (
             <>
               {notifications.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => setSelectionMode(true)}>
+                <Button variant="outline" size="sm" className="shrink-0" onClick={() => setSelectionMode(true)}>
                   <Trash2 className="h-4 w-4 mr-2" />
                   Selecionar
                 </Button>
               )}
               {unreadCount > 0 && (
-                <Button variant="outline" size="sm" onClick={() => void markAllAsRead()}>
+                <Button variant="outline" size="sm" className="shrink-0" onClick={() => void markAllAsRead()}>
                   <CheckCheck className="h-4 w-4 mr-2" />
                   Marcar todas
                 </Button>
