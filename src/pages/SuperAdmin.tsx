@@ -1575,14 +1575,14 @@ export default function SuperAdmin() {
       </Dialog>
 
       <Dialog open={detailsDialogOpen} onOpenChange={setDetailsDialogOpen}>
-        <DialogContent className="w-[96vw] max-w-5xl h-[88vh] max-h-[88vh] overflow-hidden p-0">
-          <div className="flex h-full flex-col">
-            <DialogHeader className="shrink-0 px-4 pt-4 sm:px-6">
+        <DialogContent className="w-[96vw] max-w-5xl max-h-[88dvh] overflow-y-auto p-0">
+          <div className="flex flex-col">
+            <DialogHeader className="sticky top-0 z-10 bg-card px-4 pt-4 sm:px-6">
               <DialogTitle>
                 Painel do Hospital - {selectedTenant?.name || 'Hospital'}
               </DialogTitle>
             </DialogHeader>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+            <div className="p-4 sm:p-6">
               {detailsLoading ? (
                 <div className="py-10 text-center text-muted-foreground">Carregando detalhes...</div>
               ) : (
