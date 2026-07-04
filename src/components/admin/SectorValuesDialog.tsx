@@ -43,6 +43,7 @@ export default function SectorValuesDialog({
   const [weekendDayValue, setWeekendDayValue] = useState('');
   const [weekendNightValue, setWeekendNightValue] = useState('');
   const [applyToExisting, setApplyToExisting] = useState(false);
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -53,6 +54,7 @@ export default function SectorValuesDialog({
       setWeekendNightValue(sector.default_weekend_night_value?.toString() || '');
       // Default to applying to existing so Sector -> Escalas -> Financeiro stays consistent.
       setApplyToExisting(true);
+      setOverwriteExisting(false);
     }
   }, [sector]);
 
@@ -166,7 +168,11 @@ export default function SectorValuesDialog({
         if (shiftsError) throw shiftsError;
 
         if (shifts && shifts.length > 0) {
-          const shiftsToUpdate = shifts.filter((s: any) => s.base_value === null);
+          // Padrão: só preenche plantões sem valor (null), preservando ajustes manuais.
+          // Se overwriteExisting, recalcula TODOS (sobrescreve valores já definidos).
+          const shiftsToUpdate = overwriteExisting
+            ? shifts
+            : shifts.filter((s: any) => s.base_value === null);
           const shiftUpdates = shiftsToUpdate.map((s: any) => {
             const baseValue = pickBaseValue(s.start_time, s.shift_date, dayVal, nightVal, weekendDayVal, weekendNightVal); // Base 12h value
             const duration = calculateDurationHours(s.start_time, s.end_time);
@@ -201,8 +207,11 @@ export default function SectorValuesDialog({
         if (fetchError) throw fetchError;
 
         if (assignments && assignments.length > 0) {
-          // Preserve explicit manual values (including zero). Apply defaults only when value is truly undefined (null).
-          const assignmentsToUpdate = assignments.filter((assignment: any) => assignment.assigned_value === null);
+          // Padrão: preserva valores manuais (inclusive zero), aplica só onde está null.
+          // Se overwriteExisting, recalcula TODAS as atribuições do setor.
+          const assignmentsToUpdate = overwriteExisting
+            ? assignments
+            : assignments.filter((assignment: any) => assignment.assigned_value === null);
           const updates = assignmentsToUpdate.map(async (assignment: any) => {
             const shift = assignment.shift as unknown as { id: string; sector_id: string; start_time: string; end_time: string; shift_date: string };
             const baseValue = pickBaseValue(shift.start_time, shift.shift_date, dayVal, nightVal, weekendDayVal, weekendNightVal); // Base 12h value
@@ -224,7 +233,9 @@ export default function SectorValuesDialog({
 
         toast({
           title: 'Valores atualizados!',
-          description: `Valores padrão salvos e aplicados a ${shifts?.length || 0} plantões existentes.`,
+          description: overwriteExisting
+            ? `Valores padrão salvos e recalculados em ${shifts?.length || 0} plantões deste setor (incluindo os de fim de semana).`
+            : `Valores padrão salvos e aplicados aos plantões sem valor definido (${shifts?.length || 0} verificados).`,
         });
       } else {
         toast({
@@ -357,20 +368,44 @@ export default function SectorValuesDialog({
           </div>
 
           {/* Apply to existing */}
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 border">
-            <Checkbox
-              id="applyToExisting"
-              checked={applyToExisting}
-              onCheckedChange={(checked) => setApplyToExisting(checked === true)}
-            />
-            <div className="space-y-1">
-              <Label htmlFor="applyToExisting" className="cursor-pointer font-medium">
-                Aplicar a plantões existentes
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Atualiza os valores de todos os plantões já criados neste setor que ainda não têm valor individual definido.
-              </p>
+          <div className="space-y-2">
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50 border">
+              <Checkbox
+                id="applyToExisting"
+                checked={applyToExisting}
+                onCheckedChange={(checked) => {
+                  const on = checked === true;
+                  setApplyToExisting(on);
+                  if (!on) setOverwriteExisting(false);
+                }}
+              />
+              <div className="space-y-1">
+                <Label htmlFor="applyToExisting" className="cursor-pointer font-medium">
+                  Aplicar a plantões existentes
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  Preenche o valor dos plantões já criados neste setor que ainda estão sem valor definido. Não altera os que já têm valor.
+                </p>
+              </div>
             </div>
+
+            {applyToExisting && (
+              <div className="flex items-start gap-3 p-4 rounded-lg border border-amber-500/40 bg-amber-500/10">
+                <Checkbox
+                  id="overwriteExisting"
+                  checked={overwriteExisting}
+                  onCheckedChange={(checked) => setOverwriteExisting(checked === true)}
+                />
+                <div className="space-y-1">
+                  <Label htmlFor="overwriteExisting" className="cursor-pointer font-medium">
+                    Recalcular também os plantões que já têm valor
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Sobrescreve o valor de todos os plantões deste setor com o padrão correto por dia/noite e fim de semana. Use isto para atualizar plantões antigos com os novos valores de fim de semana. <strong>Atenção:</strong> valores ajustados manualmente serão substituídos.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
