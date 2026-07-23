@@ -22,6 +22,7 @@ import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import { detectScheduleConflicts } from '@/lib/scheduleConflicts';
 import type { ScheduleAssignment, ScheduleShift, SectorLookup, UserSectorValueLookup } from '@/lib/financial/types';
 
 interface Absence {
@@ -178,6 +179,9 @@ export default function AdminReports() {
   const [financialByPlantonistaSector, setFinancialByPlantonistaSector] = useState<FinancialByPlantonistaSectorRecord[]>([]);
   const [movements, setMovements] = useState<MovementRecord[]>([]);
   const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
+  // Conflitos ativos/não resolvidos (detectados ao vivo), separados dos resolvidos
+  // para não afetar a aba de exclusão de histórico.
+  const [activeConflicts, setActiveConflicts] = useState<ConflictRecord[]>([]);
   const [loading, setLoading] = useState(false);
   
   // Selection for bulk delete
@@ -634,6 +638,71 @@ export default function AdminReports() {
     }));
     
     setConflicts(conflictRecords);
+
+    // --- Conflitos ATIVOS (ainda não resolvidos) no período ---
+    // Detecta ao vivo os mesmos conflitos que o calendário mostra, para que
+    // apareçam no relatório mesmo sem terem sido resolvidos.
+    try {
+      const [pShiftsRes, pAssignRes, pSectorsRes] = await Promise.all([
+        supabase
+          .from('shifts')
+          .select('id, shift_date, start_time, end_time, sector_id, hospital')
+          .eq('tenant_id', currentTenantId)
+          .gte('shift_date', startDate)
+          .lte('shift_date', endDate),
+        supabase.rpc('get_shift_assignments_range', {
+          _tenant_id: currentTenantId,
+          _start: startDate,
+          _end: endDate,
+        }),
+        supabase.from('sectors').select('id, name').eq('tenant_id', currentTenantId),
+      ]);
+
+      const pShifts = (pShiftsRes.data ?? []) as Array<{
+        id: string; shift_date: string; start_time: string; end_time: string; sector_id: string | null; hospital: string | null;
+      }>;
+      const pAssignments = (pAssignRes.data ?? []) as Array<{ id: string; shift_id: string; user_id: string; name: string | null }>;
+      const sectorNameById = new Map((pSectorsRes.data ?? []).map((s: any) => [s.id as string, s.name as string]));
+      const nameByUser = new Map<string, string>();
+      pAssignments.forEach((a) => {
+        if (a.name && !nameByUser.has(a.user_id)) nameByUser.set(a.user_id, a.name);
+      });
+      const shiftById = new Map(pShifts.map((s) => [s.id, s]));
+
+      const active = detectScheduleConflicts({
+        assignments: pAssignments.map((a) => ({ id: a.id, shift_id: a.shift_id, user_id: a.user_id })),
+        shiftById,
+        getSectorName: (sectorId) => (sectorId ? (sectorNameById.get(sectorId) ?? 'Sem setor') : 'Sem setor'),
+        getUserName: (userId) => nameByUser.get(userId) ?? 'Plantonista',
+      });
+
+      const activeRecords: ConflictRecord[] = active
+        .filter((conf) => conf.date >= startDate && conf.date <= endDate)
+        .map((conf) => {
+          const locais = Array.from(
+            new Set(conf.shifts.map((s) => `${s.sectorName} (${s.startTime.slice(0, 5)}-${s.endTime.slice(0, 5)})`)),
+          );
+          return {
+            id: `pending_${conf.id}`,
+            conflict_date: conf.date,
+            plantonista_name: conf.userName,
+            resolution_type: 'pending',
+            removed_sector_name: null,
+            removed_shift_time: null,
+            kept_sector_name: null,
+            kept_shift_time: null,
+            justification: null,
+            resolved_at: '',
+            resolved_by_name: '',
+            action_taken: `Conflito ativo (não resolvido): ${conf.shifts.length} plantões sobrepostos — ${locais.join(', ')}.`,
+          };
+        });
+
+      setActiveConflicts(activeRecords);
+    } catch (e) {
+      console.error('Erro ao detectar conflitos ativos:', e);
+      setActiveConflicts([]);
+    }
   }
 
   async function fetchAbsences() {
@@ -1780,22 +1849,25 @@ export default function AdminReports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {conflicts.length === 0 ? (
+                      {(activeConflicts.length + conflicts.length) === 0 ? (
                         <TableRow>
                           <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
-                            Nenhum conflito resolvido no período
+                            Nenhum conflito no período
                           </TableCell>
                         </TableRow>
                       ) : (
-                        conflicts.map(conflict => (
+                        [...activeConflicts, ...conflicts].map(conflict => (
                           <TableRow key={conflict.id}>
                             <TableCell>{format(parseISO(conflict.conflict_date), 'dd/MM/yyyy')}</TableCell>
                             <TableCell className="font-medium whitespace-normal break-words max-w-[180px] align-top">
                               {conflict.plantonista_name}
                             </TableCell>
                             <TableCell>
-                              <Badge variant={conflict.resolution_type === 'removed' ? 'destructive' : 'secondary'}>
-                                {conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
+                              <Badge
+                                variant={conflict.resolution_type === 'removed' ? 'destructive' : conflict.resolution_type === 'pending' ? 'outline' : 'secondary'}
+                                className={conflict.resolution_type === 'pending' ? 'border-amber-400 text-amber-600' : undefined}
+                              >
+                                {conflict.resolution_type === 'pending' ? '⚠️ Ativo' : conflict.resolution_type === 'removed' ? 'Removido' : 'Reconhecido'}
                               </Badge>
                             </TableCell>
                             <TableCell className="max-w-[260px] whitespace-normal break-words align-top">
@@ -1826,12 +1898,12 @@ export default function AdminReports() {
                               )}
                             </TableCell>
                             <TableCell className="whitespace-normal break-words max-w-[160px] align-top">
-                              {conflict.resolved_by_name}
+                              {conflict.resolved_by_name || '-'}
                             </TableCell>
                             <TableCell className="max-w-[240px] whitespace-normal break-words align-top">
                               {conflict.justification || '-'}
                             </TableCell>
-                            <TableCell>{format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm')}</TableCell>
+                            <TableCell>{conflict.resolved_at ? format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm') : '-'}</TableCell>
                           </TableRow>
                         ))
                       )}

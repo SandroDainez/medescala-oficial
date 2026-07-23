@@ -23,6 +23,7 @@ import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteA
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
 import { isWeekendDate } from '@/lib/financial/valueCalculation';
+import { detectScheduleConflicts } from '@/lib/scheduleConflicts';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
 import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftIdsByNaturalKey, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
@@ -5319,107 +5320,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     }[];
   }
 
-  function buildConflictKey(userId: string, date: string, conflictShifts: ShiftConflict['shifts']): string {
-    const assignmentIds = conflictShifts
-      .map((shift) => shift.assignmentId)
-      .filter(Boolean)
-      .sort();
-
-    if (assignmentIds.length > 1) {
-      return `${userId}_${date}_${assignmentIds.join('|')}`;
-    }
-
-    return `${userId}_${date}`;
-  }
-
-  // Detect conflicts: same person assigned to overlapping shifts on the same date
+  // Detecção de conflitos centralizada na lib compartilhada (mesma usada nos Relatórios).
   function detectConflicts(): ShiftConflict[] {
-    const conflicts: ShiftConflict[] = [];
-    
-    // Group assignments by user and date
-    const userDateAssignments: Record<string, {
-      userId: string;
-      userName: string;
-      date: string;
-      shifts: {
-        shiftId: string;
-        sectorName: string;
-        startTime: string;
-        endTime: string;
-        assignmentId: string;
-      }[];
-    }> = {};
-
-    assignments.forEach(assignment => {
-      const shift = shifts.find(s => s.id === assignment.shift_id);
-      if (!shift) return;
-
-      const key = `${assignment.user_id}_${shift.shift_date}`;
-      
-      if (!userDateAssignments[key]) {
-        userDateAssignments[key] = {
-          userId: assignment.user_id,
-          userName: getAssignmentName(assignment),
-          date: shift.shift_date,
-          shifts: []
-        };
-      }
-
-      userDateAssignments[key].shifts.push({
-        shiftId: shift.id,
-        sectorName: getSectorName(shift.sector_id, shift.hospital),
-        startTime: shift.start_time,
-        endTime: shift.end_time,
-        assignmentId: assignment.id
-      });
+    const shiftById = new Map(shifts.map((s) => [s.id, s]));
+    const nameByUser = new Map<string, string>();
+    assignments.forEach((a) => {
+      if (!nameByUser.has(a.user_id)) nameByUser.set(a.user_id, getAssignmentName(a));
     });
 
-    // Check for overlapping shifts - only include shifts that actually overlap
-    Object.entries(userDateAssignments).forEach(([key, data]) => {
-      if (data.shifts.length > 1) {
-        // Find shifts that actually overlap with at least one other shift
-        const overlappingShifts: typeof data.shifts = [];
-        
-        data.shifts.forEach((s1, i) => {
-          const hasOverlapWithAnother = data.shifts.some((s2, j) => {
-            if (i === j) return false;
-            
-            const s1Start = parseInt(s1.startTime.replace(':', ''));
-            const s1End = parseInt(s1.endTime.replace(':', ''));
-            const s2Start = parseInt(s2.startTime.replace(':', ''));
-            const s2End = parseInt(s2.endTime.replace(':', ''));
-            
-            // Handle overnight shifts - add 2400 if end time is before start time
-            const s1EndAdjusted = s1End <= s1Start ? s1End + 2400 : s1End;
-            const s2EndAdjusted = s2End <= s2Start ? s2End + 2400 : s2End;
-            
-            // For overnight comparison, also adjust start if comparing across midnight
-            const s1StartAdjusted = s1Start;
-            const s2StartAdjusted = s2Start;
-            
-            // Check overlap: two intervals overlap if one starts before the other ends
-            // Strictly less than (<) means touching endpoints (07:00-19:00 and 19:00-07:00) don't overlap
-            return s1StartAdjusted < s2EndAdjusted && s2StartAdjusted < s1EndAdjusted;
-          });
-          
-          if (hasOverlapWithAnother && !overlappingShifts.some(os => os.shiftId === s1.shiftId)) {
-            overlappingShifts.push(s1);
-          }
-        });
-
-        if (overlappingShifts.length > 1) {
-          conflicts.push({
-            id: buildConflictKey(data.userId, data.date, overlappingShifts),
-            userId: data.userId,
-            userName: data.userName,
-            date: data.date,
-            shifts: overlappingShifts // Only include shifts that actually overlap
-          });
-        }
-      }
-    });
-
-    return conflicts;
+    return detectScheduleConflicts({
+      assignments: assignments.map((a) => ({ id: a.id, shift_id: a.shift_id, user_id: a.user_id })),
+      shiftById,
+      getSectorName: (sectorId, hospital) => getSectorName(sectorId, hospital ?? null),
+      getUserName: (userId) =>
+        nameByUser.get(userId) ?? getMemberDisplayName(members.find((m) => m.user_id === userId)),
+    }) as ShiftConflict[];
   }
 
   const conflicts = detectConflicts();
