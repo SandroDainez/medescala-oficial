@@ -595,6 +595,26 @@ export default function AdminReports() {
 
     const filtered = (data || []).filter(isInSelectedPeriod);
 
+    // Monta o texto da ação incluindo os horários e deixando claro cada caso:
+    // duplicata (mesmo setor e horário), mesmo setor com turnos diferentes, ou setores diferentes.
+    const describeRemoval = (c: any): string => {
+      const remSector = (c.removed_sector_name || '').trim() || 'setor não informado';
+      const keepSector = (c.kept_sector_name || '').trim() || 'setor não informado';
+      const remTime = (c.removed_shift_time || '').trim();
+      const keepTime = (c.kept_shift_time || '').trim();
+      const sameSector = remSector === keepSector && remSector !== 'setor não informado';
+
+      if (sameSector && remTime && keepTime && remTime === keepTime) {
+        return `Atribuição duplicada em ${remSector} (${remTime}): removida a cópia; a outra foi mantida.`;
+      }
+      if (sameSector) {
+        return `No setor ${remSector}: removido o plantão ${remTime || '—'} e mantido o plantão ${keepTime || '—'}.`;
+      }
+      const remLabel = remTime ? `${remSector} (${remTime})` : remSector;
+      const keepLabel = keepTime ? `${keepSector} (${keepTime})` : keepSector;
+      return `Removido de ${remLabel} e mantido em ${keepLabel}.`;
+    };
+
     const conflictRecords: ConflictRecord[] = filtered.map((c: any) => ({
       id: c.id,
       conflict_date: c.conflict_date,
@@ -609,8 +629,8 @@ export default function AdminReports() {
       resolved_by_name: c.resolved_by_profile?.full_name || c.resolved_by_profile?.name || 'Administrador',
       action_taken:
         c.resolution_type === 'removed'
-          ? `Removido de ${c.removed_sector_name || 'setor não informado'} e mantido em ${c.kept_sector_name || 'setor não informado'}`
-          : `Conflito reconhecido e mantido em ${c.kept_sector_name || 'setor não informado'}`,
+          ? describeRemoval(c)
+          : `Conflito reconhecido e mantido em ${(c.kept_sector_name || '').trim() || 'setor não informado'}`,
     }));
     
     setConflicts(conflictRecords);
