@@ -48,6 +48,10 @@ export function buildConflictKey(userId: string, date: string, conflictShifts: C
 }
 
 /** Dois plantões se sobrepõem no mesmo dia? Encostar nas pontas (<) não conta como sobreposição. */
+export function doSlotsOverlap(a: ConflictShiftSlot, b: ConflictShiftSlot): boolean {
+  return shiftsOverlap(a, b);
+}
+
 function shiftsOverlap(a: ConflictShiftSlot, b: ConflictShiftSlot): boolean {
   const aStart = parseInt(a.startTime.replace(':', ''), 10);
   const aEnd = parseInt(a.endTime.replace(':', ''), 10);

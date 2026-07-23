@@ -23,7 +23,7 @@ import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteA
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
 import { isWeekendDate } from '@/lib/financial/valueCalculation';
-import { detectScheduleConflicts } from '@/lib/scheduleConflicts';
+import { detectScheduleConflicts, doSlotsOverlap } from '@/lib/scheduleConflicts';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
 import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftIdsByNaturalKey, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
@@ -5408,10 +5408,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Find all other assignments that will be kept (there might be more than one)
     const keptAssignments = conflict.shifts.filter(s => s.assignmentId !== assignmentToRemove.assignmentId);
     if (keptAssignments.length === 0) return;
-    
-    // Use the first one as primary for the record, but we'll store all in conflict_details
-    const assignmentToKeep = keptAssignments[0];
-    
+
+    // O "mantido" registrado deve ser a CONTRAPARTE real: o plantão que efetivamente
+    // se sobrepõe ao removido. Em conflitos com vários plantões (ex.: dia+noite em 2
+    // setores), pegar o primeiro da lista registra a contraparte errada.
+    const overlappingKept = keptAssignments.find((s) => doSlotsOverlap(assignmentToRemove, s));
+    const assignmentToKeep = overlappingKept ?? keptAssignments[0];
+
     setPendingRemoval({ conflict, assignmentToRemove, assignmentToKeep });
     setRemoveConfirmDialogOpen(true);
   }
