@@ -447,6 +447,17 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (resolution?.resolution_type === 'removed') {
       const removed = getResolutionLocation(resolution, 'removed');
       const kept = getResolutionLocation(resolution, 'kept');
+      // Duplicata no mesmo setor/horário: o texto "tirado de X e mantido em X"
+      // fica sem sentido. Mostra uma mensagem clara de remoção de duplicata.
+      if (
+        removed.sectorName === kept.sectorName &&
+        removed.shiftTime === kept.shiftTime &&
+        removed.sectorName !== 'Não informado'
+      ) {
+        const total = safeParseConflictDetails(resolution?.conflict_details).length;
+        const totalLabel = total >= 2 ? ` (1 de ${total})` : '';
+        return `Atribuição duplicada em ${removed.sectorName} (${removed.shiftTime}): removida a cópia${totalLabel}; a outra foi mantida.`;
+      }
       return `Tirado de ${removed.sectorName} (${removed.shiftTime}) e mantido em ${kept.sectorName} (${kept.shiftTime}).`;
     }
 
@@ -507,20 +518,41 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                 <p className="text-sm whitespace-pre-wrap break-words">{resolution.justification}</p>
               </div>
             </div>
-          ) : (
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
-                <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
-                <p className="text-sm font-medium">{getResolutionLocation(resolution, 'removed').sectorName}</p>
-                <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'removed').shiftTime}</p>
+          ) : (() => {
+            const removedLoc = getResolutionLocation(resolution, 'removed');
+            const keptLoc = getResolutionLocation(resolution, 'kept');
+            const sameSlot =
+              removedLoc.sectorName === keptLoc.sectorName &&
+              removedLoc.shiftTime === keptLoc.shiftTime &&
+              removedLoc.sectorName !== 'Não informado';
+
+            if (sameSlot) {
+              // Duplicata no mesmo setor/horário: uma caixa só, evitando duas idênticas.
+              return (
+                <div className="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-950/20">
+                  <p className="text-xs font-medium text-amber-700 dark:text-amber-400">🔁 Duplicata removida em:</p>
+                  <p className="text-sm font-medium">{removedLoc.sectorName}</p>
+                  <p className="text-xs text-muted-foreground">{removedLoc.shiftTime}</p>
+                  <p className="text-xs text-muted-foreground mt-1">Havia duas atribuições iguais neste plantão; uma foi removida e a outra mantida.</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <div className="p-2 rounded bg-red-50 dark:bg-red-950/20">
+                  <p className="text-xs font-medium text-red-600 dark:text-red-400">❌ Removido de:</p>
+                  <p className="text-sm font-medium">{removedLoc.sectorName}</p>
+                  <p className="text-xs text-muted-foreground">{removedLoc.shiftTime}</p>
+                </div>
+                <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
+                  <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
+                  <p className="text-sm font-medium">{keptLoc.sectorName}</p>
+                  <p className="text-xs text-muted-foreground">{keptLoc.shiftTime}</p>
+                </div>
               </div>
-              <div className="p-2 rounded bg-green-50 dark:bg-green-950/20">
-                <p className="text-xs font-medium text-green-600 dark:text-green-400">✅ Mantido em:</p>
-                <p className="text-sm font-medium">{getResolutionLocation(resolution, 'kept').sectorName}</p>
-                <p className="text-xs text-muted-foreground">{getResolutionLocation(resolution, 'kept').shiftTime}</p>
-              </div>
-            </div>
-          )}
+            );
+          })()}
           
           <p className="text-xs text-muted-foreground mt-2">
             Resolvido por {getResolvedByName(resolution)} em {format(parseISO(resolution.resolved_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
