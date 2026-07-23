@@ -1915,7 +1915,52 @@ export default function AdminReports() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="conflicts">
+        <TabsContent value="conflicts" className="space-y-4">
+          {activeConflicts.length > 0 && (
+            <Card className="border-amber-400/60">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="h-5 w-5" />
+                  Conflitos Ativos (não resolvidos) — {activeConflicts.length}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Conflitos detectados na escala do período que ainda não foram resolvidos.
+                  Resolva-os no calendário (aba Escala) para que passem ao histórico abaixo.
+                </p>
+                <ScrollArea className="max-h-[320px]">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data</TableHead>
+                        <TableHead>Plantonista</TableHead>
+                        <TableHead>Situação</TableHead>
+                        <TableHead>Detalhe</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {activeConflicts.map(c => (
+                        <TableRow key={c.id} className="bg-amber-50/40 dark:bg-amber-950/10">
+                          <TableCell>{format(parseISO(c.conflict_date), 'dd/MM/yyyy')}</TableCell>
+                          <TableCell className="font-medium whitespace-normal break-words max-w-[180px] align-top">
+                            {c.plantonista_name}
+                          </TableCell>
+                          <TableCell className="align-top">
+                            <Badge variant="outline" className="border-amber-400 text-amber-600">⚠️ Ativo</Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-normal break-words max-w-[460px] text-sm align-top">
+                            {c.action_taken}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
