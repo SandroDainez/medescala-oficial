@@ -200,6 +200,7 @@ export default function SuperAdmin() {
   const [grantAsOwner, setGrantAsOwner] = useState(false);
 
   // Edit form state
+  const [editName, setEditName] = useState('');
   const [editBillingStatus, setEditBillingStatus] = useState('');
   const [editPlanId, setEditPlanId] = useState('');
   const [editTrialMonths, setEditTrialMonths] = useState(1);
@@ -705,6 +706,7 @@ export default function SuperAdmin() {
   function openEditDialog(tenant: Tenant) {
     const matchedPlan = planOptions.find((p) => p.name === tenant.plan_name);
     setSelectedTenant(tenant);
+    setEditName(tenant.name || '');
     setEditBillingStatus(tenant.billing_status);
     setEditPlanId(matchedPlan?.id || '');
     setEditTrialMonths(1);
@@ -723,7 +725,26 @@ export default function SuperAdmin() {
   async function handleSaveChanges() {
     if (!selectedTenant) return;
 
+    const trimmedName = editName.trim();
+    if (!trimmedName) {
+      toast({ title: 'Nome obrigatório', description: 'Informe o nome do hospital/serviço.', variant: 'destructive' });
+      return;
+    }
+
     setSaving(true);
+
+    // Renomeia o hospital (se mudou) antes das demais alterações.
+    if (trimmedName !== (selectedTenant.name || '')) {
+      const { error: renameError } = await (supabase as any).rpc('super_admin_rename_tenant', {
+        _tenant_id: selectedTenant.id,
+        _name: trimmedName,
+      });
+      if (renameError) {
+        setSaving(false);
+        toast({ title: 'Erro ao renomear hospital', description: renameError.message, variant: 'destructive' });
+        return;
+      }
+    }
 
     // Calculate new trial end date if extending
     let newTrialEndsAt: string | null = null;
@@ -1435,6 +1456,20 @@ export default function SuperAdmin() {
             <DialogTitle>Editar Acesso - {selectedTenant?.name}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-tenant-name">Nome do hospital/serviço</Label>
+              <Input
+                id="edit-tenant-name"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Ex.: UTI APAS"
+                maxLength={120}
+              />
+              <p className="text-xs text-muted-foreground">
+                Nome exibido no app. O código de acesso ({selectedTenant?.slug || selectedTenant?.name}) não muda.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Plano</Label>
               <Select value={editPlanId} onValueChange={setEditPlanId}>
