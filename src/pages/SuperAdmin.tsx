@@ -199,6 +199,11 @@ export default function SuperAdmin() {
   const [grantEmail, setGrantEmail] = useState('');
   const [grantAsOwner, setGrantAsOwner] = useState(false);
 
+  // Exclusão de hospital (dupla confirmação)
+  const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
+  const [deleteConfirmCode, setDeleteConfirmCode] = useState('');
+  const [deleteConfirmWord, setDeleteConfirmWord] = useState('');
+
   // Edit form state
   const [editName, setEditName] = useState('');
   const [editBillingStatus, setEditBillingStatus] = useState('');
@@ -569,17 +574,22 @@ export default function SuperAdmin() {
     fetchTenants();
   }, [createAdminEmail, createName, createSlug, fetchTenants, toast]);
 
-  const handleDeleteTenant = useCallback(async (tenant: Tenant) => {
-    const confirmSlug = window.prompt(
-      `Para confirmar a exclusão definitiva, digite o código do hospital: ${tenant.slug}`
-    );
+  // Abre o diálogo de dupla confirmação (não exclui direto).
+  const handleDeleteTenant = useCallback((tenant: Tenant) => {
+    setDeleteTarget(tenant);
+    setDeleteConfirmCode('');
+    setDeleteConfirmWord('');
+  }, []);
 
-    if (!confirmSlug) return;
+  // Executa a exclusão de fato, após as duas confirmações baterem.
+  const confirmDeleteTenant = useCallback(async () => {
+    const tenant = deleteTarget;
+    if (!tenant) return;
 
     setDeletingTenantId(tenant.id);
     const { error } = await supabase.rpc('super_admin_delete_tenant', {
       _tenant_id: tenant.id,
-      _confirm_slug: confirmSlug.trim().toLowerCase(),
+      _confirm_slug: deleteConfirmCode.trim().toLowerCase(),
     });
     setDeletingTenantId(null);
 
@@ -593,6 +603,9 @@ export default function SuperAdmin() {
     }
 
     toast({ title: 'Hospital removido com sucesso.' });
+    setDeleteTarget(null);
+    setDeleteConfirmCode('');
+    setDeleteConfirmWord('');
     if (selectedTenant?.id === tenant.id) {
       setDetailsDialogOpen(false);
       setSelectedTenant(null);
@@ -601,7 +614,7 @@ export default function SuperAdmin() {
       setTenantBillingEvents([]);
     }
     fetchTenants();
-  }, [fetchTenants, selectedTenant?.id, toast]);
+  }, [deleteTarget, deleteConfirmCode, fetchTenants, selectedTenant?.id, toast]);
 
   const handleSaveBillingEvent = useCallback(async () => {
     if (!selectedTenant) return;
@@ -1545,6 +1558,65 @@ export default function SuperAdmin() {
             </Button>
             <Button onClick={handleSaveChanges} disabled={saving}>
               {saving ? 'Salvando...' : 'Salvar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exclusão de hospital — dupla confirmação */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteConfirmCode(''); setDeleteConfirmWord(''); } }}>
+        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Excluir hospital — ação permanente</DialogTitle>
+          </DialogHeader>
+          {deleteTarget && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
+                <p className="font-semibold text-destructive">Você está prestes a excluir "{deleteTarget.name}" definitivamente.</p>
+                <p className="mt-1 text-muted-foreground">
+                  Isso apaga <strong>tudo</strong> do hospital, sem volta: usuários, setores, escalas,
+                  plantões, atribuições, financeiro e histórico. Não há como desfazer.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="del-code">1. Digite o código do hospital: <code className="rounded bg-muted px-1">{deleteTarget.slug}</code></Label>
+                <Input
+                  id="del-code"
+                  value={deleteConfirmCode}
+                  onChange={(e) => setDeleteConfirmCode(e.target.value)}
+                  placeholder={deleteTarget.slug}
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="del-word">2. Digite <strong>EXCLUIR</strong> para confirmar</Label>
+                <Input
+                  id="del-word"
+                  value={deleteConfirmWord}
+                  onChange={(e) => setDeleteConfirmWord(e.target.value)}
+                  placeholder="EXCLUIR"
+                  autoComplete="off"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setDeleteTarget(null); setDeleteConfirmCode(''); setDeleteConfirmWord(''); }}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmDeleteTenant}
+              disabled={
+                !deleteTarget ||
+                deletingTenantId === deleteTarget?.id ||
+                deleteConfirmCode.trim().toLowerCase() !== (deleteTarget?.slug ?? '').trim().toLowerCase() ||
+                deleteConfirmWord.trim().toUpperCase() !== 'EXCLUIR'
+              }
+            >
+              {deletingTenantId === deleteTarget?.id ? 'Excluindo...' : 'Excluir definitivamente'}
             </Button>
           </DialogFooter>
         </DialogContent>
