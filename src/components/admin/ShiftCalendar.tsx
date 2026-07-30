@@ -3704,10 +3704,48 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       notifyWarning('Plantonista inválido para o setor', 'Atribua somente plantonistas cadastrados no setor deste plantão.');
       return;
     }
-    
+
+    // Plantão é de ocupação única. Se já houver OUTRO plantonista ativo, isto é uma
+    // SUBSTITUIÇÃO: remove o atual (com confirmação) e atribui o novo, em vez de
+    // falhar com "já possui atribuição ativa".
+    const occupantsToReplace = assignments.filter(
+      (a) => a.shift_id === selectedShift.id && a.user_id !== assignData.user_id,
+    );
+    if (occupantsToReplace.length > 0) {
+      const oldName = getAssignmentName(occupantsToReplace[0]);
+      const newName = getMemberDisplayName(members.find((m) => m.user_id === assignData.user_id));
+      if (!confirm(`Este plantão já está com ${oldName}. Deseja substituir por ${newName}?`)) return;
+
+      for (const occ of occupantsToReplace) {
+        try {
+          await deleteAdminAssignment(occ.id);
+        } catch (error) {
+          notifyError('substituir plantonista', error, 'Não foi possível remover o plantonista atual para substituir.');
+          return;
+        }
+        if (currentTenantId && user?.id) {
+          const shiftDate = parseISO(selectedShift.shift_date);
+          await recordScheduleMovement({
+            tenant_id: currentTenantId,
+            month: shiftDate.getMonth() + 1,
+            year: shiftDate.getFullYear(),
+            user_id: occ.user_id,
+            user_name: occ.profile?.name || getAssignmentName(occ) || 'Desconhecido',
+            movement_type: 'removed',
+            source_sector_id: selectedShift.sector_id || null,
+            source_sector_name: getSectorName(selectedShift.sector_id, selectedShift.hospital),
+            source_shift_date: selectedShift.shift_date,
+            source_shift_time: `${selectedShift.start_time.slice(0, 5)}-${selectedShift.end_time.slice(0, 5)}`,
+            source_assignment_id: occ.id,
+            performed_by: user.id,
+          });
+        }
+      }
+    }
+
     // Check if there's already an assignment (to determine if this is an add or update)
     const existingAssignment = assignments.find(a => a.shift_id === selectedShift.id && a.user_id === assignData.user_id);
-    
+
     try {
       await upsertAdminAssignment({
         tenantId: currentTenantId,
