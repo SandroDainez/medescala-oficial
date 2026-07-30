@@ -578,6 +578,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [importFileName, setImportFileName] = useState('');
   const [importPreviewRows, setImportPreviewRows] = useState<ImportedShiftRow[]>([]);
   const [importErrors, setImportErrors] = useState<string[]>([]);
+  // Contagem para detectar perda silenciosa de linhas na leitura do arquivo.
+  const [importStats, setImportStats] = useState<{ fileRows: number; valid: number; ignored: number } | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   
   // Form data
@@ -1401,6 +1403,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   async function handleImportScheduleFile(file: File) {
     if (!file) return;
 
+    setImportStats(null);
     try {
       const ext = file.name.split('.').pop()?.toLowerCase();
       if (!ext || !['xlsx', 'xls', 'csv'].includes(ext)) {
@@ -1635,10 +1638,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           ...fallback.errors,
           'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
         ]);
+        setImportStats(null); // formato de grade: contagem linha-a-linha não se aplica
         setImportFileName(file.name);
         notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
         return;
       }
+
+      // Quantas linhas de dados não-vazias havia no arquivo, para detectar perda silenciosa.
+      const nonEmptyFileRows = rows.filter(
+        (r) => !Object.values(r).every((v) => String(v ?? '').trim() === ''),
+      ).length;
+      setImportStats({
+        fileRows: nonEmptyFileRows,
+        valid: parsed.length,
+        ignored: Math.max(0, nonEmptyFileRows - parsed.length),
+      });
 
       setImportPreviewRows(parsed);
       setImportErrors(errors);
@@ -1649,10 +1663,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return;
       }
 
-      notifyInfo('Arquivo carregado', `${parsed.length} linha(s) pronta(s) para importar.`);
+      const ignoredNow = Math.max(0, nonEmptyFileRows - parsed.length);
+      if (ignoredNow > 0) {
+        notifyWarning(
+          'Atenção: nem todas as linhas foram lidas',
+          `${parsed.length} de ${nonEmptyFileRows} linhas válidas — ${ignoredNow} ignorada(s). Veja os avisos antes de importar.`,
+        );
+      } else {
+        notifyInfo('Arquivo carregado', `${parsed.length} linha(s) pronta(s) para importar.`);
+      }
     } catch (error) {
       setImportPreviewRows([]);
       setImportErrors(['Não foi possível interpretar o arquivo selecionado.']);
+      setImportStats(null);
       notifyError('importar escala', error, 'Falha ao ler o arquivo de importação.');
     }
   }
@@ -1894,6 +1917,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setImportDialogOpen(false);
       setImportPreviewRows([]);
       setImportErrors([]);
+      setImportStats(null);
       setImportFileName('');
       await fetchData();
     } catch (error) {
@@ -7912,6 +7936,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               )}
             </div>
 
+            {importStats && importStats.ignored > 0 && (
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3">
+                <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                  ⚠️ Atenção: {importStats.ignored} linha(s) do arquivo NÃO serão importadas
+                </p>
+                <p className="mt-1 text-xs text-red-700 dark:text-red-200">
+                  O arquivo tem {importStats.fileRows} linhas, mas só {importStats.valid} são válidas.
+                  Veja os motivos nos avisos abaixo. Corrija o arquivo e reimporte, ou clique em
+                  "Importar mesmo assim" para gravar só as válidas.
+                </p>
+              </div>
+            )}
+
             {importErrors.length > 0 && (
               <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
                 <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
@@ -7961,10 +7998,15 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
               </Button>
               <Button
                 type="button"
+                variant={importStats && importStats.ignored > 0 ? 'destructive' : 'default'}
                 onClick={confirmImportSchedule}
                 disabled={importPreviewRows.length === 0 || importingShifts}
               >
-                {importingShifts ? 'Importando...' : `Importar ${importPreviewRows.length || ''}`.trim()}
+                {importingShifts
+                  ? 'Importando...'
+                  : importStats && importStats.ignored > 0
+                    ? `Importar mesmo assim (${importPreviewRows.length})`
+                    : `Importar ${importPreviewRows.length || ''}`.trim()}
               </Button>
             </div>
           </div>
