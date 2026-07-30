@@ -23,22 +23,22 @@ export default function TrialExpired({ daysExpired, tenantName }: TrialExpiredPr
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-destructive/10">
             <AlertTriangle className="h-8 w-8 text-destructive" />
           </div>
-          <CardTitle className="text-2xl">Período de teste expirado</CardTitle>
+          <CardTitle className="text-2xl">Acesso temporariamente suspenso</CardTitle>
           <CardDescription className="text-base mt-2">
-            O período de teste do <strong>{displayName}</strong> chegou ao fim.
+            O acesso do <strong>{displayName}</strong> está suspenso por pendência na assinatura.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="bg-muted/50 rounded-lg p-4 text-sm text-muted-foreground">
             <p>
-              Para continuar utilizando o MedEscala, entre em contato conosco para 
-              ativar sua assinatura.
+              Para reativar o MedEscala, regularize a assinatura ou entre em contato
+              com o responsável administrativo do seu hospital/serviço.
             </p>
           </div>
 
           <div className="space-y-3">
             <Button className="w-full" size="lg" asChild>
-              <a href="mailto:contato@medescala.com?subject=Ativar assinatura - MedEscala">
+              <a href="mailto:contato@medescala.com?subject=Reativar assinatura - MedEscala">
                 <Mail className="mr-2 h-4 w-4" />
                 Entrar em contato
               </a>
@@ -55,7 +55,8 @@ export default function TrialExpired({ daysExpired, tenantName }: TrialExpiredPr
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Seus dados estão seguros e serão mantidos por 30 dias após a expiração.
+            Seus dados estão seguros e preservados. Ao regularizar, o acesso é liberado
+            imediatamente e nada é perdido.
           </p>
         </CardContent>
       </Card>

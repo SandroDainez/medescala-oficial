@@ -176,6 +176,7 @@ export default function SuperAdmin() {
   const [createAdminEmail, setCreateAdminEmail] = useState('');
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
+  const [blockingTenantId, setBlockingTenantId] = useState<string | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [tenantDetails, setTenantDetails] = useState<TenantSuperAdminDetails | null>(null);
   const [tenantAdminContacts, setTenantAdminContacts] = useState<TenantAdminContact[]>([]);
@@ -573,6 +574,49 @@ export default function SuperAdmin() {
     setCreateDialogOpen(false);
     fetchTenants();
   }, [createAdminEmail, createName, createSlug, fetchTenants, toast]);
+
+  // Bloqueia (falta de pagamento) ou reativa o acesso do hospital.
+  // Bloqueado => billing_status 'expired': ninguém do hospital acessa, todos veem
+  // a tela de pendência. Reativar => 'active'.
+  const handleToggleBlockTenant = useCallback(async (tenant: Tenant) => {
+    const isBlocked = tenant.billing_status === 'expired' || tenant.billing_status === 'cancelled';
+
+    if (!isBlocked) {
+      const ok = window.confirm(
+        `Bloquear o acesso de "${tenant.name}" por falta de pagamento?\n\n` +
+        `Todos os usuários deste hospital deixarão de acessar o app e verão um aviso ` +
+        `de pendência financeira. Os dados são preservados e você pode reativar quando quiser.`
+      );
+      if (!ok) return;
+    }
+
+    setBlockingTenantId(tenant.id);
+    const { error } = await supabase.rpc('update_tenant_access', {
+      _tenant_id: tenant.id,
+      _billing_status: isBlocked ? 'active' : 'expired',
+      _is_unlimited: false,
+      _trial_ends_at: null,
+      _clear_trial_ends_at: true,
+    });
+    setBlockingTenantId(null);
+
+    if (error) {
+      toast({
+        title: isBlocked ? 'Erro ao reativar hospital' : 'Erro ao bloquear hospital',
+        description: error.message,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({
+      title: isBlocked ? 'Hospital reativado' : 'Hospital bloqueado',
+      description: isBlocked
+        ? `${tenant.name} voltou a ter acesso liberado.`
+        : `${tenant.name} está bloqueado por pendência. Os usuários verão o aviso de pagamento.`,
+    });
+    fetchTenants();
+  }, [fetchTenants, toast]);
 
   // Abre o diálogo de dupla confirmação (não exclui direto).
   const handleDeleteTenant = useCallback((tenant: Tenant) => {
@@ -1383,6 +1427,31 @@ export default function SuperAdmin() {
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
+                            {(() => {
+                              const blocked = tenant.billing_status === 'expired' || tenant.billing_status === 'cancelled';
+                              return (
+                                <Button
+                                  variant={blocked ? 'outline' : 'ghost'}
+                                  size="sm"
+                                  className={blocked ? 'border-green-500/50 text-green-600 hover:text-green-600' : 'text-amber-600 hover:text-amber-600'}
+                                  disabled={blockingTenantId === tenant.id}
+                                  title={blocked ? 'Reativar acesso do hospital' : 'Bloquear acesso por falta de pagamento'}
+                                  onClick={() => handleToggleBlockTenant(tenant)}
+                                >
+                                  {blocked ? (
+                                    <>
+                                      <CheckCircle className="h-4 w-4 mr-1" />
+                                      Reativar
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Lock className="h-4 w-4 mr-1" />
+                                      Bloquear
+                                    </>
+                                  )}
+                                </Button>
+                              );
+                            })()}
                             {isAppOwner && (
                               <Button
                                 variant="ghost"
