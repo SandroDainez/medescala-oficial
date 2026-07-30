@@ -659,6 +659,20 @@ export default function SectorProfitability() {
             value: String(existing.input),
             removable: true,
           })),
+        // Despesas lançadas fora deste painel (diálogo simples) também entram aqui,
+        // editáveis — antes ficavam invisíveis no painel mas contavam no total.
+        ...sectorExpenses
+          .filter((expense) => !expense.notes || !expense.notes.startsWith(ACCOUNTING_NOTE_PREFIX))
+          .map((expense) => ({
+            id: `avulsa-${expense.id}`,
+            key: `avulsa-${expense.id}`,
+            label: expense.expense_name || 'Despesa',
+            expense_type: expense.expense_type,
+            enabled: true,
+            mode: 'fixed' as AccountingMode,
+            value: String(Number(expense.amount ?? 0)),
+            removable: true,
+          })),
       ]
     );
     setAccountingDialogOpen(true);
@@ -704,16 +718,18 @@ export default function SectorProfitability() {
         if (error) throw error;
       }
 
+      // O painel agora carrega TODAS as despesas do setor/mês (inclusive as lançadas
+      // pelo diálogo simples), então ele é a fonte de verdade: apaga todas e regrava
+      // a partir dos itens da tela. Antes só as próprias eram gerenciadas, o que
+      // deixava as avulsas invisíveis aqui e sujeitas a duplicar.
       const sectorExpenses = getSectorExpenses(accountingSector.id);
-      const managedExpenseIds = sectorExpenses
-        .filter((expense) => expense.notes?.startsWith(ACCOUNTING_NOTE_PREFIX))
-        .map((expense) => expense.id);
+      const expenseIdsToReplace = sectorExpenses.map((expense) => expense.id);
 
-      if (managedExpenseIds.length > 0) {
+      if (expenseIdsToReplace.length > 0) {
         const { error } = await supabase
           .from('sector_expenses')
           .delete()
-          .in('id', managedExpenseIds);
+          .in('id', expenseIdsToReplace);
         if (error) throw error;
       }
 
@@ -1222,37 +1238,7 @@ export default function SectorProfitability() {
                         </Button>
                         <Button
                           type="button"
-                          variant="outline"
                           size="sm"
-                          className={actionButtonClass}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openRevenueDialog(sector);
-                          }}
-                        >
-                          <Edit className="mr-1 h-4 w-4" />
-                          Receitas
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className={actionButtonClass}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            openExpenseDialog(sector);
-                          }}
-                        >
-                          <Plus className="mr-1 h-4 w-4" />
-                          Despesas
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className={actionButtonClass}
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
@@ -1260,7 +1246,7 @@ export default function SectorProfitability() {
                           }}
                         >
                           <Calculator className="mr-1 h-4 w-4" />
-                          Resumo Contábil
+                          Receitas e Despesas
                         </Button>
                         </div>
                       </div>
