@@ -115,6 +115,77 @@ const SQUARE_SELECT_CONTENT_CLASS =
 const SQUARE_SELECT_ITEM_CLASS =
   "my-1 rounded-lg border border-border/60 px-2 py-2 text-sm data-[state=checked]:border-primary/70 data-[state=checked]:bg-primary/10";
 
+/**
+ * Parser de CSV próprio (texto puro, sem conversão de tipos).
+ *
+ * IMPORTANTE: não usar a biblioteca de planilha para CSV. Ela converte datas
+ * brasileiras (DD/MM/AAAA) em Date interpretando como MM/DD quando o dia é <= 12,
+ * então "01/08/2026" virava 08/01/2026 e o plantão ia para o mês errado —
+ * silenciosamente. Lendo como texto, o parser de data do app (DD/MM) acerta sempre.
+ */
+function parseCsvMatrix(text: string): string[][] {
+  // Remove BOM
+  const input = text.replace(/^﻿/, '');
+
+  // Detecta o separador pela primeira linha (vírgula, ponto-e-vírgula ou tab)
+  const firstLine = input.split(/\r?\n/, 1)[0] ?? '';
+  const counts: Array<[string, number]> = [
+    [',', (firstLine.match(/,/g) || []).length],
+    [';', (firstLine.match(/;/g) || []).length],
+    ['\t', (firstLine.match(/\t/g) || []).length],
+  ];
+  counts.sort((a, b) => b[1] - a[1]);
+  const delimiter = counts[0][1] > 0 ? counts[0][0] : ',';
+
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const char = input[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (input[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === delimiter) {
+      row.push(field.trim());
+      field = '';
+    } else if (char === '\n') {
+      row.push(field.trim());
+      rows.push(row);
+      row = [];
+      field = '';
+    } else if (char === '\r') {
+      // ignora (tratado no \n)
+    } else {
+      field += char;
+    }
+  }
+
+  // última célula/linha
+  if (field.length > 0 || row.length > 0) {
+    row.push(field.trim());
+    rows.push(row);
+  }
+
+  // descarta linhas totalmente vazias
+  return rows.filter((r) => r.some((cell) => cell !== ''));
+}
+
 function normalizeTimeInput(rawValue: string): string {
   const digits = rawValue.replace(/\D/g, '').slice(0, 4);
   const typedColon = rawValue.includes(':');
@@ -1411,24 +1482,35 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return;
       }
 
-      const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-      const firstSheetName = workbook.SheetNames[0];
-      const sheet = firstSheetName ? workbook.Sheets[firstSheetName] : undefined;
+      let rawMatrix: (string | number | Date)[][];
+      let firstSheetName = file.name;
 
-      if (!sheet) {
-        setImportPreviewRows([]);
-        setImportErrors(['Não foi possível localizar uma aba válida no arquivo.']);
-        notifyWarning('Arquivo inválido', 'A planilha não possui uma aba legível para importação.');
-        return;
+      if (ext === 'csv') {
+        // CSV é lido como TEXTO por parser próprio: a biblioteca de planilha
+        // converte DD/MM/AAAA em Date usando MM/DD quando o dia é <= 12,
+        // jogando os plantões para o mês errado sem avisar.
+        const text = await file.text();
+        rawMatrix = parseCsvMatrix(text);
+      } else {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+        firstSheetName = workbook.SheetNames[0];
+        const sheet = firstSheetName ? workbook.Sheets[firstSheetName] : undefined;
+
+        if (!sheet) {
+          setImportPreviewRows([]);
+          setImportErrors(['Não foi possível localizar uma aba válida no arquivo.']);
+          notifyWarning('Arquivo inválido', 'A planilha não possui uma aba legível para importação.');
+          return;
+        }
+
+        rawMatrix = XLSX.utils.sheet_to_json<(string | number | Date)[]>(sheet, {
+          header: 1,
+          defval: '',
+          raw: false,
+          blankrows: false,
+        });
       }
-
-      const rawMatrix = XLSX.utils.sheet_to_json<(string | number | Date)[]>(sheet, {
-        header: 1,
-        defval: '',
-        raw: false,
-        blankrows: false,
-      });
 
       if (!rawMatrix.length) {
         setImportPreviewRows([]);
