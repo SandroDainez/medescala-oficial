@@ -1951,7 +1951,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           useSectorDefault: true,
           applyProRata: true,
         });
-        const assignmentValueToPersist = assignedValue ?? 0;
+        // IMPORTANTE: quando não há valor a aplicar (setor sem valor padrão, por ex.),
+        // persistir NULL — e não 0. Zero é tratado como "valor manual explícito" e
+        // impede que o valor padrão do setor seja aplicado depois ("aplicar a plantões
+        // existentes" só preenche quem está sem valor). Gravar 0 aqui fazia a escala
+        // importada ficar zerada no Financeiro para sempre.
+        const assignmentValueToPersist = assignedValue;
 
         if (assignedValue === null && zeroValueAssignments.length < 8) {
           zeroValueAssignments.push(`${importedName ?? 'Plantonista'} em ${shiftContext}`);
@@ -1981,7 +1986,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           : '';
       const zeroValueText =
         zeroValueAssignments.length > 0
-          ? ` Valores zerados automaticamente: ${zeroValueAssignments.slice(0, 4).join(', ')}${zeroValueAssignments.length > 4 ? '...' : ''}.`
+          ? ` Sem valor definido (defina o valor padrão do setor e use "aplicar a plantões existentes"): ${zeroValueAssignments.slice(0, 4).join(', ')}${zeroValueAssignments.length > 4 ? '...' : ''}.`
           : '';
       const issueSummary = buildIssueSummary(importIssues, importErrorCount);
       if (importErrorCount > 0) {
