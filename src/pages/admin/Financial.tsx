@@ -739,18 +739,58 @@ export default function AdminFinancial() {
 
   // Export CSV - Totais por Plantonista (summary view)
   function exportCSVPlantonistas() {
-    const headers = ['Plantonista', 'Plantões', 'Horas', 'Sem Valor', 'Total'];
-    const rows = visiblePlantonistaReports
-      .slice()
-      .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name))
-      .map(p => [
-        p.assignee_name,
-        p.total_shifts.toString(),
-        p.total_hours.toFixed(1),
-        p.unpriced_shifts.toString(),
-        p.total_to_receive > 0 ? p.total_to_receive.toFixed(2) : '0.00',
+    // Respeita o modo "Separar por setor" da tela: com ele ligado, o arquivo sai
+    // com uma coluna Setor e subtotais por setor, em vez de tudo somado.
+    const headers = groupPlantonistasBySector
+      ? ['Setor', 'Plantonista', 'Plantões', 'Horas', 'Sem Valor', 'Total']
+      : ['Plantonista', 'Plantões', 'Horas', 'Sem Valor', 'Total'];
+
+    const rows: string[][] = [];
+
+    if (groupPlantonistasBySector) {
+      sectorReportsForGrouping.forEach((setor) => {
+        setor.plantonistas.forEach((linha) => {
+          rows.push([
+            setor.sector_name,
+            linha.assignee_name,
+            linha.shifts.toString(),
+            linha.hours.toFixed(1),
+            linha.unpriced.toString(),
+            linha.value > 0 ? linha.value.toFixed(2) : '0.00',
+          ]);
+        });
+        rows.push([
+          setor.sector_name,
+          `SUBTOTAL ${setor.sector_name}`,
+          setor.total_shifts.toString(),
+          setor.total_hours.toFixed(1),
+          setor.unpriced_shifts.toString(),
+          setor.total_value.toFixed(2),
+        ]);
+      });
+      rows.push([
+        '',
+        'TOTAL GERAL',
+        grandTotals.totalShifts.toString(),
+        grandTotals.totalHours.toFixed(1),
+        grandTotals.unpricedShifts.toString(),
+        grandTotals.totalValue.toFixed(2),
       ]);
-    rows.push(['TOTAL', grandTotals.totalShifts.toString(), grandTotals.totalHours.toFixed(1), grandTotals.unpricedShifts.toString(), grandTotals.totalValue.toFixed(2)]);
+    } else {
+      visiblePlantonistaReports
+        .slice()
+        .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name))
+        .forEach((p) => {
+          rows.push([
+            p.assignee_name,
+            p.total_shifts.toString(),
+            p.total_hours.toFixed(1),
+            p.unpriced_shifts.toString(),
+            p.total_to_receive > 0 ? p.total_to_receive.toFixed(2) : '0.00',
+          ]);
+        });
+      rows.push(['TOTAL', grandTotals.totalShifts.toString(), grandTotals.totalHours.toFixed(1), grandTotals.unpricedShifts.toString(), grandTotals.totalValue.toFixed(2)]);
+    }
 
     const csv = [headers.join(';'), ...rows.map(r => r.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
@@ -762,7 +802,7 @@ export default function AdminFinancial() {
       ? sectors.find(s => s.id === filterSetor)?.name?.replace(/\s+/g, '_') ?? 'filtrado'
       : 'todos';
     
-    a.download = `financeiro-plantonistas-${startDate}-a-${endDate}-${setorName}.csv`;
+    a.download = `financeiro-plantonistas${groupPlantonistasBySector ? '-por-setor' : ''}-${startDate}-a-${endDate}-${setorName}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -1020,7 +1060,30 @@ export default function AdminFinancial() {
       .slice()
       .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name));
 
-    const tableRows = sortedReports.map(p => `
+    // Respeita o modo "Separar por setor" da tela: seções por setor com subtotal.
+    const tableRows = groupPlantonistasBySector
+      ? sectorReportsForGrouping.map((setor) => `
+          <tr class="sector-row">
+            <td colspan="5"><strong>${setor.sector_name}</strong> — ${setor.total_shifts} plantão(ões) · ${setor.total_hours.toFixed(1)}h · ${formatCurrency(setor.total_value)}</td>
+          </tr>
+          ${setor.plantonistas.map((linha) => `
+            <tr>
+              <td style="padding-left:22px;">${linha.assignee_name}</td>
+              <td class="center">${linha.shifts}</td>
+              <td class="center">${linha.hours.toFixed(1)}h</td>
+              <td class="center">${linha.unpriced > 0 ? `<span class="no-value">${linha.unpriced}</span>` : '0'}</td>
+              <td class="right">${linha.value > 0 ? formatCurrency(linha.value) : '<span class="no-value">—</span>'}</td>
+            </tr>
+          `).join('')}
+          <tr class="subtotal-row">
+            <td class="right"><strong>Subtotal ${setor.sector_name}</strong></td>
+            <td class="center"><strong>${setor.total_shifts}</strong></td>
+            <td class="center"><strong>${setor.total_hours.toFixed(1)}h</strong></td>
+            <td class="center"><strong>${setor.unpriced_shifts}</strong></td>
+            <td class="right"><strong>${formatCurrency(setor.total_value)}</strong></td>
+          </tr>
+        `).join('')
+      : sortedReports.map(p => `
       <tr>
         <td>${p.assignee_name}</td>
         <td class="center">${p.total_shifts}</td>
@@ -1124,6 +1187,16 @@ export default function AdminFinancial() {
             color: #f59e0b;
             font-size: 10px;
           }
+          .sector-row td {
+            background: #eef2ff !important;
+            border-top: 2px solid #6366f1;
+            font-size: 12px;
+            padding: 9px 8px;
+          }
+          .subtotal-row td {
+            background: #f8fafc !important;
+            border-bottom: 2px solid #cbd5e1;
+          }
           .footer { 
             margin-top: 20px; 
             padding-top: 10px; 
@@ -1141,7 +1214,7 @@ export default function AdminFinancial() {
       </head>
       <body>
         <div class="header">
-          <h1>Relatório Financeiro — Plantonistas</h1>
+          <h1>Relatório Financeiro — Plantonistas${groupPlantonistasBySector ? ' por setor' : ''}</h1>
           <p class="subtitle">${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}</p>
         </div>
 
