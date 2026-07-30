@@ -45,6 +45,16 @@ import {
   BarChart3
 } from 'lucide-react';
 
+interface PlanRow {
+  id: string;
+  name: string;
+  min_users: number;
+  max_users: number;
+  price_monthly: number | string | null;
+  active: boolean;
+  tenants_count: number;
+}
+
 interface Tenant {
   id: string;
   name: string;
@@ -122,6 +132,7 @@ interface PlanOption {
   name: string;
   min_users: number;
   max_users: number;
+  price_monthly?: number | string | null;
 }
 
 interface UserFeedbackItem {
@@ -177,6 +188,12 @@ export default function SuperAdmin() {
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [blockingTenantId, setBlockingTenantId] = useState<string | null>(null);
+
+  // Planos (preço / disponibilidade)
+  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
+  const [loadingPlans, setLoadingPlans] = useState(false);
+  const [planDrafts, setPlanDrafts] = useState<Record<string, string>>({});
+  const [savingPlanId, setSavingPlanId] = useState<string | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [tenantDetails, setTenantDetails] = useState<TenantSuperAdminDetails | null>(null);
   const [tenantAdminContacts, setTenantAdminContacts] = useState<TenantAdminContact[]>([]);
@@ -194,7 +211,7 @@ export default function SuperAdmin() {
   const [savingDetailsPlan, setSavingDetailsPlan] = useState(false);
   const [feedbackItems, setFeedbackItems] = useState<UserFeedbackItem[]>([]);
   const [loadingFeedback, setLoadingFeedback] = useState(false);
-  const [activeTab, setActiveTab] = useState<'tenants' | 'feedback'>('tenants');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'feedback' | 'plans'>('tenants');
   
   const [managingSuperAdmins, setManagingSuperAdmins] = useState(false);
   const [grantEmail, setGrantEmail] = useState('');
@@ -291,7 +308,7 @@ export default function SuperAdmin() {
   const fetchPlanOptions = useCallback(async () => {
     const { data, error } = await supabase
       .from('plans')
-      .select('id, name, min_users, max_users')
+      .select('id, name, min_users, max_users, price_monthly')
       .eq('active', true)
       .order('max_users', { ascending: true });
 
@@ -574,6 +591,76 @@ export default function SuperAdmin() {
     setCreateDialogOpen(false);
     fetchTenants();
   }, [createAdminEmail, createName, createSlug, fetchTenants, toast]);
+
+  const fetchPlans = useCallback(async () => {
+    setLoadingPlans(true);
+    const { data, error } = await (supabase as any).rpc('super_admin_list_plans');
+    setLoadingPlans(false);
+
+    if (error) {
+      toast({ title: 'Erro ao carregar planos', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    const rows = (data ?? []) as PlanRow[];
+    setPlanRows(rows);
+    // Preenche os campos editáveis com o preço atual (formato pt-BR)
+    setPlanDrafts(
+      Object.fromEntries(
+        rows.map((p) => [p.id, String(Number(p.price_monthly ?? 0)).replace('.', ',')]),
+      ),
+    );
+  }, [toast]);
+
+  const handleSavePlanPrice = useCallback(async (plan: PlanRow) => {
+    const raw = (planDrafts[plan.id] ?? '').trim().replace(/\./g, '').replace(',', '.');
+    const price = Number(raw);
+    if (!Number.isFinite(price) || price < 0) {
+      toast({ title: 'Valor inválido', description: 'Informe um valor mensal válido (ex.: 199,90).', variant: 'destructive' });
+      return;
+    }
+
+    setSavingPlanId(plan.id);
+    const { error } = await (supabase as any).rpc('super_admin_update_plan', {
+      _plan_id: plan.id,
+      _price_monthly: price,
+    });
+    setSavingPlanId(null);
+
+    if (error) {
+      toast({ title: 'Erro ao salvar preço', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: 'Preço atualizado', description: `${plan.name}: R$ ${price.toFixed(2).replace('.', ',')}/mês.` });
+    fetchPlans();
+  }, [planDrafts, fetchPlans, toast]);
+
+  const handleTogglePlanActive = useCallback(async (plan: PlanRow) => {
+    if (plan.active && plan.tenants_count > 0) {
+      toast({
+        title: 'Plano em uso',
+        description: `${plan.tenants_count} hospital(is) usam este plano. Migre-os antes de desativar.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSavingPlanId(plan.id);
+    const { error } = await (supabase as any).rpc('super_admin_update_plan', {
+      _plan_id: plan.id,
+      _active: !plan.active,
+    });
+    setSavingPlanId(null);
+
+    if (error) {
+      toast({ title: 'Erro ao atualizar plano', description: error.message, variant: 'destructive' });
+      return;
+    }
+
+    toast({ title: plan.active ? 'Plano desativado' : 'Plano ativado' });
+    fetchPlans();
+  }, [fetchPlans, toast]);
 
   // Bloqueia (falta de pagamento) ou reativa o acesso do hospital.
   // Bloqueado => billing_status 'expired': ninguém do hospital acessa, todos veem
@@ -1294,11 +1381,23 @@ export default function SuperAdmin() {
           </CardContent>
         </Card>
 
-        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'tenants' | 'feedback')} className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            const next = value as 'tenants' | 'feedback' | 'plans';
+            setActiveTab(next);
+            if (next === 'plans' && planRows.length === 0) fetchPlans();
+          }}
+          className="space-y-4"
+        >
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="tenants" className="flex items-center gap-2">
               <Building2 className="h-4 w-4" />
               Hospitais
+            </TabsTrigger>
+            <TabsTrigger value="plans" className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4" />
+              Planos
             </TabsTrigger>
             <TabsTrigger value="feedback" className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" />
@@ -1475,6 +1574,122 @@ export default function SuperAdmin() {
             </Card>
           </TabsContent>
 
+          <TabsContent value="plans" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Planos e Preços</CardTitle>
+                    <CardDescription>
+                      Defina o valor mensal de cada faixa de usuários. Usado para consulta e
+                      controle — a cobrança não é automática.
+                    </CardDescription>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={fetchPlans} disabled={loadingPlans}>
+                    <RefreshCw className={`h-4 w-4 ${loadingPlans ? 'animate-spin' : ''}`} />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Plano</TableHead>
+                        <TableHead>Faixa de usuários</TableHead>
+                        <TableHead>Valor mensal (R$)</TableHead>
+                        <TableHead>Hospitais</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {loadingPlans ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                            Carregando planos...
+                          </TableCell>
+                        </TableRow>
+                      ) : planRows.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                            Nenhum plano cadastrado.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        planRows.map((plan) => {
+                          const current = Number(plan.price_monthly ?? 0);
+                          const draft = planDrafts[plan.id] ?? '';
+                          const changed = draft.trim().replace(/\./g, '').replace(',', '.') !== String(current);
+                          return (
+                            <TableRow key={plan.id} className={plan.active ? undefined : 'opacity-60'}>
+                              <TableCell className="font-medium">{plan.name}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {plan.min_users} – {plan.max_users >= 999999 ? '201+' : plan.max_users}
+                              </TableCell>
+                              <TableCell>
+                                <div className="relative w-32">
+                                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">R$</span>
+                                  <Input
+                                    value={draft}
+                                    onChange={(e) =>
+                                      setPlanDrafts((prev) => ({
+                                        ...prev,
+                                        [plan.id]: e.target.value.replace(/[^\d,]/g, ''),
+                                      }))
+                                    }
+                                    placeholder="0,00"
+                                    className="h-9 pl-8"
+                                  />
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {plan.tenants_count > 0 ? (
+                                  <Badge variant="outline">{plan.tenants_count}</Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {plan.active ? (
+                                  <Badge className="bg-green-500/10 text-green-600 border-green-500/20">Disponível</Badge>
+                                ) : (
+                                  <Badge variant="secondary">Inativo</Badge>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  <Button
+                                    size="sm"
+                                    disabled={!changed || savingPlanId === plan.id}
+                                    onClick={() => handleSavePlanPrice(plan)}
+                                  >
+                                    {savingPlanId === plan.id ? 'Salvando...' : 'Salvar'}
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={savingPlanId === plan.id}
+                                    onClick={() => handleTogglePlanActive(plan)}
+                                  >
+                                    {plan.active ? 'Desativar' : 'Ativar'}
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Planos "Disponível" aparecem na escolha de plano do hospital. Um plano em uso não pode ser desativado.
+                </p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value="feedback" className="space-y-4">
             <Card>
               <CardHeader>
@@ -1562,6 +1777,9 @@ export default function SuperAdmin() {
                   {planOptions.map((plan) => (
                     <SelectItem key={plan.id} value={plan.id}>
                       {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '201+' : plan.max_users})
+                      {Number(plan.price_monthly ?? 0) > 0
+                        ? ` — R$ ${Number(plan.price_monthly).toFixed(2).replace('.', ',')}/mês`
+                        : ' — valor a definir'}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1767,6 +1985,9 @@ export default function SuperAdmin() {
                         {planOptions.map((plan) => (
                           <SelectItem key={plan.id} value={plan.id}>
                             {plan.name} ({plan.min_users} - {plan.max_users >= 999999 ? '201+' : plan.max_users})
+                            {Number(plan.price_monthly ?? 0) > 0
+                              ? ` — R$ ${Number(plan.price_monthly).toFixed(2).replace('.', ',')}/mês`
+                              : ' — valor a definir'}
                           </SelectItem>
                         ))}
                       </SelectContent>
