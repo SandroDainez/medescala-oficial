@@ -561,9 +561,22 @@ export default function SectorProfitability() {
           });
 
         if (error) throw error;
-        toast({ title: 'Despesa adicionada!' });
+        toast({ title: 'Despesa adicionada!', description: 'Continue lançando ou clique em Concluir.' });
+
+        // Ao ADICIONAR, mantém o diálogo aberto para lançar vários itens em sequência:
+        // limpa nome/valor/observação e preserva o tipo escolhido.
+        setExpenseForm((prev) => ({
+          expense_type: prev.expense_type,
+          expense_name: '',
+          amount: '',
+          notes: '',
+        }));
+        setEditingExpenseId(null);
+        await fetchData();
+        return;
       }
 
+      // Edição de um item existente: conclui e fecha.
       setAddExpenseDialogOpen(false);
       setEditingExpenseId(null);
       fetchData();
@@ -1453,14 +1466,16 @@ export default function SectorProfitability() {
 
       {/* Add Expense Dialog */}
       <Dialog open={addExpenseDialogOpen} onOpenChange={setAddExpenseDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Receipt className="h-5 w-5 text-red-600" />
               {editingExpenseId ? 'Editar Despesa' : 'Nova Despesa'} - {editingSector?.name}
             </DialogTitle>
             <DialogDescription>
-              {editingExpenseId ? 'Altere os dados da despesa' : 'Adicione uma despesa'} para {monthName}
+              {editingExpenseId
+                ? `Altere os dados da despesa para ${monthName}`
+                : `Adicione as despesas de ${monthName}. A janela fica aberta para você lançar várias — clique em Concluir ao terminar.`}
             </DialogDescription>
           </DialogHeader>
 
@@ -1512,12 +1527,39 @@ export default function SectorProfitability() {
             </div>
           </div>
 
+          {/* Despesas já lançadas neste setor/mês — para acompanhar sem fechar o diálogo */}
+          {editingSector && !editingExpenseId && (() => {
+            const lancadas = getSectorExpenses(editingSector.id);
+            if (lancadas.length === 0) return null;
+            const total = lancadas.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+            return (
+              <div className="rounded-lg border border-border/70 bg-muted/30 p-3">
+                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  Já lançadas neste mês ({lancadas.length}) — total {formatCurrency(total)}
+                </p>
+                <div className="max-h-32 space-y-1 overflow-y-auto">
+                  {lancadas.map((e) => (
+                    <div key={e.id} className="flex items-center justify-between gap-2 text-xs">
+                      <span className="truncate">
+                        {e.expense_name}
+                        <span className="ml-1 text-muted-foreground">
+                          ({e.expense_type === 'tax' ? 'Imposto' : e.expense_type === 'general' ? 'Geral' : 'Específico'})
+                        </span>
+                      </span>
+                      <span className="shrink-0 font-medium">{formatCurrency(Number(e.amount || 0))}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="flex gap-2">
             <Button variant="outline" className="flex-1" onClick={() => {
               setAddExpenseDialogOpen(false);
               setEditingExpenseId(null);
             }}>
-              Cancelar
+              {editingExpenseId ? 'Cancelar' : 'Concluir'}
             </Button>
             <Button className="flex-1" onClick={handleSaveExpense}>
               {editingExpenseId ? <Save className="h-4 w-4 mr-2" /> : <Plus className="h-4 w-4 mr-2" />}
