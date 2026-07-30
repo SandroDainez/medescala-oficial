@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState, useCallback, Fragment } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -117,6 +117,8 @@ export default function AdminFinancial() {
   const [contactsById, setContactsById] = useState<Record<string, { email: string | null; phone: string | null }>>({});
   const [forwardTarget, setForwardTarget] = useState<PlantonistaReport | null>(null);
   const [forwardMessage, setForwardMessage] = useState('');
+  // Com "Todos os setores", separa os plantonistas por setor em vez de somar tudo junto.
+  const [groupPlantonistasBySector, setGroupPlantonistasBySector] = useState(true);
   const [selectedSectorReport, setSelectedSectorReport] = useState<SectorReport | null>(null);
 
   // Export plantonista detail to CSV
@@ -667,6 +669,27 @@ export default function AdminFinancial() {
   const visiblePlantonistaReports = useMemo(() => {
     return plantonistaReports.filter((p) => p.assignee_id !== 'unassigned');
   }, [plantonistaReports]);
+
+  // Para as ações (Detalhar/Encaminhar) na visão separada por setor.
+  const plantonistaReportById = useMemo(() => {
+    const map = new Map<string, PlantonistaReport>();
+    visiblePlantonistaReports.forEach((p) => map.set(p.assignee_id, p));
+    return map;
+  }, [visiblePlantonistaReports]);
+
+  // Setores com seus plantonistas, para a visão separada.
+  const sectorReportsForGrouping = useMemo(() => {
+    return sectorReports
+      .map((s) => ({
+        ...s,
+        plantonistas: (s.plantonistas ?? [])
+          .filter((x) => x.assignee_id !== 'unassigned')
+          .slice()
+          .sort((a, b) => a.assignee_name.localeCompare(b.assignee_name, 'pt-BR')),
+      }))
+      .filter((s) => s.plantonistas.length > 0)
+      .sort((a, b) => a.sector_name.localeCompare(b.sector_name, 'pt-BR'));
+  }, [sectorReports]);
 
   const auditData = useMemo((): AuditData => {
     return buildAuditInfo(filteredEntries);
@@ -1604,8 +1627,22 @@ export default function AdminFinancial() {
             <Card>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between gap-2">
-                  <CardTitle className="text-lg">Plantonistas — totais do período</CardTitle>
-                  <div className="flex items-center gap-2">
+                  <CardTitle className="text-lg">
+                    {groupPlantonistasBySector
+                      ? 'Plantonistas por setor — totais do período'
+                      : 'Plantonistas — totais do período'}
+                  </CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
+                      <Switch
+                        id="group-by-sector"
+                        checked={groupPlantonistasBySector}
+                        onCheckedChange={setGroupPlantonistasBySector}
+                      />
+                      <Label htmlFor="group-by-sector" className="cursor-pointer text-xs">
+                        Separar por setor
+                      </Label>
+                    </div>
                     <Button variant="outline" size="sm" className={actionButtonClass} onClick={exportCSVPlantonistas}>
                       <Download className="h-4 w-4 mr-1" />
                       Exportar
@@ -1632,7 +1669,77 @@ export default function AdminFinancial() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {visiblePlantonistaReports.map((p) => (
+                      {groupPlantonistasBySector && sectorReportsForGrouping.map((setor) => (
+                        <Fragment key={`grupo-${setor.sector_id ?? setor.sector_name}`}>
+                          <TableRow className="bg-muted/60 hover:bg-muted/60">
+                            <TableCell colSpan={7} className="py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="flex items-center gap-2 font-semibold">
+                                  <Building className="h-4 w-4 text-primary" />
+                                  {setor.sector_name}
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {setor.total_shifts} plantão(ões) · {setor.total_hours.toFixed(1)}h ·{' '}
+                                  <span className="font-medium text-green-600">{formatCurrency(setor.total_value)}</span>
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                          {setor.plantonistas.map((linha) => {
+                            const report = plantonistaReportById.get(linha.assignee_id);
+                            return (
+                              <TableRow key={`${setor.sector_id ?? setor.sector_name}-${linha.assignee_id}`}>
+                                <TableCell className="pl-8 font-medium">{linha.assignee_name}</TableCell>
+                                <TableCell className="text-xs text-muted-foreground">{setor.sector_name}</TableCell>
+                                <TableCell className="text-center">{linha.shifts}</TableCell>
+                                <TableCell className="text-center">{linha.hours.toFixed(1)}h</TableCell>
+                                <TableCell className="text-center">
+                                  {linha.unpriced > 0 ? (
+                                    <Badge variant="outline" className="text-amber-500 border-amber-500">
+                                      {linha.unpriced}
+                                    </Badge>
+                                  ) : (
+                                    '0'
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  {linha.value > 0 ? (
+                                    <span className="text-green-600 font-medium">{formatCurrency(linha.value)}</span>
+                                  ) : (
+                                    <span className="text-muted-foreground">—</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className={actionButtonClass}
+                                      disabled={!report}
+                                      onClick={() => report && setSelectedPlantonista(report)}
+                                    >
+                                      Detalhar
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className={actionButtonClass}
+                                      title="Encaminhar extrato por WhatsApp ou e-mail"
+                                      disabled={!report}
+                                      onClick={() => report && openForwardDialog(report)}
+                                    >
+                                      <Send className="h-4 w-4 mr-1" />
+                                      Encaminhar
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </Fragment>
+                      ))}
+
+                      {!groupPlantonistasBySector && visiblePlantonistaReports.map((p) => (
                         <TableRow key={p.assignee_id}>
                           <TableCell className="font-medium">{p.assignee_name}</TableCell>
                           <TableCell>
