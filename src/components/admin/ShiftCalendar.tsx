@@ -19,6 +19,7 @@ import ScheduleMovements from './ScheduleMovements';
 import SectorValuesDialog from '@/components/admin/SectorValuesDialog';
 import UserSectorValuesDialog from '@/components/admin/UserSectorValuesDialog';
 import { recordScheduleMovement } from '@/lib/scheduleMovements';
+import { logScheduleDeletion, type DeletionScope } from '@/services/scheduleDeletionLog';
 import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteAllAdminConflictHistory, fetchAdminConflictHistory, resolveAdminProfileId } from '@/services/adminConflicts';
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
@@ -3065,6 +3066,54 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     closeDayDialog();
   }
 
+  /**
+   * Monta o resumo de uma exclusão em massa (dias, setores, plantonistas afetados).
+   * Deve ser chamado ANTES do fetchData(), enquanto o estado ainda tem os plantões.
+   */
+  function buildDeletionAudit(shiftIds: string[]) {
+    const idSet = new Set(shiftIds);
+    const affectedShifts = shifts.filter((s) => idSet.has(s.id));
+    const affectedAssignments = assignments.filter((a) => idSet.has(a.shift_id));
+    const dates = affectedShifts.map((s) => s.shift_date).sort();
+    const sectorNames = Array.from(
+      new Set(affectedShifts.map((s) => getSectorName(s.sector_id, s.hospital))),
+    );
+    const plantonistas = Array.from(
+      new Set(affectedAssignments.map((a) => getAssignmentName(a)).filter(Boolean)),
+    );
+
+    return {
+      shiftsDeleted: shiftIds.length,
+      assignmentsDeleted: affectedAssignments.length,
+      dateFrom: dates[0] ?? null,
+      dateTo: dates[dates.length - 1] ?? null,
+      sectorId: affectedShifts.length > 0 ? affectedShifts[0].sector_id : null,
+      sectorName:
+        sectorNames.length === 1
+          ? sectorNames[0]
+          : sectorNames.length > 1
+            ? `${sectorNames.length} setores`
+            : null,
+      details: {
+        dias: Array.from(new Set(dates)),
+        setores: sectorNames,
+        plantonistas: plantonistas.slice(0, 60),
+        plantonistas_total: plantonistas.length,
+      },
+    };
+  }
+
+  async function registerDeletionAudit(scope: DeletionScope, shiftIds: string[]) {
+    if (!currentTenantId || shiftIds.length === 0) return;
+    const audit = buildDeletionAudit(shiftIds);
+    await logScheduleDeletion({
+      tenantId: currentTenantId,
+      performedBy: user?.id,
+      scope,
+      ...audit,
+    });
+  }
+
   async function handleDeleteDayShifts() {
     if (!selectedDate || deletingDayShifts) return;
     const dayShifts = getShiftsForDayDialog(selectedDate);
@@ -3085,6 +3134,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       // Primary path: single bulk delete for better performance.
       try {
         await deleteAdminShiftsByIds(ids);
+        await registerDeletionAudit('dias', ids);
         notifySuccess('Exclusão do dia', `${dayShifts.length} plantão(ões) excluído(s).`);
       } catch (bulkError: any) {
         // Fallback path: delete one by one to avoid transient/batch-specific failures.
@@ -3092,15 +3142,19 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
         let deletedCount = 0;
         const failures: string[] = [];
+        const deletedIds: string[] = [];
 
         for (const shiftId of ids) {
           try {
             await deleteAdminShiftById(shiftId);
             deletedCount += 1;
+            deletedIds.push(shiftId);
           } catch (singleError: any) {
             failures.push(singleError?.message || 'Falha desconhecida');
           }
         }
+
+        await registerDeletionAudit('dias', deletedIds);
 
         if (deletedCount === 0) {
           notifyError('excluir plantões do dia', bulkError.message || failures[0], 'Falha ao excluir plantões.');
@@ -3234,11 +3288,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
     }
 
+    const selectionAudit = buildDeletionAudit(idsToDelete);
     try {
       await deleteAdminShiftsByIds(idsToDelete);
     } catch (error) {
       notifyError('excluir plantões selecionados', error, 'Não foi possível excluir os plantões selecionados.');
       return;
+    }
+
+    if (currentTenantId) {
+      await logScheduleDeletion({
+        tenantId: currentTenantId,
+        performedBy: user?.id,
+        scope: 'selecao',
+        ...selectionAudit,
+      });
     }
 
     if (hasProtected && idsToDelete.length !== ids.length) {
@@ -3294,11 +3358,21 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     const ids = deleteScaleContext.ids;
 
     try {
+      const audit = buildDeletionAudit(ids);
       try {
         await deleteAdminShiftsByIds(ids);
       } catch (bulkError) {
         notifyError('excluir escala do período', bulkError, 'Não foi possível excluir a escala inteira.');
         return;
+      }
+
+      if (currentTenantId) {
+        await logScheduleDeletion({
+          tenantId: currentTenantId,
+          performedBy: user?.id,
+          scope: 'periodo',
+          ...audit,
+        });
       }
 
       setSelectedShiftIds((prev) => {
@@ -3608,7 +3682,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
     setDeletingDaysRange(true);
     try {
+      const audit = buildDeletionAudit(shiftIdsToDelete);
       await deleteAdminShiftsByIds(shiftIdsToDelete);
+      if (currentTenantId) {
+        await logScheduleDeletion({
+          tenantId: currentTenantId,
+          performedBy: user?.id,
+          scope: 'dias',
+          ...audit,
+        });
+      }
       notifySuccess('Dias excluídos', `${shiftIdsToDelete.length} plantão(ões) removido(s).`);
       setDeleteDaysDialogOpen(false);
       await fetchData();

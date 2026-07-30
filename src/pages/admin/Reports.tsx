@@ -179,6 +179,19 @@ export default function AdminReports() {
   const [financialByPlantonistaSector, setFinancialByPlantonistaSector] = useState<FinancialByPlantonistaSectorRecord[]>([]);
   const [movements, setMovements] = useState<MovementRecord[]>([]);
   const [conflicts, setConflicts] = useState<ConflictRecord[]>([]);
+  // Auditoria de exclusões em massa de plantões
+  const [deletionLogs, setDeletionLogs] = useState<Array<{
+    id: string;
+    performed_at: string;
+    performed_by_name: string;
+    scope: string;
+    sector_name: string | null;
+    date_from: string | null;
+    date_to: string | null;
+    shifts_deleted: number;
+    assignments_deleted: number;
+    details: Record<string, unknown> | null;
+  }>>([]);
   // Conflitos ativos/não resolvidos (detectados ao vivo), separados dos resolvidos
   // para não afetar a aba de exclusão de histórico.
   const [activeConflicts, setActiveConflicts] = useState<ConflictRecord[]>([]);
@@ -270,6 +283,8 @@ export default function AdminReports() {
         await fetchMovements();
       } else if (targetReportType === 'conflitos') {
         await fetchConflicts();
+      } else if (targetReportType === 'exclusoes') {
+        await fetchDeletionLogs();
       }
     } finally {
       setLoading(false);
@@ -703,6 +718,44 @@ export default function AdminReports() {
       console.error('Erro ao detectar conflitos ativos:', e);
       setActiveConflicts([]);
     }
+  }
+
+  async function fetchDeletionLogs() {
+    const { data, error } = await (supabase as any)
+      .from('schedule_deletion_logs')
+      .select('*, performer:profiles!schedule_deletion_logs_performed_by_fkey(name, full_name)')
+      .eq('tenant_id', currentTenantId)
+      .gte('performed_at', `${startDate}T00:00:00`)
+      .lte('performed_at', `${endDate}T23:59:59`)
+      .order('performed_at', { ascending: false });
+
+    if (error) {
+      // Sem a relação de perfil (FK não nomeada), tenta sem o join.
+      const fallback = await (supabase as any)
+        .from('schedule_deletion_logs')
+        .select('*')
+        .eq('tenant_id', currentTenantId)
+        .gte('performed_at', `${startDate}T00:00:00`)
+        .lte('performed_at', `${endDate}T23:59:59`)
+        .order('performed_at', { ascending: false });
+
+      if (fallback.error) {
+        console.error('Error fetching deletion logs:', fallback.error);
+        setDeletionLogs([]);
+        return;
+      }
+      setDeletionLogs(
+        (fallback.data ?? []).map((row: any) => ({ ...row, performed_by_name: 'Administrador' })),
+      );
+      return;
+    }
+
+    setDeletionLogs(
+      (data ?? []).map((row: any) => ({
+        ...row,
+        performed_by_name: row.performer?.full_name || row.performer?.name || 'Administrador',
+      })),
+    );
   }
 
   async function fetchAbsences() {
@@ -1261,6 +1314,7 @@ export default function AdminReports() {
                   <SelectItem value="financeiro">Resumo Financeiro (setor e plantonista)</SelectItem>
                   <SelectItem value="movimentacoes">Movimentações de Escala</SelectItem>
                   <SelectItem value="conflitos">Histórico de Conflitos</SelectItem>
+                  <SelectItem value="exclusoes">Exclusões de Escala (auditoria)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1353,6 +1407,7 @@ export default function AdminReports() {
                 {reportType === 'financeiro' && 'Resumo Financeiro'}
                 {reportType === 'movimentacoes' && 'Movimentações de Escala'}
                 {reportType === 'conflitos' && 'Histórico de Conflitos'}
+                {reportType === 'exclusoes' && 'Exclusões de Escala (auditoria)'}
               </CardTitle>
               <Badge variant="secondary">
                 {reportType === 'afastamentos' && `${absences.length} registros`}
@@ -1361,6 +1416,7 @@ export default function AdminReports() {
                 {reportType === 'financeiro' && `${financialData.length} plantonistas`}
                 {reportType === 'movimentacoes' && `${movements.length} movimentos`}
                 {reportType === 'conflitos' && `${conflicts.length} resoluções`}
+                {reportType === 'exclusoes' && `${deletionLogs.length} exclusão(ões) registrada(s)`}
               </Badge>
             </CardHeader>
             <CardContent>
@@ -1906,6 +1962,81 @@ export default function AdminReports() {
                             <TableCell>{conflict.resolved_at ? format(parseISO(conflict.resolved_at), 'dd/MM/yyyy HH:mm') : '-'}</TableCell>
                           </TableRow>
                         ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              ) : reportType === 'exclusoes' ? (
+                <ScrollArea className="h-[500px]">
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    Registro de exclusões em massa de plantões (escala do período, dias ou seleção).
+                    Serve para rastrear quando uma escala foi apagada e por quem.
+                  </p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Quando</TableHead>
+                        <TableHead>Quem</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead>Setor</TableHead>
+                        <TableHead>Período apagado</TableHead>
+                        <TableHead>Plantões</TableHead>
+                        <TableHead>Atribuições</TableHead>
+                        <TableHead>Plantonistas afetados</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {deletionLogs.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                            Nenhuma exclusão em massa registrada no período.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        deletionLogs.map((log) => {
+                          const nomes = Array.isArray((log.details as any)?.plantonistas)
+                            ? ((log.details as any).plantonistas as string[])
+                            : [];
+                          const totalNomes = Number((log.details as any)?.plantonistas_total ?? nomes.length);
+                          const scopeLabel =
+                            log.scope === 'periodo' ? 'Escala do período'
+                            : log.scope === 'dias' ? 'Dias'
+                            : 'Seleção';
+                          return (
+                            <TableRow key={log.id}>
+                              <TableCell className="whitespace-nowrap">
+                                {format(parseISO(log.performed_at), 'dd/MM/yyyy HH:mm')}
+                              </TableCell>
+                              <TableCell className="whitespace-normal break-words max-w-[160px]">
+                                {log.performed_by_name}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{scopeLabel}</Badge>
+                              </TableCell>
+                              <TableCell className="whitespace-normal break-words max-w-[180px]">
+                                {log.sector_name || '-'}
+                              </TableCell>
+                              <TableCell className="whitespace-nowrap text-sm">
+                                {log.date_from
+                                  ? `${format(parseISO(log.date_from), 'dd/MM/yyyy')}${
+                                      log.date_to && log.date_to !== log.date_from
+                                        ? ` – ${format(parseISO(log.date_to), 'dd/MM/yyyy')}`
+                                        : ''
+                                    }`
+                                  : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="destructive">{log.shifts_deleted}</Badge>
+                              </TableCell>
+                              <TableCell>{log.assignments_deleted}</TableCell>
+                              <TableCell className="whitespace-normal break-words max-w-[280px] text-xs text-muted-foreground">
+                                {nomes.length > 0
+                                  ? `${nomes.slice(0, 6).join(', ')}${totalNomes > 6 ? ` +${totalNomes - 6}` : ''}`
+                                  : '—'}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
