@@ -14,16 +14,19 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
+import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
 import { runFinancialSelfTest } from '@/lib/financial/selfTest';
 import { aggregateFinancial, buildAuditInfo, type PlantonistaReport, type SectorReport } from '@/lib/financial/aggregateFinancial';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { calculateProRata, isNightShift, isWeekendDate } from '@/lib/financial/valueCalculation';
-import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2, RefreshCw } from 'lucide-react';
+import { Download, DollarSign, Users, Calendar, Filter, ChevronDown, ChevronRight, Building, AlertCircle, FileText, Printer, Clock, Eye, Calculator, Table2, RefreshCw, Send, MessageCircle, Mail } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,6 +91,7 @@ function getValueSourceLabel(source: FinancialEntry['value_source']): string {
 // ============================================================
 export default function AdminFinancial() {
   const { currentTenantId } = useTenant();
+  const { toast } = useToast();
   const actionButtonClass = 'h-8 px-3';
   
   // Raw data from DB
@@ -109,9 +113,81 @@ export default function AdminFinancial() {
 
   // Modal de detalhamento (tabela por plantonista)
   const [selectedPlantonista, setSelectedPlantonista] = useState<PlantonistaReport | null>(null);
+  // Contatos cadastrados (para encaminhar o extrato por WhatsApp/e-mail)
+  const [contactsById, setContactsById] = useState<Record<string, { email: string | null; phone: string | null }>>({});
+  const [forwardTarget, setForwardTarget] = useState<PlantonistaReport | null>(null);
+  const [forwardMessage, setForwardMessage] = useState('');
   const [selectedSectorReport, setSelectedSectorReport] = useState<SectorReport | null>(null);
 
   // Export plantonista detail to CSV
+  /** Monta o texto do extrato do plantonista para encaminhar. */
+  function buildForwardMessage(p: PlantonistaReport): string {
+    const periodo = `${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`;
+    const linhasSetor = (p.sectors ?? [])
+      .filter((s) => s.sector_shifts > 0)
+      .map((s) => `- ${s.sector_name}: ${s.sector_shifts} plantão(ões) | ${formatCurrency(s.sector_total)}`)
+      .join('\n');
+
+    const partes = [
+      `Olá, ${p.assignee_name}!`,
+      '',
+      `Extrato de plantões — período de ${periodo}:`,
+      linhasSetor,
+      '',
+      `Total de plantões: ${p.total_shifts}`,
+      `Total de horas: ${p.total_hours.toFixed(1)}h`,
+      `Valor a receber: ${formatCurrency(p.total_to_receive)}`,
+    ];
+
+    if (p.unpriced_shifts > 0) {
+      partes.push('', `Observação: ${p.unpriced_shifts} plantão(ões) ainda sem valor definido.`);
+    }
+
+    partes.push('', 'Qualquer divergência, entre em contato. Obrigado!');
+    return partes.filter((linha) => linha !== undefined).join('\n');
+  }
+
+  function openForwardDialog(p: PlantonistaReport) {
+    setForwardTarget(p);
+    setForwardMessage(buildForwardMessage(p));
+  }
+
+  function forwardViaWhatsapp() {
+    if (!forwardTarget) return;
+    const phone = contactsById[forwardTarget.assignee_id]?.phone;
+    if (!phone) {
+      toast({
+        title: 'Telefone não cadastrado',
+        description: `Cadastre o telefone de ${forwardTarget.assignee_name} em Usuários para enviar por WhatsApp.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    const digits = phone.replace(/\D/g, '');
+    // Números brasileiros sem DDI recebem 55 na frente.
+    const withCountry = digits.length <= 11 ? `55${digits}` : digits;
+    window.open(
+      `https://wa.me/${withCountry}?text=${encodeURIComponent(forwardMessage)}`,
+      '_blank',
+      'noopener,noreferrer',
+    );
+  }
+
+  function forwardViaEmail() {
+    if (!forwardTarget) return;
+    const email = contactsById[forwardTarget.assignee_id]?.email;
+    if (!email) {
+      toast({
+        title: 'E-mail não cadastrado',
+        description: `Cadastre o e-mail de ${forwardTarget.assignee_name} em Usuários para enviar por e-mail.`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    const assunto = `Extrato de plantões — ${format(parseISO(startDate), 'dd/MM/yyyy')} a ${format(parseISO(endDate), 'dd/MM/yyyy')}`;
+    window.location.href = `mailto:${email}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(forwardMessage)}`;
+  }
+
   function exportPlantonistaCSV(p: PlantonistaReport) {
     const headers = ['Data', 'Horário', 'Duração (h)', 'Setor', 'Valor Padrão', 'Valor Real'];
     const sortedEntries = (p.entries ?? [])
@@ -489,6 +565,39 @@ export default function AdminFinancial() {
   useEffect(() => {
     if (currentTenantId) fetchData();
   }, [currentTenantId, startDate, endDate, filterSetor, fetchData]);
+
+  // Carrega e-mail/telefone cadastrados dos plantonistas do hospital,
+  // usados para encaminhar o extrato por WhatsApp/e-mail.
+  useEffect(() => {
+    if (!currentTenantId) return;
+    let cancelled = false;
+
+    (async () => {
+      const { data, error } = await supabase
+        .from('memberships')
+        .select('user_id, profile:profiles!memberships_user_id_profiles_fkey(id, email, phone)')
+        .eq('tenant_id', currentTenantId)
+        .eq('active', true);
+
+      if (cancelled) return;
+      if (error) {
+        console.error('Erro ao carregar contatos dos plantonistas:', error);
+        return;
+      }
+
+      const map: Record<string, { email: string | null; phone: string | null }> = {};
+      for (const row of (data ?? []) as any[]) {
+        const profile = row?.profile;
+        if (!profile?.id) continue;
+        map[profile.id] = { email: profile.email ?? null, phone: profile.phone ?? null };
+      }
+      setContactsById(map);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentTenantId]);
 
   // Realtime recalculation when schedule/values change
   useEffect(() => {
@@ -1562,9 +1671,21 @@ export default function AdminFinancial() {
                             )}
                           </TableCell>
                           <TableCell className="text-right">
-                            <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => setSelectedPlantonista(p)}>
-                              Detalhar
-                            </Button>
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" className={actionButtonClass} onClick={() => setSelectedPlantonista(p)}>
+                                Detalhar
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className={actionButtonClass}
+                                title="Encaminhar extrato por WhatsApp ou e-mail"
+                                onClick={() => openForwardDialog(p)}
+                              >
+                                <Send className="h-4 w-4 mr-1" />
+                                Encaminhar
+                              </Button>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1574,6 +1695,81 @@ export default function AdminFinancial() {
               </CardContent>
             </Card>
           )}
+
+          {/* Encaminhar extrato por WhatsApp / e-mail */}
+          <Dialog open={!!forwardTarget} onOpenChange={(open) => { if (!open) setForwardTarget(null); }}>
+            <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Send className="h-5 w-5 text-primary" />
+                  Encaminhar extrato — {forwardTarget?.assignee_name}
+                </DialogTitle>
+                <DialogDescription>
+                  Revise a mensagem e escolha como enviar. Usa o contato cadastrado do plantonista.
+                </DialogDescription>
+              </DialogHeader>
+
+              {forwardTarget && (() => {
+                const contato = contactsById[forwardTarget.assignee_id] ?? { email: null, phone: null };
+                return (
+                  <div className="space-y-4 py-2">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-md border border-border/70 bg-muted/30 p-2 text-xs">
+                        <p className="font-medium text-muted-foreground">WhatsApp</p>
+                        <p className={contato.phone ? '' : 'text-destructive'}>
+                          {contato.phone || 'não cadastrado'}
+                        </p>
+                      </div>
+                      <div className="rounded-md border border-border/70 bg-muted/30 p-2 text-xs">
+                        <p className="font-medium text-muted-foreground">E-mail</p>
+                        <p className={contato.email ? 'break-all' : 'text-destructive'}>
+                          {contato.email || 'não cadastrado'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="forward-message">Mensagem</Label>
+                      <Textarea
+                        id="forward-message"
+                        value={forwardMessage}
+                        onChange={(e) => setForwardMessage(e.target.value)}
+                        rows={12}
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Você pode editar o texto antes de enviar. O envio abre o WhatsApp ou seu programa
+                        de e-mail com a mensagem pronta — nada é enviado automaticamente.
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button variant="outline" onClick={() => setForwardTarget(null)}>
+                  Fechar
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={forwardViaEmail}
+                    disabled={!forwardTarget || !contactsById[forwardTarget.assignee_id]?.email}
+                  >
+                    <Mail className="h-4 w-4 mr-1" />
+                    E-mail
+                  </Button>
+                  <Button
+                    onClick={forwardViaWhatsapp}
+                    disabled={!forwardTarget || !contactsById[forwardTarget.assignee_id]?.phone}
+                  >
+                    <MessageCircle className="h-4 w-4 mr-1" />
+                    WhatsApp
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={!!selectedPlantonista} onOpenChange={(open) => !open && setSelectedPlantonista(null)}>
             <DialogContent className="max-w-4xl">
