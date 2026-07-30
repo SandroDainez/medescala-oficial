@@ -96,7 +96,11 @@ window.addEventListener("unhandledrejection", (event) => {
   }
 });
 
-window.addEventListener("focus", requestPwaUpdateCheck);
+// Obs.: NÃO checar atualização no evento "focus". Fechar uma janela auxiliar
+// (impressão, WhatsApp, exportação) devolve o foco à aba sem que ela tenha ficado
+// oculta — e a checagem podia recarregar a página no meio do trabalho, fazendo o
+// usuário perder o período/filtros da tela. visibilitychange + pageshow + o
+// intervalo já cobrem os casos reais de retomada.
 window.addEventListener("pageshow", requestPwaUpdateCheck);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {

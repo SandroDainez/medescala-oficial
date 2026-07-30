@@ -89,6 +89,29 @@ function getValueSourceLabel(source: FinancialEntry['value_source']): string {
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
+/** Preferências da tela do Financeiro (período/filtros) preservadas na sessão. */
+const FINANCIAL_PREFS_KEY = 'medescala_financeiro_prefs';
+
+function readFinancialPref(field: string): string | null {
+  try {
+    const raw = sessionStorage.getItem(FINANCIAL_PREFS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const value = parsed?.[field];
+    return typeof value === 'string' && value ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeFinancialPrefs(prefs: Record<string, string>): void {
+  try {
+    sessionStorage.setItem(FINANCIAL_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // sessionStorage indisponível — segue sem persistir
+  }
+}
+
 export default function AdminFinancial() {
   const { currentTenantId } = useTenant();
   const { toast } = useToast();
@@ -102,10 +125,17 @@ export default function AdminFinancial() {
   const [selfTestResult, setSelfTestResult] = useState<{ ok: boolean; errors: string[] } | null>(null);
   
   // Filters
-  const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
-  const [filterSetor, setFilterSetor] = useState<string>('all');
-  const [filterPlantonista, setFilterPlantonista] = useState<string>('all');
+  // Período e filtros ficam salvos na sessão: se a página recarregar (ex.: o app
+  // aplicar uma atualização), o usuário volta para o mesmo mês/filtros que estava,
+  // em vez de cair no mês atual.
+  const [startDate, setStartDate] = useState(
+    () => readFinancialPref('startDate') ?? format(startOfMonth(new Date()), 'yyyy-MM-dd'),
+  );
+  const [endDate, setEndDate] = useState(
+    () => readFinancialPref('endDate') ?? format(endOfMonth(new Date()), 'yyyy-MM-dd'),
+  );
+  const [filterSetor, setFilterSetor] = useState<string>(() => readFinancialPref('filterSetor') ?? 'all');
+  const [filterPlantonista, setFilterPlantonista] = useState<string>(() => readFinancialPref('filterPlantonista') ?? 'all');
   
   // Audit mode
   const [auditMode, setAuditMode] = useState(false);
@@ -567,6 +597,11 @@ export default function AdminFinancial() {
   useEffect(() => {
     if (currentTenantId) fetchData();
   }, [currentTenantId, startDate, endDate, filterSetor, fetchData]);
+
+  // Mantém período/filtros salvos para sobreviver a recargas da página.
+  useEffect(() => {
+    writeFinancialPrefs({ startDate, endDate, filterSetor, filterPlantonista });
+  }, [startDate, endDate, filterSetor, filterPlantonista]);
 
   // Carrega e-mail/telefone cadastrados dos plantonistas do hospital,
   // usados para encaminhar o extrato por WhatsApp/e-mail.
