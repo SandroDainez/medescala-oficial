@@ -1867,7 +1867,7 @@ export default function UserManagement() {
       )}
 
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{readOnlyMode ? "Dados do usuário" : "Editar usuário"}</DialogTitle>
           </DialogHeader>
@@ -2503,7 +2503,7 @@ export default function UserManagement() {
       </Dialog>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Adicionar usuário</DialogTitle>
           </DialogHeader>
@@ -3090,7 +3090,7 @@ export default function UserManagement() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="max-h-[55vh] overflow-y-auto rounded-md border bg-muted/10 p-3">
+          <div className="max-h-[55dvh] overflow-y-auto rounded-md border bg-muted/10 p-3">
             {sectors.length === 0 ? (
               <p className="text-sm text-muted-foreground">Nenhum setor cadastrado.</p>
             ) : (
@@ -3137,7 +3137,7 @@ export default function UserManagement() {
       </Dialog>
 
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[90dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Importar profissionais</DialogTitle>
           </DialogHeader>

@@ -912,7 +912,7 @@ export default function AdminDashboard() {
 
       {/* Day Detail Dialog */}
       <Dialog open={dayDialogOpen} onOpenChange={setDayDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span>{selectedDate && format(selectedDate, "EEEE, dd 'de' MMMM", { locale: ptBR })}</span>

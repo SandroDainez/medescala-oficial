@@ -6310,7 +6310,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           }
         }}
       >
-        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span>
@@ -6955,7 +6955,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }}
       >
         <DialogContent
-          className="admin-surface max-w-2xl max-h-[88vh] overflow-y-auto"
+          className="admin-surface max-w-2xl max-h-[88dvh] overflow-y-auto"
           onCloseAutoFocus={(e) => {
             // Prevent focus from returning to the trigger (edit button), which can cause an immediate re-open.
             e.preventDefault();
@@ -7561,7 +7561,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Conflict Details Dialog */}
       <Dialog open={conflictDialogOpen} onOpenChange={setConflictDialogOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-2xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle className="h-5 w-5" />
@@ -7662,7 +7662,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Justification Dialog for Acknowledging Conflict */}
       <Dialog open={justificationDialogOpen} onOpenChange={setJustificationDialogOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-lg max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-yellow-600">
               <FileText className="h-5 w-5" />
@@ -7717,7 +7717,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Remove Confirmation Dialog */}
       <Dialog open={removeConfirmDialogOpen} onOpenChange={setRemoveConfirmDialogOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <Trash2 className="h-5 w-5" />
@@ -7765,7 +7765,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Conflict History Dialog */}
       <Dialog open={conflictHistoryDialogOpen} onOpenChange={setConflictHistoryDialogOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-3xl max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <History className="h-5 w-5" />
@@ -7869,7 +7869,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
       {/* Bulk Create Dialog */}
       <Dialog open={bulkCreateDialogOpen} onOpenChange={setBulkCreateDialogOpen}>
-        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5" />
@@ -8547,7 +8547,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
       }}>
         <DialogContent
-          className="max-w-4xl max-h-[90vh] overflow-y-auto"
+          className="max-w-4xl max-h-[90dvh] overflow-y-auto"
           onInteractOutside={(e) => {
             if (bulkEditSaving) e.preventDefault();
           }}
@@ -8568,7 +8568,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
           </DialogHeader>
 
           <form onSubmit={handleBulkEditSave} className="space-y-4">
-            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+            <div className="space-y-4 max-h-[60dvh] overflow-y-auto pr-2">
               {bulkEditData.map((editData, index) => {
                 const originalShift = bulkEditShifts.find(s => s.id === editData.id);
                 const originalAssignment = originalShift

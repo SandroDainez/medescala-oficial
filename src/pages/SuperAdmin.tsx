@@ -1748,7 +1748,7 @@ export default function SuperAdmin() {
 
       {/* Edit Dialog */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="w-[95vw] max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Editar Acesso - {selectedTenant?.name}</DialogTitle>
           </DialogHeader>
@@ -1852,7 +1852,7 @@ export default function SuperAdmin() {
 
       {/* Exclusão de hospital — dupla confirmação */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) { setDeleteTarget(null); setDeleteConfirmCode(''); setDeleteConfirmWord(''); } }}>
-        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="w-[95vw] max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-destructive">Excluir hospital — ação permanente</DialogTitle>
           </DialogHeader>
@@ -1910,7 +1910,7 @@ export default function SuperAdmin() {
       </Dialog>
 
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="w-[95vw] max-h-[90vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="w-[95vw] max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Adicionar Hospital/Serviço</DialogTitle>
           </DialogHeader>

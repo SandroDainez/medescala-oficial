@@ -459,7 +459,7 @@ export default function Auth() {
       </div>
 
       <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Recuperar senha</DialogTitle>
           </DialogHeader>

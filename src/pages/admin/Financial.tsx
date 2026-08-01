@@ -1763,7 +1763,7 @@ export default function AdminFinancial() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="max-h-[70vh] overflow-y-auto">
+                <div className="max-h-[70dvh] overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
@@ -2010,7 +2010,7 @@ export default function AdminFinancial() {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="max-h-[70vh] overflow-y-auto border rounded">
+              <div className="max-h-[70dvh] overflow-y-auto border rounded">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>
@@ -2094,7 +2094,7 @@ export default function AdminFinancial() {
                 </div>
               </CardHeader>
               <CardContent className="p-0">
-                <div className="max-h-[70vh] overflow-y-auto">
+                <div className="max-h-[70dvh] overflow-y-auto">
                   <Table>
                     <TableHeader className="sticky top-0 bg-background z-10">
                       <TableRow>
@@ -2150,7 +2150,7 @@ export default function AdminFinancial() {
                   Plantonistas e valores deste setor no período selecionado.
                 </DialogDescription>
               </DialogHeader>
-              <div className="max-h-[70vh] overflow-y-auto border rounded">
+              <div className="max-h-[70dvh] overflow-y-auto border rounded">
                 <Table>
                   <TableHeader className="sticky top-0 bg-background z-10">
                     <TableRow>

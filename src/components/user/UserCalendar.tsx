@@ -1090,7 +1090,7 @@ export default function UserCalendar() {
       {/* Expandable Panel */}
       <div className={cn(
         "bg-card border-t transition-all duration-300 flex flex-col",
-        panelExpanded ? "flex-1 min-h-[35vh] max-h-[50vh]" : "h-auto"
+        panelExpanded ? "flex-1 min-h-[35vh] max-h-[50dvh]" : "h-auto"
       )}>
         {/* Panel Toggle */}
         <button 

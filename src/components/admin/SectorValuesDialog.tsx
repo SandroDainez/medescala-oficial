@@ -276,7 +276,7 @@ export default function SectorValuesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="max-h-[65vh] space-y-6 overflow-y-auto py-4 pr-1">
+        <div className="max-h-[65dvh] space-y-6 overflow-y-auto py-4 pr-1">
           {/* ===== Dias úteis (seg-sex) ===== */}
           <div className="space-y-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
