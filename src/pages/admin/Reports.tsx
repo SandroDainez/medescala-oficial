@@ -168,6 +168,8 @@ export default function AdminReports() {
   const [startDate, setStartDate] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'));
   const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'));
   const [selectedSector, setSelectedSector] = useState<string>('all');
+  // Filtro por plantonista no relatório de plantões (quantos fez no mês/ano/local)
+  const [selectedPlantonista, setSelectedPlantonista] = useState<string>('all');
   const [activeTab, setActiveTab] = useState('report');
   
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -292,7 +294,7 @@ export default function AdminReports() {
   // Intencional: evitar re-execução infinita ao incluir funções locais mutáveis como dependências.
   // A execução deste callback é dirigida apenas por filtros/aba.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, currentTenantId, reportType, selectedSector, startDate, endDate]);
+  }, [activeTab, currentTenantId, reportType, selectedSector, selectedPlantonista, startDate, endDate]);
 
   async function fetchShiftsReport() {
     let query = supabase
@@ -302,30 +304,41 @@ export default function AdminReports() {
       .gte('shift_date', startDate)
       .lte('shift_date', endDate)
       .order('shift_date', { ascending: false });
-    
+
     if (selectedSector !== 'all') {
       query = query.eq('sector_id', selectedSector);
     }
-    
+
     const { data: shiftsData, error: shiftsError } = await query;
-    
+
     if (shiftsError || !shiftsData) {
       console.error('Error fetching shifts:', shiftsError);
       setShifts([]);
       return;
     }
-    
+
     const shiftIds = shiftsData.map(s => s.id);
     if (shiftIds.length === 0) {
       setShifts([]);
       return;
     }
-    
-    const { data: assignments } = await supabase
-      .from('shift_assignments')
-      .select('shift_id, user_id')
-      .in('shift_id', shiftIds);
-    
+
+    // Busca as atribuições em blocos: períodos longos (um ano inteiro) geram
+    // muitos plantões, e um único .in() com todos os ids estoura o limite da URL.
+    const assignments: Array<{ shift_id: string; user_id: string }> = [];
+    for (let i = 0; i < shiftIds.length; i += 200) {
+      const lote = shiftIds.slice(i, i + 200);
+      const { data, error } = await supabase
+        .from('shift_assignments')
+        .select('shift_id, user_id')
+        .in('shift_id', lote);
+      if (error) {
+        console.error('Error fetching assignments for shifts report:', error);
+        continue;
+      }
+      if (data) assignments.push(...data);
+    }
+
     const userIds = [...new Set(assignments?.map(a => a.user_id) || [])];
     const { data: profiles } = await supabase
       .from('profiles')
@@ -343,7 +356,17 @@ export default function AdminReports() {
       assignmentsByShift.get(a.shift_id)!.push(profileMap.get(a.user_id) || 'Sem nome');
     });
     
-    const shiftReports: ShiftReport[] = shiftsData.map(s => ({
+    // Filtro por plantonista: mantém só os plantões em que ele está atribuído.
+    const shiftIdsDoPlantonista =
+      selectedPlantonista !== 'all'
+        ? new Set(assignments.filter(a => a.user_id === selectedPlantonista).map(a => a.shift_id))
+        : null;
+
+    const shiftsFiltrados = shiftIdsDoPlantonista
+      ? shiftsData.filter(s => shiftIdsDoPlantonista.has(s.id))
+      : shiftsData;
+
+    const shiftReports: ShiftReport[] = shiftsFiltrados.map(s => ({
       id: s.id,
       shift_date: s.shift_date,
       start_time: s.start_time,
@@ -1263,8 +1286,24 @@ export default function AdminReports() {
         const gpsOut = c.checkout_latitude ? `${c.checkout_latitude},${c.checkout_longitude}` : 'N/A';
         csvContent += `"${c.user_name}","${format(parseISO(c.shift_date), 'dd/MM/yyyy')}","${c.start_time} - ${c.end_time}","${c.sector_name}","${c.checkin_at ? format(parseISO(c.checkin_at), 'HH:mm') : 'Não registrado'}","${c.checkout_at ? format(parseISO(c.checkout_at), 'HH:mm') : 'Não registrado'}","${gpsIn}","${gpsOut}"\n`;
       });
+    } else if (reportType === 'plantoes') {
+      // Segue os filtros da tela (setor e plantonista), pois `shifts` já vem filtrado.
+      csvContent = 'Data,Horário,Setor,Título,Hospital,Valor Base,Plantonistas\n';
+      shifts.forEach(s => {
+        const horario = `${(s.start_time || '').slice(0, 5)} - ${(s.end_time || '').slice(0, 5)}`;
+        const valor = s.base_value !== null && s.base_value !== undefined ? Number(s.base_value).toFixed(2) : '';
+        csvContent += `"${format(parseISO(s.shift_date), 'dd/MM/yyyy')}","${horario}","${s.sector_name}","${s.title || ''}","${s.hospital || ''}","${valor}","${(s.assignees || []).join(' / ')}"\n`;
+      });
+      const totalHoras = shifts.reduce((soma, s) => {
+        const [hi, mi] = (s.start_time || '00:00').slice(0, 5).split(':').map(Number);
+        const [hf, mf] = (s.end_time || '00:00').slice(0, 5).split(':').map(Number);
+        let dur = (hf * 60 + mf) - (hi * 60 + mi);
+        if (dur <= 0) dur += 24 * 60;
+        return soma + dur / 60;
+      }, 0);
+      csvContent += `"TOTAL","${shifts.length} plantão(ões)","${totalHoras.toFixed(1)}h","","","",""\n`;
     }
-    
+
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1340,7 +1379,24 @@ export default function AdminReports() {
                 )}
               </div>
             )}
-            
+
+            {reportType === 'plantoes' && (
+              <div className="space-y-2">
+                <Label>Plantonista</Label>
+                <Select value={selectedPlantonista} onValueChange={setSelectedPlantonista}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-[300px]">
+                    <SelectItem value="all">Todos os plantonistas</SelectItem>
+                    {users.map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Data de Início</Label>
               <Input
@@ -1420,6 +1476,39 @@ export default function AdminReports() {
               </Badge>
             </CardHeader>
             <CardContent>
+              {reportType === 'plantoes' && selectedPlantonista !== 'all' && !loading && (() => {
+                const nome = users.find(u => u.id === selectedPlantonista)?.name ?? 'Plantonista';
+                const horas = shifts.reduce((soma, s) => {
+                  const [hi, mi] = (s.start_time || '00:00').slice(0, 5).split(':').map(Number);
+                  const [hf, mf] = (s.end_time || '00:00').slice(0, 5).split(':').map(Number);
+                  let dur = (hf * 60 + mf) - (hi * 60 + mi);
+                  if (dur <= 0) dur += 24 * 60;
+                  return soma + dur / 60;
+                }, 0);
+                const porSetor = new Map<string, number>();
+                shifts.forEach(s => porSetor.set(s.sector_name, (porSetor.get(s.sector_name) ?? 0) + 1));
+
+                return (
+                  <div className="mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3">
+                    <p className="text-sm font-semibold">{nome}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      <strong className="text-foreground">{shifts.length}</strong> plantão(ões) ·{' '}
+                      <strong className="text-foreground">{horas.toFixed(1)}h</strong> no período de{' '}
+                      {format(parseISO(startDate), 'dd/MM/yyyy')} a {format(parseISO(endDate), 'dd/MM/yyyy')}
+                    </p>
+                    {porSetor.size > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Array.from(porSetor.entries())
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([setor, qtd]) => (
+                            <Badge key={setor} variant="outline">{setor}: {qtd}</Badge>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {loading ? (
                 <div className="flex items-center justify-center py-8">
                   <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
