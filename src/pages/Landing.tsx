@@ -263,7 +263,7 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Email</p>
-                    <p className="text-foreground font-medium">sandrodainez1@gmail.com</p>
+                    <p className="text-foreground font-medium">medescala@hotmail.com</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

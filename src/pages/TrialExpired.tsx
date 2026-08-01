@@ -38,7 +38,7 @@ export default function TrialExpired({ daysExpired, tenantName }: TrialExpiredPr
 
           <div className="space-y-3">
             <Button className="w-full" size="lg" asChild>
-              <a href="mailto:contato@medescala.com?subject=Reativar assinatura - MedEscala">
+              <a href="mailto:medescala@hotmail.com?subject=Reativar assinatura - MedEscala">
                 <Mail className="mr-2 h-4 w-4" />
                 Entrar em contato
               </a>

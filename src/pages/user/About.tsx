@@ -117,10 +117,10 @@ export default function UserAbout() {
           <Button 
             variant="ghost" 
             className="w-full justify-start h-auto py-3"
-            onClick={() => window.location.href = 'mailto:sandrodainez1@gmail.com'}
+            onClick={() => window.location.href = 'mailto:medescala@hotmail.com'}
           >
             <Mail className="h-4 w-4 mr-3" />
-            <span>sandrodainez1@gmail.com</span>
+            <span>medescala@hotmail.com</span>
           </Button>
           <Button 
             variant="ghost" 
