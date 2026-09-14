@@ -73,6 +73,8 @@ export interface AdminScheduleFetchResult {
   userSectorValues: Map<string, { day_value: number | null; night_value: number | null }>;
   shifts: ScheduleShift[];
   assignments: ScheduleAssignment[];
+  /** Atribuições do período em TODOS os setores — base da detecção de conflitos. */
+  conflictAssignments: ScheduleAssignment[];
   offers: ScheduleOffer[];
   acknowledgedConflictKeys: Set<string>;
 }
@@ -274,22 +276,24 @@ export async function fetchAdminScheduleData({
     console.error('[adminScheduleData] conflict_resolutions fetch failed', resolutionsRes.error);
   }
 
-  let assignments = ((assignmentsRes.data ?? []) as any[])
-    .filter((row) => allowedUserIds.has(row.user_id))
-    .map((row) => {
-      const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
-      const resolvedFullName =
-        row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
-      const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
-      return {
-        id: row.id,
-        shift_id: row.shift_id,
-        user_id: row.user_id,
-        assigned_value: row.assigned_value,
-        status: row.status,
-        profile: { name: resolvedName, full_name: resolvedFullName },
-      };
-    }) as ScheduleAssignment[];
+  // conflictAssignments: TODAS as atribuições do período, de todos os setores, sem o
+  // recorte do setor aberto. Conflito = mesmo plantonista em dois locais; com o recorte,
+  // abrir uma escala só mostrava conflitos de quem é membro daquele setor.
+  let conflictAssignments = ((assignmentsRes.data ?? []) as any[]).map((row) => {
+    const fallbackDisplayName = memberDisplayNameByUserId.get(row.user_id) ?? null;
+    const resolvedFullName =
+      row.full_name ?? (fallbackDisplayName && fallbackDisplayName !== row.name ? fallbackDisplayName : null);
+    const resolvedName = resolvedFullName ?? row.name ?? fallbackDisplayName ?? null;
+    return {
+      id: row.id,
+      shift_id: row.shift_id,
+      user_id: row.user_id,
+      assigned_value: row.assigned_value,
+      status: row.status,
+      profile: { name: resolvedName, full_name: resolvedFullName },
+    };
+  }) as ScheduleAssignment[];
+  let assignments = conflictAssignments.filter((row) => allowedUserIds.has(row.user_id));
 
   if (assignments.length === 0 && shifts.length > 0) {
     // Em lotes de ids (URL do .in()) e paginado (limite de 1.000 linhas).
@@ -314,19 +318,18 @@ export async function fetchAdminScheduleData({
     if (directAssignmentsError) {
       console.error('[adminScheduleData] shift_assignments fallback fetch failed', directAssignmentsError);
     } else {
-      assignments = ((directAssignments ?? []) as any[])
-        .filter((row) => allowedUserIds.has(row.user_id))
-        .map((row) => ({
-          id: row.id,
-          shift_id: row.shift_id,
-          user_id: row.user_id,
-          assigned_value: row.assigned_value,
-          status: row.status,
-          profile: {
-            name: row.profile?.name ?? null,
-            full_name: row.profile?.full_name ?? null,
-          },
-        })) as ScheduleAssignment[];
+      conflictAssignments = ((directAssignments ?? []) as any[]).map((row) => ({
+        id: row.id,
+        shift_id: row.shift_id,
+        user_id: row.user_id,
+        assigned_value: row.assigned_value,
+        status: row.status,
+        profile: {
+          name: row.profile?.name ?? null,
+          full_name: row.profile?.full_name ?? null,
+        },
+      })) as ScheduleAssignment[];
+      assignments = conflictAssignments.filter((row) => allowedUserIds.has(row.user_id));
     }
   }
 
@@ -366,6 +369,7 @@ export async function fetchAdminScheduleData({
     userSectorValues,
     shifts,
     assignments,
+    conflictAssignments,
     offers,
     acknowledgedConflictKeys,
   };

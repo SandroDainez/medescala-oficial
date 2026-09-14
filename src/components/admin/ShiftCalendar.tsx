@@ -313,6 +313,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [members, setMembers] = useState<Member[]>([]);
   const [sectors, setSectors] = useState<Sector[]>([]);
   const [sectorMemberships, setSectorMemberships] = useState<SectorMembership[]>([]);
+  // Atribuições de todos os setores no período — só para detectar conflitos entre escalas.
+  const [conflictAssignments, setConflictAssignments] = useState<ShiftAssignment[]>([]);
   const [userSectorValues, setUserSectorValues] = useState<Map<string, { day_value: number | null; night_value: number | null }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -740,6 +742,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       setSectorMemberships(result.sectorMemberships);
       setMembers(result.members as Member[]);
       setUserSectorValues(result.userSectorValues);
+      setConflictAssignments(result.conflictAssignments as ShiftAssignment[]);
       setShifts(result.shifts as Shift[]);
       setAssignments(result.assignments as unknown as ShiftAssignment[]);
       setShiftOffers(result.offers as unknown as ShiftOffer[]);
@@ -5446,14 +5449,16 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
 
   // Detecção de conflitos centralizada na lib compartilhada (mesma usada nos Relatórios).
   function detectConflicts(): ShiftConflict[] {
+    // Usa as atribuições de TODOS os setores (não só do setor aberto): o conflito é do
+    // plantonista, e deve aparecer em qualquer escala que o administrador abrir.
     const shiftById = new Map(shifts.map((s) => [s.id, s]));
     const nameByUser = new Map<string, string>();
-    assignments.forEach((a) => {
+    conflictAssignments.forEach((a) => {
       if (!nameByUser.has(a.user_id)) nameByUser.set(a.user_id, getAssignmentName(a));
     });
 
     return detectScheduleConflicts({
-      assignments: assignments.map((a) => ({ id: a.id, shift_id: a.shift_id, user_id: a.user_id })),
+      assignments: conflictAssignments.map((a) => ({ id: a.id, shift_id: a.shift_id, user_id: a.user_id })),
       shiftById,
       getSectorName: (sectorId, hospital) => getSectorName(sectorId, hospital ?? null),
       getUserName: (userId) =>
