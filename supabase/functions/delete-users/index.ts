@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
         })
       }
 
-      if (!membership || membership.role !== 'admin') {
+      if (!membership || !['admin', 'owner'].includes(membership.role)) {
         console.error('User is not an admin of this tenant')
         return new Response(JSON.stringify({ error: 'Only super admins or tenant admins can delete users' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -173,6 +173,37 @@ Deno.serve(async (req) => {
         }
 
         const userToDelete = userResp.user
+
+        // Isolamento entre tenants: se a pessoa também pertence a OUTRO serviço (ou é super
+        // admin), remove só o vínculo com ESTE serviço. Antes, a conta inteira era apagada —
+        // em todos os hospitais.
+        const { count: otherTenantMemberships } = await supabaseAdmin
+          .from('memberships')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .neq('tenant_id', tenantId)
+        const { data: targetSuperAdmin } = await supabaseAdmin
+          .from('super_admins')
+          .select('user_id')
+          .eq('user_id', userId)
+          .eq('active', true)
+          .maybeSingle()
+
+        if ((otherTenantMemberships ?? 0) > 0 || targetSuperAdmin) {
+          await supabaseAdmin.from('sector_memberships').delete().eq('tenant_id', tenantId).eq('user_id', userId)
+          const { error: removeMembershipError } = await supabaseAdmin
+            .from('memberships')
+            .delete()
+            .eq('tenant_id', tenantId)
+            .eq('user_id', userId)
+          if (removeMembershipError) {
+            errors.push(`${userToDelete?.email || userId}: ${removeMembershipError.message}`)
+          } else {
+            deletedUsers.push(userToDelete?.email || userId)
+            console.log(`Removed only tenant membership for multi-tenant user ${userId}`)
+          }
+          continue
+        }
 
         console.log(`Deleting user: ${userToDelete?.email} (${userId})`)
 

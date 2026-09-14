@@ -102,6 +102,23 @@ Deno.serve(async (req) => {
     }
     const invite = resolvedInvite.invite;
 
+    // Defesa em profundidade: o convite só define senha de conta nunca acessada e que não é
+    // super admin (impede usar um convite para tomar uma conta que já existe e está em uso).
+    {
+      const { data: inviteUserData } = await admin.auth.admin.getUserById(invite.user_id);
+      const { data: inviteUserSuperAdmin } = await admin
+        .from("super_admins")
+        .select("user_id")
+        .eq("user_id", invite.user_id)
+        .eq("active", true)
+        .maybeSingle();
+      if (inviteUserSuperAdmin || inviteUserData?.user?.last_sign_in_at) {
+        return json({
+          error: "Este convite não pode mais ser usado: a conta já foi acessada. Use \"Esqueci minha senha\" na tela de login.",
+        }, 400);
+      }
+    }
+
     if (validateOnly) {
       const { data: membership, error: membershipError } = await admin
         .from("memberships")

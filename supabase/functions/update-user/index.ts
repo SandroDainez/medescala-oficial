@@ -592,6 +592,51 @@ Deno.serve(async (req) => {
     }
 
     const payload = (body.payload ?? {}) as UpdatePayload;
+    const payloadRecord = payload as unknown as Record<string, unknown>;
+
+    // Ações sobre si mesmo não podem mudar papel, status nem tipo de perfil (antes,
+    // self_update com accessRole:"admin" promovia um usuário comum a admin do tenant).
+    if (isSelfAction) {
+      delete payloadRecord.accessRole;
+      delete payloadRecord.status;
+      delete payloadRecord.profileType;
+    }
+
+    // Isolamento entre tenants: admin de um tenant não pode trocar o e-mail de login de quem
+    // é super admin ou também pertence a OUTRO tenant (troca de e-mail + reset de senha =
+    // tomada da conta). Super admin continua podendo; o próprio usuário também.
+    if (!isSelfAction && Object.prototype.hasOwnProperty.call(payloadRecord, "email")) {
+      const requestedEmail = normalizeText(payloadRecord.email)?.toLowerCase() ?? null;
+      const { data: currentAuthUser } = await admin.auth.admin.getUserById(userId);
+      const currentEmail = currentAuthUser?.user?.email?.trim().toLowerCase() ?? null;
+      if (requestedEmail && requestedEmail !== currentEmail) {
+        const { data: requesterSuperAdmin } = await admin
+          .from("super_admins")
+          .select("user_id")
+          .eq("user_id", requester.id)
+          .eq("active", true)
+          .maybeSingle();
+        if (!requesterSuperAdmin) {
+          const { data: targetSuperAdmin } = await admin
+            .from("super_admins")
+            .select("user_id")
+            .eq("user_id", userId)
+            .eq("active", true)
+            .maybeSingle();
+          const { count: otherTenantMemberships } = await admin
+            .from("memberships")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", userId)
+            .neq("tenant_id", tenantId);
+          if (targetSuperAdmin || (otherTenantMemberships ?? 0) > 0) {
+            return json({
+              error:
+                "Este profissional também está vinculado a outro serviço. Por segurança, só ele pode trocar o próprio e-mail de login (em Configurações).",
+            }, 403);
+          }
+        }
+      }
+    }
 
     const profileUpdate: Record<string, string | null> = {
       updated_at: new Date().toISOString(),
@@ -858,6 +903,26 @@ Deno.serve(async (req) => {
         : null,
     };
 
+    // Só grava os campos sensíveis que vieram no payload. Antes, todo campo ausente virava
+    // null: salvar as próprias Configurações (que não enviam CPF/banco) apagava esses dados.
+    const privateFieldSource: Record<string, string[]> = {
+      cpf_enc: ["cpf"],
+      crm_enc: ["crm"],
+      rqe_enc: ["rqe", "rqeDetails"],
+      rg_enc: ["rg"],
+      address_enc: ["address"],
+      bank_name_enc: ["bankName"],
+      bank_agency_enc: ["bankAgency"],
+      bank_account_enc: ["bankAccount"],
+      pix_type_enc: ["pixType"],
+      pix_key_enc: ["pixKey"],
+    };
+    const privateUpsertPresent = Object.fromEntries(
+      Object.entries(privateUpsert).filter(([column]) =>
+        (privateFieldSource[column] ?? []).some((field) => Object.prototype.hasOwnProperty.call(payloadRecord, field)),
+      ),
+    );
+
     const { data: currentPrivateRow, error: currentPrivateError } = await admin
       .from("profiles_private")
       .select("tenant_id")
@@ -876,7 +941,7 @@ Deno.serve(async (req) => {
           tenant_id: currentPrivateRow?.tenant_id ?? tenantId,
           last_updated_by: requester.id,
           updated_at: new Date().toISOString(),
-          ...privateUpsert,
+          ...privateUpsertPresent,
         },
         { onConflict: "user_id" },
       );

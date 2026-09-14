@@ -66,13 +66,14 @@ Deno.serve(async (req) => {
       throw new Error('Usuário não é membro deste tenant')
     }
 
-    const isAdmin = membership.role === 'admin'
+    const isAdmin = membership.role === 'admin' || membership.role === 'owner'
 
-    // Check if user is super admin
+    // Check if user is an ACTIVE super admin (desativado não mantém acesso)
     const { data: superAdmin } = await supabaseAdmin
       .from('super_admins')
       .select('id')
       .eq('user_id', user.id)
+      .eq('active', true)
       .maybeSingle()
 
     const isSuperAdmin = !!superAdmin
@@ -174,10 +175,14 @@ Deno.serve(async (req) => {
 
       // Also clear the document_url from the absence record if absenceId provided
       if (absenceId) {
+        // Restrito ao tenant informado e ao dono do arquivo (antes, absenceId de qualquer
+        // tenant era aceito).
         await supabaseAdmin
           .from('absences')
           .update({ document_url: null })
           .eq('id', absenceId)
+          .eq('tenant_id', tenantId)
+          .eq('user_id', fileOwnerId)
       }
 
       return new Response(

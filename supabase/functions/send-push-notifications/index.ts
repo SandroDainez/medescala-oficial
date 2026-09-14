@@ -95,6 +95,16 @@ const handler = async (req: Request): Promise<Response> => {
     const oneSignalAppId = Deno.env.get("ONESIGNAL_APP_ID");
     const oneSignalApiKey = Deno.env.get("ONESIGNAL_API_KEY");
 
+    // Processamento interno (agendador/serviço): exige a service role no Authorization.
+    // Antes, qualquer portador da chave anon pública disparava o envio da fila.
+    const bearer = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    if (!supabaseServiceKey || bearer !== supabaseServiceKey) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json", ...corsHeaders },
+      });
+    }
+
     if (!oneSignalAppId || !oneSignalApiKey) {
       console.log("OneSignal not configured, skipping push notifications");
       return new Response(

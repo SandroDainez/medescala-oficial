@@ -159,6 +159,46 @@ Deno.serve(async (req) => {
 
     const existingAuthUser = await findAuthUserByEmail(admin, email);
     if (existingAuthUser?.id) {
+      // Isolamento entre tenants: vincular sem consentimento uma conta que já existe permitia
+      // a qualquer admin (inclusive de um tenant recém-criado no cadastro gratuito) ler dados
+      // e, via convite, redefinir a senha de profissionais de outros serviços. Admin comum só
+      // reaproveita a conta se ela já é deste serviço, ou se nunca foi acessada e não pertence
+      // a nenhum outro. Super admin continua podendo vincular.
+      const { data: requesterSuperAdmin } = await admin
+        .from("super_admins")
+        .select("user_id")
+        .eq("user_id", requester.id)
+        .eq("active", true)
+        .maybeSingle();
+      if (!requesterSuperAdmin) {
+        const { data: sameTenantMembership } = await admin
+          .from("memberships")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("user_id", existingAuthUser.id)
+          .maybeSingle();
+        if (!sameTenantMembership) {
+          const { data: targetSuperAdmin } = await admin
+            .from("super_admins")
+            .select("user_id")
+            .eq("user_id", existingAuthUser.id)
+            .eq("active", true)
+            .maybeSingle();
+          const { count: otherTenantMemberships } = await admin
+            .from("memberships")
+            .select("id", { count: "exact", head: true })
+            .eq("user_id", existingAuthUser.id)
+            .neq("tenant_id", tenantId);
+          const alreadyAccessed = Boolean((existingAuthUser as { last_sign_in_at?: string | null }).last_sign_in_at);
+          if (targetSuperAdmin || (otherTenantMemberships ?? 0) > 0 || alreadyAccessed) {
+            return json({
+              error:
+                "Este e-mail já tem cadastro no MedEscala (em outro serviço ou já acessado). Por segurança, o vínculo a este serviço precisa ser feito pelo suporte do MedEscala.",
+              code: "EMAIL_ALREADY_REGISTERED",
+            }, 409);
+          }
+        }
+      }
       targetUserId = existingAuthUser.id;
     }
 

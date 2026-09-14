@@ -161,6 +161,53 @@ Deno.serve(async (req) => {
     const targetUserId = typeof body.userId === "string" ? body.userId.trim() : null;
     const bodyTenantId = typeof body.tenantId === "string" ? body.tenantId.trim() : null;
 
+    // Isolamento entre tenants: o tenantId do corpo precisa ser um serviço do solicitante, e
+    // gravar verificação/metadados em OUTRO usuário exige ser admin/owner desse serviço com o
+    // alvo membro dele. Super admin continua podendo.
+    const { data: requesterSuperAdmin } = await admin
+      .from("super_admins")
+      .select("user_id")
+      .eq("user_id", requester.id)
+      .eq("active", true)
+      .maybeSingle();
+    if (!requesterSuperAdmin) {
+      if (bodyTenantId) {
+        const { data: requesterTenantMembership } = await admin
+          .from("memberships")
+          .select("role")
+          .eq("tenant_id", bodyTenantId)
+          .eq("user_id", requester.id)
+          .eq("active", true)
+          .maybeSingle();
+        if (!requesterTenantMembership) {
+          return json({ ok: false, found: false, error: "Sem acesso a este hospital/serviço" }, 403);
+        }
+      }
+      if (targetUserId && targetUserId !== requester.id) {
+        const tenantForCheck = await resolveTenantId(admin, requester.id, bodyTenantId);
+        if (!tenantForCheck) {
+          return json({ ok: false, found: false, error: "Sem permissão para verificar outro usuário" }, 403);
+        }
+        const { data: requesterRoleRow } = await admin
+          .from("memberships")
+          .select("role")
+          .eq("tenant_id", tenantForCheck)
+          .eq("user_id", requester.id)
+          .eq("active", true)
+          .maybeSingle();
+        const { data: targetMembershipRow } = await admin
+          .from("memberships")
+          .select("user_id")
+          .eq("tenant_id", tenantForCheck)
+          .eq("user_id", targetUserId)
+          .maybeSingle();
+        const requesterRole = (requesterRoleRow as { role?: string } | null)?.role ?? "";
+        if (!["admin", "owner"].includes(requesterRole) || !targetMembershipRow) {
+          return json({ ok: false, found: false, error: "Sem permissão para verificar outro usuário" }, 403);
+        }
+      }
+    }
+
     if (!crm || !uf) {
       return json({ ok: false, found: false, error: "crm e uf são obrigatórios" }, 400);
     }

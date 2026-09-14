@@ -199,6 +199,39 @@ Deno.serve(async (req: Request): Promise<Response> => {
       throw new Error("Este usuário ainda não está vinculado ativamente ao hospital/serviço. Reabra o cadastro e salve o vínculo antes de enviar o convite.");
     }
 
+    // O convite DEFINE A SENHA da conta. Só vale para quem nunca acessou e não é super admin
+    // (quem já acessou usa "Esqueci minha senha"). Admin comum também não gera convite para
+    // quem pertence a outro serviço — evita tomada de conta entre tenants.
+    const { data: targetAuthData } = await supabaseAdmin.auth.admin.getUserById(targetProfile.id);
+    const { data: targetSuperAdmin } = await supabaseAdmin
+      .from('super_admins')
+      .select('user_id')
+      .eq('user_id', targetProfile.id)
+      .eq('active', true)
+      .maybeSingle();
+    if (targetSuperAdmin) {
+      throw new Error("Não é possível gerar convite de senha para esta conta.");
+    }
+    if (targetAuthData?.user?.last_sign_in_at) {
+      throw new Error("Este profissional já acessou o MedEscala. Para trocar a senha, ele deve usar \"Esqueci minha senha\" na tela de login.");
+    }
+    const { data: requesterSuperAdmin } = await supabaseAdmin
+      .from('super_admins')
+      .select('user_id')
+      .eq('user_id', requester.id)
+      .eq('active', true)
+      .maybeSingle();
+    if (!requesterSuperAdmin) {
+      const { count: otherTenantMemberships } = await supabaseAdmin
+        .from('memberships')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', targetProfile.id)
+        .neq('tenant_id', tenantId);
+      if ((otherTenantMemberships ?? 0) > 0) {
+        throw new Error("Este profissional também está vinculado a outro serviço. O primeiro acesso dele deve ser feito pelo \"Esqueci minha senha\".");
+      }
+    }
+
     const inviteToken = generateInviteToken();
     const inviteTokenHash = await sha256Hex(inviteToken);
 

@@ -62,15 +62,44 @@ Deno.serve(async (req) => {
       return json({ error: "Usuário não autenticado" }, 401);
     }
 
-    // Aqui você pode checar se é admin se quiser:
-    // (exemplo se tiver tabela profiles com role)
-    // const { data: profile } = await admin.from("profiles").select("role").eq("id", user.id).single()
-
     const body = await req.json();
-    const userId = (body.userId || "").trim();
+    const userId = String(body.userId ?? "").trim();
+    const tenantId = String(body.tenantId ?? "").trim();
 
     if (!userId) {
       return json({ error: "userId é obrigatório" }, 400);
+    }
+
+    // Isolamento entre tenants: consultar o e-mail de OUTRO usuário exige ser super admin,
+    // ou admin/owner do tenant informado com o alvo membro desse tenant.
+    if (userId !== user.id) {
+      const { data: superAdmin } = await admin
+        .from("super_admins")
+        .select("user_id")
+        .eq("user_id", user.id)
+        .eq("active", true)
+        .maybeSingle();
+      if (!superAdmin) {
+        if (!tenantId) {
+          return json({ error: "tenantId é obrigatório" }, 400);
+        }
+        const { data: requesterMembership } = await admin
+          .from("memberships")
+          .select("role")
+          .eq("tenant_id", tenantId)
+          .eq("user_id", user.id)
+          .eq("active", true)
+          .maybeSingle();
+        const { data: targetMembership } = await admin
+          .from("memberships")
+          .select("id")
+          .eq("tenant_id", tenantId)
+          .eq("user_id", userId)
+          .maybeSingle();
+        if (!requesterMembership || !["admin", "owner"].includes(requesterMembership.role) || !targetMembership) {
+          return json({ error: "Sem permissão" }, 403);
+        }
+      }
     }
 
     const { data, error } = await admin.auth.admin.getUserById(userId);
