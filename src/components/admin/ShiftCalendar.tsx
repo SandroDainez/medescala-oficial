@@ -655,9 +655,11 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   // Profissionais ativos do serviço inteiro — não só os do setor aberto — para casar os
   // nomes da planilha. Quem está cadastrado mas sem vínculo com o setor é vinculado na importação.
   const [importPeople, setImportPeople] = useState<ImportPerson[]>([]);
+  // Diaristas/visitadores (memberships.is_diarista) que o admin marcou para importar mesmo assim.
+  const [importIncludedDiaristas, setImportIncludedDiaristas] = useState<Set<string>>(new Set());
   const importNameReport = useMemo(
-    () => buildImportNameReport(importPreviewRows, importPeople, sectorMemberships),
-    [importPreviewRows, importPeople, sectorMemberships],
+    () => buildImportNameReport(importPreviewRows, importPeople, sectorMemberships, importIncludedDiaristas),
+    [importPreviewRows, importPeople, sectorMemberships, importIncludedDiaristas],
   );
   const [importErrors, setImportErrors] = useState<string[]>([]);
   // Contagem para detectar perda silenciosa de linhas na leitura do arquivo.
@@ -1296,18 +1298,20 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     if (!currentTenantId) return [];
     const { data, error } = await supabase
       .from('memberships')
-      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
+      .select('user_id, role, is_diarista, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
       .eq('tenant_id', currentTenantId)
       .eq('active', true);
     if (error) throw error;
     type Row = {
       user_id: string;
       role: string | null;
+      is_diarista: boolean | null;
       profile: { name: string | null; full_name: string | null; profile_type: string | null } | null;
     };
     return ((data ?? []) as unknown as Row[]).map((m) => ({
       user_id: m.user_id,
       role: m.role,
+      is_diarista: m.is_diarista ?? false,
       name: m.profile?.name ?? null,
       full_name: m.profile?.full_name ?? null,
       profile_type: m.profile?.profile_type ?? null,
@@ -1326,6 +1330,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       }
 
       setImportPeople(await loadImportPeople());
+      setImportIncludedDiaristas(new Set());
 
       let rawMatrix: (string | number | Date)[][];
       let firstSheetName = file.name;
@@ -1653,6 +1658,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       const nameMatchCache = new Map<string, ImportNameMatch>();
       const sectorMembershipKeys = new Set(sectorMemberships.map((sm) => `${sm.sector_id}|${sm.user_id}`));
       const linkedToSector: string[] = [];
+      // Linhas de diaristas/visitadores não incluídos: não viram plantão nem vaga.
+      let skippedDiaristaRows = 0;
 
       async function ensureSectorMembership(params: {
         userId: string;
@@ -1789,6 +1796,9 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             unmatchedNames.add(`${importedName} (mais de um cadastro compatível)`);
           } else if (!match.eligible) {
             unmatchedNames.add(`${importedName} (perfil não pode receber plantão)`);
+          } else if (match.person.is_diarista && !importIncludedDiaristas.has(match.person.user_id)) {
+            skippedDiaristaRows += 1;
+            continue;
           } else {
             try {
               await ensureSectorMembership({
@@ -1871,6 +1881,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
       }
 
+      const skippedDiaristaText =
+        skippedDiaristaRows > 0
+          ? ` ${skippedDiaristaRows} linha(s) de diaristas/visita não importada(s).`
+          : '';
       const linkedText =
         linkedToSector.length > 0
           ? ` Vinculados automaticamente ao setor: ${linkedToSector.slice(0, 6).join(', ')}${linkedToSector.length > 6 ? ` e mais ${linkedToSector.length - 6}` : ''}.`
@@ -1889,12 +1903,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         notifyError(
           'importar escala',
           issueSummary || `${importErrorCount} erro(s)`,
-          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${linkedText}${unmatchedText}${zeroValueText}${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${skippedDiaristaText}${linkedText}${unmatchedText}${zeroValueText}${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
         );
       } else {
         notifySuccess(
           'Escala importada',
-          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${linkedText}${unmatchedText}${zeroValueText}`,
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${skippedDiaristaText}${linkedText}${unmatchedText}${zeroValueText}`,
         );
       }
       setImportDialogOpen(false);
@@ -8038,6 +8052,34 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <> · <strong className="text-foreground">{importNameReport.vacancies}</strong> vaga(s) sem responsável</>
                   )}
                 </p>
+
+                {importNameReport.diaristas.length > 0 && (
+                  <div className="rounded-md border border-violet-500/40 bg-violet-500/10 p-2 text-violet-800 dark:text-violet-200">
+                    <p className="font-semibold">
+                      Diaristas / visita ({importNameReport.diaristas.length}) — não entram na escala. Marque quem fez plantão:
+                    </p>
+                    <div className="mt-1 max-h-28 space-y-1 overflow-y-auto">
+                      {importNameReport.diaristas.map((d) => (
+                        <label key={d.userId} className="flex cursor-pointer items-center gap-2">
+                          <Checkbox
+                            checked={d.included}
+                            onCheckedChange={(checked) =>
+                              setImportIncludedDiaristas((prev) => {
+                                const next = new Set(prev);
+                                if (checked === true) next.add(d.userId);
+                                else next.delete(d.userId);
+                                return next;
+                              })
+                            }
+                          />
+                          <span>
+                            {d.person} ({d.count} linha{d.count > 1 ? 's' : ''}){d.included ? ' — será importado' : ''}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {importNameReport.notFound.length > 0 && (
                   <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-red-700 dark:text-red-200">

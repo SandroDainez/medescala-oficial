@@ -219,5 +219,31 @@ describe('buildImportNameReport', () => {
     expect(r.notFound).toEqual([{ name: 'FULANO NOVO', count: 1 }]);
     expect(r.ineligible).toEqual([{ name: 'CARLA DIAS', person: 'CARLA DIAS', count: 1 }]);
     expect(r.ambiguous).toEqual([]);
+    expect(r.diaristas).toEqual([]);
+  });
+
+  it('diaristas/visitadores ficam fora por padrão e entram quando incluídos', () => {
+    const people = [
+      p('plant', 'ANA SOUZA'),
+      p('dia', 'THIAGO BUENO', { is_diarista: true }),
+    ];
+    const rows = [
+      { sector_id: 'uti', sector_name: 'UTI', assignee_names: ['ANA SOUZA'] },
+      { sector_id: 'uti', sector_name: 'UTI', assignee_names: ['THIAGO BUENO'] },
+      { sector_id: 'uti', sector_name: 'UTI', assignee_names: ['THIAGO BUENO'] },
+    ];
+    const members = [
+      { sector_id: 'uti', user_id: 'plant' },
+      { sector_id: 'uti', user_id: 'dia' },
+    ];
+
+    const fora = buildImportNameReport(rows, people, members);
+    expect(fora.assignments).toBe(1);
+    expect(fora.vacancies).toBe(0); // diarista fora não vira vaga
+    expect(fora.diaristas).toEqual([{ userId: 'dia', person: 'THIAGO BUENO', count: 2, included: false }]);
+
+    const dentro = buildImportNameReport(rows, people, members, new Set(['dia']));
+    expect(dentro.assignments).toBe(3);
+    expect(dentro.diaristas[0].included).toBe(true);
   });
 });

@@ -45,6 +45,8 @@ type UserRow = {
   name: string | null;
   profile_type: string | null;
   status: string | null;
+  /** Diarista/visitador neste serviço (memberships.is_diarista). */
+  is_diarista: boolean;
 };
 
 type SectorRow = {
@@ -60,6 +62,7 @@ type MembershipWithProfile = {
   active: boolean;
   created_at: string;
   tenant_id: string;
+  is_diarista?: boolean | null;
   profile: {
     email: string | null;
     full_name: string | null;
@@ -527,6 +530,9 @@ export default function UserManagement() {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
 
+  // Marcação de diarista/visita no cadastro em edição (gravada direto em memberships).
+  const [editIsDiarista, setEditIsDiarista] = useState(false);
+
   const loadData = useCallback(async () => {
     if (!currentTenantId) return;
 
@@ -536,7 +542,7 @@ export default function UserManagement() {
       supabase
         .from("memberships")
         .select(
-          "id, user_id, role, active, created_at, tenant_id, profile:profiles!memberships_user_id_profiles_fkey(email, full_name, phone, name, profile_type, status)"
+          "id, user_id, role, active, is_diarista, created_at, tenant_id, profile:profiles!memberships_user_id_profiles_fkey(email, full_name, phone, name, profile_type, status)"
         )
         .eq("tenant_id", currentTenantId)
         .order("created_at", { ascending: false }),
@@ -555,7 +561,7 @@ export default function UserManagement() {
       notifyError("carregar usuários", usersRes.error, "Não foi possível carregar usuários.");
       setUsers([]);
     } else {
-      const normalized = ((usersRes.data as MembershipWithProfile[] | null) ?? []).map((row) => ({
+      const normalized = ((usersRes.data as unknown as MembershipWithProfile[] | null) ?? []).map((row) => ({
         id: row.id,
         user_id: row.user_id,
         role: row.role,
@@ -568,6 +574,7 @@ export default function UserManagement() {
         name: row.profile?.name ?? null,
         profile_type: row.profile?.profile_type ?? null,
         status: row.profile?.status ?? null,
+        is_diarista: row.is_diarista ?? false,
       }));
 
       setUsers(normalized);
@@ -659,6 +666,7 @@ export default function UserManagement() {
       status: user.status ?? "ativo",
       accessRole: user.role === "admin" || user.role === "owner" ? "admin" : "user",
     });
+    setEditIsDiarista(user.is_diarista);
 
     setEditOpen(true);
 
@@ -832,6 +840,21 @@ export default function UserManagement() {
       notifyError("salvar usuário", (data?.error as string | undefined) || "Não foi possível salvar o usuário.", "Verifique os dados e tente novamente.");
       setSaving(false);
       return;
+    }
+
+    // Diarista/visita fica no vínculo com o serviço (memberships), fora do update-user.
+    if (editIsDiarista !== editingUser.is_diarista) {
+      const { error: diaristaError } = await supabase
+        .from("memberships")
+        .update({ is_diarista: editIsDiarista } as never)
+        .eq("id", editingUser.id);
+      if (diaristaError) {
+        notifyError(
+          "marcar diarista",
+          diaristaError,
+          "Os dados foram salvos, mas não foi possível atualizar a marcação de diarista/visita.",
+        );
+      }
     }
 
     notifySuccess(
@@ -1793,6 +1816,11 @@ export default function UserManagement() {
                   <span className="rounded-full bg-blue-100 px-2 py-1 text-[11px] font-medium text-blue-700">
                     {u.profile_type ?? "outro"}
                   </span>
+                  {u.is_diarista && (
+                    <span className="rounded-full bg-violet-100 px-2 py-1 text-[11px] font-medium text-violet-700">
+                      diarista / visita
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1922,6 +1950,23 @@ export default function UserManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-border/70 p-3">
+                    <Checkbox
+                      disabled={readOnlyMode}
+                      checked={editIsDiarista}
+                      onCheckedChange={(checked) => setEditIsDiarista(checked === true)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-sm">
+                      <span className="font-medium">Diarista / visita</span>
+                      <span className="block text-xs text-muted-foreground">
+                        Passa visita e não é plantonista fixo (ex.: diarista de UTI, nefrologista). Não entra na
+                        importação de escalas, salvo se você marcar; pode ser escalado manualmente quando der plantão.
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Acesso</Label>

@@ -233,6 +233,8 @@ export interface ImportPerson {
   full_name: string | null;
   profile_type: string | null;
   role: string | null;
+  /** Diarista/visitador (memberships.is_diarista): não entra na importação, salvo se incluído. */
+  is_diarista?: boolean | null;
 }
 
 export type ImportNameMatch =
@@ -385,6 +387,11 @@ export interface ImportNameReport {
   approximate: Array<{ name: string; person: string }>;
   /** Plantonistas que serão vinculados ao setor por aparecerem na escala dele. */
   sectorLinks: Array<{ person: string; sector: string }>;
+  /**
+   * Diaristas/visitadores encontrados na planilha. Por padrão NÃO entram (nem viram vaga);
+   * `included` indica os que o administrador marcou para importar.
+   */
+  diaristas: Array<{ userId: string; person: string; count: number; included: boolean }>;
 }
 
 /** Resumo mostrado ANTES de importar: quem casa, quem não, quem será vinculado ao setor. */
@@ -392,6 +399,7 @@ export function buildImportNameReport(
   rows: Array<{ sector_id: string; sector_name: string; assignee_names?: string[] }>,
   people: ImportPerson[],
   sectorMemberships: Array<{ sector_id: string; user_id: string }>,
+  includedDiaristas: ReadonlySet<string> = new Set(),
 ): ImportNameReport {
   const cache = new Map<string, ImportNameMatch>();
   const inSector = new Set(sectorMemberships.map((m) => `${m.sector_id}|${m.user_id}`));
@@ -400,6 +408,7 @@ export function buildImportNameReport(
   const ineligible = new Map<string, { person: string; count: number }>();
   const approximate = new Map<string, string>();
   const sectorLinks = new Map<string, { person: string; sector: string }>();
+  const diaristas = new Map<string, { person: string; count: number }>();
   let assignments = 0;
   let vacancies = 0;
 
@@ -433,6 +442,14 @@ export function buildImportNameReport(
         });
         continue;
       }
+      if (match.person.is_diarista) {
+        const userId = match.person.user_id;
+        diaristas.set(userId, {
+          person: personDisplayName(match.person),
+          count: (diaristas.get(userId)?.count ?? 0) + 1,
+        });
+        if (!includedDiaristas.has(userId)) continue;
+      }
       assignments += 1;
       if (match.approximate) approximate.set(name, personDisplayName(match.person));
       const key = `${row.sector_id}|${match.person.user_id}`;
@@ -450,5 +467,6 @@ export function buildImportNameReport(
     ineligible: [...ineligible].map(([name, v]) => ({ name, ...v })),
     approximate: [...approximate].map(([name, person]) => ({ name, person })),
     sectorLinks: [...sectorLinks.values()],
+    diaristas: [...diaristas].map(([userId, v]) => ({ userId, ...v, included: includedDiaristas.has(userId) })),
   };
 }
