@@ -25,6 +25,7 @@ import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOf
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
 import { isWeekendDate } from '@/lib/financial/valueCalculation';
 import { detectScheduleConflicts, doSlotsOverlap } from '@/lib/scheduleConflicts';
+import { buildImportNameReport, matchImportedName, parseEscalasGrid, personDisplayName, type ImportNameMatch, type ImportPerson } from '@/lib/scheduleImport';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
 import { confirmAdminShiftExists, deleteAdminShiftById, deleteAdminShiftsByIds, fetchAdminShiftIdsByNaturalKey, fetchAdminShiftsInRange, insertAdminShiftAndGetId, updateAdminShiftById, updateAdminShiftsByIds } from '@/services/adminShifts';
 import { Textarea } from '@/components/ui/textarea';
@@ -649,6 +650,13 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   const [importingShifts, setImportingShifts] = useState(false);
   const [importFileName, setImportFileName] = useState('');
   const [importPreviewRows, setImportPreviewRows] = useState<ImportedShiftRow[]>([]);
+  // Profissionais ativos do serviço inteiro — não só os do setor aberto — para casar os
+  // nomes da planilha. Quem está cadastrado mas sem vínculo com o setor é vinculado na importação.
+  const [importPeople, setImportPeople] = useState<ImportPerson[]>([]);
+  const importNameReport = useMemo(
+    () => buildImportNameReport(importPreviewRows, importPeople, sectorMemberships),
+    [importPreviewRows, importPeople, sectorMemberships],
+  );
   const [importErrors, setImportErrors] = useState<string[]>([]);
   // Contagem para detectar perda silenciosa de linhas na leitura do arquivo.
   const [importStats, setImportStats] = useState<{ fileRows: number; valid: number; ignored: number } | null>(null);
@@ -1073,96 +1081,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       .trim();
   }
 
-  function normalizeImportedPersonName(value: unknown): string {
-    return normalizeString(value)
-      .replace(/\bdrs?\b/g, ' ')
-      .replace(/\bdra?s?\b/g, ' ')
-      .replace(/\bmedic[oa]s?\b/g, ' ')
-      .replace(/\bplantonistas?\b/g, ' ')
-      .replace(/\bcrm[a-z]*\s*[:-]?\s*\d+[a-z0-9/-]*\b/g, ' ')
-      .replace(/\bcoren\s*[:-]?\s*\d+[a-z0-9/-]*\b/g, ' ')
-      .replace(/[()[\]{}]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  function tokenizeImportedPersonName(value: unknown): string[] {
-    return normalizeImportedPersonName(value)
-      .split(/\s+/)
-      .map((token) => token.trim())
-      .filter((token) => token.length >= 3)
-      .filter((token) => !['dos', 'das', 'des', 'da', 'de', 'do', 'e'].includes(token));
-  }
-
-  function resolveImportedMember(name: string): Member | null {
-    const target = normalizeImportedPersonName(name);
-    if (!target) return null;
-
-    const exact = members.find((member) => {
-      const full = normalizeImportedPersonName(member.profile?.full_name ?? '');
-      const short = normalizeImportedPersonName(member.profile?.name ?? '');
-      return full === target || short === target;
-    });
-    if (exact) return exact;
-
-    if (target.length < 6) return null;
-
-    const containsMatch =
-      members.find((member) => {
-        const full = normalizeImportedPersonName(member.profile?.full_name ?? '');
-        const short = normalizeImportedPersonName(member.profile?.name ?? '');
-        return (
-          (full && (full.includes(target) || target.includes(full))) ||
-          (short && (short.includes(target) || target.includes(short)))
-        );
-      }) || null;
-    if (containsMatch) return containsMatch;
-
-    const targetTokens = tokenizeImportedPersonName(target);
-    if (targetTokens.length < 2) return null;
-
-    let bestMember: Member | null = null;
-    let bestScore = 0;
-    let secondBestScore = 0;
-
-    for (const member of members) {
-      const variants = [
-        member.profile?.full_name ?? '',
-        member.profile?.name ?? '',
-      ];
-
-      let memberBestScore = 0;
-      for (const variant of variants) {
-        const variantTokens = tokenizeImportedPersonName(variant);
-        if (variantTokens.length < 2) continue;
-
-        const variantTokenSet = new Set(variantTokens);
-        const overlap = targetTokens.filter((token) => variantTokenSet.has(token));
-        if (overlap.length === 0) continue;
-
-        let score = overlap.length * 10;
-        if (variantTokens[0] === targetTokens[0]) score += 6;
-        if (variantTokens[variantTokens.length - 1] === targetTokens[targetTokens.length - 1]) score += 8;
-        if (overlap.length === Math.min(targetTokens.length, variantTokens.length)) score += 6;
-        memberBestScore = Math.max(memberBestScore, score);
-      }
-
-      if (memberBestScore > bestScore) {
-        secondBestScore = bestScore;
-        bestScore = memberBestScore;
-        bestMember = member;
-      } else if (memberBestScore > secondBestScore) {
-        secondBestScore = memberBestScore;
-      }
-    }
-
-    if (bestMember && bestScore >= 24 && bestScore >= secondBestScore + 4) {
-      return bestMember;
-    }
-
-    return null;
-  }
-
   function normalizeHeader(value: unknown): string {
     return normalizeString(value).replace(/\s+/g, '_');
   }
@@ -1335,141 +1253,62 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       return null;
     };
 
-    const periodRegex = /(\d{2})\/(\d{2})\/(\d{4})\s*[~-]\s*(\d{2})\/(\d{2})\/(\d{4})/;
-    let baseYear = currentDate.getFullYear();
-    let periodStart: Date | null = null;
-    let periodEnd: Date | null = null;
-    for (let r = 0; r < Math.min(20, rawMatrix.length); r++) {
-      for (const cell of rawMatrix[r] || []) {
-        const text = String(cell ?? '').trim();
-        const match = text.match(periodRegex);
-        if (match) {
-          baseYear = Number(match[3]);
-          periodStart = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]));
-          periodEnd = new Date(Number(match[6]), Number(match[5]) - 1, Number(match[4]));
-          break;
-        }
+    // Leitura da grade (faixas, nomes, vagas, legenda) fica em src/lib/scheduleImport.ts,
+    // coberta por testes. Aqui só se decide o setor de cada dia e se monta as linhas.
+    const grid = parseEscalasGrid(rawMatrix, { fallbackYear: currentDate.getFullYear() });
+    errors.push(...grid.warnings);
+
+    for (const slot of grid.slots) {
+      const sector = selectedFilterSector || findNearestSector(slot.dayRow) || defaultSector;
+      if (!sector) {
+        errors.push(`Linha ${slot.dayRow + 1}: não foi possível identificar o setor para ${slot.date}.`);
+        continue;
+      }
+
+      const base = {
+        sector_id: sector.id,
+        sector_name: sector.name,
+        shift_date: slot.date,
+        start_time: slot.start,
+        end_time: slot.end,
+        hospital: sector.name,
+        location: null,
+        base_value: null,
+        title: generateShiftTitle(slot.start, slot.end),
+      };
+
+      for (const name of slot.names) {
+        parsed.push({ ...base, notes: `Importado da escala impressa - ${name}`, assignee_names: [name] });
+      }
+      // Cada vaga é um plantão próprio (não pode ser deduplicada com outra vaga da mesma faixa).
+      for (let i = 0; i < slot.vacancies; i++) {
+        parsed.push({ ...base, notes: 'Importado da escala impressa (vaga)' });
       }
     }
 
-    const dayRegex = /\b(?:SEG|TER|QUA|QUI|SEX|SAB|SÁB|DOM)\s*(\d{1,2})\/(\d{1,2})\b/i;
-    const ignoreTokens = ['escalas', 'profissional de plantao', 'profissional de plantão', 'local', 'gerado em'];
-    const isIgnored = (value: string) => {
-      const norm = normalizeString(value);
-      if (!norm) return true;
-      if (ignoreTokens.some((token) => norm.includes(token))) return true;
-      if (/^\d{2}\/\d{2}\/\d{4}/.test(norm)) return true;
-      if (/^(seg|ter|qua|qui|sex|sab|dom)\s*\d{1,2}\/\d{1,2}$/.test(norm)) return true;
-      return false;
+    return { parsed, errors };
+  }
+
+  async function loadImportPeople(): Promise<ImportPerson[]> {
+    if (!currentTenantId) return [];
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
+      .eq('tenant_id', currentTenantId)
+      .eq('active', true);
+    if (error) throw error;
+    type Row = {
+      user_id: string;
+      role: string | null;
+      profile: { name: string | null; full_name: string | null; profile_type: string | null } | null;
     };
-
-    const dayRows: number[] = [];
-    for (let r = 0; r < rawMatrix.length; r++) {
-      const row = rawMatrix[r] || [];
-      if (row.some((cell) => dayRegex.test(String(cell ?? '').trim()))) {
-        dayRows.push(r);
-      }
-    }
-
-    for (let idx = 0; idx < dayRows.length; idx++) {
-      const r = dayRows[idx];
-      const nextDayRow = dayRows[idx + 1] ?? rawMatrix.length;
-      const row = rawMatrix[r] || [];
-      for (let c = 0; c < row.length; c++) {
-        const cellText = String(row[c] ?? '').trim();
-        const dayMatch = cellText.match(dayRegex);
-        if (!dayMatch) continue;
-
-        const day = Number(dayMatch[1]);
-        const month = Number(dayMatch[2]);
-        const date = new Date(baseYear, month - 1, day);
-        if (Number.isNaN(date.getTime())) continue;
-        if (periodStart && date < periodStart) continue;
-        if (periodEnd && date > periodEnd) continue;
-
-        const sector = selectedFilterSector || findNearestSector(r) || defaultSector;
-        if (!sector) {
-          errors.push(`Linha ${r + 1}: não foi possível identificar o setor para ${cellText}.`);
-          continue;
-        }
-
-        const namesByRange = new Map<string, string[]>();
-        let currentRange = { start: '07:00', end: '19:00' };
-        namesByRange.set(`${currentRange.start}|${currentRange.end}`, []);
-
-        for (let rr = r + 1; rr < nextDayRow; rr++) {
-          const raw = String(rawMatrix[rr]?.[c] ?? '').trim();
-          if (!raw) continue;
-
-          const rangeMatches = Array.from(raw.matchAll(/(\d{1,2}:\d{2})\s*[~-]\s*(\d{1,2}:\d{2})/g));
-          if (rangeMatches.length > 0) {
-            const first = rangeMatches[0];
-            const start = parseImportTime(first[1]);
-            const end = parseImportTime(first[2]);
-            if (start && end) {
-              currentRange = { start, end };
-              const key = `${start}|${end}`;
-              if (!namesByRange.has(key)) namesByRange.set(key, []);
-            }
-            continue;
-          }
-
-          const parts = raw.split(/\n|;|,|\|/g).map((p) => p.trim()).filter(Boolean);
-          const cleanNames = parts.filter((part) => !isIgnored(part));
-          if (cleanNames.length === 0) continue;
-
-          const key = `${currentRange.start}|${currentRange.end}`;
-          if (!namesByRange.has(key)) namesByRange.set(key, []);
-          namesByRange.get(key)!.push(...cleanNames);
-        }
-
-        for (const [rangeKey, importedNames] of namesByRange.entries()) {
-          const [start, end] = rangeKey.split('|');
-          const uniqueNames = Array.from(new Set(importedNames.map((n) => n.trim()).filter(Boolean)));
-
-          if (uniqueNames.length === 0) {
-            parsed.push({
-              sector_id: sector.id,
-              sector_name: sector.name,
-              shift_date: format(date, 'yyyy-MM-dd'),
-              start_time: start,
-              end_time: end,
-              hospital: sector.name,
-              location: null,
-              base_value: null,
-              notes: 'Importado da escala impressa',
-              title: generateShiftTitle(start, end),
-            });
-            continue;
-          }
-
-          uniqueNames.forEach((name) => {
-            parsed.push({
-              sector_id: sector.id,
-              sector_name: sector.name,
-              shift_date: format(date, 'yyyy-MM-dd'),
-              start_time: start,
-              end_time: end,
-              hospital: sector.name,
-              location: null,
-              base_value: null,
-              notes: `Importado da escala impressa - ${name}`,
-              title: generateShiftTitle(start, end),
-              assignee_names: [name],
-            });
-          });
-        }
-      }
-    }
-
-    const dedup = new Map<string, ImportedShiftRow>();
-    for (const row of parsed) {
-      const assigneeKey = (row.assignee_names?.[0] || '').toLowerCase();
-      const key = `${row.sector_id}|${row.shift_date}|${row.start_time}|${row.end_time}|${assigneeKey}`;
-      if (!dedup.has(key)) dedup.set(key, row);
-    }
-
-    return { parsed: Array.from(dedup.values()), errors };
+    return ((data ?? []) as unknown as Row[]).map((m) => ({
+      user_id: m.user_id,
+      role: m.role,
+      name: m.profile?.name ?? null,
+      full_name: m.profile?.full_name ?? null,
+      profile_type: m.profile?.profile_type ?? null,
+    }));
   }
 
   async function handleImportScheduleFile(file: File) {
@@ -1482,6 +1321,8 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         notifyWarning('Arquivo inválido', 'Use um arquivo .xlsx, .xls ou .csv.');
         return;
       }
+
+      setImportPeople(await loadImportPeople());
 
       let rawMatrix: (string | number | Date)[][];
       let firstSheetName = file.name;
@@ -1618,7 +1459,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
             ...fallback.errors,
             'Formato de grade detectado: plantões por profissional/horário preparados para importação.',
           ]);
-          notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+          notifyInfo('Arquivo carregado', `${fallback.parsed.length} linha(s) identificada(s) na escala impressa (plantonistas e vagas).`);
           return;
         }
 
@@ -1723,7 +1564,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         ]);
         setImportStats(null); // formato de grade: contagem linha-a-linha não se aplica
         setImportFileName(file.name);
-        notifyInfo('Arquivo carregado', `${fallback.parsed.length} dia(s) identificado(s) na escala impressa.`);
+        notifyInfo('Arquivo carregado', `${fallback.parsed.length} linha(s) identificada(s) na escala impressa (plantonistas e vagas).`);
         return;
       }
 
@@ -1798,6 +1639,37 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
       };
 
       const shiftSlotCache = new Map<string, ImportShiftSlot[]>();
+      // Plantão já usado por uma linha desta importação nunca é reaproveitado por outra.
+      // Antes, o plantão vago criado para um nome não encontrado era "tomado" pelo
+      // próximo nome da mesma faixa — e aquele período sumia da escala.
+      const claimedSlotIds = new Set<string>();
+
+      // Nomes casados contra todos os profissionais ativos do serviço (importPeople).
+      // Plantonista cadastrado mas ainda sem vínculo com o setor é vinculado aqui:
+      // a escala oficial do setor é a prova de que ele trabalha lá.
+      const nameMatchCache = new Map<string, ImportNameMatch>();
+      const sectorMembershipKeys = new Set(sectorMemberships.map((sm) => `${sm.sector_id}|${sm.user_id}`));
+      const linkedToSector: string[] = [];
+
+      async function ensureSectorMembership(params: {
+        userId: string;
+        sectorId: string;
+        personName: string;
+        sectorName: string;
+      }) {
+        const key = `${params.sectorId}|${params.userId}`;
+        if (sectorMembershipKeys.has(key)) return;
+        const { error } = await supabase.from('sector_memberships').insert({
+          sector_id: params.sectorId,
+          user_id: params.userId,
+          tenant_id: currentTenantId,
+          created_by: user?.id,
+        });
+        // 23505 = vínculo já existe (criado em outra aba/sessão): segue normalmente.
+        if (error && error.code !== '23505') throw error;
+        sectorMembershipKeys.add(key);
+        if (!error) linkedToSector.push(`${params.personName} (${params.sectorName})`);
+      }
 
       async function loadShiftSlots(row: ImportedShiftRow) {
         const slotKey = [
@@ -1844,25 +1716,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         return { slotKey, slots };
       }
 
-      async function resolveShiftSlot(
-        row: ImportedShiftRow,
-        userId: string | null,
-        options?: { forceCreate?: boolean },
-      ) {
+      async function resolveShiftSlot(row: ImportedShiftRow, userId: string | null) {
         const { slotKey, slots } = await loadShiftSlots(row);
 
         if (userId) {
           const existingForUser = slots.find((slot) => slot.activeUserIds.has(userId));
           if (existingForUser) {
+            claimedSlotIds.add(existingForUser.id);
             return { slot: existingForUser, created: false, alreadyAssigned: true };
           }
         }
 
-        if (!options?.forceCreate) {
-          const vacantSlot = slots.find((slot) => slot.activeUserIds.size === 0);
-          if (vacantSlot) {
-            return { slot: vacantSlot, created: false, alreadyAssigned: false };
-          }
+        // Reimportação: aproveita um plantão vago que JÁ existia antes (uma única vez).
+        const vacantSlot = slots.find((slot) => slot.activeUserIds.size === 0 && !claimedSlotIds.has(slot.id));
+        if (vacantSlot) {
+          claimedSlotIds.add(vacantSlot.id);
+          return { slot: vacantSlot, created: false, alreadyAssigned: false };
         }
 
         const newShiftId = await insertAdminShiftAndGetId({
@@ -1880,6 +1749,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         });
 
         const newSlot = { id: newShiftId, activeUserIds: new Set<string>() };
+        claimedSlotIds.add(newShiftId);
         slots.push(newSlot);
         shiftSlotCache.set(slotKey, slots);
         return { slot: newSlot, created: true, alreadyAssigned: false };
@@ -1905,22 +1775,40 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         const importedName = row.assignee_names?.[0]?.trim() || null;
         let targetUserId: string | null = null;
         if (importedName) {
-          const member = resolveImportedMember(importedName);
-          if (!member?.user_id) {
+          let match = nameMatchCache.get(importedName);
+          if (!match) {
+            match = matchImportedName(importedName, importPeople);
+            nameMatchCache.set(importedName, match);
+          }
+          if (match.status === 'not_found') {
             unmatchedNames.add(importedName);
-          } else if (!isUserAllowedInSector(member.user_id, row.sector_id || null)) {
-            unmatchedNames.add(`${importedName} (fora do setor)`);
+          } else if (match.status === 'ambiguous') {
+            unmatchedNames.add(`${importedName} (mais de um cadastro compatível)`);
+          } else if (!match.eligible) {
+            unmatchedNames.add(`${importedName} (perfil não pode receber plantão)`);
           } else {
-            targetUserId = member.user_id;
+            try {
+              await ensureSectorMembership({
+                userId: match.person.user_id,
+                sectorId: row.sector_id,
+                personName: personDisplayName(match.person),
+                sectorName: row.sector_name,
+              });
+              targetUserId = match.person.user_id;
+            } catch (error) {
+              importErrorCount++;
+              if (importIssues.length < 3) {
+                importIssues.push(`${importedName}: não foi possível vincular ao setor ${row.sector_name} — ${formatSupabaseError(error)}`);
+              }
+              unmatchedNames.add(`${importedName} (sem vínculo com o setor)`);
+            }
           }
         }
 
         let selectedSlot: { id: string; activeUserIds: Set<string> };
         let alreadyAssigned = false;
         try {
-          const resolved = await resolveShiftSlot(row, targetUserId, {
-            forceCreate: Boolean(importedName && !targetUserId),
-          });
+          const resolved = await resolveShiftSlot(row, targetUserId);
           selectedSlot = resolved.slot;
           alreadyAssigned = resolved.alreadyAssigned;
           if (resolved.created) {
@@ -1980,6 +1868,10 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         }
       }
 
+      const linkedText =
+        linkedToSector.length > 0
+          ? ` Vinculados automaticamente ao setor: ${linkedToSector.slice(0, 6).join(', ')}${linkedToSector.length > 6 ? ` e mais ${linkedToSector.length - 6}` : ''}.`
+          : '';
       const unmatchedList = Array.from(unmatchedNames);
       const unmatchedText =
         unmatchedList.length > 0
@@ -1994,12 +1886,12 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
         notifyError(
           'importar escala',
           issueSummary || `${importErrorCount} erro(s)`,
-          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}${zeroValueText}${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${linkedText}${unmatchedText}${zeroValueText}${issueSummary ? ` Detalhes: ${issueSummary}` : ''}`,
         );
       } else {
         notifySuccess(
           'Escala importada',
-          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${unmatchedText}${zeroValueText}`,
+          `${createdCount} plantão(ões) criado(s), ${assignedCount} vínculo(s) de plantonista.${linkedText}${unmatchedText}${zeroValueText}`,
         );
       }
       setImportDialogOpen(false);
@@ -8129,6 +8021,75 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                     <p key={`${idx}-${err}`}>{err}</p>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {importPreviewRows.length > 0 && importPeople.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-border/70 bg-card p-3 text-xs">
+                <p className="text-sm font-medium">Plantonistas da planilha</p>
+                <p className="text-muted-foreground">
+                  <strong className="text-foreground">{importNameReport.assignments}</strong> vínculo(s) de plantonista serão gravados
+                  {importNameReport.vacancies > 0 && (
+                    <> · <strong className="text-foreground">{importNameReport.vacancies}</strong> vaga(s) sem responsável</>
+                  )}
+                </p>
+
+                {importNameReport.notFound.length > 0 && (
+                  <div className="rounded-md border border-red-500/40 bg-red-500/10 p-2 text-red-700 dark:text-red-200">
+                    <p className="font-semibold">
+                      Não cadastrados ({importNameReport.notFound.length}) — o plantão fica vago, com o nome nas observações:
+                    </p>
+                    <p className="mt-1 max-h-20 overflow-y-auto">
+                      {importNameReport.notFound.map((n) => `${n.name} (${n.count})`).join(' · ')}
+                    </p>
+                  </div>
+                )}
+
+                {importNameReport.ambiguous.length > 0 && (
+                  <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-yellow-800 dark:text-yellow-200">
+                    <p className="font-semibold">
+                      Mais de um cadastro compatível ({importNameReport.ambiguous.length}) — fica vago para você escolher:
+                    </p>
+                    <div className="mt-1 max-h-20 space-y-0.5 overflow-y-auto">
+                      {importNameReport.ambiguous.map((a) => (
+                        <p key={a.name}>{a.name} → {a.candidates.join(' ou ')}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {importNameReport.ineligible.length > 0 && (
+                  <div className="rounded-md border border-yellow-500/40 bg-yellow-500/10 p-2 text-yellow-800 dark:text-yellow-200">
+                    <p className="font-semibold">
+                      Perfil não pode receber plantão ({importNameReport.ineligible.length}) — mude o tipo para "Plantonista" em Usuários e reimporte:
+                    </p>
+                    <p className="mt-1 max-h-20 overflow-y-auto">
+                      {importNameReport.ineligible.map((i) => `${i.person} (${i.count})`).join(' · ')}
+                    </p>
+                  </div>
+                )}
+
+                {importNameReport.sectorLinks.length > 0 && (
+                  <div className="rounded-md border border-sky-500/40 bg-sky-500/10 p-2 text-sky-800 dark:text-sky-200">
+                    <p className="font-semibold">
+                      Serão vinculados automaticamente ao setor ({importNameReport.sectorLinks.length}):
+                    </p>
+                    <p className="mt-1 max-h-20 overflow-y-auto">
+                      {importNameReport.sectorLinks.map((l) => `${l.person} → ${l.sector}`).join(' · ')}
+                    </p>
+                  </div>
+                )}
+
+                {importNameReport.approximate.length > 0 && (
+                  <div className="rounded-md border border-border/60 bg-muted/40 p-2 text-muted-foreground">
+                    <p className="font-semibold text-foreground">Reconhecidos por semelhança — confira:</p>
+                    <div className="mt-1 max-h-20 space-y-0.5 overflow-y-auto">
+                      {importNameReport.approximate.map((a) => (
+                        <p key={a.name}>{a.name} → {a.person}</p>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
