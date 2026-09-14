@@ -23,7 +23,7 @@ import { logScheduleDeletion, type DeletionScope } from '@/services/scheduleDele
 import { createAdminConflictResolution, deleteAdminConflictHistoryByIds, deleteAllAdminConflictHistory, fetchAdminConflictHistory, resolveAdminProfileId } from '@/services/adminConflicts';
 import { acceptAdminShiftOffer, rejectAdminShiftOffer } from '@/services/adminOffers';
 import { fetchAdminScheduleData } from '@/services/adminScheduleData';
-import { isWeekendDate } from '@/lib/financial/valueCalculation';
+import { calculateFinalValue, isWeekendDate } from '@/lib/financial/valueCalculation';
 import { detectScheduleConflicts, doSlotsOverlap } from '@/lib/scheduleConflicts';
 import { buildImportNameReport, matchImportedName, parseEscalasGrid, personDisplayName, type ImportNameMatch, type ImportPerson } from '@/lib/scheduleImport';
 import { cloneAdminAssignmentToShift, deleteAdminAssignment, deleteAdminAssignmentsByShiftIds, fetchAdminAssignmentRange, fetchAdminAssignmentsByShiftIds, transferAdminAssignment, updateAdminAssignmentValue, upsertAdminAssignment } from '@/services/adminAssignments';
@@ -860,11 +860,6 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     return isNight ? (userValue.night_value ?? null) : (userValue.day_value ?? null);
   }
 
-  function hasUserSectorOverride(sectorId: string | null, userId: string | null): boolean {
-    if (!sectorId || !userId) return false;
-    return userSectorValues.has(`${sectorId}:${userId}`);
-  }
-
 
   // ==========================================
   // FUNÇÕES DE CÁLCULO DE VALOR - USA LIB CENTRALIZADA
@@ -897,54 +892,39 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
   }
 
   /**
-   * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO
-   * 
-   * PRIORIDADE (consistente com Financeiro):
-   * 1. Individual (user_sector_values) - APLICAR PRÓ-RATA (inclui zero explícito)
-   * 2. assigned_value (editado na Escala) - USAR COMO ESTÁ (já pró-rata)
-   * 3. Padrão do setor - APLICAR PRÓ-RATA
-   * 
-   * Esta função é usada em:
-   * - Card do plantão
-   * - Nome do médico atribuído
-   * - Preview de valor
+   * FUNÇÃO ÚNICA DE CÁLCULO DE VALOR PARA EXIBIÇÃO — MESMA REGRA DO FINANCEIRO.
+   *
+   * Usa calculateFinalValue (src/lib/financial/valueCalculation.ts), a mesma função que o
+   * Financeiro usa via mapScheduleToFinancialEntries, com os mesmos dados:
+   * 1. assigned_value do plantão (snapshot; já pró-rata)
+   * 2. valor individual do plantonista (user_sector_values) com pró-rata
+   * 3. base_value do plantão
+   * 4. padrão do setor (dia/noite/fim de semana) com pró-rata
+   *
+   * Antes a escala priorizava o individual e o Financeiro o assigned_value: um ajuste manual
+   * num plantão de quem tinha valor individual aparecia de um jeito aqui e era pago de outro.
+   *
+   * Usada em: card do plantão, nome do médico atribuído, edição e preview de valor.
    */
   function getAssignmentDisplayInfo(
     assignment: { assigned_value: number | null; user_id: string },
     shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null; shift_date?: string }
   ): { value: number | null; source: 'individual' | 'assigned' | 'base' | 'sector_default' | 'none'; durationHours: number } {
     const duration = calculateDurationHours(shift.start_time, shift.end_time);
+    const assignedValue =
+      assignment.assigned_value === null || assignment.assigned_value === undefined
+        ? null
+        : Number(assignment.assigned_value);
 
-    // PRIORIDADE 1: Valor individual (user_sector_values)
-    // IMPORTANTE: quando existir override individual (inclusive 0), ele deve prevalecer
-    // sobre assigned_value legado para manter a escala alinhada ao financeiro.
-    // Aplicar pró-rata pois é valor base de 12h
-    const userValue = getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time);
-    const hasIndividualOverride = hasUserSectorOverride(shift.sector_id, assignment.user_id);
-    if (hasIndividualOverride) {
-      if (userValue === 0) return { value: 0, source: 'individual', durationHours: duration };
-      if (userValue !== null) {
-        return { value: calculateProRataValue(userValue, duration), source: 'individual', durationHours: duration };
-      }
-      // Se existe registro individual mas campo está em branco, ignora assigned_value legado
-      // e cai para padrão do setor (ou sem valor).
-    }
+    const result = calculateFinalValue({
+      assignedValue: assignedValue !== null && Number.isFinite(assignedValue) ? assignedValue : null,
+      individualValue: getUserSectorValue(shift.sector_id, assignment.user_id, shift.start_time),
+      baseValue: shift.base_value ?? null,
+      sectorDefaultValue: getSectorDefaultValue(shift.sector_id, shift.start_time, shift.shift_date),
+      durationHours: duration,
+    });
 
-    // PRIORIDADE 2: assigned_value (editado na Escala)
-    // USAR COMO ESTÁ - já foi calculado com pró-rata no momento do save
-    if (!hasIndividualOverride && assignment.assigned_value !== null) {
-      return { value: assignment.assigned_value, source: 'assigned', durationHours: duration };
-    }
-
-    // PRIORIDADE 3: Valor padrão do setor
-    // Aplicar pró-rata pois é valor base de 12h
-    const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time, shift.shift_date);
-    if (sectorValue !== null) {
-      if (sectorValue === 0) return { value: 0, source: 'sector_default', durationHours: duration };
-      return { value: calculateProRataValue(sectorValue, duration), source: 'sector_default', durationHours: duration };
-    }
-
-    return { value: null, source: 'none', durationHours: duration };
+    return { value: result.finalValue, source: result.source, durationHours: duration };
   }
 
   /**
@@ -962,6 +942,26 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
     // Senão, usar padrão do setor com pró-rata
     const sectorValue = getSectorDefaultValue(shift.sector_id, shift.start_time, shift.shift_date);
     return calculateProRataValue(sectorValue, duration);
+  }
+
+  /**
+   * Valor do CARD do plantão na escala.
+   * Com plantonista(s): soma o valor de cada atribuição pela mesma regra do Financeiro
+   * (inclui valor individual e ajustes). Antes o card usava só base/padrão do setor e não
+   * refletia o valor individualizado — só a edição mostrava o valor correto.
+   * Vago: valor do plantão/padrão do setor.
+   */
+  function getShiftCardValue(
+    shift: { start_time: string; end_time: string; base_value: number | null; sector_id: string | null; shift_date?: string },
+    shiftAssignments: Array<{ assigned_value: number | null; user_id: string }>,
+  ): number {
+    if (shiftAssignments.length === 0) {
+      return getShiftDisplayValue(shift) ?? 0;
+    }
+    return shiftAssignments.reduce(
+      (sum, assignment) => sum + (getAssignmentDisplayInfo(assignment, shift).value ?? 0),
+      0,
+    );
   }
 
   /**
@@ -4970,7 +4970,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               Ajustar valor
                             </button>
                             <span className="text-[10px] font-semibold text-foreground">
-                              R$ {(getShiftDisplayValue(shift) ?? 0).toFixed(2)}
+                              R$ {getShiftCardValue(shift, shiftAssignments).toFixed(2)}
                             </span>
                           </div>
                           {showSectorName && (
@@ -6425,7 +6425,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                               {shift.start_time.slice(0, 5)} - {shift.end_time.slice(0, 5)}
                             </span>
                             <span className="font-medium text-foreground">
-                              R$ {(getShiftDisplayValue(shift) ?? 0).toFixed(2)}
+                              R$ {getShiftCardValue(shift, shiftAssignments).toFixed(2)}
                               {calculateDurationHours(shift.start_time, shift.end_time) !== 12 && (
                                 <span className="ml-1 text-xs text-muted-foreground">
                                   ({calculateDurationHours(shift.start_time, shift.end_time).toFixed(0)}h)
