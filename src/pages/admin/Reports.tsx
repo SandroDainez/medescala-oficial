@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { chunk, fetchAllPages } from '@/lib/supabasePaging';
+import { applyFixedMonthlyCharges, buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -502,7 +504,16 @@ export default function AdminReports() {
 
       // Este relatório é por plantonista; removemos linhas "Vago" (sem assignee real)
       const assignedOnly = mapped.filter((e) => e.assignee_id !== 'unassigned');
-      const { plantonistaReports, sectorReports } = aggregateFinancial(assignedOnly);
+      // Valor mensal fixo (pagamento por mês, não por plantão) — mesma regra do Financeiro.
+      const fixedMembers = await fetchFixedMonthlyMembers(currentTenantId);
+      const fixedCharges = buildFixedMonthlyCharges({
+        members: fixedMembers,
+        startDate,
+        endDate,
+        entries: assignedOnly,
+        sectors: sectorsData,
+      }).filter((c) => selectedSector === 'all' || c.sector_id === selectedSector);
+      const { plantonistaReports, sectorReports } = applyFixedMonthlyCharges(aggregateFinancial(assignedOnly), fixedCharges);
 
       const financialRecords: FinancialSummaryRecord[] = plantonistaReports
         .map((p) => ({
@@ -541,6 +552,19 @@ export default function AdminReports() {
         current.total_shifts += 1;
         current.total_hours += Number(e.duration_hours || 0);
         current.total_value += Number(e.final_value || 0);
+        groupedByPlantonistaSector.set(key, current);
+      });
+      fixedCharges.forEach((c) => {
+        const key = `${c.user_id}::${c.sector_name}`;
+        const current = groupedByPlantonistaSector.get(key) ?? {
+          user_id: c.user_id,
+          user_name: c.name,
+          sector_name: c.sector_name,
+          total_shifts: 0,
+          total_hours: 0,
+          total_value: 0,
+        };
+        current.total_value += c.value;
         groupedByPlantonistaSector.set(key, current);
       });
       setFinancialByPlantonistaSector(

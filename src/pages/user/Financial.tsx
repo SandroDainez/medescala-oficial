@@ -9,6 +9,7 @@ import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { extractErrorMessage } from '@/lib/errorMessage';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import type { FinancialEntry, ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import { DollarSign, Calendar, Clock, Building, MapPin } from 'lucide-react';
@@ -256,6 +257,12 @@ export default function UserFinancial() {
       .eq('year', selectedYear)
       .maybeSingle();
 
+    // Valor mensal fixo do próprio profissional: soma uma vez no mês selecionado.
+    const ownFixed = (await fetchFixedMonthlyMembers(currentTenantId, user.id)).reduce(
+      (sum, m) => sum + m.monthly_value,
+      0,
+    );
+
     if (assignments && assignments.length > 0) {
       // Normaliza a partir da MESMA fonte da Escala
       const scheduleShifts: ScheduleShift[] = assignments
@@ -332,14 +339,14 @@ export default function UserFinancial() {
       setSummary({
         totalShifts: grandTotals.totalShifts,
         totalHours: grandTotals.totalHours,
-        totalValue: grandTotals.totalValue,
+        totalValue: grandTotals.totalValue + ownFixed,
         unpricedShifts: grandTotals.unpricedShifts,
         status: payment?.status || null,
       });
     } else {
       setShifts([]);
       setSectorSummaries([]);
-      setSummary({ totalShifts: 0, totalHours: 0, totalValue: 0, unpricedShifts: 0, status: payment?.status || null });
+      setSummary({ totalShifts: 0, totalHours: 0, totalValue: ownFixed, unpricedShifts: 0, status: payment?.status || null });
     }
 
     setLoading(false);

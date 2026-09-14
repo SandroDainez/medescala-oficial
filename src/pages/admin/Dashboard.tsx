@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
 import { chunk, fetchAllPages } from '@/lib/supabasePaging';
+import { applyFixedMonthlyCharges, buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
@@ -385,7 +387,16 @@ export default function AdminDashboard() {
             userSectorValues: (userValuesRes.data ?? []) as any[],
           });
 
-          const { grandTotals, plantonistaReports } = aggregateFinancial(mappedEntries);
+          // Valor mensal fixo (pagamento por mês, não por plantão) — mesma regra do Financeiro.
+          const fixedMembers = currentTenantId ? await fetchFixedMonthlyMembers(currentTenantId) : [];
+          const fixedCharges = buildFixedMonthlyCharges({
+            members: fixedMembers,
+            startDate: format(monthStart, 'yyyy-MM-dd'),
+            endDate: format(monthEnd, 'yyyy-MM-dd'),
+            entries: mappedEntries,
+            sectors: sectorsLookup,
+          });
+          const { grandTotals, plantonistaReports } = applyFixedMonthlyCharges(aggregateFinancial(mappedEntries), fixedCharges);
 
           const financialSummary: FinancialSummary[] = plantonistaReports
             .filter((p) => p.assignee_id !== 'unassigned')

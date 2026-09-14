@@ -12,6 +12,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAllPages } from '@/lib/supabasePaging';
+import { buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -283,6 +285,19 @@ export default function SectorProfitability() {
         if (entry.value_source === 'invalid' || entry.final_value === null) return;
         const current = paymentsBySector.get(entry.sector_id) || 0;
         paymentsBySector.set(entry.sector_id, current + Number(entry.final_value));
+      });
+
+      // Valor mensal fixo (pagamento por mês, não por plantão) entra como custo do setor.
+      const fixedMembers = await fetchFixedMonthlyMembers(currentTenantId);
+      buildFixedMonthlyCharges({
+        members: fixedMembers,
+        startDate,
+        endDate,
+        entries: mappedEntries,
+        sectors: sectorsLookup,
+      }).forEach((c) => {
+        if (!c.sector_id) return;
+        paymentsBySector.set(c.sector_id, (paymentsBySector.get(c.sector_id) || 0) + c.value);
       });
 
       const payments: PlantonistaPayment[] = [];

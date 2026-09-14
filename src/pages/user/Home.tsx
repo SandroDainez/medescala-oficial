@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { parseDateOnly } from '@/lib/utils';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import type { ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { CalendarDays, Bell, ArrowLeftRight, Hand, Wallet, Building2, Clock3, ChevronRight, Calendar } from 'lucide-react';
@@ -241,10 +242,15 @@ export default function UserHome() {
     });
 
     const { grandTotals } = aggregateFinancial(entries);
+    // Valor mensal fixo do próprio profissional: soma uma vez no mês.
+    const ownFixed = (await fetchFixedMonthlyMembers(currentTenantId, user.id)).reduce(
+      (sum, m) => sum + m.monthly_value,
+      0,
+    );
     setMonthSummary({
       shifts: grandTotals.totalShifts,
       hours: grandTotals.totalHours,
-      value: grandTotals.totalValue,
+      value: grandTotals.totalValue + ownFixed,
       unpriced: grandTotals.unpricedShifts,
     });
 

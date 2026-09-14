@@ -8,6 +8,8 @@ export type PlantonistaReport = {
   paid_shifts: number;
   unpriced_shifts: number;
   total_to_receive: number;
+  /** Parte de total_to_receive que vem de valor mensal fixo (ver fixedMonthly.ts). */
+  fixed_monthly_total?: number;
   sectors: {
     sector_id: string | null;
     sector_name: string;
@@ -16,6 +18,7 @@ export type PlantonistaReport = {
     sector_paid: number;
     sector_unpriced: number;
     sector_total: number;
+    sector_fixed?: number;
   }[];
   entries: FinancialEntry[];
 };
@@ -28,6 +31,8 @@ export type SectorReport = {
   paid_shifts: number;
   unpriced_shifts: number;
   total_value: number;
+  /** Parte de total_value que vem de valores mensais fixos. */
+  fixed_monthly_total?: number;
   plantonistas: {
     assignee_id: string;
     assignee_name: string;
@@ -36,6 +41,7 @@ export type SectorReport = {
     paid: number;
     unpriced: number;
     value: number;
+    fixed?: number;
   }[];
 };
 

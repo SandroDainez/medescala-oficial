@@ -47,6 +47,9 @@ type UserRow = {
   status: string | null;
   /** Diarista/visitador neste serviço (memberships.is_diarista). */
   is_diarista: boolean;
+  /** Valor mensal fixo (R$) — pago uma vez por mês, não por plantão. */
+  fixed_monthly_value: number | null;
+  fixed_monthly_sector_id: string | null;
 };
 
 type SectorRow = {
@@ -63,6 +66,8 @@ type MembershipWithProfile = {
   created_at: string;
   tenant_id: string;
   is_diarista?: boolean | null;
+  fixed_monthly_value?: number | string | null;
+  fixed_monthly_sector_id?: string | null;
   profile: {
     email: string | null;
     full_name: string | null;
@@ -532,6 +537,19 @@ export default function UserManagement() {
 
   // Marcação de diarista/visita no cadastro em edição (gravada direto em memberships).
   const [editIsDiarista, setEditIsDiarista] = useState(false);
+  // Valor mensal fixo em edição (texto pt-BR, ex.: "7.000,00") e setor do custo ("auto" = automático).
+  const [editFixedMonthly, setEditFixedMonthly] = useState("");
+  const [editFixedSector, setEditFixedSector] = useState("auto");
+
+  /** "7.000,50" → 7000.5; vazio → null; inválido → undefined. */
+  function parseFixedMonthlyInput(raw: string): number | null | undefined {
+    const text = raw.trim().replace(/^R\$\s*/i, "");
+    if (!text) return null;
+    const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+    const value = Number(normalized);
+    if (!Number.isFinite(value) || value < 0) return undefined;
+    return Math.round(value * 100) / 100;
+  }
 
   const loadData = useCallback(async () => {
     if (!currentTenantId) return;
@@ -542,7 +560,7 @@ export default function UserManagement() {
       supabase
         .from("memberships")
         .select(
-          "id, user_id, role, active, is_diarista, created_at, tenant_id, profile:profiles!memberships_user_id_profiles_fkey(email, full_name, phone, name, profile_type, status)"
+          "id, user_id, role, active, is_diarista, fixed_monthly_value, fixed_monthly_sector_id, created_at, tenant_id, profile:profiles!memberships_user_id_profiles_fkey(email, full_name, phone, name, profile_type, status)"
         )
         .eq("tenant_id", currentTenantId)
         .order("created_at", { ascending: false }),
@@ -575,6 +593,11 @@ export default function UserManagement() {
         profile_type: row.profile?.profile_type ?? null,
         status: row.profile?.status ?? null,
         is_diarista: row.is_diarista ?? false,
+        fixed_monthly_value:
+          row.fixed_monthly_value === null || row.fixed_monthly_value === undefined
+            ? null
+            : Number(row.fixed_monthly_value),
+        fixed_monthly_sector_id: row.fixed_monthly_sector_id ?? null,
       }));
 
       setUsers(normalized);
@@ -667,6 +690,12 @@ export default function UserManagement() {
       accessRole: user.role === "admin" || user.role === "owner" ? "admin" : "user",
     });
     setEditIsDiarista(user.is_diarista);
+    setEditFixedMonthly(
+      user.fixed_monthly_value !== null
+        ? user.fixed_monthly_value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : "",
+    );
+    setEditFixedSector(user.fixed_monthly_sector_id ?? "auto");
 
     setEditOpen(true);
 
@@ -762,6 +791,11 @@ export default function UserManagement() {
   async function saveUser() {
     if (!currentTenantId || !editingUser) return;
     if (!canPersistByCfm("edit")) return;
+    const fixedMonthlyValue = parseFixedMonthlyInput(editFixedMonthly);
+    if (fixedMonthlyValue === undefined) {
+      notifyWarning("Valor mensal fixo inválido", 'Use um valor em reais, ex.: "7.000,00" — ou deixe vazio.');
+      return;
+    }
 
     setSaving(true);
     let avatarFileBase64: string | undefined;
@@ -842,17 +876,23 @@ export default function UserManagement() {
       return;
     }
 
-    // Diarista/visita fica no vínculo com o serviço (memberships), fora do update-user.
-    if (editIsDiarista !== editingUser.is_diarista) {
-      const { error: diaristaError } = await supabase
+    // Diarista/visita e valor mensal fixo ficam no vínculo com o serviço (memberships),
+    // gravados direto (RLS de admin), fora do update-user.
+    const membershipPatch: Record<string, unknown> = {};
+    if (editIsDiarista !== editingUser.is_diarista) membershipPatch.is_diarista = editIsDiarista;
+    if (fixedMonthlyValue !== editingUser.fixed_monthly_value) membershipPatch.fixed_monthly_value = fixedMonthlyValue;
+    const nextFixedSector = fixedMonthlyValue === null || editFixedSector === "auto" ? null : editFixedSector;
+    if (nextFixedSector !== editingUser.fixed_monthly_sector_id) membershipPatch.fixed_monthly_sector_id = nextFixedSector;
+    if (Object.keys(membershipPatch).length > 0) {
+      const { error: membershipError } = await supabase
         .from("memberships")
-        .update({ is_diarista: editIsDiarista } as never)
+        .update(membershipPatch as never)
         .eq("id", editingUser.id);
-      if (diaristaError) {
+      if (membershipError) {
         notifyError(
-          "marcar diarista",
-          diaristaError,
-          "Os dados foram salvos, mas não foi possível atualizar a marcação de diarista/visita.",
+          "salvar diarista / valor mensal fixo",
+          membershipError,
+          "Os dados foram salvos, mas não foi possível atualizar diarista/visita ou o valor mensal fixo.",
         );
       }
     }
@@ -1821,6 +1861,11 @@ export default function UserManagement() {
                       diarista / visita
                     </span>
                   )}
+                  {u.fixed_monthly_value !== null && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-1 text-[11px] font-medium text-emerald-700">
+                      mensal R$ {u.fixed_monthly_value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -1967,6 +2012,42 @@ export default function UserManagement() {
                       </span>
                     </span>
                   </label>
+                </div>
+                <div className="space-y-2">
+                  <Label>Valor mensal fixo (R$)</Label>
+                  <Input
+                    disabled={readOnlyMode}
+                    inputMode="decimal"
+                    placeholder="Vazio = pago por plantão"
+                    value={editFixedMonthly}
+                    onChange={(e) => setEditFixedMonthly(e.target.value)}
+                    className="h-10 rounded-xl"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Pagamento único por mês. O Financeiro soma uma vez por mês, independente da quantidade de plantões.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Setor do custo mensal</Label>
+                  <Select
+                    disabled={readOnlyMode || !editFixedMonthly.trim()}
+                    value={editFixedSector}
+                    onValueChange={setEditFixedSector}
+                  >
+                    <SelectTrigger className="h-10 w-full rounded-xl">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-[280px] rounded-xl border-border/70 p-2">
+                      <SelectItem value="auto">Automático (setor com mais plantões no mês)</SelectItem>
+                      {sectors
+                        .filter((s) => s.active)
+                        .map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
                   <Label>Acesso</Label>

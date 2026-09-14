@@ -19,6 +19,8 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { fetchAllPages } from '@/lib/supabasePaging';
+import { applyFixedMonthlyCharges, buildFixedMonthlyCharges, type FixedMonthlyMember } from '@/lib/financial/fixedMonthly';
+import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
@@ -593,6 +595,7 @@ export default function AdminFinancial() {
       });
 
       setRawEntries(mapped);
+      setFixedMonthlyMembers(await fetchFixedMonthlyMembers(currentTenantId));
     } catch (err) {
       console.error('[AdminFinancial] Unexpected error:', err);
       setRawEntries([]);
@@ -686,6 +689,9 @@ export default function AdminFinancial() {
     };
   }, [currentTenantId, fetchData]);
 
+  // Profissionais com valor mensal fixo (pagos por mês, não por plantão).
+  const [fixedMonthlyMembers, setFixedMonthlyMembers] = useState<FixedMonthlyMember[]>([]);
+
   // Filtered entries
   const filteredEntries = useMemo(() => {
     const result = rawEntries.filter(e => {
@@ -704,8 +710,21 @@ export default function AdminFinancial() {
   // ============================================================
 
   const { grandTotals, plantonistaReports, sectorReports } = useMemo(() => {
-    return aggregateFinancial(filteredEntries);
-  }, [filteredEntries]);
+    // Valor mensal fixo entra uma vez por mês de competência, respeitando os filtros.
+    // O setor automático é escolhido olhando TODOS os plantões (rawEntries), não só os filtrados.
+    const charges = buildFixedMonthlyCharges({
+      members: fixedMonthlyMembers,
+      startDate,
+      endDate,
+      entries: rawEntries,
+      sectors: allSectors,
+    }).filter(
+      (c) =>
+        (filterSetor === 'all' || c.sector_id === filterSetor) &&
+        (filterPlantonista === 'all' || c.user_id === filterPlantonista),
+    );
+    return applyFixedMonthlyCharges(aggregateFinancial(filteredEntries), charges);
+  }, [filteredEntries, fixedMonthlyMembers, startDate, endDate, rawEntries, allSectors, filterSetor, filterPlantonista]);
 
   // ALWAYS hide the synthetic "Vago" group from the plantonistas list.
   // Vacant shifts are not real plantonistas and should never appear in financial summaries.
