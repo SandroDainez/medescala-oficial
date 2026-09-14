@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -297,19 +298,22 @@ export default function AdminReports() {
   }, [activeTab, currentTenantId, reportType, selectedSector, selectedPlantonista, startDate, endDate]);
 
   async function fetchShiftsReport() {
-    let query = supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, sector_id, title, hospital, base_value')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', startDate)
-      .lte('shift_date', endDate)
-      .order('shift_date', { ascending: false });
-
-    if (selectedSector !== 'all') {
-      query = query.eq('sector_id', selectedSector);
-    }
-
-    const { data: shiftsData, error: shiftsError } = await query;
+    // Paginado: um período longo (ex.: o ano todo) passa de 1.000 plantões e o servidor
+    // cortaria o resto em silêncio — a contagem por plantonista sairia errada.
+    const { data: shiftsData, error: shiftsError } = await fetchAllPages((from, to) => {
+      let query = supabase
+        .from('shifts')
+        .select('id, shift_date, start_time, end_time, sector_id, title, hospital, base_value')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', startDate)
+        .lte('shift_date', endDate)
+        .order('shift_date', { ascending: false })
+        .order('id', { ascending: true });
+      if (selectedSector !== 'all') {
+        query = query.eq('sector_id', selectedSector);
+      }
+      return query.range(from, to);
+    });
 
     if (shiftsError || !shiftsData) {
       console.error('Error fetching shifts:', shiftsError);
@@ -323,20 +327,21 @@ export default function AdminReports() {
       return;
     }
 
-    // Busca as atribuições em blocos: períodos longos (um ano inteiro) geram
-    // muitos plantões, e um único .in() com todos os ids estoura o limite da URL.
+    // Em lotes de ids (limite da URL do .in()) e paginado (limite de 1.000 linhas).
     const assignments: Array<{ shift_id: string; user_id: string }> = [];
-    for (let i = 0; i < shiftIds.length; i += 200) {
-      const lote = shiftIds.slice(i, i + 200);
-      const { data, error } = await supabase
-        .from('shift_assignments')
-        .select('shift_id, user_id')
-        .in('shift_id', lote);
+    for (const lote of chunk(shiftIds)) {
+      const { data, error } = await fetchAllPages((from, to) =>
+        supabase
+          .from('shift_assignments')
+          .select('id, shift_id, user_id')
+          .in('shift_id', lote)
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
       if (error) {
         console.error('Error fetching assignments for shifts report:', error);
-        continue;
       }
-      if (data) assignments.push(...data);
+      assignments.push(...data);
     }
 
     const userIds = [...new Set(assignments?.map(a => a.user_id) || [])];
@@ -395,29 +400,36 @@ export default function AdminReports() {
       // Então usamos a mesma pipeline: shifts + assignments + (sectors + overrides) -> mapScheduleToFinancialEntries -> aggregateFinancial
 
       // Buscar shifts no período
-      let shiftsQuery = supabase
-        .from('shifts')
-        .select('id, shift_date, start_time, end_time, sector_id, base_value, title, hospital')
-        .eq('tenant_id', currentTenantId)
-        .gte('shift_date', startDate)
-        .lte('shift_date', endDate)
-        .order('shift_date', { ascending: true })
-        .order('start_time', { ascending: true });
-
-      if (selectedSector !== 'all') {
-        shiftsQuery = shiftsQuery.eq('sector_id', selectedSector);
-      }
-
       const month = new Date(startDate).getMonth() + 1;
       const year = new Date(startDate).getFullYear();
 
+      // Plantões e atribuições paginados (limite de 1.000 linhas do servidor).
       const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
-        shiftsQuery,
-        supabase.rpc('get_shift_assignments_range', {
-          _tenant_id: currentTenantId,
-          _start: startDate,
-          _end: endDate,
+        fetchAllPages((from, to) => {
+          let shiftsQuery = supabase
+            .from('shifts')
+            .select('id, shift_date, start_time, end_time, sector_id, base_value, title, hospital')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', startDate)
+            .lte('shift_date', endDate)
+            .order('shift_date', { ascending: true })
+            .order('start_time', { ascending: true })
+            .order('id', { ascending: true });
+          if (selectedSector !== 'all') {
+            shiftsQuery = shiftsQuery.eq('sector_id', selectedSector);
+          }
+          return shiftsQuery.range(from, to);
         }),
+        fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_shift_assignments_range', {
+              _tenant_id: currentTenantId,
+              _start: startDate,
+              _end: endDate,
+            })
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from('sectors')
           .select('id, name, default_day_value, default_night_value, default_weekend_day_value, default_weekend_night_value')
@@ -682,17 +694,26 @@ export default function AdminReports() {
     // apareçam no relatório mesmo sem terem sido resolvidos.
     try {
       const [pShiftsRes, pAssignRes, pSectorsRes] = await Promise.all([
-        supabase
-          .from('shifts')
-          .select('id, shift_date, start_time, end_time, sector_id, hospital')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', startDate)
-          .lte('shift_date', endDate),
-        supabase.rpc('get_shift_assignments_range', {
-          _tenant_id: currentTenantId,
-          _start: startDate,
-          _end: endDate,
-        }),
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shifts')
+            .select('id, shift_date, start_time, end_time, sector_id, hospital')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', startDate)
+            .lte('shift_date', endDate)
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_shift_assignments_range', {
+              _tenant_id: currentTenantId,
+              _start: startDate,
+              _end: endDate,
+            })
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         supabase.from('sectors').select('id, name').eq('tenant_id', currentTenantId),
       ]);
 
@@ -823,13 +844,17 @@ export default function AdminReports() {
     // Buscar apenas plantões de setores com check-in ativado E que já aconteceram (data <= hoje)
     const today = new Date().toISOString().split('T')[0];
     
-    const { data: shiftsData } = await supabase
-      .from('shifts')
-      .select('id, shift_date, start_time, end_time, sector_id')
-      .eq('tenant_id', currentTenantId)
-      .gte('shift_date', startDate)
-      .lte('shift_date', endDate <= today ? endDate : today) // Não mostrar plantões futuros
-      .in('sector_id', enabledSectorIds);
+    const { data: shiftsData } = await fetchAllPages((from, to) =>
+      supabase
+        .from('shifts')
+        .select('id, shift_date, start_time, end_time, sector_id')
+        .eq('tenant_id', currentTenantId)
+        .gte('shift_date', startDate)
+        .lte('shift_date', endDate <= today ? endDate : today) // Não mostrar plantões futuros
+        .in('sector_id', enabledSectorIds)
+        .order('id', { ascending: true })
+        .range(from, to),
+    );
     
     if (!shiftsData || shiftsData.length === 0) {
       setCheckins([]);
@@ -839,10 +864,19 @@ export default function AdminReports() {
     const shiftIds = shiftsData.map(s => s.id);
     
     // Fetch assignments (without GPS columns - they're in separate table now)
-    const { data: assignments } = await supabase
-      .from('shift_assignments')
-      .select(`id, user_id, checkin_at, checkout_at, shift_id, status`)
-      .in('shift_id', shiftIds);
+    const assignmentPages = await Promise.all(
+      chunk(shiftIds).map((ids) =>
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shift_assignments')
+            .select(`id, user_id, checkin_at, checkout_at, shift_id, status`)
+            .in('shift_id', ids)
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+      ),
+    );
+    const assignments = assignmentPages.flatMap((page) => page.data);
     
     if (!assignments) {
       setCheckins([]);
@@ -851,10 +885,19 @@ export default function AdminReports() {
 
     // Fetch location data from the new table
     const assignmentIds = assignments.map(a => a.id);
-    const { data: locations } = await supabase
-      .from('shift_assignment_locations')
-      .select('assignment_id, checkin_latitude, checkin_longitude, checkout_latitude, checkout_longitude')
-      .in('assignment_id', assignmentIds);
+    const locationPages = await Promise.all(
+      chunk(assignmentIds).map((ids) =>
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shift_assignment_locations')
+            .select('assignment_id, checkin_latitude, checkin_longitude, checkout_latitude, checkout_longitude')
+            .in('assignment_id', ids)
+            .order('assignment_id', { ascending: true })
+            .range(from, to),
+        ),
+      ),
+    );
+    const locations = locationPages.flatMap((page) => page.data);
 
     const locationMap = new Map(locations?.map(l => [l.assignment_id, l]) || []);
     

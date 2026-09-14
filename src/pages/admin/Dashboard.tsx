@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
+import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
@@ -220,26 +221,39 @@ export default function AdminDashboard() {
       const monthEnd = endOfMonth(currentDate);
 
       const [shiftsRes, sectorsRes, membersRes, sectorMembershipsRes, swapsRes, monthShiftsRes, monthShiftsFullRes, userValuesRes] = await Promise.all([
-        supabase
-          .from('shifts')
-          .select('*, sector:sectors(*)')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', format(start, 'yyyy-MM-dd'))
-          .lte('shift_date', format(end, 'yyyy-MM-dd'))
-          .order('shift_date'),
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shifts')
+            .select('*, sector:sectors(*)')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', format(start, 'yyyy-MM-dd'))
+            .lte('shift_date', format(end, 'yyyy-MM-dd'))
+            .order('shift_date')
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from('sectors')
           .select('*')
           .eq('tenant_id', currentTenantId)
           .eq('active', true),
-        supabase
-          .from('memberships')
-          .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
-          .eq('tenant_id', currentTenantId),
-        supabase
-          .from('sector_memberships')
-          .select('sector_id, user_id')
-          .eq('tenant_id', currentTenantId),
+        fetchAllPages((from, to) =>
+          supabase
+            .from('memberships')
+            .select('id, user_id, role, active, profile:profiles!memberships_user_id_profiles_fkey(name, full_name, profile_type)')
+            .eq('tenant_id', currentTenantId)
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPages((from, to) =>
+          supabase
+            .from('sector_memberships')
+            .select('sector_id, user_id')
+            .eq('tenant_id', currentTenantId)
+            .order('sector_id', { ascending: true })
+            .order('user_id', { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from('swap_requests')
           .select(`
@@ -254,20 +268,28 @@ export default function AdminDashboard() {
           .eq('status', 'pending')
           .order('created_at', { ascending: false })
           .limit(10),
-        supabase
-          .from('shifts')
-          .select('id')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
-          .lte('shift_date', format(monthEnd, 'yyyy-MM-dd')),
-        // Buscar shifts completos do mês para os gráficos
-        supabase
-          .from('shifts')
-          .select('*, sector:sectors(*)')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
-          .lte('shift_date', format(monthEnd, 'yyyy-MM-dd'))
-          .order('shift_date'),
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shifts')
+            .select('id')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
+            .lte('shift_date', format(monthEnd, 'yyyy-MM-dd'))
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+        // Buscar shifts completos do mês para os gráficos (paginado)
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shifts')
+            .select('*, sector:sectors(*)')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', format(monthStart, 'yyyy-MM-dd'))
+            .lte('shift_date', format(monthEnd, 'yyyy-MM-dd'))
+            .order('shift_date')
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from('user_sector_values')
           .select('sector_id, user_id, day_value, night_value, month, year')
@@ -287,10 +309,19 @@ export default function AdminDashboard() {
         // Fetch assignments para o calendario (view atual)
         if (shiftsRes.data.length > 0) {
           const shiftIds = shiftsRes.data.map(s => s.id);
-          const { data: assignmentsData } = await supabase
-            .from('shift_assignments')
-            .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
-            .in('shift_id', shiftIds);
+          const assignmentPages = await Promise.all(
+            chunk(shiftIds).map((ids) =>
+              fetchAllPages((from, to) =>
+                supabase
+                  .from('shift_assignments')
+                  .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name)')
+                  .in('shift_id', ids)
+                  .order('id', { ascending: true })
+                  .range(from, to),
+              ),
+            ),
+          );
+          const assignmentsData = assignmentPages.flatMap((page) => page.data);
           
           if (assignmentsData) {
             setAssignments(assignmentsData as unknown as ShiftAssignment[]);
@@ -305,12 +336,16 @@ export default function AdminDashboard() {
         setMonthShifts(monthShiftsFullRes.data as unknown as Shift[]);
         
         // Fetch assignments do mês completo para os gráficos usando RPC para evitar limite de URL
-        const { data: monthAssignmentsData } = await supabase
-          .rpc('get_shift_assignments_range', {
-            _tenant_id: currentTenantId,
-            _start: format(monthStart, 'yyyy-MM-dd'),
-            _end: format(monthEnd, 'yyyy-MM-dd')
-          });
+        const { data: monthAssignmentsData } = await fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_shift_assignments_range', {
+              _tenant_id: currentTenantId,
+              _start: format(monthStart, 'yyyy-MM-dd'),
+              _end: format(monthEnd, 'yyyy-MM-dd'),
+            })
+            .order('id', { ascending: true })
+            .range(from, to),
+        );
         
         if (monthAssignmentsData) {
           const activeStatuses = new Set(['assigned', 'confirmed', 'completed']);

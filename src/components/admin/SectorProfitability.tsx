@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/supabasePaging';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
@@ -184,18 +185,27 @@ export default function SectorProfitability() {
           .eq('year', selectedYear)
           .order('expense_type', { ascending: true })
           .order('expense_name', { ascending: true }),
-        // For calculating plantonista payments per sector
-        supabase
-          .from('shifts')
-          .select('id, shift_date, start_time, end_time, sector_id, base_value')
-          .eq('tenant_id', currentTenantId)
-          .gte('shift_date', startDate)
-          .lte('shift_date', endDate),
-        supabase.rpc('get_shift_assignments_range', {
-          _tenant_id: currentTenantId,
-          _start: startDate,
-          _end: endDate,
-        }),
+        // Pagamentos por setor — paginado (limite de 1.000 linhas do servidor).
+        fetchAllPages((from, to) =>
+          supabase
+            .from('shifts')
+            .select('id, shift_date, start_time, end_time, sector_id, base_value')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', startDate)
+            .lte('shift_date', endDate)
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
+        fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_shift_assignments_range', {
+              _tenant_id: currentTenantId,
+              _start: startDate,
+              _end: endDate,
+            })
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         supabase
           .from('user_sector_values')
           .select('sector_id, user_id, day_value, night_value, month, year')

@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllPages } from '@/lib/supabasePaging';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
@@ -447,30 +448,37 @@ export default function AdminFinancial() {
     setLoading(true);
 
     try {
-      const shiftsQuery = supabase
-        .from('shifts')
-        .select('id, shift_date, start_time, end_time, sector_id, base_value')
-        .eq('tenant_id', currentTenantId)
-        .gte('shift_date', startDate)
-        .lte('shift_date', endDate)
-        .order('shift_date', { ascending: true })
-        .order('start_time', { ascending: true });
-
-      // When a single sector is selected, fetch ONLY that sector's shifts.
-      // This prevents other sectors' vacant shifts from leaking into the report via client-side grouping.
-      if (filterSetor !== 'all') {
-        shiftsQuery.eq('sector_id', filterSetor);
-      }
-
-      // Fetch shifts, assignments via RPC, sectors (paginado), user overrides, and tenant info in parallel
+      // Plantões e atribuições PAGINADOS: o servidor corta em 1.000 linhas e um mês com
+      // vários setores passa disso — o Financeiro deixava plantonistas de fora da soma.
       const [shiftsRes, assignmentsRes, sectorsRes, userValuesRes, tenantRes] = await Promise.all([
-        shiftsQuery,
-        // Use RPC to avoid URL length limit with .in(...ids...)
-        supabase.rpc('get_shift_assignments_range', {
-          _tenant_id: currentTenantId,
-          _start: startDate,
-          _end: endDate,
+        fetchAllPages((from, to) => {
+          let shiftsQuery = supabase
+            .from('shifts')
+            .select('id, shift_date, start_time, end_time, sector_id, base_value')
+            .eq('tenant_id', currentTenantId)
+            .gte('shift_date', startDate)
+            .lte('shift_date', endDate)
+            .order('shift_date', { ascending: true })
+            .order('start_time', { ascending: true })
+            .order('id', { ascending: true });
+          // Com um setor selecionado, busca SÓ os plantões dele (vagos de outros setores
+          // não vazam para o relatório pelo agrupamento no cliente).
+          if (filterSetor !== 'all') {
+            shiftsQuery = shiftsQuery.eq('sector_id', filterSetor);
+          }
+          return shiftsQuery.range(from, to);
         }),
+        // RPC evita o limite de URL do .in(...ids...)
+        fetchAllPages((from, to) =>
+          supabase
+            .rpc('get_shift_assignments_range', {
+              _tenant_id: currentTenantId,
+              _start: startDate,
+              _end: endDate,
+            })
+            .order('id', { ascending: true })
+            .range(from, to),
+        ),
         fetchAllSectors(currentTenantId),
         supabase
           .from('user_sector_values')

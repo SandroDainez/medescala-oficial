@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { endOfMonth, endOfWeek, startOfMonth, startOfWeek } from 'date-fns';
 import { supabase } from '@/integrations/supabase/client';
+import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 
 export interface ScheduleSector {
   id: string;
@@ -133,30 +134,44 @@ export async function fetchAdminScheduleData({
   const startStr = format(start, 'yyyy-MM-dd');
   const endStr = format(end, 'yyyy-MM-dd');
 
+  // Paginado: o servidor corta em 1.000 linhas, e um mês com vários setores passa disso
+  // (o calendário deixava de mostrar os últimos dias do mês).
   const [shiftsRes, membersRes, sectorsRes, sectorMembershipsRes] = await Promise.all([
-    supabase
-      .from('shifts')
-      .select('*')
-      .eq('tenant_id', tenantId)
-      .gte('shift_date', startStr)
-      .lte('shift_date', endStr)
-      .order('shift_date', { ascending: true })
-      .order('start_time', { ascending: true }),
-    supabase
-      .from('memberships')
-      .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
-      .eq('tenant_id', tenantId)
-      .eq('active', true),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('shifts')
+        .select('*')
+        .eq('tenant_id', tenantId)
+        .gte('shift_date', startStr)
+        .lte('shift_date', endStr)
+        .order('shift_date', { ascending: true })
+        .order('start_time', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('memberships')
+        .select('user_id, role, profile:profiles!memberships_user_id_profiles_fkey(id, name, full_name, profile_type)')
+        .eq('tenant_id', tenantId)
+        .eq('active', true)
+        .order('user_id', { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from('sectors')
       .select('*')
       .eq('tenant_id', tenantId)
       .eq('active', true)
       .order('name'),
-    supabase
-      .from('sector_memberships')
-      .select('id, sector_id, user_id')
-      .eq('tenant_id', tenantId),
+    fetchAllPages((from, to) =>
+      supabase
+        .from('sector_memberships')
+        .select('id, sector_id, user_id')
+        .eq('tenant_id', tenantId)
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   if (shiftsRes.error) {
@@ -219,16 +234,28 @@ export async function fetchAdminScheduleData({
   const shifts = (shiftsRes.data ?? []) as ScheduleShift[];
 
   const [assignmentsRes, offersRes, resolutionsRes] = await Promise.all([
-    supabase.rpc('get_shift_assignments_range', {
-      _tenant_id: tenantId,
-      _start: startStr,
-      _end: endStr,
-    }),
-    supabase.rpc('get_shift_offers_pending_range', {
-      _tenant_id: tenantId,
-      _start: startStr,
-      _end: endStr,
-    }),
+    // RPCs que retornam tabela também são cortadas em 1.000 linhas; ordem por id é
+    // obrigatória para paginar sem repetir/perder linhas.
+    fetchAllPages((from, to) =>
+      supabase
+        .rpc('get_shift_assignments_range', {
+          _tenant_id: tenantId,
+          _start: startStr,
+          _end: endStr,
+        })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllPages((from, to) =>
+      supabase
+        .rpc('get_shift_offers_pending_range', {
+          _tenant_id: tenantId,
+          _start: startStr,
+          _end: endStr,
+        })
+        .order('id', { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from('conflict_resolutions')
       .select('conflict_date, plantonista_id, conflict_details')
@@ -265,10 +292,24 @@ export async function fetchAdminScheduleData({
     }) as ScheduleAssignment[];
 
   if (assignments.length === 0 && shifts.length > 0) {
-    const { data: directAssignments, error: directAssignmentsError } = await supabase
-      .from('shift_assignments')
-      .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
-      .in('shift_id', shifts.map((shift) => shift.id));
+    // Em lotes de ids (URL do .in()) e paginado (limite de 1.000 linhas).
+    const directAssignments: any[] = [];
+    let directAssignmentsError: unknown = null;
+    for (const ids of chunk(shifts.map((shift) => shift.id))) {
+      const page = await fetchAllPages((from, to) =>
+        supabase
+          .from('shift_assignments')
+          .select('id, shift_id, user_id, assigned_value, status, profile:profiles!shift_assignments_user_id_profiles_fkey(name, full_name)')
+          .in('shift_id', ids)
+          .order('id', { ascending: true })
+          .range(from, to),
+      );
+      if (page.error) {
+        directAssignmentsError = page.error;
+        break;
+      }
+      directAssignments.push(...page.data);
+    }
 
     if (directAssignmentsError) {
       console.error('[adminScheduleData] shift_assignments fallback fetch failed', directAssignmentsError);
