@@ -2216,7 +2216,9 @@ export default function AdminReports() {
                   Conflitos detectados na escala do período que ainda não foram resolvidos.
                   Resolva-os no calendário (aba Escala) para que passem ao histórico abaixo.
                 </p>
-                <ScrollArea className="max-h-[320px]">
+                {/* Rolagem nativa: ScrollArea (Radix) com max-h não rola — cortava a lista
+                    e mostrava só os primeiros conflitos. */}
+                <div className="max-h-[480px] overflow-y-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -2243,7 +2245,7 @@ export default function AdminReports() {
                       ))}
                     </TableBody>
                   </Table>
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
           )}

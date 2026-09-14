@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -1706,7 +1705,8 @@ export default function AdminFinancial() {
             )}
             <div className="border-t pt-4">
               <p className="font-medium mb-2">Detalhamento da soma (IDs incluídos):</p>
-              <ScrollArea className="max-h-[200px] border rounded p-2 bg-background">
+              {/* Rolagem nativa: ScrollArea (Radix) com max-h não rola e cortava a lista. */}
+              <div className="max-h-[320px] overflow-y-auto border rounded p-2 bg-background">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -1729,7 +1729,7 @@ export default function AdminFinancial() {
                     </TableRow>
                   </TableBody>
                 </Table>
-              </ScrollArea>
+              </div>
             </div>
           </CardContent>
         </Card>
