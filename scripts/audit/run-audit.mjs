@@ -446,13 +446,15 @@ async function main() {
   const reportJson = JSON.stringify(result, null, 2);
   const reportMd = buildMarkdownReport(result);
 
-  await import('node:fs/promises').then((fs) =>
-    Promise.all([
-      fs.mkdir('audit-results', { recursive: true }),
-      fs.writeFile('audit-results/latest-audit.json', reportJson, 'utf8'),
-      fs.writeFile('audit-results/latest-audit.md', reportMd, 'utf8'),
-    ])
-  );
+  // A pasta precisa existir ANTES das escritas. Quando mkdir e writeFile corriam juntos
+  // no mesmo Promise.all, de vez em quando uma escrita chegava primeiro e o script
+  // quebrava com ENOENT — o workflow então reportava "falha crítica" que não era do app.
+  const fsPromises = await import('node:fs/promises');
+  await fsPromises.mkdir('audit-results', { recursive: true });
+  await Promise.all([
+    fsPromises.writeFile('audit-results/latest-audit.json', reportJson, 'utf8'),
+    fsPromises.writeFile('audit-results/latest-audit.md', reportMd, 'utf8'),
+  ]);
 
   console.log(reportMd);
 

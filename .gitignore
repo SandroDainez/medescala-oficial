@@ -55,3 +55,4 @@ docker-data/
 *.dump
 medescala_backup.dump
 backups/
+audit-results/
