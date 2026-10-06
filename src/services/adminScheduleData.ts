@@ -203,7 +203,6 @@ export async function fetchAdminScheduleData({
   const members = ((membersRes.data ?? []) as unknown as Array<ScheduleMember & { role?: string | null }>)
     .filter((member) => member.profile?.profile_type === 'plantonista')
     .filter((member) => !scopedSectorUserIds || scopedSectorUserIds.has(member.user_id));
-  const allowedUserIds = new Set(members.map((member) => member.user_id));
   const memberDisplayNameByUserId = new Map<string, string>();
   for (const member of members) {
     const displayName = member.profile?.full_name?.trim() || member.profile?.name?.trim();
@@ -293,7 +292,11 @@ export async function fetchAdminScheduleData({
       profile: { name: resolvedName, full_name: resolvedFullName },
     };
   }) as ScheduleAssignment[];
-  let assignments = conflictAssignments.filter((row) => allowedUserIds.has(row.user_id));
+  // Exibição NÃO é filtrada por quem é membro do setor/serviço hoje: quem foi removido do
+  // serviço (ou não pertence a este setor) ainda tem plantões já feitos, e eles precisam
+  // continuar aparecendo na escala com o nome. As listas de seleção continuam usando
+  // `members` (só plantonistas ativos do setor).
+  let assignments = conflictAssignments;
 
   if (assignments.length === 0 && shifts.length > 0) {
     // Em lotes de ids (URL do .in()) e paginado (limite de 1.000 linhas).
@@ -329,7 +332,7 @@ export async function fetchAdminScheduleData({
           full_name: row.profile?.full_name ?? null,
         },
       })) as ScheduleAssignment[];
-      assignments = conflictAssignments.filter((row) => allowedUserIds.has(row.user_id));
+      assignments = conflictAssignments;
     }
   }
 

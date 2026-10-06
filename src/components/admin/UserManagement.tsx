@@ -641,7 +641,18 @@ export default function UserManagement() {
 
   async function deleteUser(user: UserRow) {
     if (!currentTenantId) return;
-    if (!confirm(`Deseja excluir o usuário ${user.full_name ?? user.name ?? user.email ?? user.user_id}?`)) return;
+    const nome = user.full_name ?? user.name ?? user.email ?? user.user_id;
+    if (
+      !confirm(
+        `Remover ${nome} deste serviço?\n\n` +
+          `• Perde o acesso e sai das listas de escala.\n` +
+          `• Os plantões já feitos CONTINUAM na escala e no financeiro, com o nome, para conferência de pagamento.\n` +
+          `• Os dados pessoais (CPF, RG, endereço, banco, PIX) são apagados.\n\n` +
+          `Para apenas suspender o acesso e poder religar depois, use "Desativar".`,
+      )
+    ) {
+      return;
+    }
 
     setDeletingUserId(user.user_id);
 
@@ -651,16 +662,16 @@ export default function UserManagement() {
     });
 
     if (!deleteOk || !data?.success) {
-      notifyError("excluir usuário", (data?.error as string | undefined) || "Falha ao excluir usuário.", "Falha ao excluir usuário.");
+      notifyError("remover do serviço", (data?.error as string | undefined) || "Falha ao remover o usuário.", "Falha ao remover o usuário.");
       setDeletingUserId(null);
       return;
     }
 
     const errorList = Array.isArray(data?.errors) ? data.errors : [];
     if (errorList.length > 0) {
-      notifyWarning("Usuário não excluído", String(errorList[0]));
+      notifyWarning("Usuário não removido", String(errorList[0]));
     } else {
-      notifySuccess("Exclusão de usuário");
+      notifySuccess("Usuário removido do serviço", "Os plantões já feitos continuam na escala e no financeiro.");
     }
 
     setDeletingUserId(null);
@@ -1903,7 +1914,7 @@ export default function UserManagement() {
                   disabled={deletingUserId === u.user_id}
                   onClick={() => deleteUser(u)}
                 >
-                  {deletingUserId === u.user_id ? "Excluindo..." : "Excluir"}
+                  {deletingUserId === u.user_id ? "Removendo..." : "Remover do serviço"}
                 </Button>
               </div>
             </div>

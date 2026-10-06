@@ -86,6 +86,9 @@ Deno.serve(async (req) => {
 
     const userIds = Array.isArray(body?.userIds) ? body.userIds : []
     const tenantId = body?.tenantId
+    // Apagar a conta de verdade (com todo o histórico) é destrutivo e fica só para super admin.
+    // O fluxo normal do admin do serviço é DESLIGAR a pessoa preservando os plantões.
+    const hardDelete = body?.hardDelete === true
 
     console.log(`Request params - userIds: ${JSON.stringify(userIds)}, tenantId: ${tenantId}`)
 
@@ -174,14 +177,6 @@ Deno.serve(async (req) => {
 
         const userToDelete = userResp.user
 
-        // Isolamento entre tenants: se a pessoa também pertence a OUTRO serviço (ou é super
-        // admin), remove só o vínculo com ESTE serviço. Antes, a conta inteira era apagada —
-        // em todos os hospitais.
-        const { count: otherTenantMemberships } = await supabaseAdmin
-          .from('memberships')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId)
-          .neq('tenant_id', tenantId)
         const { data: targetSuperAdmin } = await supabaseAdmin
           .from('super_admins')
           .select('user_id')
@@ -189,33 +184,64 @@ Deno.serve(async (req) => {
           .eq('active', true)
           .maybeSingle()
 
-        if ((otherTenantMemberships ?? 0) > 0 || targetSuperAdmin) {
-          await supabaseAdmin.from('sector_memberships').delete().eq('tenant_id', tenantId).eq('user_id', userId)
-          const { error: removeMembershipError } = await supabaseAdmin
-            .from('memberships')
-            .delete()
-            .eq('tenant_id', tenantId)
-            .eq('user_id', userId)
-          if (removeMembershipError) {
-            errors.push(`${userToDelete?.email || userId}: ${removeMembershipError.message}`)
+        // APAGAR DE VERDADE: só super admin e só quando pedido explicitamente.
+        // Apagar a conta de auth cascateia shift_assignments, absences, user_sector_values,
+        // payments e check-ins — ou seja, destrói a escala e o financeiro já lançados.
+        if (hardDelete && isSuperAdmin) {
+          console.log(`Hard delete solicitado por super admin: ${userToDelete?.email} (${userId})`)
+          const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
+          if (deleteError) {
+            errors.push(`${userToDelete?.email || userId}: ${deleteError.message}`)
           } else {
             deletedUsers.push(userToDelete?.email || userId)
-            console.log(`Removed only tenant membership for multi-tenant user ${userId}`)
           }
           continue
         }
 
-        console.log(`Deleting user: ${userToDelete?.email} (${userId})`)
+        // FLUXO PADRÃO — desligar do serviço preservando o histórico:
+        // 1) tira os vínculos de setor e o vínculo com o serviço (os plantões já atribuídos
+        //    continuam, porque apontam para o perfil, não para a membership);
+        // 2) se a pessoa não pertence a mais nenhum serviço e não é super admin, apaga os
+        //    dados pessoais sensíveis e bloqueia o login.
+        await supabaseAdmin.from('sector_memberships').delete().eq('tenant_id', tenantId).eq('user_id', userId)
+        const { error: removeMembershipError } = await supabaseAdmin
+          .from('memberships')
+          .delete()
+          .eq('tenant_id', tenantId)
+          .eq('user_id', userId)
 
-        const { error: deleteError } = await supabaseAdmin.auth.admin.deleteUser(userId)
-
-        if (deleteError) {
-          console.error(`Failed to delete user ${userId}:`, deleteError.message)
-          errors.push(`${userToDelete?.email || userId}: ${deleteError.message}`)
-        } else {
-          deletedUsers.push(userToDelete?.email || userId)
-          console.log(`Successfully deleted user: ${userToDelete?.email}`)
+        if (removeMembershipError) {
+          errors.push(`${userToDelete?.email || userId}: ${removeMembershipError.message}`)
+          continue
         }
+
+        const { count: remainingMemberships } = await supabaseAdmin
+          .from('memberships')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+
+        if ((remainingMemberships ?? 0) === 0 && !targetSuperAdmin) {
+          // Dados sensíveis (CPF, RG, endereço, banco, PIX) não têm motivo para continuar.
+          const { error: piiError } = await supabaseAdmin.from('profiles_private').delete().eq('user_id', userId)
+          if (piiError) console.error(`Falha ao apagar PII de ${userId}:`, piiError.message)
+
+          await supabaseAdmin.from('push_device_tokens').delete().eq('user_id', userId)
+
+          const { error: profileError } = await supabaseAdmin
+            .from('profiles')
+            .update({ status: 'inativo', updated_at: new Date().toISOString() })
+            .eq('id', userId)
+          if (profileError) console.error(`Falha ao inativar perfil de ${userId}:`, profileError.message)
+
+          // Bloqueia o acesso sem apagar a conta (apagar levaria o histórico junto).
+          const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+            ban_duration: '876000h',
+          })
+          if (banError) console.error(`Falha ao bloquear login de ${userId}:`, banError.message)
+        }
+
+        deletedUsers.push(userToDelete?.email || userId)
+        console.log(`Usuário desligado do serviço (histórico preservado): ${userId}`)
       } catch (err) {
         console.error(`Error deleting user ${userId}:`, err)
         errors.push(`${userId}: ${err instanceof Error ? err.message : 'Unknown error'}`)
