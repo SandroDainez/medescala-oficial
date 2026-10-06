@@ -36,6 +36,12 @@ Configure os secrets no repositório:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `AUDIT_WEBHOOK_URL` (opcional, para notificação em webhook)
 
+Regras importantes:
+
+- `SUPABASE_SERVICE_ROLE_KEY` precisa ser a chave `service_role`, não a `anon`.
+- `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` precisam ser do mesmo projeto Supabase.
+- Se a chave estiver malformada ou apontar para outro projeto, a auditoria agora falha com diagnóstico explícito no relatório.
+
 ## Como funcionam os alertas
 
 - Sempre gera artefatos em `audit-results/` (`latest-audit.json` e `latest-audit.md`).
@@ -50,4 +56,3 @@ Configure os secrets no repositório:
 1. Acesse `Actions` no repositório.
 2. Abra workflow `Daily Site Audit`.
 3. Clique em `Run workflow`.
-

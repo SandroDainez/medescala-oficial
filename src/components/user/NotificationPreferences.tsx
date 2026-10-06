@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { plantoes } from '@/lib/plural';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -451,7 +452,7 @@ export default function NotificationPreferences() {
                   <Label>Exportar para calendário</Label>
                   <p className="text-sm text-muted-foreground">
                     {hasWebShifts 
-                      ? `${webShifts.length} plantão(ões) disponível(is) para exportar`
+                      ? `${plantoes(webShifts.length)} ${webShifts.length === 1 ? 'disponível' : 'disponíveis'} para exportar`
                       : 'Nenhum plantão futuro para exportar'
                     }
                     {webShiftsChanged && webLastExportedAt && (

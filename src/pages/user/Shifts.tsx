@@ -19,6 +19,7 @@ import { parseDateOnly } from '@/lib/utils';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import { Capacitor } from '@capacitor/core';
+import { plantoes } from '@/lib/plural';
 import {
   MENSAGEM_ERRO_GENERICO,
   MENSAGEM_TEMPO_ESGOTADO,
@@ -828,12 +829,12 @@ export default function UserShifts() {
                   <div>
                     {todayPendingSummary.checkin > 0 && (
                       <p>
-                        {todayPendingSummary.checkin} plantão(ões) aguardando check-in.
+                        {plantoes(todayPendingSummary.checkin)} aguardando check-in.
                       </p>
                     )}
                     {todayPendingSummary.checkout > 0 && (
                       <p>
-                        {todayPendingSummary.checkout} plantão(ões) aguardando check-out.
+                        {plantoes(todayPendingSummary.checkout)} aguardando check-out.
                       </p>
                     )}
                   </div>

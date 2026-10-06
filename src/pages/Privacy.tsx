@@ -23,7 +23,7 @@ export default function Privacy() {
         <Card>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none p-6 space-y-6">
             <p className="text-muted-foreground text-sm">
-              Última atualização: Janeiro de 2024
+              Última atualização: outubro de 2026
             </p>
 
             <section>
@@ -106,9 +106,40 @@ export default function Privacy() {
             </section>
 
             <section>
-              <h2 className="text-lg font-semibold text-foreground mt-6 mb-3">7. Retenção de Dados</h2>
+              <h2 className="text-lg font-semibold text-foreground mt-6 mb-3">7. Retenção de Dados e Encerramento da Conta</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Mantemos seus dados enquanto sua conta estiver ativa ou conforme necessário para cumprir obrigações legais, resolver disputas e fazer cumprir nossos acordos. Dados financeiros e de plantões são mantidos pelo período legal exigido.
+                Você pode encerrar sua conta quando quiser, sem depender de autorização: pelo aplicativo,
+                em Configurações, ou pela página{' '}
+                <a href="https://app.medescalas.com.br/excluir-conta" className="underline">
+                  app.medescalas.com.br/excluir-conta
+                </a>
+                , que funciona mesmo sem o aplicativo instalado.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                <strong className="text-foreground">Ao encerrar a conta, apagamos imediatamente</strong> seus
+                dados pessoais de identificação e pagamento: CPF, RG, CRM, RQE, telefone, endereço, dados
+                bancários e chave PIX, além das preferências e dos registros de notificação do seu aparelho.
+                Seu acesso é bloqueado na mesma hora.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                <strong className="text-foreground">O que permanece, e por quê:</strong> os registros de
+                plantões realizados — data, horário, setor e o seu nome — continuam na escala e no financeiro
+                do serviço contratante. Eles são o comprovante do trabalho prestado e são necessários para
+                conferência de pagamento, prestação de contas e eventual fiscalização. Esses registros
+                pertencem também à instituição que contratou o MedEscala, e por isso não são apagados a
+                pedido individual. Nós os mantemos por <strong className="text-foreground">5 anos</strong>{' '}
+                contados do encerramento, prazo compatível com a guarda de documentos trabalhistas e fiscais,
+                após o que são anonimizados.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                As posições de localização registradas nos check-ins são mantidas enquanto o plantão
+                correspondente permanecer no financeiro, pela mesma finalidade de comprovação, e não são
+                usadas para qualquer outro fim.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                Encerrar a conta significa deixar de usar o aplicativo — não cancela plantões já marcados
+                nem desliga você do serviço. Quem organiza a escala é a coordenação da instituição, que é
+                avisada do encerramento.
               </p>
             </section>
 
