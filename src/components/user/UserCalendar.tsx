@@ -1041,8 +1041,13 @@ export default function UserCalendar() {
           const hasMyShiftToday = getShiftsForDate(date).some(s => isMyShift(s.id));
 
           return (
-            <button
+            // Dia do mês com proteção de toque (mesma dos cards): rolar o dedo sobre a
+            // grade não seleciona mais outro dia ao soltar. Tolerância menor que a dos
+            // cards porque a célula é pequena e a seleção precisa continuar ágil.
+            <TapSafeButton
               key={index}
+              moveThresholdPx={16}
+              minPressTime={70}
               onClick={() => setSelectedDate(date)}
               className={cn(
                 "relative flex flex-col items-center justify-center py-3 border-b border-r border-border/30 transition-colors touch-manipulation",
@@ -1082,7 +1087,7 @@ export default function UserCalendar() {
                   )}
                 </div>
               )}
-            </button>
+            </TapSafeButton>
           );
         })}
       </div>
@@ -1093,37 +1098,45 @@ export default function UserCalendar() {
         panelExpanded ? "flex-1 min-h-[35vh] max-h-[50dvh]" : "h-auto"
       )}>
         {/* Panel Toggle */}
-        <button 
+        {/* min-h-0 mantém a alça fina (o TapSafeButton usaria 44px por padrão). */}
+        <TapSafeButton
+          moveThresholdPx={16}
+          minPressTime={70}
+          disablePressVisual
           onClick={() => setPanelExpanded(!panelExpanded)}
-          className="w-full flex justify-center py-2 border-b touch-manipulation"
+          className="w-full min-h-0 flex justify-center py-2 border-b touch-manipulation"
         >
           <div className="w-10 h-1 rounded-full bg-muted-foreground/30" />
-        </button>
+        </TapSafeButton>
 
         {/* Tabs */}
         <div className="flex border-b">
-          <button
+          <TapSafeButton
+            moveThresholdPx={16}
+            minPressTime={70}
             onClick={() => setActiveTab('todos')}
             className={cn(
               "flex-1 h-11 text-sm font-medium transition-colors touch-manipulation",
-              activeTab === 'todos' 
-                ? "bg-primary text-primary-foreground" 
+              activeTab === 'todos'
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-accent"
             )}
           >
             Todos
-          </button>
-          <button
+          </TapSafeButton>
+          <TapSafeButton
+            moveThresholdPx={16}
+            minPressTime={70}
             onClick={() => setActiveTab('meus')}
             className={cn(
               "flex-1 h-11 text-sm font-medium transition-colors border-l border-r touch-manipulation",
-              activeTab === 'meus' 
-                ? "bg-primary text-primary-foreground" 
+              activeTab === 'meus'
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:bg-accent"
             )}
           >
             Meus Plantões
-          </button>
+          </TapSafeButton>
         </div>
 
         <div className="flex items-center justify-center gap-4 border-b bg-card/70 px-4 py-2 text-xs">
