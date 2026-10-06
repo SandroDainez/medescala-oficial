@@ -18,6 +18,19 @@ import { extractErrorMessage } from '@/lib/errorMessage';
 import { parseDateOnly } from '@/lib/utils';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
+import { Capacitor } from '@capacitor/core';
+import {
+  MENSAGEM_ERRO_GENERICO,
+  MENSAGEM_TEMPO_ESGOTADO,
+  mensagemLocalizacaoIndisponivel,
+  mensagemPermissaoNegada,
+  type Plataforma,
+} from '@/lib/mensagensLocalizacao';
+
+function plataformaAtual(): Plataforma {
+  if (!Capacitor.isNativePlatform()) return 'web';
+  return Capacitor.getPlatform() === 'ios' ? 'ios' : 'android';
+}
 import type { ScheduleAssignment, ScheduleShift, SectorLookup } from '@/lib/financial/types';
 import { 
   Clock, 
@@ -297,18 +310,22 @@ export default function UserShifts() {
       navigator.geolocation.getCurrentPosition(
         (position) => resolve(position),
         (error) => {
+          // O texto depende de onde o médico está: no app instalado não existe
+          // "navegador", e mandá-lo abrir as configurações do navegador o faz
+          // procurar algo que não está no aparelho.
+          const plataforma = plataformaAtual();
           switch (error.code) {
             case error.PERMISSION_DENIED:
-              reject(new Error('Permissão de localização negada. Por favor, habilite nas configurações do seu navegador.'));
+              reject(new Error(mensagemPermissaoNegada(plataforma)));
               break;
             case error.POSITION_UNAVAILABLE:
-              reject(new Error('Localização indisponível. Verifique se o GPS está ativado.'));
+              reject(new Error(mensagemLocalizacaoIndisponivel(plataforma)));
               break;
             case error.TIMEOUT:
-              reject(new Error('Tempo esgotado ao obter localização. Tente novamente.'));
+              reject(new Error(MENSAGEM_TEMPO_ESGOTADO));
               break;
             default:
-              reject(new Error('Erro ao obter localização'));
+              reject(new Error(MENSAGEM_ERRO_GENERICO));
           }
         },
         {
@@ -767,10 +784,12 @@ export default function UserShifts() {
               <AlertCircle className="h-5 w-5" />
               Localização Necessária
             </AlertDialogTitle>
+            {/* A mensagem de erro já diz o que fazer e onde. A frase genérica
+                que vinha depois repetia a instrução e falava em "dispositivo"
+                enquanto a de cima falava em "navegador" — duas orientações
+                diferentes na mesma tela. */}
             <AlertDialogDescription>
-              {gpsError || 'Este setor exige validação de localização GPS para o check-in/check-out.'}
-              <br /><br />
-              Por favor, habilite a localização no seu dispositivo e tente novamente.
+              {gpsError || 'Este setor exige validação de localização para o check-in e o check-out.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -995,7 +1014,10 @@ export default function UserShifts() {
                         <div className="w-3 h-3 rounded-full" style={{ backgroundColor: sectorInfo.color }} />
                         <span className="font-semibold text-foreground">{sectorInfo.name}</span>
                         <Badge variant="secondary" className="ml-2">
-                          {sectorAssignments.length} plantão{sectorAssignments.length !== 1 ? 'ões' : ''}
+                          {/* "plantão" + "ões" dava "plantãoões": o plural troca
+                              o "ão" por "ões", não o acrescenta. */}
+                          {sectorAssignments.length}{' '}
+                          {sectorAssignments.length === 1 ? 'plantão' : 'plantões'}
                         </Badge>
                         {sectorInfo.checkin_enabled && sectorInfo.require_gps_checkin && (
                           <Badge variant="outline" className="text-blue-600 border-blue-500/30 bg-blue-500/5">
