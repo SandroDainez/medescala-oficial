@@ -12,7 +12,9 @@
     "check:core": "npm run lint && npm run build",
     "check:all": "npm run lint && npm run test && npm run build",
     "preview": "vite preview",
-    "audit:daily": "node scripts/audit/run-audit.mjs"
+    "audit:daily": "node scripts/audit/run-audit.mjs",
+    "build:app": "VITE_APP_URL=https://app.medescalas.com.br vite build",
+    "sync:app": "npm run build:app && npx cap sync"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
@@ -78,6 +80,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@eslint-community/eslint-utils": "^4.9.1",
     "@eslint/js": "^9.32.0",
     "@tailwindcss/typography": "^0.5.16",

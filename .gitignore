@@ -56,3 +56,23 @@ docker-data/
 medescala_backup.dump
 backups/
 audit-results/
+
+# ── Projetos nativos (Capacitor) ──────────────────────────────────────────────
+# As pastas android/ e ios/ SÃO versionadas: contêm configuração editada à mão
+# (Info.plist, AndroidManifest, ícones). O que fica de fora é saída de build.
+android/app/src/main/assets/public/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App/config.xml
+ios/App/Pods/
+ios/App/build/
+ios/App/output/
+ios/DerivedData/
+ios/capacitor-cordova-ios-plugins/
