@@ -81,3 +81,11 @@ ios/capacitor-cordova-ios-plugins/
 
 # Credenciais da conta de demonstração das lojas (nunca versionar)
 docs/conta-demo.local.md
+
+# ── Assinatura do app Android — NUNCA versionar ───────────────────────────────
+# A chave de upload e sua senha. Se vazarem, qualquer um pode publicar
+# atualizações no seu nome. Guarde cópia de segurança fora do computador.
+*.keystore
+*.jks
+android/keystore.properties
+docs/chaves-android.local.md

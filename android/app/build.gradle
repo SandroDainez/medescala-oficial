@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+// Senhas da chave de upload. O arquivo fica FORA do git (.gitignore): se ele
+// vazar, qualquer um consegue publicar atualizações no nome do MedEscala.
+// Sem o arquivo o build de depuração continua funcionando; só o release assinado
+// é que precisa dele.
+def arquivoChaves = rootProject.file('keystore.properties')
+def chaves = new Properties()
+if (arquivoChaves.exists()) {
+    arquivoChaves.withInputStream { chaves.load(it) }
+}
+
 android {
     namespace = "com.medescala.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +26,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (chaves['storeFile']) {
+                storeFile rootProject.file(chaves['storeFile'])
+                storePassword chaves['storePassword']
+                keyAlias chaves['keyAlias']
+                keyPassword chaves['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (chaves['storeFile']) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
