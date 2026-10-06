@@ -4944,7 +4944,7 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                       return (
                         <div
                           key={shift.id}
-                          className={`text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
+                          className={`min-w-0 overflow-hidden text-xs p-1.5 rounded ${isNight ? 'ring-1 ring-indigo-400/30' : ''}`}
                           style={{
                             // Tom translúcido (não opaco) para o texto do tema permanecer legível
                             // em qualquer tema — padrão único para diurno e noturno.
@@ -4958,18 +4958,22 @@ export default function ShiftCalendar({ initialSectorId }: ShiftCalendarProps) {
                             openDayView(day, options?.sectorContextId, shift.id);
                           }}
                         >
-                          <div className="mb-1 flex items-center justify-between gap-1">
+                          {/* Valor SEMPRE em uma linha só; quando a célula aperta, ele desce
+                              para a linha de baixo em vez de quebrar no meio ("R$" / "1800.00")
+                              e vazar do card. Rótulo curto para caber no mês (7 colunas). */}
+                          <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1">
                             <button
                               type="button"
-                              className="rounded border border-border/70 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-background"
+                              title="Ajustar valor"
+                              className="min-w-0 shrink truncate rounded border border-border/70 bg-background/80 px-1.5 py-0.5 text-[10px] font-medium text-foreground hover:bg-background"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openQuickValueEdit(shift);
                               }}
                             >
-                              Ajustar valor
+                              Valor
                             </button>
-                            <span className="text-[10px] font-semibold text-foreground">
+                            <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-semibold tabular-nums text-foreground">
                               R$ {getShiftCardValue(shift, shiftAssignments).toFixed(2)}
                             </span>
                           </div>
