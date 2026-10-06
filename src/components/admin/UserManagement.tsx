@@ -8,6 +8,7 @@ import { useUserDetails } from "@/hooks/useUserDetails";
 import { buildPublicAppUrl } from "@/lib/publicAppUrl";
 import { callEdgeFunction } from "@/lib/edgeFetch";
 import { adminFeedback } from "@/lib/adminFeedback";
+import { matchesSearch } from "@/lib/searchText";
 import * as XLSX from "xlsx";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -494,15 +495,11 @@ export default function UserManagement() {
       if (roleTab === "admin" && !isAdminRole) return false;
       if (roleTab === "user" && isAdminRole) return false;
       if (!term) return true;
-      const fields = [
-        user.full_name ?? "",
-        user.name ?? "",
-        user.email ?? "",
-        user.phone ?? "",
-        user.profile_type ?? "",
-        user.status ?? "",
-      ];
-      return fields.some((field) => field.toLowerCase().includes(term));
+      // Busca sem acento: "mario" precisa achar "MÁRIO JUSTINIANO ARAUZ".
+      return matchesSearch(
+        [user.full_name, user.name, user.email, user.phone, user.profile_type, user.status],
+        term,
+      );
     });
 
     return base.slice().sort((a, b) => {

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { matchesSearch } from '@/lib/searchText';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1064,11 +1065,8 @@ export default function SuperAdmin() {
     window.location.href = `mailto:${email}?subject=${subject}`;
   }
 
-  const filteredTenants = tenants.filter(
-    (t) =>
-      t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.slug.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Busca sem acento (ex.: "beneficencia" acha "Beneficência").
+  const filteredTenants = tenants.filter((t) => matchesSearch([t.name, t.slug], searchQuery));
 
   const stats = {
     total: tenants.length,

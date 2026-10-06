@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { matchesSearch } from '@/lib/searchText';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -526,9 +527,8 @@ export default function AdminNotifications() {
   const manualRecipientBase = notificationType === 'shift' ? shiftScopedMembers : filteredMembers;
   const manualRecipientFiltered = useMemo(
     () =>
-      manualRecipientBase.filter((member) =>
-        member.name.toLowerCase().includes(recipientSearch.trim().toLowerCase()),
-      ),
+      // Busca sem acento: "mario" precisa achar "MÁRIO JUSTINIANO ARAUZ".
+      manualRecipientBase.filter((member) => matchesSearch([member.name], recipientSearch)),
     [manualRecipientBase, recipientSearch],
   );
   const shiftScopedCount = shiftScopedMembers.length;
