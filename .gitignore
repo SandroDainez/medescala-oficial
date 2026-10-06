@@ -75,4 +75,6 @@ ios/App/Pods/
 ios/App/build/
 ios/App/output/
 ios/DerivedData/
+# Estado do Swift Package Manager resolvido pelo build local
+ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 ios/capacitor-cordova-ios-plugins/

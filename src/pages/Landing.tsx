@@ -9,12 +9,22 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
       {/* Header - Fixed with safe-area support */}
       <header className="fixed top-0 left-0 right-0 z-[100] glass border-b border-border/50 pt-safe">
         <div className="container mx-auto px-4 py-4 min-h-[56px] flex items-center">
-          <nav className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-11 h-11 rounded-xl bg-primary flex items-center justify-center">
+          {/* w-full: sem largura, o nav encolhia para caber no conteúdo e o
+              justify-between não tinha espaço — no iPhone o botão "Login"
+              acabava por cima da palavra "MedEscala". min-w-0 deixa o nome
+              encurtar em vez de empurrar os botões. */}
+          <nav className="flex w-full items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="w-11 h-11 shrink-0 rounded-xl bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground font-bold text-xl">M</span>
               </div>
-              <span className="font-bold text-xl text-foreground">MedEscala</span>
+              {/* Medido no navegador: a marca precisa de 159px e os botões de
+                  191px; com o respiro do container (32px) e o gap (12px), o
+                  nome só cabe inteiro a partir de 394px. Abaixo disso fica só o
+                  logo "M" — antes, o botão "Login" vinha por cima da palavra. */}
+              <span className="hidden truncate font-bold text-xl text-foreground min-[400px]:inline">
+                MedEscala
+              </span>
             </div>
             
             <div className="hidden md:flex items-center gap-8">
@@ -32,17 +42,17 @@ const Landing = forwardRef<HTMLDivElement>(function Landing(_props, ref) {
               </a>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex shrink-0 items-center gap-2">
               <Link to="/auth">
-                <Button 
-                  variant="ghost" 
-                  className="h-11 px-4 text-muted-foreground hover:text-foreground touch-manipulation active:scale-95 transition-transform"
+                <Button
+                  variant="ghost"
+                  className="h-11 px-3 sm:px-4 text-muted-foreground hover:text-foreground touch-manipulation active:scale-95 transition-transform"
                 >
                   Login
                 </Button>
               </Link>
               <Link to="/auth">
-                <Button className="btn-glow h-11 px-5 touch-manipulation active:scale-95 transition-transform">
+                <Button className="btn-glow h-11 px-4 sm:px-5 touch-manipulation active:scale-95 transition-transform">
                   Experimente
                 </Button>
               </Link>

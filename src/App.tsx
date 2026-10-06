@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTenant } from "@/hooks/useTenant";
 import { useSuperAdmin } from "@/hooks/useSuperAdmin";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import AvisoSemConexao from "@/components/AvisoSemConexao";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { importWithChunkRecovery } from "@/lib/chunkRecovery";
 import { getTenantSelectionDoneSafe } from "@/hooks/tenant-context";
@@ -299,6 +300,9 @@ const App = () => (
             <AuthProvider>
               <TenantProvider>
                 <ErrorBoundary>
+                  {/* Fora do Suspense de propósito: o aviso de rede precisa
+                      aparecer mesmo quando a rota ainda não carregou. */}
+                  <AvisoSemConexao />
                   <PrefetchDashboardChunks />
                   <Suspense fallback={<RouteLoadingFallback />}>
                     <Routes>
