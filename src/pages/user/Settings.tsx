@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { useTenant } from "@/hooks/useTenant";
-import { Settings, Smartphone, Shield, User } from "lucide-react";
+import { Settings, Smartphone, Shield, User, UserX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/hooks/useTheme";
 import NotificationPreferences from "@/components/user/NotificationPreferences";
@@ -499,6 +499,25 @@ function isValidCurriculumType(file: File): boolean {
         <CardContent>
           <Button variant="outline" size="sm" onClick={() => navigate("/change-password")}>
             Alterar senha
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/40">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <UserX className="h-5 w-5" />
+            Encerrar minha conta
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Remove seu acesso e apaga seus dados pessoais. Plantões futuros voltam a ser vaga
+            aberta e a coordenação é avisada; plantões já realizados continuam registrados, com seu
+            nome, para conferência de pagamento.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => navigate("/excluir-conta")}>
+            Encerrar minha conta
           </Button>
         </CardContent>
       </Card>

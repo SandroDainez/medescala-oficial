@@ -28,6 +28,7 @@ const SuperAdmin = lazyRoute(() => import("./pages/SuperAdmin"));
 const Install = lazyRoute(() => import("./pages/Install"));
 const Terms = lazyRoute(() => import("./pages/Terms"));
 const Privacy = lazyRoute(() => import("./pages/Privacy"));
+const DeleteAccount = lazyRoute(() => import("./pages/DeleteAccount"));
 
 const AdminLayout = lazyRoute(() =>
   import("./components/layouts/AdminLayout").then((mod) => ({
@@ -328,6 +329,10 @@ const App = () => (
                       <Route path="/install" element={<Install />} />
                       <Route path="/terms" element={<Terms />} />
                       <Route path="/privacy" element={<Privacy />} />
+                      {/* Pública de propósito: Google Play e Apple exigem que o
+                          próprio usuário possa pedir a exclusão sem instalar o app.
+                          A página pede o login antes de mostrar ou mexer em qualquer coisa. */}
+                      <Route path="/excluir-conta" element={<DeleteAccount />} />
 
                       <Route path="/trocar-senha" element={<Navigate to="/change-password" replace />} />
 

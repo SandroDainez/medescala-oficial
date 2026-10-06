@@ -27,6 +27,11 @@ verify_jwt = false
 [functions.delete-users]
 verify_jwt = false
 
+# O gateway não valida o JWT (OPTIONS de CORS quebra com verify_jwt), mas a função
+# valida: sem usuário autenticado ela responde 401, e age sempre e só sobre quem chamou.
+[functions.delete-own-account]
+verify_jwt = false
+
 [functions.absence-document-url]
 verify_jwt = false
 
