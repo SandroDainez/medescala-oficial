@@ -78,3 +78,6 @@ ios/DerivedData/
 # Estado do Swift Package Manager resolvido pelo build local
 ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 ios/capacitor-cordova-ios-plugins/
+
+# Credenciais da conta de demonstração das lojas (nunca versionar)
+docs/conta-demo.local.md
