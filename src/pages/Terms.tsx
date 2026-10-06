@@ -23,7 +23,7 @@ export default function Terms() {
         <Card>
           <CardContent className="prose prose-sm dark:prose-invert max-w-none p-6 space-y-6">
             <p className="text-muted-foreground text-sm">
-              Última atualização: Janeiro de 2024
+              Última atualização: outubro de 2026
             </p>
 
             <section>
@@ -50,7 +50,12 @@ export default function Terms() {
             <section>
               <h2 className="text-lg font-semibold text-foreground mt-6 mb-3">3. Cadastro e Conta</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Para utilizar o Aplicativo, você deve criar uma conta fornecendo informações verdadeiras, atuais e completas. Você é responsável por manter a confidencialidade de sua senha e por todas as atividades realizadas em sua conta.
+                O MedEscala é contratado por hospitais, clínicas e grupos de médicos. Se você é
+                profissional de uma instituição contratante, sua conta é criada pela coordenação do
+                serviço e o uso do aplicativo não tem custo para você. Se você representa uma
+                instituição, pode criar a conta do serviço diretamente no aplicativo. Em qualquer
+                caso, as informações devem ser verdadeiras, atuais e completas, e você é responsável
+                por manter a confidencialidade da sua senha e pelas atividades realizadas na sua conta.
               </p>
             </section>
 
@@ -92,7 +97,23 @@ export default function Terms() {
             <section>
               <h2 className="text-lg font-semibold text-foreground mt-6 mb-3">8. Encerramento</h2>
               <p className="text-muted-foreground leading-relaxed">
-                Podemos encerrar ou suspender sua conta a qualquer momento, sem aviso prévio, por violação destes Termos ou por qualquer outro motivo que julgarmos necessário.
+                <strong className="text-foreground">Você pode encerrar sua conta quando quiser</strong>,
+                sem depender de autorização: no aplicativo, em Configurações, ou pela página{' '}
+                <a href="https://app.medescalas.com.br/excluir-conta" className="underline">
+                  app.medescalas.com.br/excluir-conta
+                </a>
+                , que funciona mesmo sem o aplicativo instalado. O que é apagado e o que é mantido
+                está descrito na seção 7 da Política de Privacidade.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                A coordenação da instituição contratante pode remover o seu acesso ao serviço dela.
+                Nós podemos suspender ou encerrar contas em caso de violação destes Termos, de uso
+                que ameace a segurança da plataforma ou por exigência legal, com aviso sempre que
+                for possível.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mt-3">
+                Encerrar a conta no aplicativo não cancela plantões já marcados nem desliga você do
+                serviço: a escala é organizada pela coordenação da instituição.
               </p>
             </section>
 
