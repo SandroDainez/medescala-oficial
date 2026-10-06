@@ -126,8 +126,9 @@ const SQUARE_SELECT_ITEM_CLASS =
  * silenciosamente. Lendo como texto, o parser de data do app (DD/MM) acerta sempre.
  */
 function parseCsvMatrix(text: string): string[][] {
-  // Remove BOM
-  const input = text.replace(/^﻿/, '');
+  // Remove BOM. Escrito como escape, e não com o caractere literal: literal, ele
+  // é invisível no editor e o eslint o rejeita (no-irregular-whitespace).
+  const input = text.replace(/^\uFEFF/, '');
 
   // Detecta o separador pela primeira linha (vírgula, ponto-e-vírgula ou tab)
   const firstLine = input.split(/\r?\n/, 1)[0] ?? '';
