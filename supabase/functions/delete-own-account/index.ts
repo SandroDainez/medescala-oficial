@@ -1,10 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import {
   type AtribuicaoBruta,
-  dataBR,
   hojeEmBrasilia,
   mensagemParaAdmin,
-  movimentosDeLiberacao,
   separarPlantoes,
   tituloParaAdmin,
 } from './logica.ts'
@@ -198,70 +196,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (futuros.length > 0) {
-      // 2) Trilha permanente, antes de apagar qualquer coisa.
-      const { error: movError } = await supabaseAdmin
-        .from('schedule_movements')
-        .insert(movimentosDeLiberacao(futuros, userId, nome, agora))
+    // A ESCALA NÃO É TOCADA. Nem os plantões futuros, nem os vínculos com o
+    // serviço. O MedEscala é contratado pelo hospital/clínica/grupo: a escala é
+    // dele, e largar o aplicativo não é o mesmo que deixar de trabalhar lá.
+    // Liberar plantão futuro aqui criaria vaga aberta onde há gente escalada, e
+    // a coordenação poderia escalar outra pessoa por cima. Quem decide é ela,
+    // avisada acima, pelo botão "Remover do serviço".
 
-      if (movError) {
-        // Sem trilha não se libera plantão: o administrador perderia o rastro de
-        // quem estava escalado naquela vaga.
-        console.error('[delete-own-account] falha na trilha:', movError.message)
-        return json(
-          {
-            error:
-              'Não foi possível registrar a liberação dos plantões futuros. Nada foi alterado. Tente novamente.',
-            detalhe: movError.message,
-          },
-          500,
-        )
-      }
-
-      // 3) Libera os plantões futuros — a vaga volta a aparecer aberta na escala.
-      const { error: delFuturosError } = await supabaseAdmin
-        .from('shift_assignments')
-        .delete()
-        .eq('user_id', userId)
-        .in(
-          'id',
-          futuros.map((f) => f.assignmentId),
-        )
-
-      if (delFuturosError) {
-        console.error('[delete-own-account] falha ao liberar futuros:', delFuturosError.message)
-        return json(
-          {
-            error: 'Não foi possível liberar os plantões futuros. Nada foi alterado.',
-            detalhe: delFuturosError.message,
-          },
-          500,
-        )
-      }
-    }
-
-    // 4) Tira os vínculos: perde acesso e sai das listas de escala.
-    const { error: delSectorError } = await supabaseAdmin
-      .from('sector_memberships')
-      .delete()
-      .eq('user_id', userId)
-    if (delSectorError) avisos.push(`sector_memberships:${delSectorError.message}`)
-
-    const { error: delMembershipError } = await supabaseAdmin
-      .from('memberships')
-      .delete()
-      .eq('user_id', userId)
-    if (delMembershipError) {
-      return json(
-        {
-          error: 'Não foi possível remover seus vínculos. Nada mais foi alterado.',
-          detalhe: delMembershipError.message,
-        },
-        500,
-      )
-    }
-
-    // 5) Apaga os dados pessoais sensíveis (CPF, RG, endereço, banco, PIX).
+    // 2) Apaga os dados pessoais sensíveis (CPF, RG, endereço, banco, PIX).
+    //    A exclusão já fica registrada sozinha pelo trigger audit_profiles_private.
     const { error: piiError } = await supabaseAdmin
       .from('profiles_private')
       .delete()
@@ -280,15 +223,16 @@ Deno.serve(async (req) => {
       .eq('user_id', userId)
     if (prefsError) avisos.push(`user_notification_preferences:${prefsError.message}`)
 
-    // 6) O perfil fica, inativo, porque os plantões já realizados apontam para ele.
-    //    É o que preserva o nome na escala e no financeiro já fechado.
+    // 3) O perfil fica, marcado como inativo, porque os plantões apontam para ele —
+    //    é o que preserva o nome na escala e no financeiro. 'inativo' aqui só
+    //    sinaliza "não usa mais o app"; nenhuma lista da escala filtra por isso.
     const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .update({ status: 'inativo', updated_at: agora })
       .eq('id', userId)
     if (profileError) avisos.push(`profiles:${profileError.message}`)
 
-    // 7) Bloqueia o login. Apagar a conta de auth cascatearia os plantões.
+    // 4) Bloqueia o login. Apagar a conta de auth cascatearia os plantões.
     const { error: banError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       ban_duration: '876000h',
     })
@@ -298,14 +242,14 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[delete-own-account] conta encerrada: ${userId} | futuros liberados: ${futuros.length} ` +
-        `(${futuros.map((f) => dataBR(f.shiftDate)).join(', ')}) | passados mantidos: ${passados}`,
+      `[delete-own-account] conta encerrada: ${userId} | escala intacta | ` +
+        `futuros no nome dele: ${futuros.length} | passados: ${passados}`,
     )
 
     return json({
       ok: true,
       encerrada: true,
-      plantoesFuturosLiberados: futuros.length,
+      plantoesFuturosMantidos: futuros.length,
       plantoesPassadosMantidos: passados,
       avisos: avisos.length > 0 ? avisos : undefined,
     })

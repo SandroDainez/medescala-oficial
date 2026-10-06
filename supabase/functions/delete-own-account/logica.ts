@@ -1,6 +1,13 @@
 /**
  * Decisões puras do encerramento de conta, separadas do index.ts para poderem
  * ser testadas sem subir servidor nem tocar no banco.
+ *
+ * REGRA DE OURO: encerrar a conta é sair do APLICATIVO, não sair do serviço.
+ * O MedEscala é contratado por hospitais, clínicas e grupos — a escala pertence
+ * a eles, não ao médico. Um médico pode largar o app e continuar trabalhando
+ * normalmente, então o encerramento NÃO mexe em plantão nenhum, nem futuro.
+ * Quem sabe se a pessoa saiu de verdade é a coordenação, e é ela que decide,
+ * pelo botão "Remover do serviço".
  */
 
 export type AtribuicaoBruta = {
@@ -30,7 +37,7 @@ export type PlantaoFuturo = {
  *
  * shifts.shift_date é DATE (sem fuso). Comparar com current_date do servidor (UTC)
  * erra o plantão de hoje a partir das 21h de Brasília, quando em UTC já é amanhã:
- * o plantão desta noite seria tratado como passado e NÃO seria liberado.
+ * o plantão desta noite sumiria da contagem e ninguém seria avisado dele.
  */
 export function hojeEmBrasilia(agora: Date = new Date()): string {
   // en-CA formata como YYYY-MM-DD.
@@ -40,8 +47,9 @@ export function hojeEmBrasilia(agora: Date = new Date()): string {
 /**
  * Separa o que já foi trabalhado do que ainda vai acontecer.
  *
- * O plantão de hoje conta como FUTURO: ainda vai ser cumprido (ou não), então
- * precisa virar vaga aberta para alguém cobrir.
+ * Nenhum dos dois é apagado: a separação existe só para avisar a coordenação,
+ * e para avisar o próprio médico de que encerrar a conta não cancela plantão.
+ * O plantão de hoje conta como futuro — ainda vai ser cumprido.
  */
 export function separarPlantoes(
   atribuicoes: AtribuicaoBruta[],
@@ -52,7 +60,7 @@ export function separarPlantoes(
 
   for (const a of atribuicoes ?? []) {
     const s = a.shifts
-    if (!s?.shift_date) continue // sem data não dá para decidir: não mexe
+    if (!s?.shift_date) continue // sem data não dá para classificar
 
     if (s.shift_date >= hoje) {
       futuros.push({
@@ -81,60 +89,34 @@ export function dataBR(isoDate: string): string {
 }
 
 /**
- * Aviso para a coordenação. Precisa dizer quantos plantões ficaram descobertos
- * e em que datas: é o que faz o administrador ir procurar cobertura.
+ * Aviso para a coordenação.
+ *
+ * Precisa deixar claro que a escala NÃO mudou e que a decisão é dela: se a
+ * pessoa só largou o app, não há o que fazer; se saiu do serviço, é "Remover
+ * do serviço" que libera os plantões.
  */
 export function mensagemParaAdmin(nome: string, futurosDoServico: PlantaoFuturo[]): string {
-  const base = `${nome} encerrou a conta no MedEscala.`
-  const rodape = 'Os plantões já realizados continuam na escala e no financeiro.'
+  const base = `${nome} encerrou a conta e não usa mais o aplicativo.`
+  const escalaIntacta = 'A escala não foi alterada: os plantões continuam no nome dele.'
 
   if (futurosDoServico.length === 0) {
-    return `${base} Não havia plantões futuros escalados. ${rodape}`
+    return `${base} ${escalaIntacta} Não há plantões futuros escalados.`
   }
 
   const datas = futurosDoServico.map((f) => dataBR(f.shiftDate)).join(', ')
   const n = futurosDoServico.length
-  const frase =
-    n === 1
-      ? '1 plantão futuro ficou sem cobertura e voltou a ser vaga aberta'
-      : `${n} plantões futuros ficaram sem cobertura e voltaram a ser vaga aberta`
+  const quantos =
+    n === 1 ? 'Há 1 plantão futuro no nome dele' : `Há ${n} plantões futuros no nome dele`
 
-  return `${base} ${frase}: ${datas}. ${rodape}`
+  return (
+    `${base} ${escalaIntacta} ${quantos}: ${datas}. ` +
+    'Confirme com ele se vai cumprir. Se ele também saiu do serviço, use "Remover do serviço" ' +
+    'em Usuários para liberar esses plantões.'
+  )
 }
 
 export function tituloParaAdmin(futurosDoServico: PlantaoFuturo[]): string {
   return futurosDoServico.length > 0
-    ? 'Conta encerrada — plantões futuros descobertos'
+    ? 'Conta encerrada — confira os plantões futuros'
     : 'Conta encerrada'
-}
-
-/**
- * Trilha permanente de cada plantão liberado. schedule_movements não tem FK
- * nenhuma e guarda o nome em texto, então o registro sobrevive à remoção do
- * plantão, do vínculo e dos dados pessoais.
- */
-export function movimentosDeLiberacao(
-  futuros: PlantaoFuturo[],
-  userId: string,
-  nome: string,
-  agoraIso: string,
-) {
-  return futuros.map((f) => {
-    const [ano, mes] = f.shiftDate.split('-')
-    return {
-      tenant_id: f.tenantId,
-      month: Number(mes),
-      year: Number(ano),
-      user_id: userId,
-      user_name: nome,
-      movement_type: 'removed' as const,
-      source_sector_id: f.sectorId,
-      source_shift_date: f.shiftDate,
-      source_shift_time: f.startTime && f.endTime ? `${f.startTime}-${f.endTime}` : f.startTime,
-      source_assignment_id: f.assignmentId,
-      reason: 'Conta encerrada pelo próprio profissional',
-      performed_by: userId,
-      performed_at: agoraIso,
-    }
-  })
 }

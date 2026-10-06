@@ -4,7 +4,6 @@ import {
   dataBR,
   hojeEmBrasilia,
   mensagemParaAdmin,
-  movimentosDeLiberacao,
   separarPlantoes,
   tituloParaAdmin,
 } from './logica.ts'
@@ -29,8 +28,7 @@ Deno.test('hojeEmBrasilia: às 21h de Brasília ainda é hoje, mesmo já sendo a
 })
 
 Deno.test('hojeEmBrasilia: às 02h de Brasília o dia já virou', () => {
-  const agora = new Date('2026-10-06T05:10:00Z') // 02:10 em Brasília
-  assertEquals(hojeEmBrasilia(agora), '2026-10-06')
+  assertEquals(hojeEmBrasilia(new Date('2026-10-06T05:10:00Z')), '2026-10-06')
 })
 
 Deno.test('hojeEmBrasilia: meio-dia bate com a data em UTC', () => {
@@ -39,30 +37,29 @@ Deno.test('hojeEmBrasilia: meio-dia bate com a data em UTC', () => {
 
 // ── separarPlantoes ─────────────────────────────────────────────────────────
 
-Deno.test('separarPlantoes: o plantão de hoje conta como futuro e vira vaga aberta', () => {
+Deno.test('separarPlantoes: o plantão de hoje conta como futuro', () => {
   const { futuros, passados } = separarPlantoes([plantao('a', '2026-10-06')], '2026-10-06')
   assertEquals(futuros.length, 1)
   assertEquals(passados, 0)
   assertEquals(futuros[0].assignmentId, 'a')
 })
 
-Deno.test('separarPlantoes: o de ontem conta como trabalho feito e é preservado', () => {
+Deno.test('separarPlantoes: o de ontem conta como já trabalhado', () => {
   const { futuros, passados } = separarPlantoes([plantao('a', '2026-10-05')], '2026-10-06')
   assertEquals(futuros.length, 0)
   assertEquals(passados, 1)
 })
 
-Deno.test('separarPlantoes: plantão da noite não é perdido por conta do fuso', () => {
-  // Cenário real: médico encerra a conta às 21h30; tem plantão hoje 19h-07h.
-  // Com current_date em UTC (2026-10-07), este plantão seria tratado como
-  // passado e ficaria no nome dele — a UTI apareceria coberta e ninguém iria.
-  const agora = new Date('2026-10-07T00:30:00Z')
-  const hoje = hojeEmBrasilia(agora)
+Deno.test('separarPlantoes: plantão da noite não some da contagem por causa do fuso', () => {
+  // Médico encerra a conta às 21h30 e tem plantão hoje 19h-07h. Com current_date
+  // em UTC (2026-10-07) ele cairia em "passado" e a coordenação não seria avisada
+  // de que há um plantão desta noite no nome de quem acabou de largar o app.
+  const hoje = hojeEmBrasilia(new Date('2026-10-07T00:30:00Z'))
   const { futuros, passados } = separarPlantoes(
     [plantao('noturno', '2026-10-06', { start_time: '19:00:00', end_time: '07:00:00' })],
     hoje,
   )
-  assertEquals(futuros.length, 1, 'o plantão desta noite tem que ser liberado')
+  assertEquals(futuros.length, 1, 'o plantão desta noite tem que entrar no aviso')
   assertEquals(passados, 0)
 })
 
@@ -84,7 +81,7 @@ Deno.test('separarPlantoes: separa, conta e ordena por data', () => {
   )
 })
 
-Deno.test('separarPlantoes: atribuição sem data não é mexida nem contada', () => {
+Deno.test('separarPlantoes: atribuição sem data não é classificada', () => {
   const semData: AtribuicaoBruta = { id: 'x', tenant_id: 'tenant-a', shifts: { shift_date: null } }
   const semShift: AtribuicaoBruta = { id: 'y', tenant_id: 'tenant-a', shifts: null }
   const { futuros, passados } = separarPlantoes([semData, semShift], '2026-10-06')
@@ -96,7 +93,7 @@ Deno.test('separarPlantoes: lista vazia não quebra', () => {
   assertEquals(separarPlantoes([], '2026-10-06'), { futuros: [], passados: 0 })
 })
 
-Deno.test('separarPlantoes: guarda o setor para a vaga reabrir no lugar certo', () => {
+Deno.test('separarPlantoes: leva título e setor para o aviso ficar reconhecível', () => {
   const { futuros } = separarPlantoes(
     [plantao('a', '2026-10-20', { sector_id: 'setor-uti', title: 'UTI Irmã Dulce' })],
     '2026-10-06',
@@ -106,10 +103,7 @@ Deno.test('separarPlantoes: guarda o setor para a vaga reabrir no lugar certo', 
 })
 
 Deno.test('separarPlantoes: plantão sem título ganha rótulo genérico', () => {
-  const { futuros } = separarPlantoes(
-    [plantao('a', '2026-10-20', { title: null })],
-    '2026-10-06',
-  )
+  const { futuros } = separarPlantoes([plantao('a', '2026-10-20', { title: null })], '2026-10-06')
   assertEquals(futuros[0].title, 'Plantão')
 })
 
@@ -117,14 +111,33 @@ Deno.test('separarPlantoes: plantão sem título ganha rótulo genérico', () =>
 
 Deno.test('dataBR: converte sem passar por Date, que deslocaria o dia', () => {
   assertEquals(dataBR('2026-10-06'), '06/10/2026')
-  assertEquals(dataBR('2026-01-01'), '01/01/2026')
   // new Date('2026-01-01') em Brasília cairia em 31/12/2025.
-  assertEquals(dataBR('2026-01-01').startsWith('01/01'), true)
+  assertEquals(dataBR('2026-01-01'), '01/01/2026')
 })
 
 // ── mensagemParaAdmin ───────────────────────────────────────────────────────
 
-Deno.test('mensagemParaAdmin: diz quantos e em que datas ficou descoberto', () => {
+Deno.test('mensagemParaAdmin: diz que a escala NÃO mudou', () => {
+  const { futuros } = separarPlantoes(
+    [plantao('a', '2026-10-10'), plantao('b', '2026-10-20')],
+    '2026-10-06',
+  )
+  const msg = mensagemParaAdmin('FLÁVIO DE ANGELIS', futuros)
+  assertEquals(msg.includes('A escala não foi alterada'), true)
+  assertEquals(msg.includes('continuam no nome dele'), true)
+})
+
+Deno.test('mensagemParaAdmin: nunca promete vaga aberta — a escala não foi tocada', () => {
+  const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
+  for (const msg of [mensagemParaAdmin('Dr. Teste', futuros), mensagemParaAdmin('Dr. Teste', [])]) {
+    assertEquals(msg.includes('vaga aberta'), false)
+    assertEquals(msg.includes('liberad'), false)
+    assertEquals(msg.includes('sem cobertura'), false)
+    assertEquals(msg.includes('descoberto'), false)
+  }
+})
+
+Deno.test('mensagemParaAdmin: lista as datas e manda confirmar com o médico', () => {
   const { futuros } = separarPlantoes(
     [plantao('a', '2026-10-10'), plantao('b', '2026-10-20')],
     '2026-10-06',
@@ -134,75 +147,30 @@ Deno.test('mensagemParaAdmin: diz quantos e em que datas ficou descoberto', () =
   assertEquals(msg.includes('2 plantões futuros'), true)
   assertEquals(msg.includes('10/10/2026'), true)
   assertEquals(msg.includes('20/10/2026'), true)
-  assertEquals(msg.includes('continuam na escala e no financeiro'), true)
+  assertEquals(msg.includes('Confirme com ele se vai cumprir'), true)
+})
+
+Deno.test('mensagemParaAdmin: ensina o caminho para liberar, se a pessoa saiu mesmo', () => {
+  const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
+  const msg = mensagemParaAdmin('Dr. Teste', futuros)
+  assertEquals(msg.includes('Remover do serviço'), true)
 })
 
 Deno.test('mensagemParaAdmin: singular quando é um só', () => {
   const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
   const msg = mensagemParaAdmin('Dr. Teste', futuros)
-  assertEquals(msg.includes('1 plantão futuro ficou'), true)
-  assertEquals(msg.includes('voltou a ser vaga aberta'), true)
-  // "plantões" ainda aparece no rodapé sobre os já realizados — o que não pode
-  // é pluralizar o que ficou descoberto.
+  assertEquals(msg.includes('Há 1 plantão futuro no nome dele'), true)
   assertEquals(msg.includes('plantões futuros'), false)
-  assertEquals(msg.includes('voltaram'), false)
 })
 
-Deno.test('mensagemParaAdmin: sem futuros, avisa que nada ficou descoberto', () => {
+Deno.test('mensagemParaAdmin: sem futuros, continua dizendo que a escala está intacta', () => {
   const msg = mensagemParaAdmin('Dr. Teste', [])
-  assertEquals(msg.includes('Não havia plantões futuros'), true)
+  assertEquals(msg.includes('A escala não foi alterada'), true)
+  assertEquals(msg.includes('Não há plantões futuros'), true)
   assertEquals(tituloParaAdmin([]), 'Conta encerrada')
 })
 
-Deno.test('tituloParaAdmin: com futuros, o título alerta', () => {
+Deno.test('tituloParaAdmin: com futuros, o título manda conferir — não alarma de descoberto', () => {
   const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
-  assertEquals(tituloParaAdmin(futuros), 'Conta encerrada — plantões futuros descobertos')
-})
-
-// ── movimentosDeLiberacao ───────────────────────────────────────────────────
-
-Deno.test('movimentosDeLiberacao: mês e ano saem da data do plantão, não de hoje', () => {
-  const { futuros } = separarPlantoes([plantao('a', '2026-10-31')], '2026-10-06')
-  const [mov] = movimentosDeLiberacao(futuros, 'user-1', 'FLÁVIO', '2026-10-06T12:00:00Z')
-  assertEquals(mov.month, 10)
-  assertEquals(mov.year, 2026)
-  assertEquals(mov.source_shift_date, '2026-10-31')
-})
-
-Deno.test('movimentosDeLiberacao: guarda o nome em texto, que sobrevive à remoção', () => {
-  const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
-  const [mov] = movimentosDeLiberacao(futuros, 'user-1', 'FLÁVIO DE ANGELIS', '2026-10-06T12:00:00Z')
-  assertEquals(mov.user_name, 'FLÁVIO DE ANGELIS')
-  assertEquals(mov.user_id, 'user-1')
-  assertEquals(mov.movement_type, 'removed')
-  assertEquals(mov.reason, 'Conta encerrada pelo próprio profissional')
-  assertEquals(mov.source_assignment_id, 'a')
-})
-
-Deno.test('movimentosDeLiberacao: horário vira faixa quando há início e fim', () => {
-  const { futuros } = separarPlantoes([plantao('a', '2026-10-10')], '2026-10-06')
-  const [mov] = movimentosDeLiberacao(futuros, 'u', 'N', '2026-10-06T12:00:00Z')
-  assertEquals(mov.source_shift_time, '07:00:00-19:00:00')
-})
-
-Deno.test('movimentosDeLiberacao: sem hora de fim, guarda só o início', () => {
-  const { futuros } = separarPlantoes(
-    [plantao('a', '2026-10-10', { end_time: null })],
-    '2026-10-06',
-  )
-  const [mov] = movimentosDeLiberacao(futuros, 'u', 'N', '2026-10-06T12:00:00Z')
-  assertEquals(mov.source_shift_time, '07:00:00')
-})
-
-Deno.test('movimentosDeLiberacao: um registro por plantão liberado', () => {
-  const { futuros } = separarPlantoes(
-    [plantao('a', '2026-10-10'), plantao('b', '2026-11-01'), plantao('c', '2026-12-25')],
-    '2026-10-06',
-  )
-  const movs = movimentosDeLiberacao(futuros, 'u', 'N', '2026-10-06T12:00:00Z')
-  assertEquals(movs.length, 3)
-  assertEquals(
-    movs.map((m) => `${m.month}/${m.year}`),
-    ['10/2026', '11/2026', '12/2026'],
-  )
+  assertEquals(tituloParaAdmin(futuros), 'Conta encerrada — confira os plantões futuros')
 })

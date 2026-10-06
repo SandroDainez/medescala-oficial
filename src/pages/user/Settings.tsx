@@ -512,9 +512,9 @@ function isValidCurriculumType(file: File): boolean {
         </CardHeader>
         <CardContent className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Remove seu acesso e apaga seus dados pessoais. Plantões futuros voltam a ser vaga
-            aberta e a coordenação é avisada; plantões já realizados continuam registrados, com seu
-            nome, para conferência de pagamento.
+            Remove seu acesso e apaga seus dados pessoais. Não cancela plantões: a escala é do
+            serviço, e os plantões já marcados no seu nome continuam marcados. A coordenação é
+            avisada.
           </p>
           <Button variant="outline" size="sm" onClick={() => navigate("/excluir-conta")}>
             Encerrar minha conta

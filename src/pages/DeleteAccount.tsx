@@ -77,7 +77,7 @@ export default function DeleteAccount() {
     }
 
     setEncerrada({
-      futuros: Number(data?.plantoesFuturosLiberados ?? 0),
+      futuros: Number(data?.plantoesFuturosMantidos ?? 0),
       passados: Number(data?.plantoesPassadosMantidos ?? 0),
     });
     setEncerrando(false);
@@ -113,11 +113,12 @@ export default function DeleteAccount() {
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               <p>Seus dados pessoais — CPF, RG, endereço, dados bancários e PIX — foram apagados.</p>
               {encerrada.futuros > 0 && (
-                <p>
+                <p className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-foreground">
                   {encerrada.futuros === 1
-                    ? '1 plantão futuro voltou a ser vaga aberta'
-                    : `${encerrada.futuros} plantões futuros voltaram a ser vaga aberta`}{' '}
-                  e a coordenação foi avisada.
+                    ? 'Atenção: você continua escalado em 1 plantão que ainda vai acontecer.'
+                    : `Atenção: você continua escalado em ${encerrada.futuros} plantões que ainda vão acontecer.`}{' '}
+                  A coordenação foi avisada de que você saiu do aplicativo, mas a escala não mudou.
+                  Fale com ela se não for cumprir.
                 </p>
               )}
               {encerrada.passados > 0 && (
@@ -130,7 +131,7 @@ export default function DeleteAccount() {
                 </p>
               )}
               <p>
-                Para voltar a usar o MedEscala, a coordenação do serviço precisa cadastrar você
+                Para voltar a usar o MedEscala, a coordenação do serviço precisa liberar seu acesso
                 novamente.
               </p>
               <div className="pt-2">
@@ -171,7 +172,10 @@ export default function DeleteAccount() {
               <ul className="list-disc space-y-1 pl-6">
                 <li>seu acesso é removido na hora;</li>
                 <li>seus dados pessoais (CPF, RG, endereço, dados bancários, PIX) são apagados;</li>
-                <li>plantões futuros que estavam no seu nome voltam a ser vaga aberta;</li>
+                <li>
+                  a escala do serviço não muda — encerrar a conta é sair do aplicativo, não do
+                  serviço, e plantões já marcados no seu nome continuam marcados;
+                </li>
                 <li>
                   plantões já realizados continuam registrados, com seu nome, para conferência de
                   pagamento e auditoria.
@@ -248,26 +252,33 @@ export default function DeleteAccount() {
                 <div className="space-y-2 text-muted-foreground">
                   <p>
                     <strong className="text-foreground">Seu acesso termina na hora.</strong> O login
-                    é bloqueado e você sai das listas da escala
+                    é bloqueado e você deixa de receber avisos
                     {previa.servicos.length > 0 ? ` de ${previa.servicos.join(', ')}` : ''}.
                   </p>
                   <p>
                     <strong className="text-foreground">Seus dados pessoais são apagados:</strong>{' '}
                     CPF, RG, endereço, dados bancários, PIX e as notificações no seu aparelho.
                   </p>
+                  <p>
+                    <strong className="text-foreground">A escala do serviço não muda.</strong> Quem
+                    monta a escala é a coordenação; encerrar a conta aqui é sair do aplicativo, não
+                    do serviço.
+                  </p>
                 </div>
 
-                {previa.plantoesFuturos > 0 ? (
+                {previa.plantoesFuturos > 0 && (
                   <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
                     <p className="flex items-start gap-2 font-medium text-foreground">
                       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                      {previa.plantoesFuturos === 1
-                        ? 'Você tem 1 plantão futuro escalado'
-                        : `Você tem ${previa.plantoesFuturos} plantões futuros escalados`}
+                      Encerrar a conta não cancela seus plantões
                     </p>
                     <p className="mt-2 text-muted-foreground">
-                      {previa.plantoesFuturos === 1 ? 'Ele volta' : 'Eles voltam'} a ser vaga aberta
-                      e a coordenação é avisada na hora, para procurar quem cubra.
+                      {previa.plantoesFuturos === 1
+                        ? 'Você continua escalado em 1 plantão que ainda vai acontecer.'
+                        : `Você continua escalado em ${previa.plantoesFuturos} plantões que ainda vão acontecer.`}{' '}
+                      A escala é do serviço e não muda por aqui. A coordenação é avisada de que você
+                      saiu do aplicativo — <strong className="text-foreground">fale com ela</strong>{' '}
+                      se não for cumprir estes plantões, senão o setor fica sem ninguém no dia.
                     </p>
                     <ul className="mt-2 space-y-0.5 text-xs text-muted-foreground">
                       {previa.plantoesFuturosDatas.slice(0, 8).map((p, i) => (
@@ -280,11 +291,10 @@ export default function DeleteAccount() {
                         <li>e mais {previa.plantoesFuturosDatas.length - 8}...</li>
                       )}
                     </ul>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Depois de encerrar, você não enxerga mais esta lista no aplicativo.
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-muted-foreground">
-                    Você não tem plantões futuros escalados — nada fica descoberto.
-                  </p>
                 )}
 
                 {previa.plantoesPassados > 0 && (
