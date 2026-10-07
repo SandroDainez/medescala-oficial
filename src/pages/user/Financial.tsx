@@ -374,7 +374,7 @@ export default function UserFinancial() {
             <SelectTrigger className="flex-1 min-w-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-popover z-50">
+            <SelectContent className="bg-popover">
               {months.map(m => (
                 <SelectItem key={m.value} value={m.value.toString()}>{m.label}</SelectItem>
               ))}
@@ -384,7 +384,7 @@ export default function UserFinancial() {
             <SelectTrigger className="w-20 sm:w-24 shrink-0">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent className="bg-popover z-50">
+            <SelectContent className="bg-popover">
               {years.map(y => (
                 <SelectItem key={y} value={y.toString()}>{y}</SelectItem>
               ))}
