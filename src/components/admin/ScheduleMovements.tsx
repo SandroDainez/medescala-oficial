@@ -250,13 +250,13 @@ export default function ScheduleMovements({ currentMonth, currentYear, sectorId,
         isValid = !!rpcValid;
       }
 
-      // Final business-rule fallback for legacy local environments:
-      // default first-access password.
-      if (!isValid) {
-        if (password === '123456') {
-          isValid = true;
-        }
-      }
+      // Havia aqui uma liberação fixa: "123456" reabria a escala de qualquer
+      // serviço mesmo quando ele já tinha senha própria — e a checagem era no
+      // navegador, sem passar pelo servidor. Removida.
+      //
+      // O primeiro acesso continua funcionando: quando o serviço ainda não tem
+      // senha própria, a função do banco aceita a senha global, isValid vira
+      // true pelo servidor, e o fluxo logo abaixo exige a troca imediata.
 
       if (!isValid) {
         setReopenPasswordError('Senha incorreta');

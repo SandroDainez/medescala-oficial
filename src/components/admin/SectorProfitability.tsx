@@ -452,7 +452,11 @@ export default function SectorProfitability() {
         isValid = !!rpcValid;
       }
 
-      if (!isValid && password === '123456') isValid = true;
+      // Havia aqui uma liberação fixa: qualquer um que digitasse "123456" abria a
+      // rentabilidade de qualquer serviço, independente da senha configurada — e
+      // sem passar pelo servidor, porque a checagem era no próprio navegador.
+      // Isso anulava a senha do serviço. Quem valida agora é só o banco, pela
+      // função por serviço, que exige ser admin daquele serviço.
 
       if (!isValid) {
         setUnlockError('Senha incorreta');
