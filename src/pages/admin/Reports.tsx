@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { plantoes } from '@/lib/plural';
+import { contar, plantoes } from '@/lib/plural';
 import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 import { applyFixedMonthlyCharges, buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
 import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
@@ -1379,10 +1379,17 @@ export default function AdminReports() {
       // teria só cabeçalho e um total zerado, e isso é "nada para exportar".
       csvContent += `"TOTAL","${plantoes(shifts.length)}","${totalHoras.toFixed(1)}h","","","",""\n`;
     } else if (reportType === 'conflitos') {
-      csvContent = 'Data do Conflito,Plantonista,A\u00e7\u00e3o,Setor Removido,Hor\u00e1rio Removido,Setor Mantido,Hor\u00e1rio Mantido,Justificativa,Resolvido em,Resolvido por\n';
-      conflicts.forEach(c => {
+      // A tela mostra os ativos (ainda n\u00e3o resolvidos) junto com os resolvidos.
+      // A exporta\u00e7\u00e3o levava s\u00f3 os resolvidos: o admin via 11 na tela e recebia 1
+      // no arquivo. Agora leva os dois, com uma coluna dizendo qual \u00e9 qual \u2014
+      // os ativos s\u00e3o justamente os que exigem a\u00e7\u00e3o.
+      csvContent = 'Situa\u00e7\u00e3o,Data do Conflito,Plantonista,A\u00e7\u00e3o,Setor Removido,Hor\u00e1rio Removido,Setor Mantido,Hor\u00e1rio Mantido,Justificativa,Resolvido em,Resolvido por\n';
+      [...activeConflicts, ...conflicts].forEach(c => {
+        const ativo = c.resolution_type === 'pending';
+        // Conflito ativo n\u00e3o tem data de resolu\u00e7\u00e3o; parseISO('') lan\u00e7aria erro.
+        const resolvidoEm = c.resolved_at ? format(parseISO(c.resolved_at), 'dd/MM/yyyy HH:mm') : '';
         linhasDeDados++;
-        csvContent += `"${format(parseISO(c.conflict_date), 'dd/MM/yyyy')}","${c.plantonista_name}","${c.action_taken || c.resolution_type || ''}","${c.removed_sector_name || ''}","${c.removed_shift_time || ''}","${c.kept_sector_name || ''}","${c.kept_shift_time || ''}","${(c.justification || '').replace(/"/g, '""')}","${format(parseISO(c.resolved_at), 'dd/MM/yyyy HH:mm')}","${c.resolved_by_name || ''}"\n`;
+        csvContent += `"${ativo ? 'ATIVO \u2014 pendente' : 'Resolvido'}","${format(parseISO(c.conflict_date), 'dd/MM/yyyy')}","${c.plantonista_name}","${(c.action_taken || c.resolution_type || '').replace(/"/g, '""')}","${c.removed_sector_name || ''}","${c.removed_shift_time || ''}","${c.kept_sector_name || ''}","${c.kept_shift_time || ''}","${(c.justification || '').replace(/"/g, '""')}","${resolvidoEm}","${c.resolved_by_name || ''}"\n`;
       });
     } else if (reportType === 'movimentacoes') {
       csvContent = 'Tipo,Plantonista,Setor de Origem,Data de Origem,Hor\u00e1rio de Origem,Setor de Destino,Data de Destino,Hor\u00e1rio de Destino,Motivo,Feito em,Feito por\n';
@@ -1612,7 +1619,13 @@ export default function AdminReports() {
                 {reportType === 'plantoes' && `${shifts.length} plantões`}
                 {reportType === 'financeiro' && `${financialData.length} plantonistas`}
                 {reportType === 'movimentacoes' && `${movements.length} movimentos`}
-                {reportType === 'conflitos' && `${conflicts.length} resoluções`}
+                {/* A tabela lista ativos + resolvidos, mas o contador só somava os
+                    resolvidos: aparecia "0 resoluções" com uma linha na tela.
+                    Agora conta os dois e destaca os que ainda exigem ação. */}
+                {reportType === 'conflitos' &&
+                  (activeConflicts.length > 0
+                    ? `${contar(activeConflicts.length + conflicts.length, 'conflito', 'conflitos')} · ${activeConflicts.length} ainda sem resolver`
+                    : contar(conflicts.length, 'conflito resolvido', 'conflitos resolvidos'))}
                 {reportType === 'exclusoes' && `${deletionLogs.length} exclusão(ões) registrada(s)`}
               </Badge>
             </CardHeader>
