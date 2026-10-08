@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { montarTabelaDoRelatorio, tabelaParaCsv, tabelaParaHtmlDeImpressao } from '@/lib/relatorios/tabelaDoRelatorio';
 import { contar, plantoes } from '@/lib/plural';
 import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 import { applyFixedMonthlyCharges, buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
@@ -21,7 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { useAbsenceDocuments } from '@/hooks/useAbsenceDocuments';
-import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign, Upload, Eye, Loader2 } from 'lucide-react';
+import { FileSpreadsheet, Download, Plus, Calendar, UserMinus, MapPin, Check, X, Clock, FileText, Filter, Users, Building2, LogIn, LogOut, Trash2, AlertTriangle, ArrowRightLeft, DollarSign, Upload, Eye, Loader2, Printer } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
@@ -1339,119 +1340,85 @@ export default function AdminReports() {
     }
   }
 
-  function exportToXLS() {
-    let csvContent = '';
-    // Conta linhas de DADOS (não cabeçalhos), para distinguir "relatório sem
-    // exportação escrita" de "relatório sem registros no período".
-    let linhasDeDados = 0;
-    
-    if (reportType === 'afastamentos') {
-      csvContent = 'Plantonista,Tipo,Data Início,Data Fim,Motivo,Status,Observações\n';
-      absences.forEach(a => {
-        linhasDeDados++;
-        csvContent += `"${a.user_name}","${absenceTypeLabels[a.type] || a.type}","${format(parseISO(a.start_date), 'dd/MM/yyyy')}","${format(parseISO(a.end_date), 'dd/MM/yyyy')}","${a.reason || ''}","${absenceStatusLabels[a.status] || a.status}","${a.notes || ''}"\n`;
-      });
-    } else if (reportType === 'checkins') {
-      csvContent = 'Plantonista,Data,Horário,Setor,Check-in,Check-out,GPS Check-in,GPS Check-out\n';
-      checkins.forEach(c => {
-        const gpsIn = c.checkin_latitude ? `${c.checkin_latitude},${c.checkin_longitude}` : 'N/A';
-        const gpsOut = c.checkout_latitude ? `${c.checkout_latitude},${c.checkout_longitude}` : 'N/A';
-        linhasDeDados++;
-        csvContent += `"${c.user_name}","${format(parseISO(c.shift_date), 'dd/MM/yyyy')}","${c.start_time} - ${c.end_time}","${c.sector_name}","${c.checkin_at ? format(parseISO(c.checkin_at), 'HH:mm') : 'Não registrado'}","${c.checkout_at ? format(parseISO(c.checkout_at), 'HH:mm') : 'Não registrado'}","${gpsIn}","${gpsOut}"\n`;
-      });
-    } else if (reportType === 'plantoes') {
-      // Segue os filtros da tela (setor e plantonista), pois `shifts` já vem filtrado.
-      csvContent = 'Data,Horário,Setor,Título,Hospital,Valor Base,Plantonistas\n';
-      shifts.forEach(s => {
-        const horario = `${(s.start_time || '').slice(0, 5)} - ${(s.end_time || '').slice(0, 5)}`;
-        const valor = s.base_value !== null && s.base_value !== undefined ? Number(s.base_value).toFixed(2) : '';
-        linhasDeDados++;
-        csvContent += `"${format(parseISO(s.shift_date), 'dd/MM/yyyy')}","${horario}","${s.sector_name}","${s.title || ''}","${s.hospital || ''}","${valor}","${(s.assignees || []).join(' / ')}"\n`;
-      });
-      const totalHoras = shifts.reduce((soma, s) => {
-        const [hi, mi] = (s.start_time || '00:00').slice(0, 5).split(':').map(Number);
-        const [hf, mf] = (s.end_time || '00:00').slice(0, 5).split(':').map(Number);
-        let dur = (hf * 60 + mf) - (hi * 60 + mi);
-        if (dur <= 0) dur += 24 * 60;
-        return soma + dur / 60;
-      }, 0);
-      // A linha de TOTAL não conta como dado: sem plantões no período, o arquivo
-      // teria só cabeçalho e um total zerado, e isso é "nada para exportar".
-      csvContent += `"TOTAL","${plantoes(shifts.length)}","${totalHoras.toFixed(1)}h","","","",""\n`;
-    } else if (reportType === 'conflitos') {
-      // A tela mostra os ativos (ainda n\u00e3o resolvidos) junto com os resolvidos.
-      // A exporta\u00e7\u00e3o levava s\u00f3 os resolvidos: o admin via 11 na tela e recebia 1
-      // no arquivo. Agora leva os dois, com uma coluna dizendo qual \u00e9 qual \u2014
-      // os ativos s\u00e3o justamente os que exigem a\u00e7\u00e3o.
-      csvContent = 'Situa\u00e7\u00e3o,Data do Conflito,Plantonista,A\u00e7\u00e3o,Setor Removido,Hor\u00e1rio Removido,Setor Mantido,Hor\u00e1rio Mantido,Justificativa,Resolvido em,Resolvido por\n';
-      [...activeConflicts, ...conflicts].forEach(c => {
-        const ativo = c.resolution_type === 'pending';
-        // Conflito ativo n\u00e3o tem data de resolu\u00e7\u00e3o; parseISO('') lan\u00e7aria erro.
-        const resolvidoEm = c.resolved_at ? format(parseISO(c.resolved_at), 'dd/MM/yyyy HH:mm') : '';
-        linhasDeDados++;
-        csvContent += `"${ativo ? 'ATIVO \u2014 pendente' : 'Resolvido'}","${format(parseISO(c.conflict_date), 'dd/MM/yyyy')}","${c.plantonista_name}","${(c.action_taken || c.resolution_type || '').replace(/"/g, '""')}","${c.removed_sector_name || ''}","${c.removed_shift_time || ''}","${c.kept_sector_name || ''}","${c.kept_shift_time || ''}","${(c.justification || '').replace(/"/g, '""')}","${resolvidoEm}","${c.resolved_by_name || ''}"\n`;
-      });
-    } else if (reportType === 'movimentacoes') {
-      csvContent = 'Tipo,Plantonista,Setor de Origem,Data de Origem,Hor\u00e1rio de Origem,Setor de Destino,Data de Destino,Hor\u00e1rio de Destino,Motivo,Feito em,Feito por\n';
-      movements.forEach(m => {
-        linhasDeDados++;
-        csvContent += `"${m.movement_type}","${m.user_name}","${m.source_sector_name || ''}","${m.source_shift_date ? format(parseISO(m.source_shift_date), 'dd/MM/yyyy') : ''}","${m.source_shift_time || ''}","${m.destination_sector_name || ''}","${m.destination_shift_date ? format(parseISO(m.destination_shift_date), 'dd/MM/yyyy') : ''}","${m.destination_shift_time || ''}","${(m.reason || '').replace(/"/g, '""')}","${format(parseISO(m.performed_at), 'dd/MM/yyyy HH:mm')}","${m.performed_by_name || ''}"\n`;
-      });
-    } else if (reportType === 'exclusoes') {
-      csvContent = 'Feito em,Feito por,Abrang\u00eancia,Setor,De,At\u00e9,Plant\u00f5es Exclu\u00eddos,Atribui\u00e7\u00f5es Exclu\u00eddas\n';
-      deletionLogs.forEach(d => {
-        linhasDeDados++;
-        csvContent += `"${format(parseISO(d.performed_at), 'dd/MM/yyyy HH:mm')}","${d.performed_by_name || ''}","${d.scope || ''}","${d.sector_name || ''}","${d.date_from ? format(parseISO(d.date_from), 'dd/MM/yyyy') : ''}","${d.date_to ? format(parseISO(d.date_to), 'dd/MM/yyyy') : ''}","${d.shifts_deleted}","${d.assignments_deleted}"\n`;
-      });
-    } else if (reportType === 'financeiro') {
-      // Tr\u00eas vis\u00f5es no mesmo arquivo, separadas por uma linha em branco: \u00e9 como
-      // a tela mostra, e evita o admin ter que baixar tr\u00eas vezes.
-      csvContent = 'POR PLANTONISTA\n';
-      csvContent += 'Plantonista,Plant\u00f5es,Horas,Valor Total\n';
-      financialData.forEach(f => {
-        linhasDeDados++;
-        csvContent += `"${f.user_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
-      });
+  // Monta a tabela do relatório atual UMA vez. Arquivo e impressão saem daqui,
+  // para nunca divergirem do que a tela mostra.
+  function tabelaAtual() {
+    return montarTabelaDoRelatorio(reportType, {
+      absences,
+      checkins,
+      shifts,
+      conflitos: [...activeConflicts, ...conflicts],
+      movements,
+      deletionLogs,
+      financeiroPorPlantonista: financialData,
+      financeiroPorSetor: financialBySector,
+      financeiroPorPlantonistaSetor: financialByPlantonistaSector,
+      rotulosTipoAfastamento: absenceTypeLabels,
+      rotulosStatusAfastamento: absenceStatusLabels,
+    });
+  }
 
-      csvContent += '\nPOR SETOR\n';
-      csvContent += 'Setor,Plant\u00f5es,Horas,Valor Total\n';
-      financialBySector.forEach(f => {
-        linhasDeDados++;
-        csvContent += `"${f.sector_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
-      });
+  function periodoDoRelatorio() {
+    const de = startDate ? format(parseISO(startDate), 'dd/MM/yyyy') : '';
+    const ate = endDate ? format(parseISO(endDate), 'dd/MM/yyyy') : '';
+    return de && ate ? `${de} a ${ate}` : de || ate;
+  }
 
-      csvContent += '\nPOR PLANTONISTA E SETOR\n';
-      csvContent += 'Plantonista,Setor,Plant\u00f5es,Horas,Valor Total\n';
-      financialByPlantonistaSector.forEach(f => {
-        linhasDeDados++;
-        csvContent += `"${f.user_name}","${f.sector_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
-      });
-    }
-
-    // Trava: antes, tipo de relat\u00f3rio sem exporta\u00e7\u00e3o escrita gerava conte\u00fado
-    // vazio e o arquivo baixava assim mesmo \u2014 o admin abria e n\u00e3o havia nada,
-    // sem nenhum aviso. Quatro dos sete tipos estavam nessa situa\u00e7\u00e3o.
-    if (!csvContent.trim()) {
+  /** true se dá para prosseguir; senão já avisou o usuário. */
+  function relatorioTemConteudo(tabela: ReturnType<typeof tabelaAtual>) {
+    if (tabela.secoes.length === 0) {
       toast({
-        title: 'Exporta\u00e7\u00e3o indispon\u00edvel',
-        description: 'Este relat\u00f3rio ainda n\u00e3o tem exporta\u00e7\u00e3o. Avise o suporte.',
+        title: 'Relatório indisponível',
+        description: 'Este tipo de relatório ainda não pode ser exportado. Avise o suporte.',
         variant: 'destructive',
       });
-      return;
+      return false;
     }
-    if (linhasDeDados === 0) {
+    if (tabela.totalDeLinhas === 0) {
       toast({
         title: 'Nada para exportar',
-        description: 'O relat\u00f3rio n\u00e3o tem registros no per\u00edodo escolhido.',
+        description: 'O relatório não tem registros no período escolhido.',
       });
-      return;
+      return false;
     }
+    return true;
+  }
 
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  function exportToXLS() {
+    const tabela = tabelaAtual();
+    if (!relatorioTemConteudo(tabela)) return;
+
+    // BOM na frente para o Excel abrir a acentuação certa.
+    const blob = new Blob(['\ufeff' + tabelaParaCsv(tabela)], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = `relatorio_${reportType}_${format(new Date(), 'yyyy-MM-dd')}.csv`;
     link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function imprimirRelatorio() {
+    const tabela = tabelaAtual();
+    if (!relatorioTemConteudo(tabela)) return;
+
+    const html = tabelaParaHtmlDeImpressao(tabela, {
+      periodo: periodoDoRelatorio(),
+      emitidoEm: format(new Date(), 'dd/MM/yyyy HH:mm'),
+    });
+
+    const janela = window.open('', '_blank');
+    if (!janela) {
+      toast({
+        title: 'Não foi possível abrir a impressão',
+        description: 'O navegador bloqueou a janela. Libere os pop-ups deste site e tente de novo.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    janela.document.write(html);
+    janela.document.close();
+    janela.focus();
+    janela.print();
   }
 
   useEffect(() => {
@@ -1563,7 +1530,10 @@ export default function AdminReports() {
               />
             </div>
             
-            <div className="flex min-w-0 items-end gap-2">
+            {/* Os três botões ocupam duas colunas da grade: numa só, de 200px,
+                "Gerar", "XLS" e "Imprimir" não cabem lado a lado. Em tela
+                estreita a grade vira uma coluna e o span se ajusta sozinho. */}
+            <div className="flex min-w-0 items-end gap-2 [grid-column:span_2]">
               <Button onClick={generateReport} className="flex-1 min-w-0">
                 <FileText className="mr-2 h-4 w-4 shrink-0" />
                 Gerar
@@ -1571,6 +1541,10 @@ export default function AdminReports() {
               <Button variant="outline" className="shrink-0" onClick={exportToXLS}>
                 <Download className="mr-2 h-4 w-4 shrink-0" />
                 XLS
+              </Button>
+              <Button variant="outline" className="shrink-0" onClick={imprimirRelatorio}>
+                <Printer className="mr-2 h-4 w-4 shrink-0" />
+                Imprimir
               </Button>
             </div>
           </div>
