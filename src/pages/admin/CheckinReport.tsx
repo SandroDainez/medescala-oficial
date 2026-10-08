@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { entraNoRelatorio } from '@/lib/relatorioCheckin';
 import { format, startOfMonth, endOfMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
@@ -71,11 +72,14 @@ export default function CheckinReport() {
 
   const fetchSectors = useCallback(async () => {
     if (!currentTenantId) return;
+    // Só setores que usam check-in: oferecer no filtro um setor que não registra
+    // presença só leva a uma tela cheia de "Sem registro".
     const { data } = await supabase
       .from('sectors')
       .select('id, name, color')
       .eq('tenant_id', currentTenantId)
       .eq('active', true)
+      .eq('checkin_enabled', true)
       .order('name');
     if (data) setSectors(data);
   }, [currentTenantId]);
@@ -99,7 +103,7 @@ export default function CheckinReport() {
           shift_date,
           start_time,
           end_time,
-          sector:sectors(id, name, color, reference_latitude, reference_longitude)
+          sector:sectors(id, name, color, reference_latitude, reference_longitude, checkin_enabled)
         )
       `)
       .eq('tenant_id', currentTenantId)
@@ -128,6 +132,15 @@ export default function CheckinReport() {
 
     const mapped: CheckinRecord[] = (data || [])
       .filter(r => r.shift && r.shift.sector)
+      // Fora os plantões de setor que não usa check-in — a não ser que já tenham
+      // registro, para não apagar o histórico de um setor desligado depois.
+      .filter(r =>
+        entraNoRelatorio({
+          setorExigeCheckin: Boolean(r.shift.sector.checkin_enabled),
+          checkin_at: r.checkin_at,
+          checkout_at: r.checkout_at,
+        }),
+      )
       .filter(r => selectedSector === 'all' || r.shift.sector.id === selectedSector)
       .map(r => {
         const loc = locationMap.get(r.id);
