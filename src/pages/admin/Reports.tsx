@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { plantoes } from '@/lib/plural';
 import { chunk, fetchAllPages } from '@/lib/supabasePaging';
 import { applyFixedMonthlyCharges, buildFixedMonthlyCharges } from '@/lib/financial/fixedMonthly';
 import { fetchFixedMonthlyMembers } from '@/services/fixedMonthly';
@@ -1340,10 +1341,14 @@ export default function AdminReports() {
 
   function exportToXLS() {
     let csvContent = '';
+    // Conta linhas de DADOS (não cabeçalhos), para distinguir "relatório sem
+    // exportação escrita" de "relatório sem registros no período".
+    let linhasDeDados = 0;
     
     if (reportType === 'afastamentos') {
       csvContent = 'Plantonista,Tipo,Data Início,Data Fim,Motivo,Status,Observações\n';
       absences.forEach(a => {
+        linhasDeDados++;
         csvContent += `"${a.user_name}","${absenceTypeLabels[a.type] || a.type}","${format(parseISO(a.start_date), 'dd/MM/yyyy')}","${format(parseISO(a.end_date), 'dd/MM/yyyy')}","${a.reason || ''}","${absenceStatusLabels[a.status] || a.status}","${a.notes || ''}"\n`;
       });
     } else if (reportType === 'checkins') {
@@ -1351,6 +1356,7 @@ export default function AdminReports() {
       checkins.forEach(c => {
         const gpsIn = c.checkin_latitude ? `${c.checkin_latitude},${c.checkin_longitude}` : 'N/A';
         const gpsOut = c.checkout_latitude ? `${c.checkout_latitude},${c.checkout_longitude}` : 'N/A';
+        linhasDeDados++;
         csvContent += `"${c.user_name}","${format(parseISO(c.shift_date), 'dd/MM/yyyy')}","${c.start_time} - ${c.end_time}","${c.sector_name}","${c.checkin_at ? format(parseISO(c.checkin_at), 'HH:mm') : 'Não registrado'}","${c.checkout_at ? format(parseISO(c.checkout_at), 'HH:mm') : 'Não registrado'}","${gpsIn}","${gpsOut}"\n`;
       });
     } else if (reportType === 'plantoes') {
@@ -1359,6 +1365,7 @@ export default function AdminReports() {
       shifts.forEach(s => {
         const horario = `${(s.start_time || '').slice(0, 5)} - ${(s.end_time || '').slice(0, 5)}`;
         const valor = s.base_value !== null && s.base_value !== undefined ? Number(s.base_value).toFixed(2) : '';
+        linhasDeDados++;
         csvContent += `"${format(parseISO(s.shift_date), 'dd/MM/yyyy')}","${horario}","${s.sector_name}","${s.title || ''}","${s.hospital || ''}","${valor}","${(s.assignees || []).join(' / ')}"\n`;
       });
       const totalHoras = shifts.reduce((soma, s) => {
@@ -1368,7 +1375,69 @@ export default function AdminReports() {
         if (dur <= 0) dur += 24 * 60;
         return soma + dur / 60;
       }, 0);
-      csvContent += `"TOTAL","${shifts.length} plantão(ões)","${totalHoras.toFixed(1)}h","","","",""\n`;
+      // A linha de TOTAL não conta como dado: sem plantões no período, o arquivo
+      // teria só cabeçalho e um total zerado, e isso é "nada para exportar".
+      csvContent += `"TOTAL","${plantoes(shifts.length)}","${totalHoras.toFixed(1)}h","","","",""\n`;
+    } else if (reportType === 'conflitos') {
+      csvContent = 'Data do Conflito,Plantonista,A\u00e7\u00e3o,Setor Removido,Hor\u00e1rio Removido,Setor Mantido,Hor\u00e1rio Mantido,Justificativa,Resolvido em,Resolvido por\n';
+      conflicts.forEach(c => {
+        linhasDeDados++;
+        csvContent += `"${format(parseISO(c.conflict_date), 'dd/MM/yyyy')}","${c.plantonista_name}","${c.action_taken || c.resolution_type || ''}","${c.removed_sector_name || ''}","${c.removed_shift_time || ''}","${c.kept_sector_name || ''}","${c.kept_shift_time || ''}","${(c.justification || '').replace(/"/g, '""')}","${format(parseISO(c.resolved_at), 'dd/MM/yyyy HH:mm')}","${c.resolved_by_name || ''}"\n`;
+      });
+    } else if (reportType === 'movimentacoes') {
+      csvContent = 'Tipo,Plantonista,Setor de Origem,Data de Origem,Hor\u00e1rio de Origem,Setor de Destino,Data de Destino,Hor\u00e1rio de Destino,Motivo,Feito em,Feito por\n';
+      movements.forEach(m => {
+        linhasDeDados++;
+        csvContent += `"${m.movement_type}","${m.user_name}","${m.source_sector_name || ''}","${m.source_shift_date ? format(parseISO(m.source_shift_date), 'dd/MM/yyyy') : ''}","${m.source_shift_time || ''}","${m.destination_sector_name || ''}","${m.destination_shift_date ? format(parseISO(m.destination_shift_date), 'dd/MM/yyyy') : ''}","${m.destination_shift_time || ''}","${(m.reason || '').replace(/"/g, '""')}","${format(parseISO(m.performed_at), 'dd/MM/yyyy HH:mm')}","${m.performed_by_name || ''}"\n`;
+      });
+    } else if (reportType === 'exclusoes') {
+      csvContent = 'Feito em,Feito por,Abrang\u00eancia,Setor,De,At\u00e9,Plant\u00f5es Exclu\u00eddos,Atribui\u00e7\u00f5es Exclu\u00eddas\n';
+      deletionLogs.forEach(d => {
+        linhasDeDados++;
+        csvContent += `"${format(parseISO(d.performed_at), 'dd/MM/yyyy HH:mm')}","${d.performed_by_name || ''}","${d.scope || ''}","${d.sector_name || ''}","${d.date_from ? format(parseISO(d.date_from), 'dd/MM/yyyy') : ''}","${d.date_to ? format(parseISO(d.date_to), 'dd/MM/yyyy') : ''}","${d.shifts_deleted}","${d.assignments_deleted}"\n`;
+      });
+    } else if (reportType === 'financeiro') {
+      // Tr\u00eas vis\u00f5es no mesmo arquivo, separadas por uma linha em branco: \u00e9 como
+      // a tela mostra, e evita o admin ter que baixar tr\u00eas vezes.
+      csvContent = 'POR PLANTONISTA\n';
+      csvContent += 'Plantonista,Plant\u00f5es,Horas,Valor Total\n';
+      financialData.forEach(f => {
+        linhasDeDados++;
+        csvContent += `"${f.user_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
+      });
+
+      csvContent += '\nPOR SETOR\n';
+      csvContent += 'Setor,Plant\u00f5es,Horas,Valor Total\n';
+      financialBySector.forEach(f => {
+        linhasDeDados++;
+        csvContent += `"${f.sector_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
+      });
+
+      csvContent += '\nPOR PLANTONISTA E SETOR\n';
+      csvContent += 'Plantonista,Setor,Plant\u00f5es,Horas,Valor Total\n';
+      financialByPlantonistaSector.forEach(f => {
+        linhasDeDados++;
+        csvContent += `"${f.user_name}","${f.sector_name}","${f.total_shifts}","${f.total_hours.toFixed(1)}","${f.total_value.toFixed(2)}"\n`;
+      });
+    }
+
+    // Trava: antes, tipo de relat\u00f3rio sem exporta\u00e7\u00e3o escrita gerava conte\u00fado
+    // vazio e o arquivo baixava assim mesmo \u2014 o admin abria e n\u00e3o havia nada,
+    // sem nenhum aviso. Quatro dos sete tipos estavam nessa situa\u00e7\u00e3o.
+    if (!csvContent.trim()) {
+      toast({
+        title: 'Exporta\u00e7\u00e3o indispon\u00edvel',
+        description: 'Este relat\u00f3rio ainda n\u00e3o tem exporta\u00e7\u00e3o. Avise o suporte.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    if (linhasDeDados === 0) {
+      toast({
+        title: 'Nada para exportar',
+        description: 'O relat\u00f3rio n\u00e3o tem registros no per\u00edodo escolhido.',
+      });
+      return;
     }
 
     const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1406,7 +1475,12 @@ export default function AdminReports() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-5">
+          {/* Colunas que se ajustam, com largura mínima garantida. Era uma grade
+              de 5 colunas fixas, mas o número de campos muda conforme o tipo de
+              relatório: a célula dos botões sobrava estreita e o "Gerar" saía
+              cortado pela metade. Com minmax, cada campo tem pelo menos 200px —
+              o espaço que "Gerar" e "XLS" precisam lado a lado. */}
+          <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(200px,1fr))]">
             <div className="space-y-2">
               <Label>Tipo de Relatório</Label>
               <Select value={reportType} onValueChange={setReportType}>
@@ -1482,13 +1556,13 @@ export default function AdminReports() {
               />
             </div>
             
-            <div className="flex items-end gap-2">
-              <Button onClick={generateReport} className="flex-1">
-                <FileText className="mr-2 h-4 w-4" />
+            <div className="flex min-w-0 items-end gap-2">
+              <Button onClick={generateReport} className="flex-1 min-w-0">
+                <FileText className="mr-2 h-4 w-4 shrink-0" />
                 Gerar
               </Button>
-              <Button variant="outline" onClick={exportToXLS}>
-                <Download className="mr-2 h-4 w-4" />
+              <Button variant="outline" className="shrink-0" onClick={exportToXLS}>
+                <Download className="mr-2 h-4 w-4 shrink-0" />
                 XLS
               </Button>
             </div>
