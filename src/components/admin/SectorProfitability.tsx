@@ -1642,6 +1642,65 @@ export default function SectorProfitability() {
               </div>
             </div>
 
+            {/* O custo com plantonistas é calculado a partir da escala do mês e já
+                entra no lucro do setor, mas não aparecia aqui — a tela de
+                fechamento mostrava só receita e despesas lançadas à mão, como se
+                o maior custo do setor não existisse. Agora ele aparece, junto da
+                conta inteira, para o fechamento ser conferível na própria tela. */}
+            {accountingSector && (
+              <div className="rounded-lg border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Custo com plantonistas</p>
+                    <p className="text-xs text-muted-foreground">
+                      Vem da escala de {monthName} e já está no cálculo do lucro. Não precisa
+                      lançar como despesa — seria contado duas vezes.
+                    </p>
+                  </div>
+                  <p className="text-lg font-semibold tabular-nums text-foreground">
+                    {formatCurrency(getPlantonistaPayment(accountingSector.id))}
+                  </p>
+                </div>
+
+                {(() => {
+                  const receitas =
+                    (parseFloat(accountingForm.fixed_revenue) || 0) +
+                    (parseFloat(accountingForm.variable_revenue) || 0) +
+                    (parseFloat(accountingForm.other_revenue) || 0);
+                  const plantonistas = getPlantonistaPayment(accountingSector.id);
+                  const despesas = accountingItems.reduce((soma, item) => {
+                    if (!item.enabled) return soma;
+                    const entrada = parseFloat(item.value) || 0;
+                    return soma + (item.mode === 'percent' ? (receitas * entrada) / 100 : entrada);
+                  }, 0);
+                  const lucro = receitas - despesas - plantonistas;
+                  return (
+                    <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 border-t pt-3 text-sm">
+                      <span className="text-muted-foreground">
+                        Receitas <span className="font-medium text-foreground">{formatCurrency(receitas)}</span>
+                      </span>
+                      <span className="text-muted-foreground">
+                        Impostos e despesas{' '}
+                        <span className="font-medium text-foreground">{formatCurrency(despesas)}</span>
+                      </span>
+                      <span className="text-muted-foreground">
+                        Plantonistas{' '}
+                        <span className="font-medium text-foreground">{formatCurrency(plantonistas)}</span>
+                      </span>
+                      <span className="text-muted-foreground">
+                        Lucro{' '}
+                        <span
+                          className={`font-semibold ${lucro < 0 ? 'text-destructive' : 'text-emerald-500'}`}
+                        >
+                          {formatCurrency(lucro)}
+                        </span>
+                      </span>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="acc_notes">Observações (opcional)</Label>
               <Textarea
