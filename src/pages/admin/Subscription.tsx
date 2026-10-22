@@ -2,31 +2,49 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useTenant } from '@/hooks/useTenant';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Users, Crown, Zap } from 'lucide-react';
-import { toast } from 'sonner';
+import { Users, Crown, Zap, ArrowUpRight } from 'lucide-react';
+import { moeda } from '@/lib/relatorios/tabelaDoRelatorio';
+import {
+  descreverFaixa,
+  percentualDeUso,
+  proximaFaixa,
+  vagasRestantes,
+  type PlanoDisponivel,
+} from '@/lib/planoDoServico';
 
 interface SubscriptionInfo {
   plan_name: string;
   max_users: number;
   current_users: number;
+  price_monthly: number | null;
   billing_status: string;
   trial_ends_at: string | null;
 }
 
-interface Plan {
+interface MudancaDePlano {
   id: string;
-  name: string;
-  min_users: number;
-  max_users: number;
+  from_plan_name: string | null;
+  to_plan_name: string;
+  from_price_monthly: number | string | null;
+  to_price_monthly: number | string | null;
+  users_count: number;
+  origin: string;
+  changed_at: string;
 }
+
+const ORIGEM: Record<string, string> = {
+  automatico: 'Automática, pelo número de usuários',
+  super_admin: 'Ajuste do MedEscala',
+  admin_hospital: 'Solicitada pelo serviço',
+};
 
 export default function Subscription() {
   const { currentTenantId } = useTenant();
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
-  const [plans, setPlans] = useState<Plan[]>([]);
+  const [planos, setPlanos] = useState<PlanoDisponivel[]>([]);
+  const [mudancas, setMudancas] = useState<MudancaDePlano[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchSubscription = useCallback(async () => {
@@ -40,6 +58,9 @@ export default function Subscription() {
         plan_name: sub.plan_name,
         max_users: sub.max_users,
         current_users: sub.current_users,
+        price_monthly: sub.price_monthly === null || sub.price_monthly === undefined
+          ? null
+          : Number(sub.price_monthly),
         billing_status: sub.billing_status,
         trial_ends_at: sub.trial_ends_at
       });
@@ -47,53 +68,39 @@ export default function Subscription() {
     setLoading(false);
   }, [currentTenantId]);
 
-  const fetchPlans = useCallback(async () => {
+  const fetchPlanos = useCallback(async () => {
     const { data, error } = await supabase
       .from('plans')
-      .select('id, name, min_users, max_users')
+      .select('id, name, min_users, max_users, price_monthly')
       .eq('active', true)
       .order('max_users', { ascending: true });
 
     if (!error && data) {
-      setPlans(data);
+      setPlanos(data as PlanoDisponivel[]);
     }
   }, []);
+
+  const fetchMudancas = useCallback(async () => {
+    const { data, error } = await (supabase as any).rpc('list_tenant_plan_changes', {
+      _tenant_id: currentTenantId,
+    });
+
+    if (!error && data) {
+      setMudancas(data as MudancaDePlano[]);
+    }
+  }, [currentTenantId]);
 
   useEffect(() => {
     if (currentTenantId) {
       fetchSubscription();
-      fetchPlans();
+      fetchPlanos();
+      fetchMudancas();
     }
-  }, [currentTenantId, fetchSubscription, fetchPlans]);
-
-  const handleUpgrade = async (planId: string) => {
-    if (!currentTenantId) return;
-    const { error } = await (supabase as any).rpc('upgrade_tenant_plan', {
-      _tenant_id: currentTenantId,
-      _plan_id: planId,
-    });
-
-    if (error) {
-      toast.error(error.message || 'Erro ao atualizar plano');
-    } else {
-      toast.success('Plano atualizado com sucesso!');
-      fetchSubscription();
-    }
-  };
-
-  const usagePercentage = subscription 
-    ? (subscription.current_users / subscription.max_users) * 100 
-    : 0;
-
-  const formatPlanRange = (minUsers: number, maxUsers: number) => {
-    if (maxUsers >= 999999) return `${minUsers}+ usuários`;
-    if (minUsers === maxUsers) return `${maxUsers} usuários`;
-    return `${minUsers} - ${maxUsers} usuários`;
-  };
+  }, [currentTenantId, fetchSubscription, fetchPlanos, fetchMudancas]);
 
   const getPlanIcon = (name: string) => {
-    if (name.toLowerCase().includes('enterprise')) return <Crown className="h-6 w-6" />;
-    if (name.toLowerCase().includes('profissional')) return <Zap className="h-6 w-6" />;
+    if (name.toLowerCase().includes('201+')) return <Crown className="h-6 w-6" />;
+    if (name.toLowerCase().includes('teste')) return <Zap className="h-6 w-6" />;
     return <Users className="h-6 w-6" />;
   };
 
@@ -105,18 +112,21 @@ export default function Subscription() {
     );
   }
 
+  const usagePercentage = percentualDeUso(subscription?.current_users, subscription?.max_users);
+  const vagas = vagasRestantes(subscription?.current_users, subscription?.max_users);
+  const faixaSeguinte = proximaFaixa(planos, subscription?.max_users);
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Assinatura</h1>
-        <p className="text-muted-foreground">Gerencie seu plano e veja o uso atual</p>
+        <p className="text-muted-foreground">Seu plano e o uso atual do serviço</p>
       </div>
 
-      {/* Current Plan */}
       {subscription && (
         <Card className="border-primary/20 bg-primary/5">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 {getPlanIcon(subscription.plan_name)}
                 <div>
@@ -140,68 +150,93 @@ export default function Subscription() {
               <Progress value={usagePercentage} className="h-2" />
               {usagePercentage >= 80 && (
                 <p className="text-sm text-amber-600 mt-2">
-                  Você está usando {usagePercentage.toFixed(0)}% do limite de usuários
+                  {vagas > 0
+                    ? `Restam ${vagas} ${vagas === 1 ? 'vaga' : 'vagas'} nesta faixa.`
+                    : 'Esta faixa está no limite.'}
                 </p>
               )}
             </div>
 
-            <div className="p-4 rounded-lg bg-background border">
-              <p className="text-sm text-muted-foreground">Limite de usuários</p>
-              <p className="text-2xl font-bold">{subscription.max_users}</p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="p-4 rounded-lg bg-background border">
+                <p className="text-sm text-muted-foreground">Mensalidade</p>
+                <p className="text-2xl font-bold">
+                  {subscription.price_monthly === null ? '—' : moeda(subscription.price_monthly)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">por mês</p>
+              </div>
+              <div className="p-4 rounded-lg bg-background border">
+                <p className="text-sm text-muted-foreground">Limite de usuários</p>
+                <p className="text-2xl font-bold">{subscription.max_users}</p>
+                <p className="text-xs text-muted-foreground mt-1">nesta faixa</p>
+              </div>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Available Plans */}
-      <div>
-        <h2 className="text-lg font-semibold mb-4">Planos disponíveis</h2>
-        <div className="grid gap-4 md:grid-cols-3">
-          {plans.map((plan) => {
-            const isCurrentPlan = subscription?.plan_name === plan.name;
-            const canUpgrade = subscription && plan.max_users > (subscription.max_users || 0);
-            
-            return (
-              <Card 
-                key={plan.id} 
-                className={isCurrentPlan ? 'border-primary ring-2 ring-primary/20' : ''}
-              >
-                <CardHeader>
-                  <div className="flex items-center gap-2">
-                    {getPlanIcon(plan.name)}
-                    <CardTitle className="text-lg">{plan.name}</CardTitle>
-                  </div>
-                  <CardDescription>
-                    {formatPlanRange(plan.min_users, plan.max_users)}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <span className="text-3xl font-bold">
-                      {plan.max_users >= 999999 ? `${plan.min_users}+` : plan.max_users}
-                    </span>
-                    <span className="text-muted-foreground ml-1">usuários</span>
-                  </div>
+      {/* O serviço não escolhe plano. Esta tela existe para ele não descobrir a
+          mudança de faixa pela fatura do mês seguinte. */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Como funciona o seu plano</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          <p>
+            O plano acompanha o número de usuários ativos do serviço. Não é preciso contratar
+            nada: ao cadastrar um usuário além do limite da faixa, o serviço passa
+            automaticamente para a faixa seguinte, e a mensalidade passa a ser a dela.
+          </p>
+          {faixaSeguinte && (
+            <div className="flex items-start gap-3 rounded-lg border bg-background p-4">
+              <ArrowUpRight className="h-5 w-5 mt-0.5 text-muted-foreground shrink-0" />
+              <div>
+                <p className="font-medium text-foreground">
+                  Acima de {subscription?.max_users} usuários: {faixaSeguinte.name}
+                </p>
+                <p>
+                  {descreverFaixa(faixaSeguinte.min_users, faixaSeguinte.max_users)}
+                  {faixaSeguinte.price_monthly !== null && faixaSeguinte.price_monthly !== undefined
+                    ? ` — ${moeda(Number(faixaSeguinte.price_monthly))} por mês`
+                    : ''}
+                </p>
+              </div>
+            </div>
+          )}
+          <p>
+            Para reduzir a faixa, desative os usuários que não fazem mais parte do serviço e
+            fale com o MedEscala: o ajuste de mensalidade é feito por nós.
+          </p>
+        </CardContent>
+      </Card>
 
-                  {isCurrentPlan ? (
-                    <Button className="w-full" variant="outline" disabled>
-                      Plano atual
-                    </Button>
-                  ) : canUpgrade ? (
-                    <Button className="w-full" onClick={() => handleUpgrade(plan.id)}>
-                      Fazer upgrade
-                    </Button>
-                  ) : (
-                    <Button className="w-full" variant="outline" disabled>
-                      Plano menor
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
+      {mudancas.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Mudanças de plano</CardTitle>
+            <CardDescription>Quando a faixa mudou e por quê</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {mudancas.map((m) => (
+              <div key={m.id} className="rounded-lg border p-3 text-sm">
+                <div className="flex flex-wrap items-center gap-x-2 font-medium">
+                  <span>{m.from_plan_name ?? '—'}</span>
+                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
+                  <span>{m.to_plan_name}</span>
+                </div>
+                <p className="text-muted-foreground mt-1">
+                  {new Date(m.changed_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
+                  {' · '}
+                  {m.users_count} {m.users_count === 1 ? 'usuário' : 'usuários'}
+                  {' · '}
+                  {moeda(Number(m.from_price_monthly ?? 0))} para {moeda(Number(m.to_price_monthly ?? 0))}
+                </p>
+                <p className="text-muted-foreground text-xs mt-1">{ORIGEM[m.origin] ?? m.origin}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

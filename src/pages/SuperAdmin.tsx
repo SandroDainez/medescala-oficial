@@ -15,6 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFetch';
 import { gerarSenhaTemporaria } from '@/lib/senhaTemporaria';
+import { faixaParaUsuarios, type PlanoDisponivel } from '@/lib/planoDoServico';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -110,6 +111,23 @@ interface TenantBillingEvent {
   created_at: string;
 }
 
+interface TenantPlanChange {
+  id: string;
+  from_plan_name: string | null;
+  to_plan_name: string;
+  from_price_monthly: number | string | null;
+  to_price_monthly: number | string | null;
+  users_count: number;
+  origin: string;
+  changed_at: string;
+}
+
+const ORIGEM_DA_MUDANCA: Record<string, string> = {
+  automatico: 'Automática, pelo número de usuários',
+  super_admin: 'Ajuste manual do MedEscala',
+  admin_hospital: 'Solicitada pelo serviço',
+};
+
 interface TenantSuperAdminDetails {
   tenant_id: string;
   tenant_name: string;
@@ -188,6 +206,7 @@ export default function SuperAdmin() {
   const [createSlug, setCreateSlug] = useState('');
   const [createAdminEmail, setCreateAdminEmail] = useState('');
   const [credenciaisIniciais, setCredenciaisIniciais] = useState<{ email: string; senha: string } | null>(null);
+  const [tenantPlanChanges, setTenantPlanChanges] = useState<TenantPlanChange[]>([]);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [blockingTenantId, setBlockingTenantId] = useState<string | null>(null);
@@ -450,11 +469,12 @@ export default function SuperAdmin() {
 
   const fetchTenantDetails = useCallback(async (tenantId: string) => {
     setDetailsLoading(true);
-    const [detailsRes, contactsRes, billingRes, reopenStatusRes] = await Promise.all([
+    const [detailsRes, contactsRes, billingRes, reopenStatusRes, planChangesRes] = await Promise.all([
       supabase.rpc('get_tenant_super_admin_details', { _tenant_id: tenantId }),
       supabase.rpc('get_tenant_admin_contacts', { _tenant_id: tenantId }),
       supabase.rpc('list_tenant_billing_events', { _tenant_id: tenantId }),
       supabase.rpc('get_tenant_reopen_password_status', { _tenant_id: tenantId }),
+      (supabase as any).rpc('list_tenant_plan_changes', { _tenant_id: tenantId }),
     ]);
     setDetailsLoading(false);
 
@@ -476,6 +496,7 @@ export default function SuperAdmin() {
     setTenantAdminContacts((contactsRes.data || []) as TenantAdminContact[]);
     setTenantBillingEvents((billingRes.data || []) as TenantBillingEvent[]);
     setTenantReopenPasswordStatus((reopenStatusRes.data?.[0] as TenantReopenPasswordStatus) || null);
+    setTenantPlanChanges((planChangesRes.data || []) as TenantPlanChange[]);
   }, [toast]);
 
   const handleOpenDetails = useCallback(async (tenant: Tenant) => {
@@ -484,16 +505,27 @@ export default function SuperAdmin() {
     setSelectedTenant(tenant);
     setDetailsDialogOpen(true);
     resetBillingForm();
+    // A cobrança do mês é a do plano vigente. Digitar o valor à mão toda vez
+    // era o caminho mais curto para cobrar a faixa errada depois de uma
+    // migração automática.
+    const precoDoPlano = Number(matchedPlan?.price_monthly ?? 0);
+    if (precoDoPlano > 0) {
+      setBillingFormAmount(precoDoPlano.toFixed(2).replace('.', ','));
+    }
     setTenantReopenPasswordStatus(null);
     await fetchTenantDetails(tenant.id);
   }, [fetchTenantDetails, resetBillingForm, planOptions]);
 
-  async function handleSaveDetailsPlan() {
-    if (!selectedTenant?.id || !detailsPlanId) return;
+  // planoEscolhido existe para o botão "Ajustar à faixa de uso": o setState do
+  // seletor ainda não valeu quando a função roda, e sem isso ele salvaria o
+  // plano anterior.
+  async function handleSaveDetailsPlan(planoEscolhido?: string) {
+    const planId = planoEscolhido || detailsPlanId;
+    if (!selectedTenant?.id || !planId) return;
     setSavingDetailsPlan(true);
     const { error } = await (supabase as any).rpc('super_admin_set_tenant_plan', {
       _tenant_id: selectedTenant.id,
-      _plan_id: detailsPlanId,
+      _plan_id: planId,
     });
     setSavingDetailsPlan(false);
 
@@ -507,6 +539,12 @@ export default function SuperAdmin() {
     }
 
     toast({ title: 'Plano do hospital atualizado' });
+    // O cartão lê o plano de selectedTenant; sem atualizar aqui, o aviso de
+    // faixa divergente continuaria na tela depois do ajuste.
+    const planoSalvo = planOptions.find((p) => p.id === planId);
+    if (planoSalvo) {
+      setSelectedTenant((atual) => (atual ? { ...atual, plan_name: planoSalvo.name, max_users: planoSalvo.max_users } : atual));
+    }
     await fetchTenants();
     await fetchTenantDetails(selectedTenant.id);
   }
@@ -2041,12 +2079,85 @@ export default function SuperAdmin() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={handleSaveDetailsPlan} disabled={!detailsPlanId || savingDetailsPlan}>
+                    <Button onClick={() => handleSaveDetailsPlan()} disabled={!detailsPlanId || savingDetailsPlan}>
                       {savingDetailsPlan ? 'Salvando...' : 'Salvar plano'}
                     </Button>
                   </div>
+
+                  {/* O plano sobe sozinho quando o serviço cresce, mas nunca
+                      desce sozinho. Sem este aviso, um serviço que encolheu
+                      continua pagando a faixa antiga sem ninguém perceber. */}
+                  {(() => {
+                    const usuarios = selectedTenant?.current_users_count ?? 0;
+                    const faixaDoUso = faixaParaUsuarios(planOptions as PlanoDisponivel[], usuarios);
+                    if (!faixaDoUso) return null;
+
+                    const planoAtual = planOptions.find((p) => p.name === selectedTenant?.plan_name);
+                    const divergente = planoAtual ? planoAtual.id !== faixaDoUso.id : false;
+                    const valor = Number(faixaDoUso.price_monthly ?? 0);
+
+                    return (
+                      <div className={`rounded-lg border p-3 text-sm ${divergente ? 'border-amber-500/50 bg-amber-500/10' : ''}`}>
+                        <p>
+                          Faixa correspondente a {usuarios} {usuarios === 1 ? 'usuário ativo' : 'usuários ativos'}:{' '}
+                          <span className="font-semibold">{faixaDoUso.name}</span>
+                          {valor > 0 ? ` — R$ ${valor.toFixed(2).replace('.', ',')}/mês` : ' — sem cobrança'}
+                        </p>
+                        {divergente && (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="text-amber-700 dark:text-amber-400">
+                              O serviço está em outra faixa do que o uso indica.
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={savingDetailsPlan}
+                              onClick={() => {
+                                setDetailsPlanId(faixaDoUso.id);
+                                handleSaveDetailsPlan(faixaDoUso.id);
+                              }}
+                            >
+                              Ajustar à faixa de uso
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </CardContent>
               </Card>
+
+              {tenantPlanChanges.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Mudanças de plano</CardTitle>
+                    <CardDescription>
+                      Quando a faixa mudou, com quantos usuários e quanto passou a valer
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {tenantPlanChanges.map((mudanca) => (
+                      <div key={mudanca.id} className="rounded-lg border p-3 text-sm">
+                        <p className="font-medium">
+                          {mudanca.from_plan_name ?? '—'} → {mudanca.to_plan_name}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {format(new Date(mudanca.changed_at), 'dd/MM/yyyy HH:mm')}
+                          {' · '}
+                          {mudanca.users_count} {mudanca.users_count === 1 ? 'usuário' : 'usuários'}
+                          {' · R$ '}
+                          {Number(mudanca.from_price_monthly ?? 0).toFixed(2).replace('.', ',')}
+                          {' para R$ '}
+                          {Number(mudanca.to_price_monthly ?? 0).toFixed(2).replace('.', ',')}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {ORIGEM_DA_MUDANCA[mudanca.origin] ?? mudanca.origin}
+                        </p>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="grid gap-3 md:grid-cols-4">
                 <Card>
