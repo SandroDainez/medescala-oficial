@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  direcaoDaMudanca,
   faixaParaUsuarios,
   descreverFaixa,
   percentualDeUso,
@@ -103,6 +104,25 @@ describe('vagasRestantes', () => {
 
   it('nunca é negativo', () => {
     expect(vagasRestantes(25, 20)).toBe(0);
+  });
+});
+
+describe('direcaoDaMudanca', () => {
+  it('distingue os dois sentidos — a tela mostrava seta para cima nos dois', () => {
+    expect(direcaoDaMudanca(0, 800)).toBe('subiu');
+    expect(direcaoDaMudanca(700, 0)).toBe('reduziu');
+    expect(direcaoDaMudanca(700, 700)).toBe('igual');
+  });
+
+  it('trata preço ausente como zero, sem quebrar', () => {
+    expect(direcaoDaMudanca(null, 200)).toBe('subiu');
+    expect(direcaoDaMudanca(200, null)).toBe('reduziu');
+    expect(direcaoDaMudanca(null, null)).toBe('igual');
+  });
+
+  it('aceita o preço como texto, que é como o banco devolve numeric', () => {
+    expect(direcaoDaMudanca('700', '0')).toBe('reduziu');
+    expect(direcaoDaMudanca('0', '800')).toBe('subiu');
   });
 });
 

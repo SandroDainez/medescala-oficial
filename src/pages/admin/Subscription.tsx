@@ -8,11 +8,25 @@ import { Users, Crown, Zap, ArrowUpRight } from 'lucide-react';
 import { moeda } from '@/lib/relatorios/tabelaDoRelatorio';
 import {
   descreverFaixa,
+  direcaoDaMudanca,
   percentualDeUso,
   proximaFaixa,
   vagasRestantes,
   type PlanoDisponivel,
 } from '@/lib/planoDoServico';
+
+// Duas mudanças podem cair no mesmo dia; sem a hora elas ficam idênticas na
+// lista. Fuso fixo de Brasília: a data não pode mudar conforme o aparelho.
+function dataHoraDaMudanca(iso: string): string {
+  return new Date(iso).toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
 
 interface SubscriptionInfo {
   plan_name: string;
@@ -217,23 +231,28 @@ export default function Subscription() {
             <CardDescription>Quando a faixa mudou e por quê</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {mudancas.map((m) => (
-              <div key={m.id} className="rounded-lg border p-3 text-sm">
-                <div className="flex flex-wrap items-center gap-x-2 font-medium">
-                  <span>{m.from_plan_name ?? '—'}</span>
-                  <ArrowUpRight className="h-4 w-4 text-muted-foreground" />
-                  <span>{m.to_plan_name}</span>
+            {mudancas.map((m) => {
+              const direcao = direcaoDaMudanca(m.from_price_monthly, m.to_price_monthly);
+              return (
+                <div key={m.id} className="rounded-lg border p-3 text-sm space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={direcao === 'subiu' ? 'default' : 'secondary'}>
+                      {direcao === 'subiu' ? 'Mensalidade subiu' : direcao === 'reduziu' ? 'Mensalidade reduziu' : 'Mesma mensalidade'}
+                    </Badge>
+                    <span className="text-muted-foreground">{dataHoraDaMudanca(m.changed_at)}</span>
+                  </div>
+                  <p className="font-medium">
+                    De {m.from_plan_name ?? '—'} para {m.to_plan_name}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Mensalidade de {moeda(Number(m.from_price_monthly ?? 0))} para{' '}
+                    {moeda(Number(m.to_price_monthly ?? 0))}, com {m.users_count}{' '}
+                    {m.users_count === 1 ? 'usuário ativo' : 'usuários ativos'}
+                  </p>
+                  <p className="text-muted-foreground text-xs">{ORIGEM[m.origin] ?? m.origin}</p>
                 </div>
-                <p className="text-muted-foreground mt-1">
-                  {new Date(m.changed_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}
-                  {' · '}
-                  {m.users_count} {m.users_count === 1 ? 'usuário' : 'usuários'}
-                  {' · '}
-                  {moeda(Number(m.from_price_monthly ?? 0))} para {moeda(Number(m.to_price_monthly ?? 0))}
-                </p>
-                <p className="text-muted-foreground text-xs mt-1">{ORIGEM[m.origin] ?? m.origin}</p>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
       )}

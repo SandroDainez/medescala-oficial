@@ -63,6 +63,21 @@ export function vagasRestantes(usuarios: number | null | undefined, limite: numb
   return Math.max(0, Number(limite ?? 0) - Number(usuarios ?? 0));
 }
 
+/**
+ * Para onde a mudança foi, em dinheiro. A tela precisa disso porque mostrar a
+ * mesma seta nos dois sentidos afirma "subiu" até quando o plano caiu.
+ */
+export function direcaoDaMudanca(
+  precoAnterior: number | string | null | undefined,
+  precoNovo: number | string | null | undefined,
+): 'subiu' | 'reduziu' | 'igual' {
+  const antes = Number(precoAnterior ?? 0);
+  const depois = Number(precoNovo ?? 0);
+  if (depois > antes) return 'subiu';
+  if (depois < antes) return 'reduziu';
+  return 'igual';
+}
+
 export function descreverFaixa(minUsers: number, maxUsers: number): string {
   if (maxUsers >= 999999) return `${minUsers}+ usuários`;
   if (minUsers === maxUsers) return `${maxUsers} usuários`;

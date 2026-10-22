@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFetch';
 import { gerarSenhaTemporaria } from '@/lib/senhaTemporaria';
-import { faixaParaUsuarios, type PlanoDisponivel } from '@/lib/planoDoServico';
+import { direcaoDaMudanca, faixaParaUsuarios, type PlanoDisponivel } from '@/lib/planoDoServico';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -2136,25 +2136,37 @@ export default function SuperAdmin() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-2">
-                    {tenantPlanChanges.map((mudanca) => (
-                      <div key={mudanca.id} className="rounded-lg border p-3 text-sm">
-                        <p className="font-medium">
-                          {mudanca.from_plan_name ?? '—'} → {mudanca.to_plan_name}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {format(new Date(mudanca.changed_at), 'dd/MM/yyyy HH:mm')}
-                          {' · '}
-                          {mudanca.users_count} {mudanca.users_count === 1 ? 'usuário' : 'usuários'}
-                          {' · R$ '}
-                          {Number(mudanca.from_price_monthly ?? 0).toFixed(2).replace('.', ',')}
-                          {' para R$ '}
-                          {Number(mudanca.to_price_monthly ?? 0).toFixed(2).replace('.', ',')}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {ORIGEM_DA_MUDANCA[mudanca.origin] ?? mudanca.origin}
-                        </p>
-                      </div>
-                    ))}
+                    {tenantPlanChanges.map((mudanca) => {
+                      const direcao = direcaoDaMudanca(mudanca.from_price_monthly, mudanca.to_price_monthly);
+                      return (
+                        <div key={mudanca.id} className="rounded-lg border p-3 text-sm space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={direcao === 'subiu' ? 'default' : 'secondary'}>
+                              {direcao === 'subiu'
+                                ? 'Mensalidade subiu'
+                                : direcao === 'reduziu'
+                                  ? 'Mensalidade reduziu'
+                                  : 'Mesma mensalidade'}
+                            </Badge>
+                            <span className="text-muted-foreground">
+                              {format(new Date(mudanca.changed_at), 'dd/MM/yyyy HH:mm')}
+                            </span>
+                          </div>
+                          <p className="font-medium">
+                            De {mudanca.from_plan_name ?? '—'} para {mudanca.to_plan_name}
+                          </p>
+                          <p className="text-muted-foreground">
+                            Mensalidade de R$ {Number(mudanca.from_price_monthly ?? 0).toFixed(2).replace('.', ',')}
+                            {' para R$ '}
+                            {Number(mudanca.to_price_monthly ?? 0).toFixed(2).replace('.', ',')}, com{' '}
+                            {mudanca.users_count} {mudanca.users_count === 1 ? 'usuário ativo' : 'usuários ativos'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {ORIGEM_DA_MUDANCA[mudanca.origin] ?? mudanca.origin}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </CardContent>
                 </Card>
               )}
