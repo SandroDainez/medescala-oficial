@@ -44,7 +44,10 @@ export function faixaParaUsuarios(
   const candidatos = planos
     .filter((p) => p.max_users >= alvo)
     .filter((p) => !(alvo > LIMITE_TESTE_GRATUITO && ehTesteGratuito(p)))
-    .sort((a, b) => a.max_users - b.max_users);
+    // O desempate por preço acompanha o do banco: dois planos podem ter o mesmo
+    // teto, e aí o mais barato nunca pode ser servido em silêncio no lugar do
+    // pago — o serviço mudaria de faixa e pararia de ser cobrado.
+    .sort((a, b) => a.max_users - b.max_users || Number(b.price_monthly ?? 0) - Number(a.price_monthly ?? 0));
 
   return candidatos[0] ?? null;
 }

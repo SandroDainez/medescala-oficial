@@ -69,6 +69,18 @@ describe('faixaParaUsuarios', () => {
   it('serviço sem nenhum usuário cabe na menor faixa, não em nenhuma', () => {
     expect(faixaParaUsuarios(PLANOS, 0)?.id).toBe('trial');
   });
+
+  it('com dois planos do mesmo teto, nunca serve o de graça no lugar do pago', () => {
+    // Era o risco dos planos antigos desativados: "Enterprise Plus" (até 200,
+    // R$ 0) empatava com "Plano 151-200" (R$ 1.200). Se alguém o reativasse,
+    // um serviço podia migrar de faixa e parar de ser cobrado em silêncio.
+    const comEmpate = [
+      ...PLANOS,
+      { id: 'brinde', name: 'Enterprise Plus', min_users: 1, max_users: 200, price_monthly: 0 },
+    ];
+    expect(faixaParaUsuarios(comEmpate, 180)?.id).toBe('p200');
+    expect(proximaFaixa(comEmpate, 150)?.id).toBe('p200');
+  });
 });
 
 describe('percentualDeUso', () => {
