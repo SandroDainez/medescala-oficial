@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { callEdgeFunction } from '@/lib/edgeFetch';
+import { gerarSenhaTemporaria } from '@/lib/senhaTemporaria';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { format, addMonths, endOfMonth } from 'date-fns';
@@ -186,6 +187,7 @@ export default function SuperAdmin() {
   const [createName, setCreateName] = useState('');
   const [createSlug, setCreateSlug] = useState('');
   const [createAdminEmail, setCreateAdminEmail] = useState('');
+  const [credenciaisIniciais, setCredenciaisIniciais] = useState<{ email: string; senha: string } | null>(null);
   const [creatingTenant, setCreatingTenant] = useState(false);
   const [deletingTenantId, setDeletingTenantId] = useState<string | null>(null);
   const [blockingTenantId, setBlockingTenantId] = useState<string | null>(null);
@@ -554,12 +556,13 @@ export default function SuperAdmin() {
 
     if (tenantId && adminEmail) {
       const adminName = deriveAdminNameFromEmail(adminEmail);
+      const senhaTemporaria = gerarSenhaTemporaria();
       const { ok: userOk, data: userData } = await callEdgeFunction('create-user', {
         tenantId,
         name: adminName,
         email: adminEmail,
         role: 'admin',
-        bootstrapPassword: '123456',
+        bootstrapPassword: senhaTemporaria,
         mustChangePassword: true,
       });
 
@@ -569,7 +572,9 @@ export default function SuperAdmin() {
           'Hospital criado, mas não foi possível provisionar o administrador inicial.';
       } else {
         if (userData.createdNow) {
-          adminProvisionMessage = `Administrador inicial criado. Primeiro login com ${adminEmail} e senha 123456, com troca obrigatória no primeiro acesso.`;
+          // A senha só existe aqui: ninguém consegue lê-la de volta depois.
+          setCredenciaisIniciais({ email: adminEmail, senha: senhaTemporaria });
+          adminProvisionMessage = `Administrador inicial criado. Anote a senha de primeiro acesso mostrada na tela.`;
         } else {
           adminProvisionMessage = 'Administrador inicial vinculado ao hospital. Como este email já existia, a senha atual do usuário foi preservada.';
         }
@@ -1941,8 +1946,10 @@ export default function SuperAdmin() {
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Se informar um email novo, o sistema criará o administrador inicial com senha temporária `123456`
-              e exigirá a troca no primeiro acesso. Se o email já existir, o vínculo será criado sem alterar a senha atual.
+              Se informar um email novo, o sistema criará o administrador inicial com uma senha temporária
+              gerada na hora — ela aparece na tela e você precisa anotá-la, porque não dá para consultá-la
+              depois. A troca é exigida no primeiro acesso. Se o email já existir, o vínculo será criado sem
+              alterar a senha atual.
             </p>
           </div>
           <DialogFooter>
@@ -1952,6 +1959,50 @@ export default function SuperAdmin() {
             <Button onClick={handleCreateTenant} disabled={creatingTenant}>
               {creatingTenant ? 'Criando...' : 'Criar hospital'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* A senha de primeiro acesso não fica guardada em lugar nenhum: se esta
+          caixa sumir sem ser lida, o único caminho é "Esqueceu sua senha?". */}
+      <Dialog open={Boolean(credenciaisIniciais)} onOpenChange={(open) => { if (!open) setCredenciaisIniciais(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Anote o primeiro acesso</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Entregue estes dados ao administrador do serviço. Esta senha não pode ser consultada depois,
+              e o app vai exigir a troca já no primeiro acesso.
+            </p>
+            <div className="space-y-1">
+              <Label>Email</Label>
+              <p className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-sm break-all">
+                {credenciaisIniciais?.email}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <Label>Senha temporária</Label>
+              <p className="rounded-md border bg-muted/40 px-3 py-2 font-mono text-lg tracking-wider break-all">
+                {credenciaisIniciais?.senha}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (credenciaisIniciais) {
+                  navigator.clipboard
+                    ?.writeText(`Email: ${credenciaisIniciais.email}\nSenha temporária: ${credenciaisIniciais.senha}`)
+                    .then(() => toast({ title: 'Copiado' }))
+                    .catch(() => toast({ title: 'Não foi possível copiar', variant: 'destructive' }));
+                }
+              }}
+            >
+              Copiar
+            </Button>
+            <Button onClick={() => setCredenciaisIniciais(null)}>Já anotei</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

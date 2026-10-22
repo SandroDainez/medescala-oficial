@@ -161,6 +161,22 @@ Deno.serve(async (req: Request): Promise<Response> => {
     });
 
     if (linkError) {
+      // E-mail digitado que não tem conta não é erro do app: subia 500 na tela
+      // ("Edge Function returned a non-2xx status code") e, de quebra, dizia a
+      // qualquer um quais e-mails estão cadastrados aqui. Mesmo silêncio do
+      // caminho de CPF logo acima.
+      const naoEncontrado =
+        (linkError as { code?: string }).code === "user_not_found" ||
+        (linkError as { status?: number }).status === 404;
+
+      if (naoEncontrado) {
+        console.log("User not found on generateLink, returning success anyway for security");
+        return new Response(JSON.stringify({ success: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json", ...corsHeaders },
+        });
+      }
+
       console.error("Error generating reset link:", linkError);
       throw new Error("Erro ao gerar link de recuperação");
     }
