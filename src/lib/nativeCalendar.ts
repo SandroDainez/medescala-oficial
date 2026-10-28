@@ -5,15 +5,11 @@
 
 import { Capacitor } from '@capacitor/core';
 import { supabase } from '@/integrations/supabase/client';
-
-// Types for calendar operations
-interface CalendarEventInput {
-  title: string;
-  location?: string;
-  notes?: string;
-  startDate: number; // Unix timestamp in ms
-  endDate: number;   // Unix timestamp in ms
-}
+import {
+  montarEventoDoPlantao,
+  permissaoConcedida,
+  type ResultadoDaSincronizacao,
+} from '@/lib/calendarioDoCelular';
 
 interface CalendarSyncEvent {
   id: string;
@@ -87,42 +83,17 @@ export async function requestCalendarPermissions(): Promise<boolean> {
 
   try {
     const Calendar = await getCalendarPlugin();
-    
-    // Request all permissions
-    const result = await Calendar.requestAllPermissions();
-    
-    // Check if we have calendar access (the result structure varies by platform)
-    return result && typeof result === 'object';
+
+    // requestAllPermissions está obsoleta e pede também acesso a Lembretes —
+    // escopo que o app não usa e cujo texto de uso (NSRemindersFullAccess...)
+    // nem existe no Info.plist, o que faz o iOS recusar o pedido na hora.
+    // Aqui só o calendário interessa, e é o acesso declarado no Info.plist.
+    const { result } = await Calendar.requestFullCalendarAccess();
+    return permissaoConcedida(result);
   } catch (error) {
     console.error('[NativeCalendar] Error requesting permissions:', error);
     return false;
   }
-}
-
-/**
- * Convert shift data to calendar event format
- */
-function shiftToCalendarEvent(shift: ShiftData): CalendarEventInput {
-  const startDateTime = new Date(`${shift.shift_date}T${shift.start_time}`);
-  const endDateTime = new Date(`${shift.shift_date}T${shift.end_time}`);
-  
-  if (endDateTime <= startDateTime) {
-    endDateTime.setDate(endDateTime.getDate() + 1);
-  }
-
-  return {
-    title: `🏥 ${shift.title}`,
-    location: [shift.hospital, shift.location].filter(Boolean).join(' - '),
-    notes: [
-      shift.sector_name ? `Setor: ${shift.sector_name}` : '',
-      shift.hospital ? `Hospital: ${shift.hospital}` : '',
-      shift.location || '',
-      '',
-      'Gerenciado pelo MedEscala'
-    ].filter(Boolean).join('\n'),
-    startDate: startDateTime.getTime(),
-    endDate: endDateTime.getTime(),
-  };
 }
 
 /**
@@ -147,8 +118,8 @@ export async function createCalendarEvent(
 
   try {
     const Calendar = await getCalendarPlugin();
-    const event = shiftToCalendarEvent(shift);
-    
+    const event = montarEventoDoPlantao(shift);
+
     // Create the event
     const result = await Calendar.createEvent(event);
     
@@ -210,9 +181,10 @@ export async function updateCalendarEvent(
       .eq('platform', platform)
       .maybeSingle();
 
+    // Devolver `true` sem olhar o resultado de createCalendarEvent fazia a
+    // atualização ser contada como feita mesmo quando nada foi gravado.
     if (error || !syncRecord) {
-      await createCalendarEvent(shift, userId, tenantId);
-      return true;
+      return Boolean(await createCalendarEvent(shift, userId, tenantId));
     }
 
     const newHash = generateShiftHash(shift);
@@ -223,9 +195,7 @@ export async function updateCalendarEvent(
 
     // Delete old event and create new one
     await deleteCalendarEvent(shift.id, userId);
-    await createCalendarEvent(shift, userId, tenantId);
-    
-    return true;
+    return Boolean(await createCalendarEvent(shift, userId, tenantId));
   } catch (error) {
     console.error('[NativeCalendar] Error updating event:', error);
     return false;
@@ -284,18 +254,22 @@ export async function syncAllShiftsToCalendar(
   shifts: ShiftData[],
   userId: string,
   tenantId: string
-): Promise<{ created: number; updated: number; deleted: number }> {
+): Promise<ResultadoDaSincronizacao> {
+  const vazio: ResultadoDaSincronizacao = { criados: 0, atualizados: 0, removidos: 0, falharam: 0 };
+
   if (!isNativePlatform()) {
-    return { created: 0, updated: 0, deleted: 0 };
+    return vazio;
   }
 
   const hasPermission = await requestCalendarPermissions();
   if (!hasPermission) {
-    return { created: 0, updated: 0, deleted: 0 };
+    // Sem permissão nada será gravado: contar os plantões como falha é o que
+    // permite a tela dizer isso, em vez de anunciar sucesso.
+    return { ...vazio, falharam: shifts.length };
   }
 
   const platform = getPlatform();
-  const stats = { created: 0, updated: 0, deleted: 0 };
+  const stats: ResultadoDaSincronizacao = { criados: 0, atualizados: 0, removidos: 0, falharam: 0 };
 
   try {
     const { data: existingRecords } = await supabase
@@ -314,21 +288,26 @@ export async function syncAllShiftsToCalendar(
     for (const [shiftId] of existingMap) {
       if (!currentShiftIds.has(shiftId)) {
         await deleteCalendarEvent(shiftId, userId);
-        stats.deleted++;
+        stats.removidos++;
       }
     }
 
+    // Os contadores antigos subiam mesmo quando a gravação falhava: as funções
+    // devolvem null/false em erro e ninguém olhava. O número exibido ao médico
+    // não tinha relação com o que entrou no calendário.
     for (const shift of shifts) {
       const existing = existingMap.get(shift.id);
-      
+
       if (!existing) {
-        await createCalendarEvent(shift, userId, tenantId);
-        stats.created++;
+        const eventoId = await createCalendarEvent(shift, userId, tenantId);
+        if (eventoId) stats.criados++;
+        else stats.falharam++;
       } else {
         const newHash = generateShiftHash(shift);
         if (existing.shift_hash !== newHash) {
-          await updateCalendarEvent(shift, userId, tenantId);
-          stats.updated++;
+          const ok = await updateCalendarEvent(shift, userId, tenantId);
+          if (ok) stats.atualizados++;
+          else stats.falharam++;
         }
       }
     }

@@ -15,6 +15,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { isNativePlatform, saveNotificationPreferences } from '@/lib/pushNotifications';
 import { requestCalendarPermissions, syncAllShiftsToCalendar } from '@/lib/nativeCalendar';
+import { mensagemDaSincronizacao } from '@/lib/calendarioDoCelular';
 import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
 
 /**
@@ -27,6 +28,7 @@ export function CalendarSyncInitialModal() {
   const [open, setOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [resumo, setResumo] = useState('');
   
   const isNative = isNativePlatform();
   const { hasShifts, exportToCalendar } = useWebCalendarSync();
@@ -86,40 +88,50 @@ export function CalendarSyncInitialModal() {
 
         if (error) throw error;
 
-        if (assignments && assignments.length > 0) {
-          const shiftsToSync = assignments.map((a: any) => ({
-            id: a.shifts.id,
-            title: a.shifts.title,
-            hospital: a.shifts.hospital,
-            shift_date: a.shifts.shift_date,
-            start_time: a.shifts.start_time,
-            end_time: a.shifts.end_time,
-            location: a.shifts.location,
-            sector_name: a.shifts.sectors?.name,
-          }));
+        const shiftsToSync = (assignments ?? []).map((a: any) => ({
+          id: a.shifts.id,
+          title: a.shifts.title,
+          hospital: a.shifts.hospital,
+          shift_date: a.shifts.shift_date,
+          start_time: a.shifts.start_time,
+          end_time: a.shifts.end_time,
+          location: a.shifts.location,
+          sector_name: a.shifts.sectors?.name,
+        }));
 
-          await syncAllShiftsToCalendar(shiftsToSync, user.id, currentTenantId);
+        const resultado = await syncAllShiftsToCalendar(shiftsToSync, user.id, currentTenantId);
+        const { ok, texto } = mensagemDaSincronizacao(resultado, shiftsToSync.length);
+
+        // O "sucesso" era fixo: aparecia mesmo com zero evento gravado.
+        if (!ok) {
+          toast.error(texto);
+          handleDismiss();
+          return;
         }
-        
-        // Salva preferência
+
         await saveNotificationPreferences(user.id, currentTenantId, { calendar_sync_enabled: true });
-        
+
         setSuccess(true);
-        toast.success('Plantões sincronizados com seu calendário!');
-        
+        setResumo(texto);
+        toast.success(texto);
+
       } else {
-        // Web: exporta arquivo ICS
+        // No navegador não existe acesso ao calendário do aparelho: o que dá
+        // para fazer é entregar um arquivo para o médico importar. A tela
+        // precisa dizer isso, senão ele espera os plantões aparecerem sozinhos.
         if (hasShifts) {
           const shared = await exportToCalendar();
-          if (shared) {
-            toast.success('Arquivo de calendário compartilhado!');
-          } else {
-            toast.success('Arquivo de calendário baixado!');
-          }
+          const texto = shared
+            ? 'Arquivo do calendário gerado. Escolha o app de calendário para importar os plantões.'
+            : 'Arquivo do calendário baixado. Abra-o para importar os plantões.';
+          setResumo(texto);
+          toast.success(texto);
         } else {
-          toast.info('Você ainda não tem plantões para sincronizar.');
+          const texto = 'Você ainda não tem plantões futuros para adicionar ao calendário.';
+          setResumo(texto);
+          toast.info(texto);
         }
-        
+
         setSuccess(true);
       }
       
@@ -151,19 +163,20 @@ export function CalendarSyncInitialModal() {
             {success ? (
               <>
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
-                Calendário sincronizado!
+                {isNative ? 'Calendário sincronizado!' : 'Arquivo pronto'}
               </>
             ) : (
               <>
                 <Calendar className="h-5 w-5 text-primary" />
-                Sincronizar com calendário?
+                {isNative ? 'Sincronizar com calendário?' : 'Levar seus plantões para o calendário?'}
               </>
             )}
           </DialogTitle>
           {!success && (
             <DialogDescription>
-              Deseja adicionar seus plantões ao calendário do celular? 
-              Assim você receberá lembretes automáticos e nunca perderá um plantão.
+              {isNative
+                ? 'Deseja adicionar seus plantões ao calendário do celular? Assim você receberá lembretes automáticos e nunca perderá um plantão.'
+                : 'Pelo navegador, o MedEscala gera um arquivo de calendário com seus plantões. Você o abre no app de calendário do aparelho para importá-los.'}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -176,9 +189,19 @@ export function CalendarSyncInitialModal() {
                 <div className="text-sm">
                   <p className="font-medium">Benefícios</p>
                   <ul className="text-muted-foreground mt-1 space-y-1">
-                    <li>• Lembretes automáticos do celular</li>
-                    <li>• Veja plantões junto com seus eventos</li>
-                    <li>• Atualizações automáticas quando a escala muda</li>
+                    {isNative ? (
+                      <>
+                        <li>• Lembretes 1 dia e 1 hora antes de cada plantão</li>
+                        <li>• Veja plantões junto com seus eventos</li>
+                        <li>• Atualizações automáticas quando a escala muda</li>
+                      </>
+                    ) : (
+                      <>
+                        <li>• Veja plantões junto com seus eventos</li>
+                        <li>• Funciona com Google Agenda, Apple Calendário e Outlook</li>
+                        <li>• Ao mudar a escala, gere o arquivo de novo nas configurações</li>
+                      </>
+                    )}
                   </ul>
                 </div>
               </div>
@@ -190,7 +213,7 @@ export function CalendarSyncInitialModal() {
                 disabled={syncing}
                 className="w-full"
               >
-                {syncing ? 'Sincronizando...' : 'Aceitar'}
+                {syncing ? 'Sincronizando...' : isNative ? 'Adicionar ao calendário' : 'Gerar arquivo'}
               </Button>
               <Button 
                 onClick={handleDismiss} 
@@ -208,7 +231,7 @@ export function CalendarSyncInitialModal() {
 
         {success && (
           <div className="py-4 text-center text-muted-foreground">
-            Seus plantões foram adicionados ao calendário.
+            {resumo}
           </div>
         )}
       </DialogContent>

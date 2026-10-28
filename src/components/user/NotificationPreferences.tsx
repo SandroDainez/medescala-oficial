@@ -18,8 +18,9 @@ import {
 } from '@/lib/pushNotifications';
 import {
   requestCalendarPermissions,
-  syncAllShiftsToCalendar
+  syncAllShiftsToCalendar,
 } from '@/lib/nativeCalendar';
+import { mensagemDaSincronizacao } from '@/lib/calendarioDoCelular';
 import {
   isNotificationSupported,
   getNotificationPermission,
@@ -229,9 +230,11 @@ export default function NotificationPreferences() {
         sector_name: a.shifts.sectors?.name,
       }));
 
-      const result = await syncAllShiftsToCalendar(shiftsToSync, user.id, currentTenantId);
-      
-      toast.success(`Calendário sincronizado! ${result.created} novos, ${result.updated} atualizados`);
+      const resultado = await syncAllShiftsToCalendar(shiftsToSync, user.id, currentTenantId);
+      const { ok, texto } = mensagemDaSincronizacao(resultado, shiftsToSync.length);
+
+      if (ok) toast.success(texto);
+      else toast.error(texto);
     } catch (error) {
       console.error('Error syncing calendar:', error);
       toast.error('Erro ao sincronizar calendário');
