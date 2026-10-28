@@ -120,10 +120,17 @@ export function CalendarSyncInitialModal() {
         // para fazer é entregar um arquivo para o médico importar. A tela
         // precisa dizer isso, senão ele espera os plantões aparecerem sozinhos.
         if (hasShifts) {
-          const shared = await exportToCalendar();
-          const texto = shared
-            ? 'Arquivo do calendário gerado. Escolha o app de calendário para importar os plantões.'
-            : 'Arquivo do calendário baixado. Abra-o para importar os plantões.';
+          const entrega = await exportToCalendar();
+
+          if (entrega === 'falhou') {
+            toast.error('Não foi possível entregar o arquivo. Tente de novo pelas configurações.');
+            handleDismiss();
+            return;
+          }
+
+          const texto = entrega === 'compartilhado'
+            ? 'Arquivo gerado. Escolha o app de calendário para importar os plantões.'
+            : 'Arquivo baixado. Abra-o para importar os plantões no seu calendário.';
           setResumo(texto);
           toast.success(texto);
         } else {

@@ -254,17 +254,26 @@ export default function NotificationPreferences() {
   }
 
   const handleWebCalendarExport = async () => {
-    const shared = await exportToCalendar();
-    if (shared) {
-      toast.success('Arquivo de calendário compartilhado!');
-    } else {
-      toast.success('Arquivo de calendário baixado!');
+    const entrega = await exportToCalendar();
+
+    if (entrega === 'falhou') {
+      toast.error('Não foi possível entregar o arquivo. Tente a opção de baixar.');
+      return;
     }
+
+    toast.success(
+      entrega === 'compartilhado'
+        ? 'Arquivo gerado. Escolha o app de calendário para importar os plantões.'
+        : 'Arquivo baixado. Abra-o para importar os plantões no seu calendário.',
+    );
   };
 
   const handleWebCalendarDownload = () => {
-    downloadCalendar();
-    toast.success('Arquivo baixado! Abra-o para adicionar ao seu calendário.');
+    if (!downloadCalendar()) {
+      toast.error('Não foi possível baixar o arquivo neste navegador.');
+      return;
+    }
+    toast.success('Arquivo baixado. Abra-o para importar os plantões no seu calendário.');
   };
 
   return (

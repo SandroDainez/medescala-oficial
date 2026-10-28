@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
-import { generateICSFile, shareICSFile, downloadICSFile } from '@/lib/calendarExport';
+import { generateICSFile, shareICSFile, downloadICSFile, type EntregaDoCalendario } from '@/lib/calendarExport';
 
 interface ShiftForCalendar {
   id: string;
@@ -19,8 +19,8 @@ interface UseWebCalendarSyncReturn {
   shifts: ShiftForCalendar[];
   loading: boolean;
   hasShifts: boolean;
-  exportToCalendar: () => Promise<boolean>;
-  downloadCalendar: () => void;
+  exportToCalendar: () => Promise<EntregaDoCalendario>;
+  downloadCalendar: () => boolean;
   lastExportedAt: Date | null;
   shiftsChanged: boolean;
   markAsExported: () => void;
@@ -161,30 +161,33 @@ export function useWebCalendarSync(): UseWebCalendarSyncReturn {
     };
   }, [user?.id, currentTenantId, fetchShifts]);
 
-  const exportToCalendar = useCallback(async (): Promise<boolean> => {
+  const exportToCalendar = useCallback(async (): Promise<EntregaDoCalendario> => {
+    if (shifts.length === 0) return 'falhou';
+
+    const icsContent = generateICSFile(shifts, 'Meus Plantões - MedEscala');
+    const entrega = await shareICSFile(icsContent, 'meus-plantoes.ics');
+
+    // Só conta como exportado o que chegou ao médico: marcar depois de uma
+    // entrega falha esconderia dele que a escala nova nunca foi para fora.
+    if (entrega !== 'falhou') {
+      setStoredExportInfo(currentHash);
+      setLastExportedAt(new Date());
+      setShiftsChanged(false);
+    }
+
+    return entrega;
+  }, [shifts, currentHash]);
+
+  const downloadCalendar = useCallback((): boolean => {
     if (shifts.length === 0) return false;
 
     const icsContent = generateICSFile(shifts, 'Meus Plantões - MedEscala');
-    const shared = await shareICSFile(icsContent, 'meus-plantoes.ics');
-    
-    // Mark as exported
+    if (!downloadICSFile(icsContent, 'meus-plantoes.ics')) return false;
+
     setStoredExportInfo(currentHash);
     setLastExportedAt(new Date());
     setShiftsChanged(false);
-
-    return shared;
-  }, [shifts, currentHash]);
-
-  const downloadCalendar = useCallback(() => {
-    if (shifts.length === 0) return;
-
-    const icsContent = generateICSFile(shifts, 'Meus Plantões - MedEscala');
-    downloadICSFile(icsContent, 'meus-plantoes.ics');
-    
-    // Mark as exported
-    setStoredExportInfo(currentHash);
-    setLastExportedAt(new Date());
-    setShiftsChanged(false);
+    return true;
   }, [shifts, currentHash]);
 
   const markAsExported = useCallback(() => {
