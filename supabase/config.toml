@@ -49,3 +49,8 @@ verify_jwt = false
 
 [functions.verify-professional]
 verify_jwt = false
+
+# O celular assina o calendário sem sessão e sem poder fazer login: quem
+# autoriza é o token aleatório da URL, conferido dentro da função.
+[functions.calendario-plantoes]
+verify_jwt = false

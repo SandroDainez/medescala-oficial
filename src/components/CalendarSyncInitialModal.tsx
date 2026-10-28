@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { isNativePlatform, saveNotificationPreferences } from '@/lib/pushNotifications';
 import { requestCalendarPermissions, syncAllShiftsToCalendar } from '@/lib/nativeCalendar';
 import { mensagemDaSincronizacao } from '@/lib/calendarioDoCelular';
+import { montarEnderecoDoCalendario } from '@/lib/assinaturaDoCalendario';
 import { useWebCalendarSync } from '@/hooks/useWebCalendarSync';
 
 /**
@@ -120,10 +121,25 @@ export function CalendarSyncInitialModal() {
         // para fazer é entregar um arquivo para o médico importar. A tela
         // precisa dizer isso, senão ele espera os plantões aparecerem sozinhos.
         if (hasShifts) {
+          // Assinar em vez de importar: o arquivo avulso vira cópia velha na
+          // semana seguinte, e no iPhone ele nem chega ao Calendário.
+          const { data: chave, error: chaveError } = await (supabase as any).rpc('obter_token_de_calendario');
+
+          if (!chaveError && chave) {
+            const { webcal } = montarEnderecoDoCalendario(import.meta.env.VITE_SUPABASE_URL as string, chave as string);
+            const texto = 'Confirme no seu aparelho para assinar o calendário. Depois disso a escala se atualiza sozinha.';
+            setResumo(texto);
+            setSuccess(true);
+            window.location.href = webcal;
+            setTimeout(() => setOpen(false), 2500);
+            return;
+          }
+
+          // Sem endereço, ainda resta entregar o arquivo.
           const entrega = await exportToCalendar();
 
           if (entrega === 'falhou') {
-            toast.error('Não foi possível entregar o arquivo. Tente de novo pelas configurações.');
+            toast.error('Não foi possível adicionar ao calendário. Tente pelas configurações.');
             handleDismiss();
             return;
           }
@@ -170,7 +186,7 @@ export function CalendarSyncInitialModal() {
             {success ? (
               <>
                 <CheckCircle2 className="h-5 w-5 text-green-500" />
-                {isNative ? 'Calendário sincronizado!' : 'Arquivo pronto'}
+                {isNative ? 'Calendário sincronizado!' : 'Quase lá'}
               </>
             ) : (
               <>
@@ -183,7 +199,7 @@ export function CalendarSyncInitialModal() {
             <DialogDescription>
               {isNative
                 ? 'Deseja adicionar seus plantões ao calendário do celular? Assim você receberá lembretes automáticos e nunca perderá um plantão.'
-                : 'Pelo navegador, o MedEscala gera um arquivo de calendário com seus plantões. Você o abre no app de calendário do aparelho para importá-los.'}
+                : 'Seus plantões passam a aparecer no calendário do aparelho e se atualizam sozinhos quando a escala muda.'}
             </DialogDescription>
           )}
         </DialogHeader>
@@ -205,8 +221,8 @@ export function CalendarSyncInitialModal() {
                     ) : (
                       <>
                         <li>• Veja plantões junto com seus eventos</li>
-                        <li>• Funciona com Google Agenda, Apple Calendário e Outlook</li>
-                        <li>• Ao mudar a escala, gere o arquivo de novo nas configurações</li>
+                        <li>• A escala muda, seu calendário muda junto</li>
+                        <li>• Lembretes 1 dia e 1 hora antes de cada plantão</li>
                       </>
                     )}
                   </ul>
@@ -220,7 +236,7 @@ export function CalendarSyncInitialModal() {
                 disabled={syncing}
                 className="w-full"
               >
-                {syncing ? 'Sincronizando...' : isNative ? 'Adicionar ao calendário' : 'Gerar arquivo'}
+                {syncing ? 'Sincronizando...' : 'Adicionar ao calendário'}
               </Button>
               <Button 
                 onClick={handleDismiss} 

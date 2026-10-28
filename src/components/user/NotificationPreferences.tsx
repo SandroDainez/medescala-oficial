@@ -21,6 +21,7 @@ import {
   syncAllShiftsToCalendar,
 } from '@/lib/nativeCalendar';
 import { mensagemDaSincronizacao } from '@/lib/calendarioDoCelular';
+import { AssinaturaDoCalendario } from '@/components/user/AssinaturaDoCalendario';
 import {
   isNotificationSupported,
   getNotificationPermission,
@@ -399,6 +400,12 @@ export default function NotificationPreferences() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* A assinatura resolve o que o arquivo não resolve: a escala muda
+              toda semana, e importar de novo a cada mudança ninguém faz. */}
+          <AssinaturaDoCalendario />
+
+          <Separator />
+
           {/* Native calendar sync */}
           {isNative && (
             <>
