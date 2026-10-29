@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ConviteEmMassa } from "@/components/admin/ConviteEmMassa";
 
 type RoleType = "admin" | "user" | "owner";
 type AccessRole = "admin" | "user";
@@ -318,6 +319,12 @@ export default function UserManagement() {
   const [importFileName, setImportFileName] = useState("");
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // Quem já entrou no app ao menos uma vez. Vem de auth.users, que o navegador
+  // não enxerga: sem isto, não há como saber quem ainda não começou a usar.
+  const [jaAcessaram, setJaAcessaram] = useState<Set<string>>(new Set());
+  const [ultimoAcesso, setUltimoAcesso] = useState<Map<string, string>>(new Map());
+  const [somenteSemAcesso, setSomenteSemAcesso] = useState(false);
+  const [conviteEmMassaAberto, setConviteEmMassaAberto] = useState(false);
   const [roleTab, setRoleTab] = useState<"all" | "admin" | "user">("all");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
@@ -494,6 +501,7 @@ export default function UserManagement() {
       const isAdminRole = user.role === "admin" || user.role === "owner";
       if (roleTab === "admin" && !isAdminRole) return false;
       if (roleTab === "user" && isAdminRole) return false;
+      if (somenteSemAcesso && jaAcessaram.has(user.user_id)) return false;
       if (!term) return true;
       // Busca sem acento: "mario" precisa achar "MÁRIO JUSTINIANO ARAUZ".
       return matchesSearch(
@@ -507,7 +515,12 @@ export default function UserManagement() {
       const nameB = (b.full_name ?? b.name ?? b.email ?? "").trim().toLowerCase();
       return nameA.localeCompare(nameB, "pt-BR");
     });
-  }, [users, searchTerm, roleTab]);
+  }, [users, searchTerm, roleTab, somenteSemAcesso, jaAcessaram]);
+
+  const semAcessoCount = useMemo(
+    () => users.filter((u) => u.active && !jaAcessaram.has(u.user_id)).length,
+    [users, jaAcessaram],
+  );
 
   const roleCounters = useMemo(() => {
     const admins = users.filter((u) => u.role === "admin" || u.role === "owner").length;
@@ -617,10 +630,39 @@ export default function UserManagement() {
     setLoading(false);
   }, [currentTenantId, notifyError]);
 
+  // Quem já entrou no app. Carregado à parte de propósito: se falhar, a lista
+  // de usuários continua funcionando — só a marcação de primeiro acesso some.
+  const carregarAcessos = useCallback(async () => {
+    if (!currentTenantId) return;
+
+    const { data, error } = await (supabase as any).rpc("listar_status_de_acesso", {
+      _tenant_id: currentTenantId,
+    });
+
+    if (error) {
+      console.error("[UserManagement] Erro ao ler status de acesso:", error);
+      return;
+    }
+
+    const acessaram = new Set<string>();
+    const datas = new Map<string, string>();
+
+    for (const linha of (data ?? []) as { user_id: string; nunca_acessou: boolean; ultimo_acesso: string | null }[]) {
+      if (!linha.nunca_acessou) {
+        acessaram.add(linha.user_id);
+        if (linha.ultimo_acesso) datas.set(linha.user_id, linha.ultimo_acesso);
+      }
+    }
+
+    setJaAcessaram(acessaram);
+    setUltimoAcesso(datas);
+  }, [currentTenantId]);
+
   useEffect(() => {
     if (!currentTenantId) return;
     loadData();
-  }, [currentTenantId, loadData]);
+    carregarAcessos();
+  }, [currentTenantId, loadData, carregarAcessos]);
 
   async function toggleActive(userId: string, current: boolean) {
     if (!currentTenantId) return;
@@ -1794,6 +1836,24 @@ export default function UserManagement() {
           >
             Usuários ({roleCounters.regularUsers})
           </Button>
+          <Button
+            type="button"
+            variant={somenteSemAcesso ? "default" : "outline"}
+            className="h-8 rounded-lg px-3 text-xs"
+            onClick={() => setSomenteSemAcesso((v) => !v)}
+          >
+            Nunca acessaram ({semAcessoCount})
+          </Button>
+          {canSendInvites && semAcessoCount > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 rounded-lg px-3 text-xs"
+              onClick={() => setConviteEmMassaAberto(true)}
+            >
+              Convidar em massa
+            </Button>
+          )}
         </div>
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
           <Input
@@ -1841,6 +1901,22 @@ export default function UserManagement() {
                     {u.full_name ?? u.name ?? "-"}
                   </h3>
                   <p className="truncate text-xs text-muted-foreground lg:text-sm">{u.email ?? "-"}</p>
+                  {/* Sem isto, só dava para saber quem nunca entrou no app
+                      perguntando a cada um. */}
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {jaAcessaram.has(u.user_id) ? (
+                      <>
+                        Último acesso:{" "}
+                        {ultimoAcesso.has(u.user_id)
+                          ? new Date(ultimoAcesso.get(u.user_id)!).toLocaleDateString("pt-BR", {
+                              timeZone: "America/Sao_Paulo",
+                            })
+                          : "já acessou"}
+                      </>
+                    ) : (
+                      <span className="font-medium text-amber-600">Nunca acessou o app</span>
+                    )}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span
@@ -3373,6 +3449,25 @@ export default function UserManagement() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConviteEmMassa
+        open={conviteEmMassaAberto}
+        onOpenChange={(aberto) => {
+          setConviteEmMassaAberto(aberto);
+          // Quem recebeu o convite ainda não acessou, mas o envio pode ter
+          // mudado alguma coisa no cadastro: recarregar mantém a contagem fiel.
+          if (!aberto) carregarAcessos();
+        }}
+        tenantId={currentTenantId}
+        tenantName={currentTenantName}
+        profissionais={users.map((u) => ({
+          user_id: u.user_id,
+          email: u.email,
+          full_name: u.full_name,
+          name: u.name,
+          active: u.active,
+        }))}
+      />
     </div>
   );
 }
