@@ -8,7 +8,7 @@ import { extractErrorMessage } from '@/lib/errorMessage';
 import { useTenant } from '@/hooks/useTenant';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
-import { ChevronLeft, ChevronRight, Moon, Sun, CalendarPlus, ArrowRightLeft, User, Send, X } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Moon, Sun, CalendarPlus, ArrowRightLeft, User, Send, X } from 'lucide-react';
 import { format, startOfMonth, endOfMonth, isSameDay, addMonths, subMonths, isToday, startOfWeek, addDays } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn, parseDateOnly } from '@/lib/utils';
@@ -101,6 +101,7 @@ export default function UserCalendar() {
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const [panelExpanded, setPanelExpanded] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>('todos');
+  const [conflitosAbertos, setConflitosAbertos] = useState(false);
 
   // Swap request states
   const [swapSheetOpen, setSwapSheetOpen] = useState(false);
@@ -1150,28 +1151,20 @@ export default function UserCalendar() {
           </span>
         </div>
         {myConflictsCount > 0 && (
-          <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300 space-y-2">
-            <div>
-              Você tem {myConflictsCount} plantão(ões) com conflito de horário no mesmo dia.
-            </div>
-            <div className="space-y-2">
-              {myConflictDetails.slice(0, 3).map((conflict, index) => (
-                <div key={`${conflict.date}-${index}`} className="rounded-md border border-amber-500/20 bg-background/70 p-2">
-                  <div className="font-semibold">
-                    {format(parseDateOnly(conflict.date), "dd/MM/yyyy", { locale: ptBR })}
-                  </div>
-                  {conflict.shifts.map((shift) => (
-                    <div key={shift.id} className="mt-1">
-                      {shift.sectorName} • {shift.start_time.slice(0, 5)}-{shift.end_time.slice(0, 5)} • {shift.hospital}
-                    </div>
-                  ))}
-                </div>
-              ))}
-              <div className="text-[11px] text-amber-900 dark:text-amber-200">
-                Esse aviso e apenas informativo. A regularizacao do conflito deve ser feita pelo administrativo.
-              </div>
-            </div>
-          </div>
+          // Uma linha só: o aviso não pode roubar a tela da escala. O detalhe
+          // mora no diálogo, para quem quiser conferir.
+          <TapSafeButton
+            moveThresholdPx={16}
+            minPressTime={70}
+            onClick={() => setConflitosAbertos(true)}
+            className="flex w-full items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-left text-xs text-amber-800 transition-colors hover:bg-amber-500/20 dark:text-amber-300"
+          >
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span className="flex-1 truncate">
+              {myConflictsCount} plantão(ões) com conflito de horário
+            </span>
+            <span className="shrink-0 font-medium underline">Ver</span>
+          </TapSafeButton>
         )}
 
         {/* Shifts List */}
@@ -1791,6 +1784,42 @@ export default function UserCalendar() {
               {submittingSwap ? 'Enviando...' : 'Enviar Solicitação'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={conflitosAbertos} onOpenChange={setConflitosAbertos}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Conflitos de horário
+            </DialogTitle>
+            <DialogDescription>
+              {myConflictsCount} plantão(ões) seus se sobrepõem no mesmo dia.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="max-h-[55vh] space-y-2 overflow-y-auto pr-1">
+            {myConflictDetails.map((conflict, index) => (
+              <div
+                key={`${conflict.date}-${index}`}
+                className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+              >
+                <div className="font-semibold">
+                  {format(parseDateOnly(conflict.date), "dd/MM/yyyy", { locale: ptBR })}
+                </div>
+                {conflict.shifts.map((shift) => (
+                  <div key={shift.id} className="mt-1 text-muted-foreground">
+                    {shift.sectorName} • {shift.start_time.slice(0, 5)}-{shift.end_time.slice(0, 5)} • {shift.hospital}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Esse aviso é apenas informativo. A regularização do conflito deve ser feita pelo administrativo.
+          </p>
         </DialogContent>
       </Dialog>
     </div>
