@@ -5,6 +5,7 @@ import { useSuperAdmin } from '@/hooks/useSuperAdmin';
 import { useAdminPendingCounts } from '@/hooks/useAdminPendingCounts';
 import { TenantSelector } from '@/components/TenantSelector';
 import { TrialBanner } from '@/components/TrialBanner';
+import { ConvitesDeServico } from '@/components/user/ConvitesDeServico';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -178,6 +179,7 @@ export function AdminLayout() {
 
   return (
     <div className="min-h-[100dvh] bg-background flex flex-col overflow-x-hidden w-full">
+      <ConvitesDeServico />
       {/* Header - Fixed with safe-area support */}
       <header className="fixed top-0 left-0 right-0 z-[100] border-b border-border/70 bg-card/90 backdrop-blur-md shadow-sm flex flex-col pt-safe dark:bg-slate-800/85">
         {/* Trial Banner */}

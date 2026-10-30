@@ -191,11 +191,46 @@ Deno.serve(async (req) => {
             .neq("tenant_id", tenantId);
           const alreadyAccessed = Boolean((existingAuthUser as { last_sign_in_at?: string | null }).last_sign_in_at);
           if (targetSuperAdmin || (otherTenantMemberships ?? 0) > 0 || alreadyAccessed) {
+            // A conta é de outra pessoa: o vínculo não pode ser ato do admin.
+            // Vira convite, e quem decide é o dono da conta, autenticado.
+            const { data: convitePendente } = await admin
+              .from("tenant_join_requests")
+              .select("id")
+              .eq("tenant_id", tenantId)
+              .eq("user_id", existingAuthUser.id)
+              .eq("status", "pendente")
+              .maybeSingle();
+
+            let conviteId = (convitePendente as { id?: string } | null)?.id ?? null;
+
+            if (!conviteId) {
+              const { data: conviteCriado, error: conviteError } = await admin
+                .from("tenant_join_requests")
+                .insert({
+                  tenant_id: tenantId,
+                  user_id: existingAuthUser.id,
+                  email,
+                  nome_sugerido: name,
+                  role,
+                  created_by: requester.id,
+                })
+                .select("id")
+                .maybeSingle();
+
+              if (conviteError) {
+                return json({ error: `Erro ao registrar o convite: ${conviteError.message}` }, 400);
+              }
+
+              conviteId = (conviteCriado as { id?: string } | null)?.id ?? null;
+            }
+
             return json({
-              error:
-                "Este e-mail já tem cadastro no MedEscala (em outro serviço ou já acessado). Por segurança, o vínculo a este serviço precisa ser feito pelo suporte do MedEscala.",
-              code: "EMAIL_ALREADY_REGISTERED",
-            }, 409);
+              ok: true,
+              pendingConsent: true,
+              alreadyPending: Boolean((convitePendente as { id?: string } | null)?.id),
+              conviteId,
+              code: "CONSENT_PENDING",
+            });
           }
         }
       }

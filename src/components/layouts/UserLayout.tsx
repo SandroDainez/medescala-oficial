@@ -7,6 +7,7 @@ import { TrialBanner } from '@/components/TrialBanner';
 import { ThemeToggleSimple } from '@/components/ThemeToggle';
 import { CalendarSyncPrompt } from '@/components/CalendarSyncPrompt';
 import { CalendarSyncInitialModal } from '@/components/CalendarSyncInitialModal';
+import { ConvitesDeServico } from '@/components/user/ConvitesDeServico';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -111,6 +112,7 @@ export function UserLayout() {
 
   return (
     <div className="min-h-[100dvh] w-full overflow-x-hidden bg-background">
+      <ConvitesDeServico />
       <CalendarSyncInitialModal />
       <CalendarSyncPrompt />
 

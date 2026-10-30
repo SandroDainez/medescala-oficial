@@ -24,6 +24,13 @@ type RoleType = "admin" | "user" | "owner";
 type AccessRole = "admin" | "user";
 type ProfileTypeOption = "admin" | "plantonista" | "estudante" | "medico_estrangeiro" | "outro";
 type RqeDetail = { rqe: string; especialidade: string };
+type ConvitePendente = {
+  id: string;
+  email: string;
+  nome_sugerido: string | null;
+  role: RoleType;
+  criado_em: string;
+};
 type UserDocument = {
   id: string;
   kind: "diploma" | "crm" | "rqe" | "certificado" | "curriculo" | "outro";
@@ -322,6 +329,7 @@ export default function UserManagement() {
   // Quem já entrou no app ao menos uma vez. Vem de auth.users, que o navegador
   // não enxerga: sem isto, não há como saber quem ainda não começou a usar.
   const [jaAcessaram, setJaAcessaram] = useState<Set<string>>(new Set());
+  const [convitesPendentes, setConvitesPendentes] = useState<ConvitePendente[]>([]);
   const [ultimoAcesso, setUltimoAcesso] = useState<Map<string, string>>(new Map());
   const [somenteSemAcesso, setSomenteSemAcesso] = useState(false);
   const [conviteEmMassaAberto, setConviteEmMassaAberto] = useState(false);
@@ -658,11 +666,43 @@ export default function UserManagement() {
     setUltimoAcesso(datas);
   }, [currentTenantId]);
 
+  // Quem já tem conta no MedEscala e foi convidado para este serviço: ainda
+  // não é membro, então não aparece na lista de usuários.
+  const carregarConvitesPendentes = useCallback(async () => {
+    if (!currentTenantId) return;
+
+    const { data, error } = await (supabase as any).rpc("listar_convites_do_servico", {
+      _tenant_id: currentTenantId,
+    });
+
+    if (error) {
+      console.error("[UserManagement] Erro ao ler convites pendentes:", error);
+      return;
+    }
+
+    setConvitesPendentes((data ?? []) as ConvitePendente[]);
+  }, [currentTenantId]);
+
+  async function cancelarConvite(conviteId: string) {
+    const { error } = await (supabase as any).rpc("cancelar_convite_de_servico", {
+      _convite_id: conviteId,
+    });
+
+    if (error) {
+      notifyError("cancelar convite", error, "Tente novamente.");
+      return;
+    }
+
+    setConvitesPendentes((atual) => atual.filter((c) => c.id !== conviteId));
+    notifySuccess("Convite cancelado", "A pessoa não verá mais esse pedido.");
+  }
+
   useEffect(() => {
     if (!currentTenantId) return;
     loadData();
     carregarAcessos();
-  }, [currentTenantId, loadData, carregarAcessos]);
+    carregarConvitesPendentes();
+  }, [currentTenantId, loadData, carregarAcessos, carregarConvitesPendentes]);
 
   async function toggleActive(userId: string, current: boolean) {
     if (!currentTenantId) return;
@@ -1015,6 +1055,23 @@ export default function UserManagement() {
       phone: createForm.phone.trim(),
       role: createForm.accessRole,
     });
+
+    if (createOk && data?.pendingConsent) {
+      // A conta já existe e é de outra pessoa: nada é gravado até ela aceitar.
+      // Os dados do formulário ficam de fora de propósito — o perfil é dela.
+      notifySuccess(
+        data.alreadyPending ? "Convite já estava pendente" : "Convite enviado",
+        `${name} já tem conta no MedEscala. O vínculo com ${currentTenantName || "este serviço"} aparece para ele(a) ao abrir o app, e vale quando aceitar.`,
+      );
+      setCreateForm(EMPTY_CREATE_FORM);
+      setCreateAvatarFile(null);
+      setCreateCurriculumFile(null);
+      setCreateDocumentFiles([]);
+      setCreateOpen(false);
+      setCreating(false);
+      await carregarConvitesPendentes();
+      return;
+    }
 
     if (!createOk || !data?.ok || !data?.userId) {
       notifyError("adicionar usuário", (data?.error as string | undefined) || "Não foi possível adicionar o usuário.", "Verifique os dados e tente novamente.");
@@ -1701,6 +1758,7 @@ export default function UserManagement() {
     let created = 0;
     let skipped = 0;
     let failed = 0;
+    let convitesAguardando = 0;
 
     for (const item of importRows) {
       if (existingEmails.has(item.email)) {
@@ -1721,6 +1779,19 @@ export default function UserManagement() {
         phone: item.telefone,
         role: "user",
       });
+
+      if (createOk && data?.pendingConsent) {
+        // Não é falha: a pessoa já tem conta e precisa aceitar o vínculo.
+        convitesAguardando += 1;
+        runtimeIssues.push({
+          line: item.line,
+          nome: item.nome,
+          email: item.email,
+          error: "Já tem conta no MedEscala. Convite enviado — entra na escala quando aceitar.",
+        });
+        existingEmails.add(item.email);
+        continue;
+      }
 
       if (!createOk || !data?.ok || !data?.userId) {
         failed += 1;
@@ -1769,7 +1840,14 @@ export default function UserManagement() {
     setImportSummary({ created, skipped, failed });
     setImporting(false);
 
-    notifyInfo("Importação concluída", `Criados: ${created} | Ignorados: ${skipped} | Falhas: ${failed}`);
+    if (convitesAguardando > 0) await carregarConvitesPendentes();
+
+    notifyInfo(
+      "Importação concluída",
+      `Criados: ${created} | Ignorados: ${skipped} | Falhas: ${failed}${
+        convitesAguardando > 0 ? ` | Convites aguardando aceite: ${convitesAguardando}` : ""
+      }`,
+    );
 
     await loadData();
   }
@@ -1855,6 +1933,39 @@ export default function UserManagement() {
             </Button>
           )}
         </div>
+
+        {convitesPendentes.length > 0 && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+            <p className="text-sm font-medium">
+              Aguardando aceite ({convitesPendentes.length})
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Já têm conta no MedEscala. Entram na escala quando aceitarem o convite no app.
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {convitesPendentes.map((convite) => (
+                <div key={convite.id} className="flex items-center justify-between gap-2 text-sm">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{convite.nome_sugerido || convite.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {convite.email} • convidado em{" "}
+                      {new Date(convite.criado_em).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-8 shrink-0 px-2 text-xs"
+                    onClick={() => cancelarConvite(convite.id)}
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
           <Input
             value={searchTerm}
