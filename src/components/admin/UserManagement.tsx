@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ConviteEmMassa } from "@/components/admin/ConviteEmMassa";
+import { TrazerEquipe } from "@/components/admin/TrazerEquipe";
 
 type RoleType = "admin" | "user" | "owner";
 type AccessRole = "admin" | "user";
@@ -333,6 +334,7 @@ export default function UserManagement() {
   const [ultimoAcesso, setUltimoAcesso] = useState<Map<string, string>>(new Map());
   const [somenteSemAcesso, setSomenteSemAcesso] = useState(false);
   const [conviteEmMassaAberto, setConviteEmMassaAberto] = useState(false);
+  const [trazerEquipeAberto, setTrazerEquipeAberto] = useState(false);
   const [roleTab, setRoleTab] = useState<"all" | "admin" | "user">("all");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1932,6 +1934,14 @@ export default function UserManagement() {
               Convidar em massa
             </Button>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            className="h-8 rounded-lg px-3 text-xs"
+            onClick={() => setTrazerEquipeAberto(true)}
+          >
+            Trazer de outra escala
+          </Button>
         </div>
 
         {convitesPendentes.length > 0 && (
@@ -3578,6 +3588,16 @@ export default function UserManagement() {
           name: u.name,
           active: u.active,
         }))}
+      />
+
+      <TrazerEquipe
+        open={trazerEquipeAberto}
+        onOpenChange={setTrazerEquipeAberto}
+        tenantId={currentTenantId}
+        onConcluido={async () => {
+          // Quem nunca acessou entra direto na escala; quem já usa vira convite.
+          await Promise.all([loadData(), carregarConvitesPendentes(), carregarAcessos()]);
+        }}
       />
     </div>
   );
