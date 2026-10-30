@@ -2200,6 +2200,12 @@ export default function UserManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {form.profileType === "admin" && form.accessRole !== "admin" && (
+                    <p className="text-xs font-medium text-amber-600">
+                      Isto é só o rótulo do perfil. Para administrar o serviço, mude também
+                      <span className="font-semibold"> Acesso</span> para Admin.
+                    </p>
+                  )}
                 </div>
                 <div className="md:col-span-2">
                   <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-border/70 p-3">
@@ -2893,6 +2899,12 @@ export default function UserManagement() {
                       ))}
                     </SelectContent>
                   </Select>
+                  {createForm.profileType === "admin" && createForm.accessRole !== "admin" && (
+                    <p className="text-xs font-medium text-amber-600">
+                      Isto é só o rótulo do perfil. Para administrar o serviço, mude também
+                      <span className="font-semibold"> Acesso</span> para Admin.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label>Acesso</Label>
