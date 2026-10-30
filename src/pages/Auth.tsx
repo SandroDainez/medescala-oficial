@@ -254,7 +254,10 @@ export default function Auth() {
       const rawMessage = extractErrorMessage(error, 'Erro ao criar conta');
       let message = translatePasswordError(error) ?? rawMessage;
       if (rawMessage.includes('User already registered')) {
-        message = 'Este email já está cadastrado';
+        // Sem a saída, a pessoa fica tentando criar conta de novo com o mesmo
+        // e-mail e conclui que o app está quebrado.
+        message =
+          'Este e-mail já tem conta no MedEscala. Use a aba "Entrar" — se não lembra a senha, toque em "Esqueceu sua senha?". Para usar o app em outro hospital, peça à coordenação de lá para adicionar este e-mail: o convite aparece dentro do app.';
       }
 
       toast({
