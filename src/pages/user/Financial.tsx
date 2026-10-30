@@ -15,7 +15,7 @@ import { aggregateFinancial } from '@/lib/financial/aggregateFinancial';
 import { DollarSign, Calendar, Clock, Building, MapPin } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { parseDateOnly } from '@/lib/utils';
+import { diaDaSemanaCurto, parseDateOnly } from '@/lib/utils';
 
 type ShiftDetail = FinancialEntry;
 
@@ -477,7 +477,14 @@ export default function UserFinancial() {
                     {/* Date & Time */}
                     <div className="flex items-center justify-between sm:block sm:w-24 shrink-0">
                       <span className="text-sm font-medium">
-                        {shift.shift_date && format(parseDateOnly(shift.shift_date), 'dd/MM', { locale: ptBR })}
+                        {shift.shift_date && (
+                          <>
+                            {format(parseDateOnly(shift.shift_date), 'dd/MM', { locale: ptBR })}
+                            <span className="ml-1 font-normal text-muted-foreground">
+                              ({diaDaSemanaCurto(parseDateOnly(shift.shift_date))})
+                            </span>
+                          </>
+                        )}
                       </span>
                       <span className="text-xs text-muted-foreground sm:block">
                         {shift.start_time?.slice(0, 5)}-{shift.end_time?.slice(0, 5)}

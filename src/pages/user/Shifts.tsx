@@ -15,7 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTenant } from '@/hooks/useTenant';
 import { useToast } from '@/hooks/use-toast';
 import { extractErrorMessage } from '@/lib/errorMessage';
-import { parseDateOnly } from '@/lib/utils';
+import { diaDaSemanaCurto, parseDateOnly } from '@/lib/utils';
 import { MyShiftStatsChart } from '@/components/user/MyShiftStatsChart';
 import { mapScheduleToFinancialEntries } from '@/lib/financial/mapScheduleToEntries';
 import { Capacitor } from '@capacitor/core';
@@ -1082,7 +1082,7 @@ export default function UserShifts() {
                                   <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
                                     <div className="flex items-center gap-1">
                                       <Calendar className="h-4 w-4" />
-                                      {format(shiftDate, 'dd/MM/yyyy', { locale: ptBR })}
+                                      {format(shiftDate, 'dd/MM/yyyy', { locale: ptBR })} ({diaDaSemanaCurto(shiftDate)})
                                     </div>
                                     <div className="flex items-center gap-1">
                                       <Clock className="h-4 w-4" />
